@@ -38,6 +38,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import kotlinx.coroutines.delay
@@ -190,6 +192,8 @@ fun SmbBrowser(viewModel: SmbViewModel, onOpenSettings: () -> Unit) {
                         } else if (item.isDirectory) {
                             viewModel.recordSelection(viewModel.currentPath, item.path)
                             viewModel.loadPath(item.path)
+                        } else {
+                            // File opening logic
                         }
                     }
                 }
@@ -406,26 +410,26 @@ fun TileItem(
         ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                 if (thumbnailUrl != null) {
-                    AsyncImage(
+                    SubcomposeAsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
-                            .data(thumbnailUrl) // Coil needs a custom Fetcher for SMB, but we'll use this as a placeholder
+                            .data(thumbnailUrl)
                             .crossfade(true)
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
-                        error = { Icon(icon, contentDescription = null, modifier = Modifier.size(48.dp)) },
-                        placeholder = { Icon(icon, contentDescription = null, modifier = Modifier.size(48.dp)) }
+                        loading = { Icon(icon, contentDescription = null, modifier = Modifier.fillMaxSize(0.7f)) },
+                        error = { Icon(icon, contentDescription = null, modifier = Modifier.fillMaxSize(0.7f)) }
                     )
                 } else {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(48.dp))
+                    Icon(icon, contentDescription = null, modifier = Modifier.fillMaxSize(0.7f))
                 }
             }
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = title,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.titleMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
