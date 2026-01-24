@@ -31,9 +31,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.*
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.Key
@@ -296,6 +294,14 @@ fun <T> FocusableList(
 fun SettingsScreen(viewModel: SmbViewModel, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
+    val backFocus = remember { FocusRequester() }
+    val hiddenFilesFocus = remember { FocusRequester() }
+    val clearCacheFocus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(100)
+        backFocus.requestFocus()
+    }
 
     Column(
         modifier = Modifier
@@ -311,15 +317,23 @@ fun SettingsScreen(viewModel: SmbViewModel, onBack: () -> Unit) {
             }
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = onBack) {
+            Button(
+                onClick = onBack,
+                modifier = Modifier
+                    .focusRequester(backFocus)
+                    .focusProperties { 
+                        down = hiddenFilesFocus
+                    }
+            ) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
             Spacer(modifier = Modifier.width(16.dp))
             Text("Settings", style = MaterialTheme.typography.headlineMedium)
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
+        // First row: Hidden Files
         Surface(
             onClick = { viewModel.updateShowHiddenFiles(!viewModel.showHiddenFiles) },
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
@@ -335,13 +349,19 @@ fun SettingsScreen(viewModel: SmbViewModel, onBack: () -> Unit) {
                     shape = MaterialTheme.shapes.small
                 )
             ),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(hiddenFilesFocus)
+                .focusProperties {
+                    up = backFocus
+                    down = clearCacheFocus
+                }
         ) {
             Row(
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Show hidden files", modifier = Modifier.weight(1f))
+                Text("Show hidden files", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Switch(
                     checked = viewModel.showHiddenFiles,
                     onCheckedChange = null
@@ -351,8 +371,36 @@ fun SettingsScreen(viewModel: SmbViewModel, onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(onClick = { viewModel.clearThumbnailCache(context) }) {
-            Text("Clear Thumbnail Cache")
+        // Second row: Clear Cache
+        Surface(
+            onClick = { viewModel.clearThumbnailCache(context) },
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+            colors = ClickableSurfaceDefaults.colors(
+                containerColor = Color.Transparent,
+                focusedContainerColor = Color.Transparent,
+                pressedContainerColor = Color.Transparent
+            ),
+            border = ClickableSurfaceDefaults.border(
+                focusedBorder = Border(
+                    border = BorderStroke(2.dp, Color.White),
+                    inset = 0.dp,
+                    shape = MaterialTheme.shapes.small
+                )
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(clearCacheFocus)
+                .focusProperties {
+                    up = hiddenFilesFocus
+                }
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Clear Thumbnail Cache", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Icon(Icons.Default.DeleteSweep, contentDescription = null)
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
