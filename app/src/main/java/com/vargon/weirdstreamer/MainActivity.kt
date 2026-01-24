@@ -30,6 +30,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -55,6 +56,7 @@ import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
+import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -234,6 +236,8 @@ fun <T> FocusableList(
     itemContent: @Composable (T, Modifier) -> Unit
 ) {
     val focusRequesters = remember(items) { List(items.size) { FocusRequester() } }
+    val gridState = rememberLazyGridState()
+    val listState = rememberLazyListState()
     
     val initialIndex = remember(items, initialSelection) {
         if (initialSelection == null) 0
@@ -248,15 +252,24 @@ fun <T> FocusableList(
         }
     }
 
-    LaunchedEffect(items) {
+    LaunchedEffect(items, initialIndex, isGridView) {
         if (items.isNotEmpty()) {
+            val safeIndex = initialIndex.coerceIn(items.indices)
+            // Ensure the item is target for composition
+            if (isGridView) gridState.scrollToItem(safeIndex)
+            else listState.scrollToItem(safeIndex)
+            
+            // Wait for composition and attachment
             delay(100)
-            focusRequesters[initialIndex.coerceIn(items.indices)].requestFocus()
+            awaitFrame()
+            
+            runCatching {
+                focusRequesters[safeIndex].requestFocus()
+            }
         }
     }
 
     if (isGridView) {
-        val gridState = rememberLazyGridState()
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
             state = gridState,
@@ -270,7 +283,6 @@ fun <T> FocusableList(
             }
         }
     } else {
-        val listState = rememberLazyListState()
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             itemsIndexed(items) { index, item ->
                 itemContent(item, Modifier.focusRequester(focusRequesters[index]))
@@ -308,12 +320,33 @@ fun SettingsScreen(viewModel: SmbViewModel, onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Show hidden files", modifier = Modifier.weight(1f))
-            Switch(
-                checked = viewModel.showHiddenFiles,
-                onCheckedChange = { viewModel.updateShowHiddenFiles(it) }
-            )
+        Surface(
+            onClick = { viewModel.updateShowHiddenFiles(!viewModel.showHiddenFiles) },
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+            colors = ClickableSurfaceDefaults.colors(
+                containerColor = Color.Transparent,
+                focusedContainerColor = Color.Transparent,
+                pressedContainerColor = Color.Transparent
+            ),
+            border = ClickableSurfaceDefaults.border(
+                focusedBorder = Border(
+                    border = BorderStroke(2.dp, Color.White),
+                    inset = 0.dp,
+                    shape = MaterialTheme.shapes.small
+                )
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Show hidden files", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = viewModel.showHiddenFiles,
+                    onCheckedChange = null
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -357,10 +390,15 @@ fun HostItemRow(host: String, modifier: Modifier = Modifier, onClick: () -> Unit
     Surface(
         onClick = onClick,
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent,
+            pressedContainerColor = Color.Transparent
+        ),
         border = ClickableSurfaceDefaults.border(
             focusedBorder = Border(
                 border = BorderStroke(2.dp, Color.White),
-                inset = 1.dp,
+                inset = 0.dp,
                 shape = MaterialTheme.shapes.small
             )
         ),
@@ -416,16 +454,24 @@ fun TileItem(
         Surface(
             onClick = onClick,
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
+            colors = ClickableSurfaceDefaults.colors(
+                containerColor = Color.Transparent,
+                focusedContainerColor = Color.Transparent,
+                pressedContainerColor = Color.Transparent
+            ),
             border = ClickableSurfaceDefaults.border(
                 focusedBorder = Border(
                     border = BorderStroke(4.dp, Color.White),
-                    inset = 1.dp,
+                    inset = 0.dp,
                     shape = MaterialTheme.shapes.medium
                 )
             ),
             modifier = Modifier.aspectRatio(16f / 9f)
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Box(
+                contentAlignment = Alignment.Center, 
+                modifier = Modifier.fillMaxSize().padding(10.dp)
+            ) {
                 Icon(icon, contentDescription = null, modifier = Modifier.fillMaxSize(0.7f))
                 if (thumbnailUrl != null) {
                     AsyncImage(
@@ -435,7 +481,7 @@ fun TileItem(
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.small)
                     )
                 }
             }
@@ -556,10 +602,15 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
     Surface(
         onClick = onClick,
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent,
+            pressedContainerColor = Color.Transparent
+        ),
         border = ClickableSurfaceDefaults.border(
             focusedBorder = Border(
                 border = BorderStroke(2.dp, Color.White),
-                inset = 1.dp,
+                inset = 0.dp,
                 shape = MaterialTheme.shapes.small
             )
         ),
@@ -569,7 +620,7 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.size(48.dp).padding(8.dp), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
                 if (!item.isDirectory && item.name != "..") {
                     AsyncImage(
@@ -579,7 +630,7 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall)
                     )
                 }
             }

@@ -83,10 +83,18 @@ class SmbFetcher(
             if (!path.startsWith("smb://")) return null
             
             val lower = path.substringBefore("?").lowercase()
+            
+            // Expanded list of extensions including user requested types
             val isMedia = lower.endsWith(".jpg") || lower.endsWith(".jpeg") || 
                           lower.endsWith(".png") || lower.endsWith(".webp") ||
-                          lower.endsWith(".mp4") || lower.endsWith(".mkv") ||
-                          lower.endsWith(".avi") || lower.endsWith(".mov")
+                          lower.endsWith(".gif") || lower.endsWith(".wmv") ||
+                          lower.endsWith(".mkv") || lower.endsWith(".avi") ||
+                          lower.endsWith(".mpg") || lower.endsWith(".mpeg") ||
+                          lower.endsWith(".mp4") || lower.endsWith(".mov") ||
+                          lower.endsWith(".flv") || lower.endsWith(".webm") ||
+                          lower.endsWith(".heic") || lower.endsWith(".heif") ||
+                          lower.endsWith(".m4v") || lower.endsWith(".vob") ||
+                          lower.endsWith(".bmp") || lower.endsWith(".pdf")
             
             if (!isMedia) return null
             

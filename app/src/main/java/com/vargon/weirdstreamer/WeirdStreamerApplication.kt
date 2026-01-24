@@ -4,7 +4,9 @@ import android.app.Application
 import android.util.Log
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.decode.GifDecoder
 import coil.decode.VideoFrameDecoder
+import coil.decode.SvgDecoder
 
 class WeirdStreamerApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
@@ -18,6 +20,8 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
         return ImageLoader.Builder(this)
             .components {
                 add(VideoFrameDecoder.Factory())
+                add(GifDecoder.Factory())
+                add(SvgDecoder.Factory())
                 add(SmbFetcher.Factory(credentialManager))
             }
             .build()
