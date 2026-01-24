@@ -18,6 +18,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okio.buffer
 import okio.source
+import okio.ForwardingSource
+import java.io.File
 import java.util.Properties
 
 class SmbFetcher(
@@ -29,11 +31,7 @@ class SmbFetcher(
 
     override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
         val path = data.toString()
-        val host = try {
-            path.removePrefix("smb://").substringBefore("/")
-        } catch (e: Exception) {
-            return@withContext null
-        }
+        val host = try { path.removePrefix("smb://").substringBefore("/") } catch (e: Exception) { return@withContext null }
         
         val creds = credentialManager.getCredentials(host)
         val auth = if (creds.first != null && creds.second != null) {
@@ -43,37 +41,100 @@ class SmbFetcher(
         }
         
         val context = baseContext.withCredentials(auth)
+        val smbFile = SmbFile(path, context)
         
         return@withContext try {
-            val smbFile = SmbFile(path, context)
             val extension = path.substringAfterLast('.', "").lowercase()
-            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: when (extension) {
+                "flv" -> "video/x-flv"
+                "mkv" -> "video/x-matroska"
+                "wmv" -> "video/x-ms-wmv"
+                "3gp" -> "video/3gpp"
+                "mpg", "mpeg" -> "video/mpeg"
+                "m4v" -> "video/x-m4v"
+                "vob" -> "video/dvd"
+                "pdf" -> "application/pdf"
+                else -> null
+            }
+
+            val isVideo = mimeType?.startsWith("video/") == true
+            
+            val imageSource = if (isVideo) {
+                // Videos still need a small local proxy for reliable frame extraction
+                val tempFile = File.createTempFile("smb_video_thumb_", ".$extension", options.context.cacheDir)
+                try {
+                    smbFile.inputStream.use { input ->
+                        tempFile.outputStream().use { output ->
+                            val buffer = ByteArray(8192)
+                            var totalRead = 0L
+                            val maxToRead = 2 * 1024 * 1024L // 2MB is enough
+                            while (totalRead < maxToRead) {
+                                val read = input.read(buffer)
+                                if (read == -1) break
+                                output.write(buffer, 0, read)
+                                totalRead += read
+                            }
+                        }
+                    }
+                } finally {
+                    smbFile.close() // Close network handle immediately for videos
+                }
+                
+                ImageSource(
+                    source = object : ForwardingSource(tempFile.source()) {
+                        override fun close() {
+                            try {
+                                super.close()
+                            } finally {
+                                if (tempFile.exists()) tempFile.delete()
+                                Log.i("SmbFetcher", "CLOSED video proxy for: $path")
+                            }
+                        }
+                    }.buffer(),
+                    context = options.context
+                )
+            } else {
+                // Images stream directly
+                val inputStream = smbFile.inputStream
+                ImageSource(
+                    source = object : ForwardingSource(inputStream.source()) {
+                        private var closed = false
+                        override fun close() {
+                            if (closed) return
+                            closed = true
+                            try {
+                                super.close()
+                            } finally {
+                                inputStream.close()
+                                smbFile.close() // Close network handle for images
+                                Log.i("SmbFetcher", "CLOSED image stream for: $path")
+                            }
+                        }
+                    }.buffer(),
+                    context = options.context
+                )
+            }
             
             SourceResult(
-                source = ImageSource(
-                    source = smbFile.inputStream.source().buffer(),
-                    context = options.context
-                ),
+                source = imageSource,
                 mimeType = mimeType,
                 dataSource = DataSource.NETWORK
             )
         } catch (e: Exception) {
-            Log.e("SmbFetcher", "Error fetching: $path", e)
+            smbFile.close()
+            Log.e("SmbFetcher", "Failed to fetch: $path", e)
             null
         }
     }
 
     class Factory(private val credentialManager: CredentialManager) : Fetcher.Factory<Any> {
-        
         private val baseContext: CIFSContext by lazy {
             val props = Properties().apply {
                 setProperty("jcifs.smb.client.minVersion", "SMB202")
                 setProperty("jcifs.smb.client.maxVersion", "SMB311")
                 setProperty("jcifs.smb.client.ipcSigningEnforced", "false")
-                setProperty("jcifs.smb.client.signingPreferred", "false")
-                setProperty("jcifs.smb.client.signingEnforced", "false")
-                setProperty("jcifs.smb.client.connTimeout", "3000")
-                setProperty("jcifs.smb.client.responseTimeout", "5000")
+                setProperty("jcifs.smb.client.connTimeout", "5000")
+                setProperty("jcifs.smb.client.responseTimeout", "10000")
             }
             BaseContext(PropertyConfiguration(props))
         }
@@ -81,23 +142,6 @@ class SmbFetcher(
         override fun create(data: Any, options: Options, imageLoader: ImageLoader): Fetcher? {
             val path = data.toString()
             if (!path.startsWith("smb://")) return null
-            
-            val lower = path.substringBefore("?").lowercase()
-            
-            // Expanded list of extensions including user requested types
-            val isMedia = lower.endsWith(".jpg") || lower.endsWith(".jpeg") || 
-                          lower.endsWith(".png") || lower.endsWith(".webp") ||
-                          lower.endsWith(".gif") || lower.endsWith(".wmv") ||
-                          lower.endsWith(".mkv") || lower.endsWith(".avi") ||
-                          lower.endsWith(".mpg") || lower.endsWith(".mpeg") ||
-                          lower.endsWith(".mp4") || lower.endsWith(".mov") ||
-                          lower.endsWith(".flv") || lower.endsWith(".webm") ||
-                          lower.endsWith(".heic") || lower.endsWith(".heif") ||
-                          lower.endsWith(".m4v") || lower.endsWith(".vob") ||
-                          lower.endsWith(".bmp") || lower.endsWith(".pdf")
-            
-            if (!isMedia) return null
-            
             return SmbFetcher(data, options, credentialManager, baseContext)
         }
     }

@@ -7,6 +7,8 @@ import coil.ImageLoaderFactory
 import coil.decode.GifDecoder
 import coil.decode.VideoFrameDecoder
 import coil.decode.SvgDecoder
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 
 class WeirdStreamerApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
@@ -18,6 +20,17 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
         Log.d("WeirdStreamerApp", "Creating new ImageLoader")
         val credentialManager = CredentialManager(this)
         return ImageLoader.Builder(this)
+            .memoryCache {
+                MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(this.cacheDir.resolve("image_cache"))
+                    .maxSizePercent(0.02)
+                    .build()
+            }
             .components {
                 add(VideoFrameDecoder.Factory())
                 add(GifDecoder.Factory())

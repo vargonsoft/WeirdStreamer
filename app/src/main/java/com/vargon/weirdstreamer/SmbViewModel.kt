@@ -47,7 +47,6 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
     var showHiddenFiles by mutableStateOf(credentialManager.getShowHiddenFiles())
         private set
 
-    // Track view mode per path: path -> isGridView
     private var viewModeMap by mutableStateOf(mapOf<String, Boolean>())
 
     val isGridView: Boolean
@@ -62,7 +61,6 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
 
     private var discoveredHosts = emptyList<String>()
     
-    // Selection tracking: parentPath -> childPath or childName
     private val selectionMap = mutableMapOf<String, String>()
 
     private val baseContext: CIFSContext by lazy {
@@ -127,10 +125,16 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
                     val context = baseContext.withCredentials(NtlmPasswordAuthenticator(null, null, null))
                     SmbFile("smb://", context).use { workgroup ->
                         workgroup.listFiles().flatMap { server ->
-                            try {
-                                server.listFiles().map { it.name.removeSuffix("/") }
-                            } catch (e: Exception) {
-                                emptyList()
+                            server.use { s ->
+                                try {
+                                    s.listFiles().map { 
+                                        val name = it.name.removeSuffix("/")
+                                        it.close() // Close every file in the share
+                                        name
+                                    }
+                                } catch (e: Exception) {
+                                    emptyList()
+                                }
                             }
                         }
                     }
@@ -139,7 +143,7 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
                 val saved = credentialManager.getSavedServers()
                 allHosts = (saved + discoveredHosts).distinct().sorted()
             } catch (e: SmbUnsupportedOperationException) {
-                // Expected on SMB2+ networks.
+                // Expected
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -171,21 +175,25 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
                     
                     val context = baseContext.withCredentials(auth)
                     SmbFile(finalPath, context).use { smbFile ->
-                        val remoteItems = smbFile.listFiles()
-                            .filter { showHiddenFiles || (!it.isHidden && !it.name.startsWith(".")) }
-                            .map {
+                        val allFiles = smbFile.listFiles()
+                        val result = allFiles.mapNotNull { file ->
+                            val isHidden = file.isHidden || file.name.startsWith(".")
+                            val item = if (showHiddenFiles || !isHidden) {
                                 SmbFileItem(
-                                    name = it.name.removeSuffix("/"),
-                                    path = it.canonicalPath,
-                                    isDirectory = it.isDirectory,
-                                    size = if (it.isDirectory) 0 else it.length()
+                                    name = file.name.removeSuffix("/"),
+                                    path = file.canonicalPath,
+                                    isDirectory = file.isDirectory,
+                                    size = if (file.isDirectory) 0 else file.length()
                                 )
-                            }.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+                            } else null
+                            file.close() // CRITICAL: Close every file, even if we filter it out
+                            item
+                        }.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
                         
                         if (finalPath != "smb://") {
-                            listOf(SmbFileItem("..", "UP", true)) + remoteItems
+                            listOf(SmbFileItem("..", "UP", true)) + result
                         } else {
-                            remoteItems
+                            result
                         }
                     }
                 }
