@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.vargon.weirdstreamer"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -52,6 +52,12 @@ dependencies {
     implementation(libs.coil.video)
     implementation(libs.coil.gif)
     implementation(libs.coil.svg)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
+    implementation(libs.media3.common)
+    implementation(libs.media3.inspector)
+    implementation(libs.kotlinx.coroutines.guava)
+
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)

@@ -32,6 +32,7 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
                     .build()
             }
             .components {
+                add(VideoThumbnailDecoder.Factory())
                 add(VideoFrameDecoder.Factory())
                 add(GifDecoder.Factory())
                 add(SvgDecoder.Factory())

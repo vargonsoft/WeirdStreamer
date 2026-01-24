@@ -3,6 +3,7 @@ package com.vargon.weirdstreamer
 import android.util.Log
 import android.webkit.MimeTypeMap
 import coil.ImageLoader
+import coil.annotation.ExperimentalCoilApi
 import coil.decode.DataSource
 import coil.decode.ImageSource
 import coil.fetch.FetchResult
@@ -19,8 +20,17 @@ import kotlinx.coroutines.withContext
 import okio.buffer
 import okio.source
 import okio.ForwardingSource
+import okio.Source
+import okio.Buffer
 import java.io.File
 import java.util.Properties
+import kotlin.math.min
+
+/**
+ * Metadata to pass the SmbFile to the decoder for random access.
+ */
+@OptIn(ExperimentalCoilApi::class)
+class SmbMetadata(val smbFile: SmbFile) : ImageSource.Metadata()
 
 class SmbFetcher(
     private val data: Any,
@@ -53,67 +63,54 @@ class SmbFetcher(
                 "mpg", "mpeg" -> "video/mpeg"
                 "m4v" -> "video/x-m4v"
                 "vob" -> "video/dvd"
-                "pdf" -> "application/pdf"
+                "avi" -> "video/x-msvideo"
+                "ts" -> "video/mp2t"
+                "webm" -> "video/webm"
+                "mov" -> "video/quicktime"
+                "asf" -> "video/x-ms-asf"
                 else -> null
             }
 
             val isVideo = mimeType?.startsWith("video/") == true
+            val inputStream = smbFile.inputStream
+            val rawSource = inputStream.source()
             
-            val imageSource = if (isVideo) {
-                // Videos still need a small local proxy for reliable frame extraction
-                val tempFile = File.createTempFile("smb_video_thumb_", ".$extension", options.context.cacheDir)
-                try {
-                    smbFile.inputStream.use { input ->
-                        tempFile.outputStream().use { output ->
-                            val buffer = ByteArray(8192)
-                            var totalRead = 0L
-                            val maxToRead = 2 * 1024 * 1024L // 2MB is enough
-                            while (totalRead < maxToRead) {
-                                val read = input.read(buffer)
-                                if (read == -1) break
-                                output.write(buffer, 0, read)
-                                totalRead += read
-                            }
+            // If it's a video, we wrap it in a limited source.
+            // This prevents accidental full download if a decoder doesn't use random access.
+            val processedSource = if (isVideo) {
+                object : ForwardingSource(rawSource) {
+                    private var bytesRead = 0L
+                    private val limit = 10 * 1024 * 1024L // 10MB
+                    override fun read(sink: Buffer, byteCount: Long): Long {
+                        if (bytesRead >= limit) return -1
+                        val toRead = min(byteCount, limit - bytesRead)
+                        val read = super.read(sink, toRead)
+                        if (read != -1L) bytesRead += read
+                        return read
+                    }
+                }
+            } else {
+                rawSource
+            }
+            
+            val imageSource = ImageSource(
+                source = object : ForwardingSource(processedSource) {
+                    private var closed = false
+                    override fun close() {
+                        if (closed) return
+                        closed = true
+                        try {
+                            super.close()
+                        } finally {
+                            inputStream.close()
+                            smbFile.close()
+                            Log.d("SmbFetcher", "Closed SMB resources for: $path")
                         }
                     }
-                } finally {
-                    smbFile.close() // Close network handle immediately for videos
-                }
-                
-                ImageSource(
-                    source = object : ForwardingSource(tempFile.source()) {
-                        override fun close() {
-                            try {
-                                super.close()
-                            } finally {
-                                if (tempFile.exists()) tempFile.delete()
-                                Log.i("SmbFetcher", "CLOSED video proxy for: $path")
-                            }
-                        }
-                    }.buffer(),
-                    context = options.context
-                )
-            } else {
-                // Images stream directly
-                val inputStream = smbFile.inputStream
-                ImageSource(
-                    source = object : ForwardingSource(inputStream.source()) {
-                        private var closed = false
-                        override fun close() {
-                            if (closed) return
-                            closed = true
-                            try {
-                                super.close()
-                            } finally {
-                                inputStream.close()
-                                smbFile.close() // Close network handle for images
-                                Log.i("SmbFetcher", "CLOSED image stream for: $path")
-                            }
-                        }
-                    }.buffer(),
-                    context = options.context
-                )
-            }
+                }.buffer(),
+                context = options.context,
+                metadata = SmbMetadata(smbFile)
+            )
             
             SourceResult(
                 source = imageSource,
