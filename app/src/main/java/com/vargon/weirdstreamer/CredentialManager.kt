@@ -72,4 +72,12 @@ class CredentialManager(context: Context) {
     fun getLastPath(): String? {
         return sharedPreferences.getString("last_path", null)
     }
+
+    fun setGridView(path: String, isGrid: Boolean) {
+        sharedPreferences.edit().putBoolean("grid_view_$path", isGrid).apply()
+    }
+
+    fun isGridView(path: String): Boolean {
+        return sharedPreferences.getBoolean("grid_view_$path", false)
+    }
 }

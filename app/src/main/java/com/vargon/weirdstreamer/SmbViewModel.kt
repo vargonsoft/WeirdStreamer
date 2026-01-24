@@ -14,6 +14,7 @@ import jcifs.context.BaseContext
 import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbAuthException
 import jcifs.smb.SmbFile
+import jcifs.smb.SmbUnsupportedOperationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,7 +47,18 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
     var showHiddenFiles by mutableStateOf(credentialManager.getShowHiddenFiles())
         private set
 
-    var isGridView by mutableStateOf(false)
+    // Track view mode per path: path -> isGridView
+    private var viewModeMap by mutableStateOf(mapOf<String, Boolean>())
+
+    val isGridView: Boolean
+        get() = viewModeMap[currentPath] ?: credentialManager.isGridView(currentPath)
+
+    fun toggleViewMode() {
+        val current = isGridView
+        val newState = !current
+        viewModeMap = viewModeMap + (currentPath to newState)
+        credentialManager.setGridView(currentPath, newState)
+    }
 
     private var discoveredHosts = emptyList<String>()
     
@@ -115,13 +127,19 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
                     val context = baseContext.withCredentials(NtlmPasswordAuthenticator(null, null, null))
                     SmbFile("smb://", context).use { workgroup ->
                         workgroup.listFiles().flatMap { server ->
-                            server.listFiles().map { it.name.removeSuffix("/") }
+                            try {
+                                server.listFiles().map { it.name.removeSuffix("/") }
+                            } catch (e: Exception) {
+                                emptyList()
+                            }
                         }
                     }
                 }
                 discoveredHosts = found
                 val saved = credentialManager.getSavedServers()
                 allHosts = (saved + discoveredHosts).distinct().sorted()
+            } catch (e: SmbUnsupportedOperationException) {
+                // Expected on SMB2+ networks.
             } catch (e: Exception) {
                 e.printStackTrace()
             }

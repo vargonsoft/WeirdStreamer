@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -120,9 +122,9 @@ fun SmbBrowser(viewModel: SmbViewModel, onOpenSettings: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Button(onClick = { viewModel.isGridView = !viewModel.isGridView }) {
+            Button(onClick = { viewModel.toggleViewMode() }) {
                 Icon(
-                    if (viewModel.isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                    if (viewModel.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
                     contentDescription = "Switch View"
                 )
             }
@@ -335,8 +337,7 @@ fun SettingsScreen(viewModel: SmbViewModel, onBack: () -> Unit) {
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                        verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Dns, contentDescription = null)
                         Spacer(modifier = Modifier.width(16.dp))
                         Text(host, modifier = Modifier.weight(1f))
@@ -355,6 +356,14 @@ fun SettingsScreen(viewModel: SmbViewModel, onBack: () -> Unit) {
 fun HostItemRow(host: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, Color.White),
+                inset = 1.dp,
+                shape = MaterialTheme.shapes.small
+            )
+        ),
         modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
     ) {
         Row(
@@ -406,23 +415,28 @@ fun TileItem(
     ) {
         Surface(
             onClick = onClick,
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
+            border = ClickableSurfaceDefaults.border(
+                focusedBorder = Border(
+                    border = BorderStroke(4.dp, Color.White),
+                    inset = 1.dp,
+                    shape = MaterialTheme.shapes.medium
+                )
+            ),
             modifier = Modifier.aspectRatio(16f / 9f)
         ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Icon(icon, contentDescription = null, modifier = Modifier.fillMaxSize(0.7f))
                 if (thumbnailUrl != null) {
-                    SubcomposeAsyncImage(
+                    AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(thumbnailUrl)
                             .crossfade(true)
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                        loading = { Icon(icon, contentDescription = null, modifier = Modifier.fillMaxSize(0.7f)) },
-                        error = { Icon(icon, contentDescription = null, modifier = Modifier.fillMaxSize(0.7f)) }
+                        modifier = Modifier.fillMaxSize()
                     )
-                } else {
-                    Icon(icon, contentDescription = null, modifier = Modifier.fillMaxSize(0.7f))
                 }
             }
         }
@@ -538,19 +552,37 @@ fun ManualAddressDialog(initialAddress: String, onDismiss: () -> Unit, onConnect
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val icon = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description
     Surface(
         onClick = onClick,
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, Color.White),
+                inset = 1.dp,
+                shape = MaterialTheme.shapes.small
+            )
+        ),
         modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description,
-                contentDescription = null,
-                modifier = Modifier.size(32.dp)
-            )
+            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
+                if (!item.isDirectory && item.name != "..") {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(item.path)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
