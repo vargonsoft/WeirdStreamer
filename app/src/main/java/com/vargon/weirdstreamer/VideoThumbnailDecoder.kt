@@ -130,8 +130,8 @@ class VideoThumbnailDecoder(
                 } catch (_: Exception) {
                     null
                 } finally {
-                    try { retriever.release() } catch (_: Exception) {}
                     try { dataSource?.close() } catch (_: Exception) {}
+                    try { retriever.close() } catch (_: Exception) {}
                 }
             }
         }
@@ -166,7 +166,7 @@ class VideoThumbnailDecoder(
                         null
                     } finally {
                         try { fis?.close() } catch (_: Exception) {}
-                        try { retriever.release() } catch (_: Exception) {}
+                        try { retriever.close() } catch (_: Exception) {}
                     }
                 }
 

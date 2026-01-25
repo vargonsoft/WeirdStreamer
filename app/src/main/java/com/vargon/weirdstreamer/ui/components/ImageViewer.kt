@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.*
@@ -29,6 +30,7 @@ import androidx.tv.material3.*
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
+import coil.size.Size as CoilSize
 import com.vargon.weirdstreamer.SmbViewModel
 import kotlinx.coroutines.delay
 import java.io.File
@@ -50,12 +52,12 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
     var loopFeedback by remember { mutableStateOf<Pair<Boolean, Long>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var imageIntrinsicSize by remember { mutableStateOf<Size?>(null) }
     
     val focusRequester = remember { FocusRequester() }
     val currentSmbPath = images.getOrNull(currentIndex) ?: initialPath
     
-    // For HEIC support on some devices (like Google TV), we download to a temp file
-    // because the system's HEIF decoder often requires a seekable FileDescriptor.
+    // For HEIC support
     var localImagePath by remember { mutableStateOf<String?>(null) }
     var tempFile by remember { mutableStateOf<File?>(null) }
 
@@ -67,8 +69,8 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
         filenameTimerTrigger = System.currentTimeMillis()
         isLoading = true
         errorMessage = null
+        imageIntrinsicSize = null
         
-        // Cleanup old temp file
         tempFile?.delete()
         tempFile = null
         
@@ -81,7 +83,7 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
                     localImagePath = file.absolutePath
                 } else {
                     errorMessage = "Failed to download HEIC for decoding"
-                    localImagePath = currentSmbPath // Fallback to stream
+                    localImagePath = currentSmbPath
                 }
             } else {
                 localImagePath = currentSmbPath
@@ -147,157 +149,214 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
 
     BackHandler { handleBack() }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .clipToBounds() // Clip everything inside this box
             .then(
                 if (isZoomMode) Modifier.border(2.dp, Color.White) else Modifier
             )
-            .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown) {
-                    when (event.key) {
-                        Key.DirectionCenter, Key.Enter -> {
-                            if (!isZoomMode) {
-                                isZoomMode = true
-                                if (zoomLevel == 1f) zoomLevel = 2f
-                            } else if (zoomLevel < 256f) {
-                                zoomLevel *= 2f
-                            }
-                            true
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown) {
+                        val w = constraints.maxWidth.toFloat()
+                        val h = constraints.maxHeight.toFloat()
+                        
+                        val imageRatio = imageIntrinsicSize?.let { 
+                            if (it.width > 0 && it.height > 0) it.width / it.height else null 
+                        } ?: (w / h)
+                        val containerRatio = w / h
+                        
+                        val fittedWidth: Float
+                        val fittedHeight: Float
+                        if (imageRatio > containerRatio) {
+                            fittedWidth = w
+                            fittedHeight = w / imageRatio
+                        } else {
+                            fittedWidth = h * imageRatio
+                            fittedHeight = h
                         }
-                        Key.Backspace -> {
-                            if (isZoomMode) {
-                                if (zoomLevel > 2f) {
-                                    zoomLevel /= 2f
-                                } else {
-                                    resetZoom()
+
+                        when (event.key) {
+                            Key.DirectionCenter, Key.Enter -> {
+                                if (!isZoomMode) {
+                                    isZoomMode = true
+                                    zoomLevel = 1f
+                                } else if (zoomLevel < 64f) {
+                                    val oldZoom = zoomLevel
+                                    zoomLevel = if (zoomLevel == 1f) 2f else zoomLevel * 2f
+                                    
+                                    val newScaledWidth = fittedWidth * zoomLevel
+                                    val newScaledHeight = fittedHeight * zoomLevel
+                                    val newMaxPX = (newScaledWidth - w).coerceAtLeast(0f) / 2f
+                                    val newMaxPY = (newScaledHeight - h).coerceAtLeast(0f) / 2f
+                                    
+                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(-newMaxPX, newMaxPX)
+                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(-newMaxPY, newMaxPY)
                                 }
                                 true
-                            } else {
-                                onBack(currentSmbPath)
+                            }
+                            Key.Backspace -> {
+                                if (isZoomMode) {
+                                    if (zoomLevel > 1f) {
+                                        val oldZoom = zoomLevel
+                                        zoomLevel = if (zoomLevel <= 2f) 1f else zoomLevel / 2f
+                                        
+                                        val newScaledWidth = fittedWidth * zoomLevel
+                                        val newScaledHeight = fittedHeight * zoomLevel
+                                        val newMaxPX = (newScaledWidth - w).coerceAtLeast(0f) / 2f
+                                        val newMaxPY = (newScaledHeight - h).coerceAtLeast(0f) / 2f
+                                        
+                                        panX = (panX * (zoomLevel / oldZoom)).coerceIn(-newMaxPX, newMaxPX)
+                                        panY = (panY * (zoomLevel / oldZoom)).coerceIn(-newMaxPY, newMaxPY)
+                                    } else {
+                                        isZoomMode = false
+                                    }
+                                    true
+                                } else {
+                                    onBack(currentSmbPath)
+                                    true
+                                }
+                            }
+                            Key.DirectionLeft -> {
+                                if (isZoomMode) {
+                                    val scaledWidth = fittedWidth * zoomLevel
+                                    val maxPX = (scaledWidth - w).coerceAtLeast(0f) / 2f
+                                    panX = (panX + 100f).coerceAtMost(maxPX)
+                                } else {
+                                    navigate(false)
+                                }
                                 true
                             }
-                        }
-                        Key.DirectionLeft -> {
-                            if (isZoomMode) {
-                                panX += 0.1f / zoomLevel
-                            } else {
-                                navigate(false)
+                            Key.DirectionRight -> {
+                                if (isZoomMode) {
+                                    val scaledWidth = fittedWidth * zoomLevel
+                                    val maxPX = (scaledWidth - w).coerceAtLeast(0f) / 2f
+                                    panX = (panX - 100f).coerceAtLeast(-maxPX)
+                                } else {
+                                    navigate(true)
+                                }
+                                true
                             }
-                            true
-                        }
-                        Key.DirectionRight -> {
-                            if (isZoomMode) {
-                                panX -= 0.1f / zoomLevel
-                            } else {
-                                navigate(true)
+                            Key.DirectionUp -> {
+                                if (isZoomMode) {
+                                    val scaledHeight = fittedHeight * zoomLevel
+                                    val maxPY = (scaledHeight - h).coerceAtLeast(0f) / 2f
+                                    panY = (panY + 100f).coerceAtMost(maxPY)
+                                }
+                                true
                             }
-                            true
+                            Key.DirectionDown -> {
+                                if (isZoomMode) {
+                                    val scaledHeight = fittedHeight * zoomLevel
+                                    val maxPY = (scaledHeight - h).coerceAtLeast(0f) / 2f
+                                    panY = (panY - 100f).coerceAtLeast(-maxPY)
+                                }
+                                true
+                            }
+                            else -> false
                         }
-                        Key.DirectionUp -> {
-                            if (isZoomMode) panY += 0.1f / zoomLevel
-                            true
-                        }
-                        Key.DirectionDown -> {
-                            if (isZoomMode) panY -= 0.1f / zoomLevel
-                            true
-                        }
-                        else -> false
-                    }
-                } else false
-            }
-            .focusRequester(focusRequester)
-            .focusable()
-    ) {
-        localImagePath?.let { path ->
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(path)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = null,
-                contentScale = if (isZoomMode) ContentScale.None else ContentScale.Fit,
-                onState = { state ->
-                    isLoading = state is AsyncImagePainter.State.Loading
-                    if (state is AsyncImagePainter.State.Error) {
-                        errorMessage = state.result.throwable.message ?: "Failed to load image"
-                        Log.e("ImageViewer", "Error loading $path: $errorMessage", state.result.throwable)
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clipToBounds()
-                    .graphicsLayer(
-                        scaleX = zoomLevel,
-                        scaleY = zoomLevel,
-                        translationX = panX * 1000f * zoomLevel,
-                        translationY = panY * 1000f * zoomLevel
-                    )
-            )
-        }
-
-        if (isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = Color.White
-            )
-        }
-
-        if (errorMessage != null) {
-            Column(
-                modifier = Modifier.align(Alignment.Center).padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text("Error", style = MaterialTheme.typography.headlineMedium, color = Color.Red)
-                Text(errorMessage!!, style = MaterialTheme.typography.bodyMedium, color = Color.White, textAlign = TextAlign.Center)
-            }
-        }
-
-        // Filename Overlay
-        AnimatedVisibility(
-            visible = showFilename && !isZoomMode,
-            enter = fadeIn() + slideInVertically(),
-            exit = fadeOut() + slideOutVertically(),
-            modifier = Modifier.align(Alignment.TopCenter)
+                    } else false
+                }
+                .focusRequester(focusRequester)
+                .focusable()
         ) {
-            Text(
-                text = fileName,
-                modifier = Modifier
-                    .padding(top = 32.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        // Loop Feedback
-        AnimatedVisibility(
-            visible = loopFeedback != null,
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut(),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(32.dp)
-        ) {
-            val isForward = loopFeedback?.first == true
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(32.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
+            localImagePath?.let { path ->
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(path)
+                        .crossfade(true)
+                        .size(CoilSize.ORIGINAL)
+                        .build(),
                     contentDescription = null,
-                    tint = Color.White,
+                    contentScale = ContentScale.Fit,
+                    onState = { state ->
+                        isLoading = state is AsyncImagePainter.State.Loading
+                        if (state is AsyncImagePainter.State.Success) {
+                            imageIntrinsicSize = state.painter.intrinsicSize
+                        }
+                        if (state is AsyncImagePainter.State.Error) {
+                            errorMessage = state.result.throwable.message ?: "Failed to load image"
+                            Log.e("ImageViewer", "Error loading $path: $errorMessage", state.result.throwable)
+                        }
+                    },
                     modifier = Modifier
-                        .size(40.dp)
-                        .graphicsLayer(scaleX = if (isForward) -1f else 1f)
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            scaleX = zoomLevel,
+                            scaleY = zoomLevel,
+                            translationX = panX,
+                            translationY = panY
+                        )
                 )
+            }
+
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color.White
+                )
+            }
+
+            if (errorMessage != null) {
+                Column(
+                    modifier = Modifier.align(Alignment.Center).padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Error", style = MaterialTheme.typography.headlineMedium, color = Color.Red)
+                    Text(errorMessage!!, style = MaterialTheme.typography.bodyMedium, color = Color.White, textAlign = TextAlign.Center)
+                }
+            }
+
+            // Filename Overlay
+            AnimatedVisibility(
+                visible = showFilename && !isZoomMode,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically(),
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                Text(
+                    text = fileName,
+                    modifier = Modifier
+                        .padding(top = 32.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Loop Feedback
+            AnimatedVisibility(
+                visible = loopFeedback != null,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(32.dp)
+            ) {
+                val isForward = loopFeedback?.first == true
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(32.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .graphicsLayer(scaleX = if (isForward) -1f else 1f)
+                    )
+                }
             }
         }
     }
