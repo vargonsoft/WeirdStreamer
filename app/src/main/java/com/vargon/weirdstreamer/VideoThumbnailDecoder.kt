@@ -3,6 +3,8 @@ package com.vargon.weirdstreamer
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.media.MediaDataSource
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
@@ -46,7 +48,8 @@ class VideoThumbnailDecoder(
 ) : Decoder {
 
     companion object {
-        private val MEDIA3_PREFERRED_EXTENSIONS = setOf("flv", "avi", "wmv", "asf", "m4v")
+        // Extensions where Media3 is generally more robust than the system retriever.
+        private val MEDIA3_PREFERRED_EXTENSIONS = setOf("flv", "avi", "wmv", "asf")
         private const val TAG = "VideoThumbnailDecoder"
     }
 
@@ -79,12 +82,9 @@ class VideoThumbnailDecoder(
 
             // Strategy 2: Persistent Temp File (to solve ENOENT issues with Media3/System)
             if (bitmap == null) {
-                // Use a stable hash-based filename to avoid ENOENT when multiple decoders 
-                // compete for the same resource or when background cleanup is slow.
                 val fileHash = path.hashCode().toString()
                 val tempFile = File(options.context.cacheDir, "v_thumb_$fileHash.tmp")
                 
-                // Only write if it doesn't exist or is empty
                 if (!tempFile.exists() || tempFile.length() == 0L) {
                     runInterruptible(Dispatchers.IO) {
                         try {
@@ -103,13 +103,14 @@ class VideoThumbnailDecoder(
                 if (tempFile.exists() && tempFile.length() > 0) {
                     // A. Try system retriever on local file (very stable)
                     var hasVideo = false
+                    var retrieverSuccess = false
                     bitmap = runInterruptible(Dispatchers.IO) {
                         val retriever = MediaMetadataRetriever()
                         var fis: FileInputStream? = null
                         try {
                             fis = FileInputStream(tempFile)
                             retriever.setDataSource(fis.fd)
-                            // Check if the file actually contains a video track to avoid Media3 internal NPEs
+                            retrieverSuccess = true
                             hasVideo = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) == "yes"
                             tryGetFrame(retriever, targetTimeMicros)
                         } catch (e: Exception) {
@@ -120,16 +121,14 @@ class VideoThumbnailDecoder(
                         }
                     }
 
-                    // B. Try Media3 as last resort for formats system doesn't like
-                    // Only attempt Media3 if we know there is a video track or if system retriever failed to even check.
-                    if (bitmap == null && (hasVideo || extension == "flv") && 
-                        (MEDIA3_PREFERRED_EXTENSIONS.contains(extension) || extension == "flv")) {
-                        bitmap = tryExtractWithMedia3(tempFile, targetTimeMicros / 1000)
+                    // B. Try Media3 as last resort
+                    if (bitmap == null && (MEDIA3_PREFERRED_EXTENSIONS.contains(extension))) {
+                        // Crucial: Only use Media3 if the file is likely valid to avoid internal NPEs
+                        if (isLikelyDecodableByMedia3(tempFile)) {
+                            bitmap = tryExtractWithMedia3(tempFile, targetTimeMicros / 1000)
+                        }
                     }
                 }
-                
-                // NOTE: We do NOT delete tempFile here. This prevents the ENOENT race condition
-                // that leads to the fatal NPE in Media3's internal player listeners.
             }
         } catch (e: Exception) {
             if (e is CancellationException || e is InterruptedException || e is InterruptedIOException) return null
@@ -144,22 +143,52 @@ class VideoThumbnailDecoder(
         }
     }
 
+    /**
+     * Pre-validates the file using the lighter MediaExtractor to avoid triggering 
+     * internal Media3 bugs that cause NPEs on the main thread.
+     */
+    private fun isLikelyDecodableByMedia3(file: File): Boolean {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(file.absolutePath)
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("video/")) {
+                    // Avoid Sorenson Spark (often in FLV) which Media3's FrameExtractor chokes on
+                    if (mime == "video/x-vnd.on2.vp6" || mime.contains("sorenson") || mime.contains("spark")) {
+                        return false
+                    }
+                    return true
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { extractor.release() } catch (_: Exception) {}
+        }
+        return false
+    }
+
     private suspend fun tryExtractWithMedia3(file: File, targetMillis: Long): Bitmap? {
-        // Media3 FrameExtractor must run on the Main thread to avoid internal listener NPEs.
         return withContext(Dispatchers.Main) {
             var extractor: FrameExtractor? = null
             try {
                 if (!file.exists()) return@withContext null
                 
                 val extension = file.extension.lowercase()
-                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+                val mimeType = when (extension) {
+                    "wmv" -> "video/x-ms-wmv"
+                    "asf" -> "video/x-ms-asf"
+                    "avi" -> "video/x-msvideo"
+                    "flv" -> "video/x-flv"
+                    else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+                }
                 
                 val mediaItem = MediaItem.Builder()
                     .setUri(Uri.fromFile(file))
                     .apply { if (mimeType != null) setMimeType(mimeType) }
                     .build()
                 
-                // Use applicationContext to avoid leaking Activity context and for better stability
                 extractor = FrameExtractor.Builder(options.context.applicationContext, mediaItem).build()
                 
                 try {
@@ -172,7 +201,6 @@ class VideoThumbnailDecoder(
                     }
                 }
             } catch (e: Throwable) {
-                // Catch Throwable to handle the library's internal NullPointerException
                 if (e !is CancellationException) {
                     Log.w(TAG, "Media3 FrameExtractor failed for ${file.name}: ${e.message}")
                 }
@@ -180,14 +208,10 @@ class VideoThumbnailDecoder(
             } finally {
                 val finalExtractor = extractor
                 if (finalExtractor != null) {
-                    // Defer closing to the end of the Main Looper queue. 
-                    // This prevents closing the player while a playback state change might 
-                    // still be processing, which is a known cause of NPE in onPlaybackStateChanged.
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        try {
-                            finalExtractor.close()
-                        } catch (_: Exception) {}
-                    }
+                    // Close immediately on the main thread to stop any pending callbacks
+                    try {
+                        finalExtractor.close()
+                    } catch (_: Exception) {}
                 }
             }
         }
@@ -214,7 +238,6 @@ class VideoThumbnailDecoder(
             if (closed || raf == null) return -1
             if (size <= 0) return 0
 
-            // 1. Serve from buffer if the requested position is within its range
             if (bufferPos != -1L && position >= bufferPos && position < bufferPos + bufferSize) {
                 val available = (bufferPos + bufferSize - position).toInt()
                 val toCopy = min(size, available)
@@ -222,7 +245,6 @@ class VideoThumbnailDecoder(
                 return toCopy
             }
 
-            // 2. Refill buffer or read directly
             return try {
                 val currentRaf = raf!!
                 if (size >= buffer.size) {
