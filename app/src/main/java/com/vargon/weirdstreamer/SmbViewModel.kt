@@ -65,6 +65,9 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
     var selectedPdfPath by mutableStateOf<String?>(null)
         private set
 
+    var downloadProgress by mutableStateOf<Float?>(null)
+        private set
+
     fun toggleViewMode() {
         val current = isGridView
         val newState = !current
@@ -305,6 +308,7 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun downloadToTempFile(smbPath: String, context: Context, suffix: String = ".pdf"): File? = withContext(Dispatchers.IO) {
         try {
+            downloadProgress = 0f
             val host = smbPath.removePrefix("smb://").substringBefore("/")
             val creds = credentialManager.getCredentials(host)
             val auth = if (creds.first != null && creds.second != null) {
@@ -316,15 +320,27 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
             
             val tempFile = File(context.cacheDir, "temp_${System.currentTimeMillis()}$suffix")
             SmbFile(smbPath, cifsContext).use { smbFile ->
+                val totalSize = smbFile.length()
                 smbFile.inputStream.use { input ->
                     tempFile.outputStream().use { output ->
-                        input.copyTo(output)
+                        val buffer = ByteArray(64 * 1024)
+                        var bytesRead: Int
+                        var totalRead = 0L
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            totalRead += bytesRead
+                            if (totalSize > 0) {
+                                downloadProgress = totalRead.toFloat() / totalSize.toFloat()
+                            }
+                        }
                     }
                 }
             }
+            downloadProgress = null
             tempFile
         } catch (e: Exception) {
             e.printStackTrace()
+            downloadProgress = null
             null
         }
     }

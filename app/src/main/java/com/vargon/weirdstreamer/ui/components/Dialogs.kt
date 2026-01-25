@@ -9,6 +9,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
@@ -25,9 +27,10 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Bo
     var savePassword by remember { mutableStateOf(true) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Surface(onClick = {}, modifier = Modifier.width(400.dp)) {
+        Surface(modifier = Modifier.width(400.dp)) {
             Column(modifier = Modifier.padding(24.dp)) {
                 Text("Authentication Required", style = MaterialTheme.typography.headlineSmall)
                 Text("Host: $host", style = MaterialTheme.typography.bodySmall)
@@ -37,7 +40,9 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Bo
                     value = username,
                     onValueChange = { username = it },
                     label = { Text("Username") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
@@ -80,6 +85,10 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Bo
             }
         }
     }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -87,16 +96,19 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Bo
 fun ManualAddressDialog(initialAddress: String, onDismiss: () -> Unit, onConnect: (String) -> Unit) {
     var address by remember { mutableStateOf(initialAddress) }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Surface(onClick = {}, modifier = Modifier.width(500.dp)) {
+        Surface(modifier = Modifier.width(500.dp)) {
             Column(modifier = Modifier.padding(24.dp)) {
                 Text("Manual Connection", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(16.dp))
                 TextField(
                     value = address,
                     onValueChange = { address = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
                     label = { Text("smb://host/share/") },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { 
@@ -113,5 +125,9 @@ fun ManualAddressDialog(initialAddress: String, onDismiss: () -> Unit, onConnect
                 }
             }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
     }
 }

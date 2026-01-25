@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,12 +102,20 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
                         canvas.drawColor(android.graphics.Color.WHITE)
                         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                         currentPageBitmap = bitmap
+                        errorMessage = null // Clear any previous transient errors on success
                     }
                 } catch (e: Exception) {
                     errorMessage = "Failed to render page: ${e.localizedMessage}"
                 }
             }
             isLoading = false
+        }
+    }
+
+    LaunchedEffect(errorMessage) {
+        if (errorMessage != null && errorMessage!!.contains("Current page not closed")) {
+            delay(3000)
+            errorMessage = null
         }
     }
 
@@ -248,10 +257,31 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
         }
 
         if (isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = Color.White
-            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                val progress = viewModel.downloadProgress
+                if (progress != null) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            progress = { progress },
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "${(progress * 100).toInt()}%",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                } else {
+                    CircularProgressIndicator(color = Color.White)
+                }
+            }
         }
 
         if (errorMessage != null) {
