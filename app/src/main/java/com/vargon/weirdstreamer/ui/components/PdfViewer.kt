@@ -6,19 +6,23 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -27,14 +31,19 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
 import com.vargon.weirdstreamer.SmbViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -42,17 +51,25 @@ import java.io.File
 @Composable
 fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
+    
     var tempFile by remember { mutableStateOf<File?>(null) }
     var pdfRenderer by remember { mutableStateOf<PdfRenderer?>(null) }
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
     var pageCount by remember { mutableIntStateOf(0) }
     var currentPageIndex by remember { mutableIntStateOf(0) }
     var currentPageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var nextPageBitmap by remember { mutableStateOf<Bitmap?>(null) }
     
     var zoomLevel by remember { mutableFloatStateOf(1f) }
     var panX by remember { mutableFloatStateOf(0f) }
     var panY by remember { mutableFloatStateOf(0f) }
     var isZoomMode by remember { mutableStateOf(false) }
+    
+    var rotation by remember { mutableFloatStateOf(0f) }
+    var isTwoPageView by remember { mutableStateOf(false) }
+    var isThumbnailView by remember { mutableStateOf(false) }
     
     var showOverlays by remember { mutableStateOf(false) }
     var overlayTimerTrigger by remember { mutableLongStateOf(0L) }
@@ -60,10 +77,15 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
+    val rendererMutex = remember { Mutex() }
+    val thumbCache = remember { mutableStateMapOf<Int, Bitmap>() }
+    
     // Used to trigger a retry if rendering fails due to concurrency
     var retryTrigger by remember { mutableIntStateOf(0) }
     
-    val focusRequester = remember { FocusRequester() }
+    val mainFocusRequester = remember { FocusRequester() }
+    val gridState = rememberLazyGridState()
+    
     val fileName = remember(initialPath) {
         initialPath.substringBefore('?').removeSuffix("/").substringAfterLast('/')
     }
@@ -90,37 +112,53 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
         isLoading = false
     }
 
-    LaunchedEffect(currentPageIndex, pdfRenderer, retryTrigger) {
+    LaunchedEffect(currentPageIndex, isTwoPageView, pdfRenderer, retryTrigger, isThumbnailView) {
         val renderer = pdfRenderer ?: return@LaunchedEffect
         val targetIndex = currentPageIndex
-        if (pageCount > 0) {
-            // Small delay to debounce rapid navigation
+        val targetTwoPage = isTwoPageView
+        if (pageCount > 0 && !isThumbnailView) {
             delay(150)
-            
             isLoading = true
             overlayTimerTrigger = System.currentTimeMillis()
-            withContext(Dispatchers.Default) { // Use Default for CPU intensive task
+            withContext(Dispatchers.Default) {
                 try {
                     if (targetIndex != currentPageIndex) return@withContext
 
-                    renderer.openPage(targetIndex).use { page ->
-                        val width = (page.width * 1.5f).toInt()
-                        val height = (page.height * 1.5f).toInt()
-                        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                        val canvas = Canvas(bitmap)
-                        canvas.drawColor(android.graphics.Color.WHITE)
-                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        
-                        if (targetIndex == currentPageIndex) {
-                            currentPageBitmap = bitmap
-                            errorMessage = null
+                    val firstBitmap = rendererMutex.withLock {
+                        renderer.openPage(targetIndex).use { page ->
+                            val width = (page.width * 1.5f).toInt()
+                            val height = (page.height * 1.5f).toInt()
+                            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                            val canvas = Canvas(bitmap)
+                            canvas.drawColor(android.graphics.Color.WHITE)
+                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            bitmap
                         }
+                    }
+                    
+                    val secondBitmap = if (targetTwoPage && targetIndex + 1 < pageCount) {
+                        rendererMutex.withLock {
+                            renderer.openPage(targetIndex + 1).use { page ->
+                                val width = (page.width * 1.5f).toInt()
+                                val height = (page.height * 1.5f).toInt()
+                                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                                val canvas = Canvas(bitmap)
+                                canvas.drawColor(android.graphics.Color.WHITE)
+                                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                bitmap
+                            }
+                        }
+                    } else null
+                    
+                    if (targetIndex == currentPageIndex && targetTwoPage == isTwoPageView) {
+                        currentPageBitmap = firstBitmap
+                        nextPageBitmap = secondBitmap
+                        errorMessage = null
                     }
                 } catch (e: Exception) {
                     if (targetIndex == currentPageIndex) {
                         val msg = e.localizedMessage ?: "Unknown error"
                         if (msg.contains("Current page not closed")) {
-                            // Concurrency error, try again shortly
                             delay(200)
                             retryTrigger++
                         } else {
@@ -155,6 +193,8 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
             pdfRenderer?.close()
             pfd?.close()
             tempFile?.delete()
+            thumbCache.values.forEach { it.recycle() }
+            thumbCache.clear()
         }
     }
 
@@ -177,11 +217,12 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
             overlayTimerTrigger = System.currentTimeMillis()
             if (pageCount > 1) {
                 val oldIndex = currentPageIndex
+                val step = 1
                 if (forward) {
-                    currentPageIndex = (currentPageIndex + 1) % pageCount
+                    currentPageIndex = (currentPageIndex + step) % pageCount
                     if (currentPageIndex < oldIndex) loopFeedback = true to System.currentTimeMillis()
                 } else {
-                    currentPageIndex = (currentPageIndex - 1 + pageCount) % pageCount
+                    currentPageIndex = (currentPageIndex - step + pageCount) % pageCount
                     if (currentPageIndex > oldIndex) loopFeedback = false to System.currentTimeMillis()
                 }
                 resetZoom()
@@ -192,6 +233,8 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
     val handleBack = {
         if (isZoomMode) {
             resetZoom()
+        } else if (isThumbnailView) {
+            isThumbnailView = false
         } else {
             onBack(initialPath)
         }
@@ -210,13 +253,17 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.DirectionCenter, Key.Enter -> {
-                            if (!isZoomMode) {
-                                isZoomMode = true
-                                if (zoomLevel == 1f) zoomLevel = 2f
-                            } else if (zoomLevel < 256f) {
-                                zoomLevel *= 2f
+                            if (isThumbnailView) {
+                                false
+                            } else {
+                                if (!isZoomMode) {
+                                    isZoomMode = true
+                                    if (zoomLevel == 1f) zoomLevel = 2f
+                                } else if (zoomLevel < 256f) {
+                                    zoomLevel *= 2f
+                                }
+                                true
                             }
-                            true
                         }
                         Key.Backspace -> {
                             if (isZoomMode) {
@@ -226,6 +273,9 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
                                     resetZoom()
                                 }
                                 true
+                            } else if (isThumbnailView) {
+                                isThumbnailView = false
+                                true
                             } else {
                                 onBack(initialPath)
                                 true
@@ -234,39 +284,167 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
                         Key.DirectionLeft -> {
                             if (isZoomMode) {
                                 panX += 0.1f / zoomLevel
+                                true
+                            } else if (isThumbnailView) {
+                                false
                             } else {
                                 navigate(false)
+                                true
                             }
-                            true
                         }
                         Key.DirectionRight -> {
                             if (isZoomMode) {
                                 panX -= 0.1f / zoomLevel
+                                true
+                            } else if (isThumbnailView) {
+                                false
                             } else {
                                 navigate(true)
+                                true
                             }
-                            true
                         }
                         Key.DirectionUp -> {
-                            if (isZoomMode) panY += 0.1f / zoomLevel
-                            true
+                            if (isZoomMode) {
+                                panY += 0.1f / zoomLevel
+                                true
+                            } else if (isThumbnailView) {
+                                false
+                            } else {
+                                if (isTwoPageView) {
+                                    isThumbnailView = true
+                                } else {
+                                    isTwoPageView = true
+                                }
+                                overlayTimerTrigger = System.currentTimeMillis()
+                                true
+                            }
                         }
                         Key.DirectionDown -> {
-                            if (isZoomMode) panY -= 0.1f / zoomLevel
-                            true
+                            if (isZoomMode) {
+                                panY -= 0.1f / zoomLevel
+                                true
+                            } else if (isThumbnailView) {
+                                false
+                            } else {
+                                if (isTwoPageView) {
+                                    isTwoPageView = false
+                                } else {
+                                    rotation = (rotation + 90f) % 360f
+                                }
+                                overlayTimerTrigger = System.currentTimeMillis()
+                                true
+                            }
                         }
                         else -> false
                     }
                 } else false
             }
-            .focusRequester(focusRequester)
+            .focusRequester(mainFocusRequester)
             .focusable()
     ) {
-        currentPageBitmap?.let { bitmap ->
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = null,
-                contentScale = if (isZoomMode) ContentScale.None else ContentScale.Fit,
+        if (isThumbnailView) {
+            val thumbHeight = screenHeight * 0.4f
+            
+            // To ensure the current page is focused when opening the grid
+            val focusRequesters = remember(pageCount) { List(pageCount) { FocusRequester() } }
+            
+            LaunchedEffect(Unit) {
+                gridState.scrollToItem(currentPageIndex)
+                delay(100)
+                focusRequesters[currentPageIndex].requestFocus()
+            }
+
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 150.dp),
+                state = gridState,
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(pageCount) { index ->
+                    var thumbBitmap by remember { mutableStateOf<Bitmap?>(thumbCache[index]) }
+                    
+                    LaunchedEffect(index, pdfRenderer) {
+                        if (thumbBitmap == null && pdfRenderer != null) {
+                            withContext(Dispatchers.Default) {
+                                try {
+                                    val bitmap = rendererMutex.withLock {
+                                        pdfRenderer!!.openPage(index).use { page ->
+                                            val scale = 0.3f
+                                            val bitmap = Bitmap.createBitmap(
+                                                (page.width * scale).toInt(),
+                                                (page.height * scale).toInt(),
+                                                Bitmap.Config.ARGB_8888
+                                            )
+                                            val canvas = Canvas(bitmap)
+                                            canvas.drawColor(android.graphics.Color.WHITE)
+                                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                            bitmap
+                                        }
+                                    }
+                                    thumbCache[index] = bitmap
+                                    thumbBitmap = bitmap
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    }
+
+                    Surface(
+                        onClick = {
+                            currentPageIndex = index
+                            isThumbnailView = false
+                            isTwoPageView = false
+                        },
+                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
+                        border = ClickableSurfaceDefaults.border(
+                            focusedBorder = Border(
+                                border = BorderStroke(4.dp, Color.White),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        ),
+                        modifier = Modifier
+                            .height(thumbHeight)
+                            .aspectRatio(0.75f)
+                            .focusRequester(focusRequesters[index]),
+                        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                        colors = ClickableSurfaceDefaults.colors(
+                            containerColor = Color.DarkGray,
+                            focusedContainerColor = Color.DarkGray
+                        )
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            if (thumbBitmap != null) {
+                                Image(
+                                    bitmap = thumbBitmap!!.asImageBitmap(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                            }
+                            
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(8.dp)
+                                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = (index + 1).toString(),
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .clipToBounds()
@@ -274,12 +452,52 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
                         scaleX = zoomLevel,
                         scaleY = zoomLevel,
                         translationX = panX * 1000f * zoomLevel,
-                        translationY = panY * 1000f * zoomLevel
-                    )
-            )
+                        translationY = panY * 1000f * zoomLevel,
+                        rotationZ = if (!isTwoPageView) rotation else 0f
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isTwoPageView) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(0.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
+                            currentPageBitmap?.let { bitmap ->
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxHeight()
+                                )
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
+                            nextPageBitmap?.let { bitmap ->
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxHeight()
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    currentPageBitmap?.let { bitmap ->
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = if (isZoomMode) ContentScale.None else ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
         }
 
-        if (isLoading) {
+        if (isLoading && !isThumbnailView) {
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -307,7 +525,7 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
             }
         }
 
-        if (errorMessage != null) {
+        if (errorMessage != null && !isThumbnailView) {
             Column(
                 modifier = Modifier.align(Alignment.Center).padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -319,13 +537,13 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
 
         // Filename Overlay
         AnimatedVisibility(
-            visible = showOverlays && !isZoomMode,
+            visible = showOverlays && !isZoomMode && !isThumbnailView,
             enter = fadeIn() + slideInVertically(),
             exit = fadeOut() + slideOutVertically(),
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
             Text(
-                text = fileName,
+                text = fileName + if (rotation != 0f && !isTwoPageView) " (${rotation.toInt()}°)" else "",
                 modifier = Modifier
                     .padding(top = 32.dp)
                     .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
@@ -339,13 +557,18 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
 
         // Page Number Indicator
         AnimatedVisibility(
-            visible = showOverlays && pageCount > 0 && !isZoomMode,
+            visible = showOverlays && pageCount > 0 && !isZoomMode && !isThumbnailView,
             enter = fadeIn() + slideInVertically { it },
             exit = fadeOut() + slideOutVertically { it },
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
+            val pageText = if (isTwoPageView && currentPageIndex + 1 < pageCount) {
+                "${currentPageIndex + 1}-${currentPageIndex + 2} / $pageCount"
+            } else {
+                "${currentPageIndex + 1} / $pageCount"
+            }
             Text(
-                text = "${currentPageIndex + 1} / $pageCount",
+                text = (if (isTwoPageView) "Two-Page View: " else "") + pageText,
                 modifier = Modifier
                     .padding(bottom = 32.dp)
                     .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
@@ -357,7 +580,7 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
 
         // Loop Feedback
         AnimatedVisibility(
-            visible = loopFeedback != null,
+            visible = loopFeedback != null && !isThumbnailView,
             enter = fadeIn() + scaleIn(),
             exit = fadeOut() + scaleOut(),
             modifier = Modifier
@@ -384,6 +607,6 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
     }
 
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        mainFocusRequester.requestFocus()
     }
 }
