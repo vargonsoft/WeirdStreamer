@@ -1,6 +1,7 @@
 package com.vargon.weirdstreamer
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -22,18 +23,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okio.buffer
 import okio.sink
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.InterruptedIOException
+import java.util.Collections
 import java.util.concurrent.CancellationException
 
 /**
- * Advanced multi-stage video thumbnail decoder:
- * 1. Buffered SMB Random Access (for performance)
- * 2. System MediaMetadataRetriever via Persistent Temp File (to avoid ENOENT race)
- * 3. Media3 FrameExtractor (for stubborn formats like FLV/AVI/WMV)
+ * Advanced multi-stage video thumbnail decoder with session-aware disk caching:
+ * 1. Disk Cache: Fast initial display and offline fallback.
+ * 2. SMB Refresh: Fresh extraction on new app launches (session-based).
+ * 3. Multi-Engine: System MediaMetadataRetriever (Local/SMB) or Media3 FrameExtractor.
  */
 @UnstableApi
 @OptIn(ExperimentalCoilApi::class)
@@ -43,101 +47,167 @@ class VideoThumbnailDecoder(
 ) : Decoder {
 
     companion object {
-        // Extensions where Media3 is generally more robust than the system retriever.
         private val MEDIA3_PREFERRED_EXTENSIONS = setOf("flv", "avi", "wmv", "asf")
         private const val TAG = "VideoThumbnailDecoder"
+        
+        // Tracks paths refreshed in the current app session to avoid redundant network calls.
+        private val sessionRefreshedPaths = Collections.synchronizedSet(mutableSetOf<String>())
+        
+        fun clearSessionCache() {
+            sessionRefreshedPaths.clear()
+        }
     }
 
     override suspend fun decode(): DecodeResult? {
         val smbFile = (source.metadata as? SmbMetadata)?.smbFile
-        val path = smbFile?.path ?: ""
+        val path = smbFile?.path ?: source.fileOrNull()?.toFile()?.absolutePath ?: ""
+        if (path.isEmpty()) return null
+        
         val extension = path.substringAfterLast(".", "").lowercase()
         val targetTimeMicros = 10_000_000L
         
-        var bitmap: Bitmap? = null
-
-        try {
-            // Strategy 1: Buffered SMB Random Access (Fastest, avoids full download)
-            if (smbFile != null && !MEDIA3_PREFERRED_EXTENSIONS.contains(extension)) {
-                bitmap = runInterruptible(Dispatchers.IO) {
-                    val retriever = MediaMetadataRetriever()
-                    var dataSource: SmbMediaDataSource? = null
-                    try {
-                        dataSource = SmbMediaDataSource(smbFile)
-                        retriever.setDataSource(dataSource)
-                        tryGetFrame(retriever, targetTimeMicros)
-                    } catch (e: Exception) {
-                        null
-                    } finally {
-                        try { retriever.release() } catch (_: Exception) {}
-                        try { dataSource?.close() } catch (_: Exception) {}
-                    }
-                }
-            }
-
-            // Strategy 2: Persistent Temp File (to solve ENOENT issues with Media3/System)
-            if (bitmap == null) {
-                val fileHash = path.hashCode().toString()
-                val tempFile = File(options.context.cacheDir, "v_thumb_$fileHash.tmp")
-                
-                if (!tempFile.exists() || tempFile.length() == 0L) {
-                    runInterruptible(Dispatchers.IO) {
-                        try {
-                            source.source().use { input ->
-                                tempFile.outputStream().sink().buffer().use { output ->
-                                    output.writeAll(input)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            if (tempFile.exists()) tempFile.delete()
-                            throw e
-                        }
-                    }
-                }
-
-                if (tempFile.exists() && tempFile.length() > 0) {
-                    // A. Try system retriever on local file (very stable)
-                    bitmap = runInterruptible(Dispatchers.IO) {
-                        val retriever = MediaMetadataRetriever()
-                        var fis: FileInputStream? = null
-                        try {
-                            fis = FileInputStream(tempFile)
-                            retriever.setDataSource(fis.fd)
-                            tryGetFrame(retriever, targetTimeMicros)
-                        } catch (e: Exception) {
-                            null
-                        } finally {
-                            try { fis?.close() } catch (_: Exception) {}
-                            try { retriever.release() } catch (_: Exception) {}
-                        }
-                    }
-
-                    // B. Try Media3 as last resort
-                    if (bitmap == null && (MEDIA3_PREFERRED_EXTENSIONS.contains(extension))) {
-                        // Crucial: Only use Media3 if the file is likely valid to avoid internal NPEs
-                        if (isLikelyDecodableByMedia3(tempFile)) {
-                            bitmap = tryExtractWithMedia3(tempFile, targetTimeMicros / 1000)
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            if (e is CancellationException || e is InterruptedException || e is InterruptedIOException) return null
-            Log.e(TAG, "Extraction error for $path", e)
+        val cacheKey = path.hashCode().toString()
+        val thumbCacheDir = File(options.context.cacheDir, "thumbnails")
+        val thumbCacheFile = File(thumbCacheDir, "$cacheKey.webp")
+        
+        val isRefreshed = sessionRefreshedPaths.contains(path)
+        
+        // 1. Initial Display: Use disk cache immediately if it was already refreshed this session
+        if (isRefreshed && thumbCacheFile.exists()) {
+            val bitmap = loadFromDisk(thumbCacheFile)
+            if (bitmap != null) return toResult(bitmap)
         }
 
-        return bitmap?.let {
-            DecodeResult(
-                drawable = BitmapDrawable(options.context.resources, it),
-                isSampled = false
-            )
+        var bitmap: Bitmap? = null
+
+        // 2. Fresh Extraction: If not refreshed this session, try to get a new thumbnail from SMB
+        if (!isRefreshed) {
+            try {
+                // We use a timeout for the "initial display" fallback. 
+                // If SMB is slow, we'll fall back to the old disk cache if it exists.
+                val timeout = if (thumbCacheFile.exists()) 2000L else 15000L
+                
+                bitmap = withTimeoutOrNull(timeout) {
+                    tryFreshExtraction(smbFile, path, extension, targetTimeMicros, cacheKey)
+                }
+                
+                if (bitmap != null) {
+                    saveToDisk(thumbCacheFile, bitmap)
+                    sessionRefreshedPaths.add(path)
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException || e is InterruptedException || e is InterruptedIOException) return null
+                Log.w(TAG, "Fresh extraction failed/timed out for $path")
+            }
+        }
+
+        // 3. Fallback: If fresh extraction failed or timed out, use disk cache as a fallback.
+        if (bitmap == null && thumbCacheFile.exists()) {
+            bitmap = loadFromDisk(thumbCacheFile)
+        }
+
+        return bitmap?.let { toResult(it) }
+    }
+
+    private suspend fun tryFreshExtraction(
+        smbFile: jcifs.smb.SmbFile?,
+        path: String,
+        extension: String,
+        targetTimeMicros: Long,
+        cacheKey: String
+    ): Bitmap? {
+        var bitmap: Bitmap? = null
+
+        // Strategy A: Buffered SMB Random Access (Fastest for SMB)
+        if (smbFile != null && !MEDIA3_PREFERRED_EXTENSIONS.contains(extension)) {
+            bitmap = runInterruptible(Dispatchers.IO) {
+                val retriever = MediaMetadataRetriever()
+                var dataSource: SmbMediaDataSource? = null
+                try {
+                    dataSource = SmbMediaDataSource(smbFile)
+                    retriever.setDataSource(dataSource)
+                    tryGetFrame(retriever, targetTimeMicros)
+                } catch (_: Exception) {
+                    null
+                } finally {
+                    try { retriever.release() } catch (_: Exception) {}
+                    try { dataSource?.close() } catch (_: Exception) {}
+                }
+            }
+        }
+
+        // Strategy B: Persistent Temp File (System or Media3)
+        if (bitmap == null) {
+            val tempFile = File(options.context.cacheDir, "v_thumb_$cacheKey.tmp")
+            if (!tempFile.exists() || tempFile.length() == 0L) {
+                runInterruptible(Dispatchers.IO) {
+                    try {
+                        source.source().use { input ->
+                            tempFile.outputStream().sink().buffer().use { output ->
+                                output.writeAll(input)
+                            }
+                        }
+                    } catch (_: Exception) {
+                        if (tempFile.exists()) tempFile.delete()
+                    }
+                }
+            }
+
+            if (tempFile.exists() && tempFile.length() > 0) {
+                // B1: System Retriever on local file
+                bitmap = runInterruptible(Dispatchers.IO) {
+                    val retriever = MediaMetadataRetriever()
+                    var fis: FileInputStream? = null
+                    try {
+                        fis = FileInputStream(tempFile)
+                        retriever.setDataSource(fis.fd)
+                        tryGetFrame(retriever, targetTimeMicros)
+                    } catch (_: Exception) {
+                        null
+                    } finally {
+                        try { fis?.close() } catch (_: Exception) {}
+                        try { retriever.release() } catch (_: Exception) {}
+                    }
+                }
+
+                // B2: Media3 as last resort
+                if (bitmap == null && MEDIA3_PREFERRED_EXTENSIONS.contains(extension)) {
+                    if (isLikelyDecodableByMedia3(tempFile)) {
+                        bitmap = tryExtractWithMedia3(tempFile, targetTimeMicros / 1000)
+                    }
+                }
+            }
+        }
+        return bitmap
+    }
+
+    private fun toResult(bitmap: Bitmap): DecodeResult {
+        return DecodeResult(
+            drawable = BitmapDrawable(options.context.resources, bitmap),
+            isSampled = false
+        )
+    }
+
+    private suspend fun loadFromDisk(file: File): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            BitmapFactory.decodeFile(file.absolutePath)
+        } catch (_: Exception) {
+            null
         }
     }
 
-    /**
-     * Pre-validates the file using the lighter MediaExtractor to avoid triggering 
-     * internal Media3 bugs that cause NPEs on the main thread.
-     */
+    private suspend fun saveToDisk(file: File, bitmap: Bitmap) = withContext(Dispatchers.IO) {
+        try {
+            val parent = file.parentFile
+            if (parent != null && !parent.exists()) parent.mkdirs()
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.WEBP, 80, out)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save thumbnail to disk: $file", e)
+        }
+    }
+
     private fun isLikelyDecodableByMedia3(file: File): Boolean {
         val extractor = MediaExtractor()
         try {
@@ -146,11 +216,7 @@ class VideoThumbnailDecoder(
                 val format = extractor.getTrackFormat(i)
                 val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
                 if (mime.startsWith("video/")) {
-                    // Avoid Sorenson Spark (often in FLV) which Media3's FrameExtractor chokes on
-                    if (mime == "video/x-vnd.on2.vp6" || mime.contains("sorenson") || mime.contains("spark")) {
-                        return false
-                    }
-                    return true
+                    return !(mime == "video/x-vnd.on2.vp6" || mime.contains("sorenson") || mime.contains("spark"))
                 }
             }
         } catch (_: Exception) {
@@ -166,13 +232,13 @@ class VideoThumbnailDecoder(
             try {
                 if (!file.exists()) return@withContext null
                 
-                val extension = file.extension.lowercase()
-                val mimeType = when (extension) {
+                val ext = file.extension.lowercase()
+                val mimeType = when (ext) {
                     "wmv" -> "video/x-ms-wmv"
                     "asf" -> "video/x-ms-asf"
                     "avi" -> "video/x-msvideo"
                     "flv" -> "video/x-flv"
-                    else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+                    else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
                 }
                 
                 val mediaItem = MediaItem.Builder()
@@ -184,10 +250,10 @@ class VideoThumbnailDecoder(
                 
                 try {
                     extractor.getFrame(targetMillis).await().bitmap
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     try {
                         extractor.getThumbnail().await().bitmap
-                    } catch (inner: Exception) {
+                    } catch (_: Exception) {
                         null
                     }
                 }
@@ -197,12 +263,8 @@ class VideoThumbnailDecoder(
                 }
                 null
             } finally {
-                val finalExtractor = extractor
-                if (finalExtractor != null) {
-                    // Close immediately on the main thread to stop any pending callbacks
-                    try {
-                        finalExtractor.close()
-                    } catch (_: Exception) {}
+                extractor?.let {
+                    try { it.close() } catch (_: Exception) {}
                 }
             }
         }
@@ -213,7 +275,7 @@ class VideoThumbnailDecoder(
             retriever.getFrameAtTime(targetMicros, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 ?: retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

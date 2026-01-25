@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.util.UnstableApi
+import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
 import jcifs.CIFSContext
 import jcifs.config.PropertyConfiguration
@@ -18,6 +20,7 @@ import jcifs.smb.SmbUnsupportedOperationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Properties
 
 class SmbViewModel(application: Application) : AndroidViewModel(application) {
@@ -106,9 +109,21 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
         refreshHosts()
     }
 
+    @androidx.annotation.OptIn(UnstableApi::class)
+    @OptIn(ExperimentalCoilApi::class)
     fun clearThumbnailCache(context: Context) {
+        // 1. Clear Coil's internal caches
         context.imageLoader.diskCache?.clear()
         context.imageLoader.memoryCache?.clear()
+
+        // 2. Clear our custom video thumbnail disk cache
+        val thumbCacheDir = File(context.cacheDir, "thumbnails")
+        if (thumbCacheDir.exists()) {
+            thumbCacheDir.deleteRecursively()
+        }
+
+        // 3. Reset the session refresh state so new thumbnails are fetched on next view
+        VideoThumbnailDecoder.clearSessionCache()
     }
 
     fun refreshHosts() {
@@ -132,7 +147,7 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
                                         it.close() // Close every file in the share
                                         name
                                     }
-                                } catch (e: Exception) {
+                                } catch (_: Exception) {
                                     emptyList()
                                 }
                             }
@@ -142,7 +157,7 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
                 discoveredHosts = found
                 val saved = credentialManager.getSavedServers()
                 allHosts = (saved + discoveredHosts).distinct().sorted()
-            } catch (e: SmbUnsupportedOperationException) {
+            } catch (_: SmbUnsupportedOperationException) {
                 // Expected
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -204,7 +219,7 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
                 fileList = list
                 currentPath = finalPath
                 authRequiredHost = null
-            } catch (e: SmbAuthException) {
+            } catch (_: SmbAuthException) {
                 authRequiredHost = host
             } catch (e: Exception) {
                 if (isAutoRestore) {
