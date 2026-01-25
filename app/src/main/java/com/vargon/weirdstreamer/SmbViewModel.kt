@@ -24,7 +24,7 @@ import java.io.File
 import java.util.Properties
 
 class SmbViewModel(application: Application) : AndroidViewModel(application) {
-    private val credentialManager = CredentialManager(application)
+    val credentialManager = CredentialManager(application)
     
     var fileList by mutableStateOf<List<SmbFileItem>>(emptyList())
         private set
@@ -55,6 +55,9 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
     val isGridView: Boolean
         get() = viewModeMap[currentPath] ?: credentialManager.isGridView(currentPath)
 
+    var selectedVideoPath by mutableStateOf<String?>(null)
+        private set
+
     fun toggleViewMode() {
         val current = isGridView
         val newState = !current
@@ -66,7 +69,7 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
     
     private val selectionMap = mutableMapOf<String, String>()
 
-    private val baseContext: CIFSContext by lazy {
+    val baseContext: CIFSContext by lazy {
         val props = Properties().apply {
             setProperty("jcifs.smb.client.minVersion", "SMB202")
             setProperty("jcifs.smb.client.maxVersion", "SMB311")
@@ -248,5 +251,13 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
         
         val parent = pathWithoutTrailing.substringBeforeLast("/") + "/"
         loadPath(parent)
+    }
+
+    fun playVideo(path: String) {
+        selectedVideoPath = path
+    }
+
+    fun stopPlayback() {
+        selectedVideoPath = null
     }
 }

@@ -118,6 +118,8 @@ fun SmbBrowser(viewModel: SmbViewModel, onOpenSettings: () -> Unit) {
                         } else if (item.isDirectory) {
                             viewModel.recordSelection(viewModel.currentPath, item.path)
                             viewModel.loadPath(item.path)
+                        } else {
+                            viewModel.playVideo(item.path)
                         }
                     }
                 } else {
@@ -127,6 +129,8 @@ fun SmbBrowser(viewModel: SmbViewModel, onOpenSettings: () -> Unit) {
                         } else if (item.isDirectory) {
                             viewModel.recordSelection(viewModel.currentPath, item.path)
                             viewModel.loadPath(item.path)
+                        } else {
+                            viewModel.playVideo(item.path)
                         }
                     }
                 }

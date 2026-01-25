@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.tv.material3.*
 import com.vargon.weirdstreamer.ui.components.SettingsScreen
 import com.vargon.weirdstreamer.ui.components.SmbBrowser
+import com.vargon.weirdstreamer.ui.components.VideoPlayer
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 
 class MainActivity : ComponentActivity() {
@@ -24,8 +25,15 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     var showSettings by remember { mutableStateOf(false) }
-                    
-                    if (showSettings) {
+                    val selectedVideo = viewModel.selectedVideoPath
+
+                    if (selectedVideo != null) {
+                        VideoPlayer(
+                            viewModel = viewModel,
+                            path = selectedVideo,
+                            onBack = { viewModel.stopPlayback() }
+                        )
+                    } else if (showSettings) {
                         SettingsScreen(
                             viewModel = viewModel,
                             onBack = { showSettings = false }
