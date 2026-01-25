@@ -6,10 +6,12 @@ import android.media.MediaDataSource
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
+import android.webkit.MimeTypeMap
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.inspector.FrameExtractor
 import coil.ImageLoader
+import coil.annotation.ExperimentalCoilApi
 import coil.decode.DecodeResult
 import coil.decode.Decoder
 import coil.decode.ImageSource
@@ -20,20 +22,24 @@ import jcifs.smb.SmbRandomAccessFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withContext
 import okio.buffer
 import okio.sink
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.util.concurrent.CancellationException
+import kotlin.math.min
 
 /**
  * Advanced multi-stage video thumbnail decoder:
  * 1. Buffered SMB Random Access (for performance)
- * 2. Media3 FrameExtractor (for stubborn formats like FLV/AVI/WMV)
- * 3. System MediaMetadataRetriever (as final legacy fallback)
+ * 2. System MediaMetadataRetriever via Persistent Temp File (to avoid ENOENT race)
+ * 3. Media3 FrameExtractor (for stubborn formats like FLV/AVI/WMV)
  */
 @UnstableApi
+@OptIn(ExperimentalCoilApi::class)
 class VideoThumbnailDecoder(
     private val source: ImageSource,
     private val options: Options
@@ -41,19 +47,19 @@ class VideoThumbnailDecoder(
 
     companion object {
         private val MEDIA3_PREFERRED_EXTENSIONS = setOf("flv", "avi", "wmv", "asf", "m4v")
+        private const val TAG = "VideoThumbnailDecoder"
     }
 
     override suspend fun decode(): DecodeResult? {
         val smbFile = (source.metadata as? SmbMetadata)?.smbFile
-        val path = smbFile?.path?.lowercase() ?: ""
-        val extension = path.substringAfterLast(".", "")
-        val targetTimeMicros = 15_000_000L
+        val path = smbFile?.path ?: ""
+        val extension = path.substringAfterLast(".", "").lowercase()
+        val targetTimeMicros = 10_000_000L
         
         var bitmap: Bitmap? = null
 
         try {
-            // Strategy 1: Buffered SMB Random Access (Best for MP4, MKV)
-            // We try this first because it's the fastest and most network-efficient.
+            // Strategy 1: Buffered SMB Random Access (Fastest, avoids full download)
             if (smbFile != null && !MEDIA3_PREFERRED_EXTENSIONS.contains(extension)) {
                 bitmap = runInterruptible(Dispatchers.IO) {
                     val retriever = MediaMetadataRetriever()
@@ -65,55 +71,69 @@ class VideoThumbnailDecoder(
                     } catch (e: Exception) {
                         null
                     } finally {
-                        try { retriever.release() } catch (e: Exception) {}
-                        try { dataSource?.close() } catch (e: Exception) {}
+                        try { retriever.release() } catch (_: Exception) {}
+                        try { dataSource?.close() } catch (_: Exception) {}
                     }
                 }
             }
 
-            // Strategy 2: Media3 FrameExtractor via Temp File (For stubborn formats)
+            // Strategy 2: Persistent Temp File (to solve ENOENT issues with Media3/System)
             if (bitmap == null) {
-                val tempFile = File.createTempFile("thumb_work_", ".tmp", options.context.cacheDir)
-                try {
+                // Use a stable hash-based filename to avoid ENOENT when multiple decoders 
+                // compete for the same resource or when background cleanup is slow.
+                val fileHash = path.hashCode().toString()
+                val tempFile = File(options.context.cacheDir, "v_thumb_$fileHash.tmp")
+                
+                // Only write if it doesn't exist or is empty
+                if (!tempFile.exists() || tempFile.length() == 0L) {
                     runInterruptible(Dispatchers.IO) {
-                        source.source().use { input ->
-                            tempFile.outputStream().sink().buffer().use { output ->
-                                output.writeAll(input)
-                            }
-                        }
-                    }
-
-                    if (tempFile.length() > 0) {
-                        // Try Media3 first for preferred extensions, otherwise try system retriever
-                        if (MEDIA3_PREFERRED_EXTENSIONS.contains(extension)) {
-                            bitmap = tryExtractWithMedia3(tempFile, targetTimeMicros / 1000)
-                        }
-                        
-                        // Fallback to system retriever for the temp file
-                        if (bitmap == null) {
-                            bitmap = runInterruptible(Dispatchers.IO) {
-                                val retriever = MediaMetadataRetriever()
-                                var fis: FileInputStream? = null
-                                try {
-                                    fis = FileInputStream(tempFile)
-                                    retriever.setDataSource(fis.fd)
-                                    tryGetFrame(retriever, targetTimeMicros)
-                                } catch (e: Exception) {
-                                    null
-                                } finally {
-                                    try { fis?.close() } catch (e: Exception) {}
-                                    try { retriever.release() } catch (e: Exception) {}
+                        try {
+                            source.source().use { input ->
+                                tempFile.outputStream().sink().buffer().use { output ->
+                                    output.writeAll(input)
                                 }
                             }
+                        } catch (e: Exception) {
+                            if (tempFile.exists()) tempFile.delete()
+                            throw e
                         }
                     }
-                } finally {
-                    if (tempFile.exists()) tempFile.delete()
                 }
+
+                if (tempFile.exists() && tempFile.length() > 0) {
+                    // A. Try system retriever on local file (very stable)
+                    var hasVideo = false
+                    bitmap = runInterruptible(Dispatchers.IO) {
+                        val retriever = MediaMetadataRetriever()
+                        var fis: FileInputStream? = null
+                        try {
+                            fis = FileInputStream(tempFile)
+                            retriever.setDataSource(fis.fd)
+                            // Check if the file actually contains a video track to avoid Media3 internal NPEs
+                            hasVideo = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) == "yes"
+                            tryGetFrame(retriever, targetTimeMicros)
+                        } catch (e: Exception) {
+                            null
+                        } finally {
+                            try { fis?.close() } catch (_: Exception) {}
+                            try { retriever.release() } catch (_: Exception) {}
+                        }
+                    }
+
+                    // B. Try Media3 as last resort for formats system doesn't like
+                    // Only attempt Media3 if we know there is a video track or if system retriever failed to even check.
+                    if (bitmap == null && (hasVideo || extension == "flv") && 
+                        (MEDIA3_PREFERRED_EXTENSIONS.contains(extension) || extension == "flv")) {
+                        bitmap = tryExtractWithMedia3(tempFile, targetTimeMicros / 1000)
+                    }
+                }
+                
+                // NOTE: We do NOT delete tempFile here. This prevents the ENOENT race condition
+                // that leads to the fatal NPE in Media3's internal player listeners.
             }
         } catch (e: Exception) {
-            if (e is CancellationException || e is InterruptedException) return null
-            Log.e("VideoThumbnailDecoder", "Extraction error", e)
+            if (e is CancellationException || e is InterruptedException || e is InterruptedIOException) return null
+            Log.e(TAG, "Extraction error for $path", e)
         }
 
         return bitmap?.let {
@@ -125,15 +145,51 @@ class VideoThumbnailDecoder(
     }
 
     private suspend fun tryExtractWithMedia3(file: File, targetMillis: Long): Bitmap? {
-        return try {
-            val mediaItem = MediaItem.fromUri(Uri.fromFile(file))
-            FrameExtractor.Builder(options.context, mediaItem).build().use { extractor ->
-                extractor.getFrame(targetMillis).await().bitmap
-                    ?: extractor.getThumbnail().await().bitmap
+        // Media3 FrameExtractor must run on the Main thread to avoid internal listener NPEs.
+        return withContext(Dispatchers.Main) {
+            var extractor: FrameExtractor? = null
+            try {
+                if (!file.exists()) return@withContext null
+                
+                val extension = file.extension.lowercase()
+                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+                
+                val mediaItem = MediaItem.Builder()
+                    .setUri(Uri.fromFile(file))
+                    .apply { if (mimeType != null) setMimeType(mimeType) }
+                    .build()
+                
+                // Use applicationContext to avoid leaking Activity context and for better stability
+                extractor = FrameExtractor.Builder(options.context.applicationContext, mediaItem).build()
+                
+                try {
+                    extractor.getFrame(targetMillis).await().bitmap
+                } catch (e: Exception) {
+                    try {
+                        extractor.getThumbnail().await().bitmap
+                    } catch (inner: Exception) {
+                        null
+                    }
+                }
+            } catch (e: Throwable) {
+                // Catch Throwable to handle the library's internal NullPointerException
+                if (e !is CancellationException) {
+                    Log.w(TAG, "Media3 FrameExtractor failed for ${file.name}: ${e.message}")
+                }
+                null
+            } finally {
+                val finalExtractor = extractor
+                if (finalExtractor != null) {
+                    // Defer closing to the end of the Main Looper queue. 
+                    // This prevents closing the player while a playback state change might 
+                    // still be processing, which is a known cause of NPE in onPlaybackStateChanged.
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        try {
+                            finalExtractor.close()
+                        } catch (_: Exception) {}
+                    }
+                }
             }
-        } catch (e: Exception) {
-            Log.w("VideoThumbnailDecoder", "Media3 FrameExtractor failed: ${e.message}")
-            null
         }
     }
 
@@ -150,32 +206,39 @@ class VideoThumbnailDecoder(
     private class SmbMediaDataSource(smbFile: SmbFile) : MediaDataSource() {
         private var raf: SmbRandomAccessFile? = try { smbFile.openRandomAccess("r") } catch (e: IOException) { null }
         private var closed = false
-        private val buffer = ByteArray(16384)
+        private val buffer = ByteArray(64 * 1024) 
         private var bufferPos = -1L
         private var bufferSize = 0
 
         override fun readAt(position: Long, data: ByteArray, offset: Int, size: Int): Int {
             if (closed || raf == null) return -1
-            if (position >= bufferPos && position + size <= bufferPos + bufferSize && bufferPos != -1L) {
-                System.arraycopy(buffer, (position - bufferPos).toInt(), data, offset, size)
-                return size
+            if (size <= 0) return 0
+
+            // 1. Serve from buffer if the requested position is within its range
+            if (bufferPos != -1L && position >= bufferPos && position < bufferPos + bufferSize) {
+                val available = (bufferPos + bufferSize - position).toInt()
+                val toCopy = min(size, available)
+                System.arraycopy(buffer, (position - bufferPos).toInt(), data, offset, toCopy)
+                return toCopy
             }
+
+            // 2. Refill buffer or read directly
             return try {
-                val raf = raf!!
+                val currentRaf = raf!!
                 if (size >= buffer.size) {
-                    raf.seek(position)
-                    raf.read(data, offset, size)
+                    currentRaf.seek(position)
+                    currentRaf.read(data, offset, size)
                 } else {
-                    raf.seek(position)
+                    currentRaf.seek(position)
                     bufferPos = position
-                    bufferSize = raf.read(buffer, 0, buffer.size)
+                    bufferSize = currentRaf.read(buffer, 0, buffer.size)
                     if (bufferSize <= 0) {
                         bufferPos = -1
                         return -1
                     }
-                    val bytesToCopy = Math.min(size, bufferSize)
-                    System.arraycopy(buffer, 0, data, offset, bytesToCopy)
-                    bytesToCopy
+                    val toCopy = min(size, bufferSize)
+                    System.arraycopy(buffer, 0, data, offset, toCopy)
+                    toCopy
                 }
             } catch (e: IOException) { -1 }
         }

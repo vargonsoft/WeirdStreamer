@@ -25,6 +25,8 @@ import okio.Buffer
 import java.io.File
 import java.util.Properties
 import kotlin.math.min
+import kotlinx.coroutines.CancellationException
+import java.io.InterruptedIOException
 
 /**
  * Metadata to pass the SmbFile to the decoder for random access.
@@ -80,7 +82,7 @@ class SmbFetcher(
             val processedSource = if (isVideo) {
                 object : ForwardingSource(rawSource) {
                     private var bytesRead = 0L
-                    private val limit = 10 * 1024 * 1024L // 10MB
+                    private val limit = 20 * 1024 * 1024L // Increased to 20MB
                     override fun read(sink: Buffer, byteCount: Long): Long {
                         if (bytesRead >= limit) return -1
                         val toRead = min(byteCount, limit - bytesRead)
@@ -119,7 +121,9 @@ class SmbFetcher(
             )
         } catch (e: Exception) {
             smbFile.close()
-            Log.e("SmbFetcher", "Failed to fetch: $path", e)
+            if (e !is CancellationException && e !is InterruptedException && e !is InterruptedIOException) {
+                Log.e("SmbFetcher", "Failed to fetch: $path", e)
+            }
             null
         }
     }
