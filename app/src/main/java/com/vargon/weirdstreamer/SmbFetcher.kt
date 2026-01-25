@@ -21,7 +21,6 @@ import okio.buffer
 import okio.source
 import okio.ForwardingSource
 import okio.Buffer
-import java.io.File
 import java.util.Properties
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
@@ -36,6 +35,7 @@ class SmbFetcher(
 
     override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
         val path = data.toString()
+        Log.d("SmbFetcher", "Fetching: $path")
         val host = try { path.removePrefix("smb://").substringBefore("/") } catch (e: Exception) { return@withContext null }
         
         val creds = credentialManager.getCredentials(host)
@@ -49,7 +49,12 @@ class SmbFetcher(
         val smbFile = SmbFile(path, context)
         
         return@withContext try {
-            val extension = path.substringAfterLast('.', "").lowercase()
+            if (!smbFile.exists() || !smbFile.isFile) {
+                smbFile.close()
+                return@withContext null
+            }
+
+            val extension = path.substringBefore('?').substringAfterLast('.', "").lowercase()
             val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: when (extension) {
                 "flv" -> "video/x-flv"
                 "mkv" -> "video/x-matroska"
@@ -63,11 +68,25 @@ class SmbFetcher(
                 "webm" -> "video/webm"
                 "mov" -> "video/quicktime"
                 "asf" -> "video/x-ms-asf"
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                "webp" -> "image/webp"
                 else -> null
             }
 
+            Log.d("SmbFetcher", "Mapped mimeType: $mimeType for ext: $extension")
+
             val isVideo = mimeType?.startsWith("video/") == true
             val inputStream = smbFile.inputStream
+            
+            // Log file size if possible
+            try {
+                val length = smbFile.length()
+                Log.d("SmbFetcher", "File size: $length bytes")
+            } catch (e: Exception) {
+                Log.w("SmbFetcher", "Could not determine file length")
+            }
+
             val rawSource = inputStream.source()
             
             // If it's a video, we wrap it in a limited source.
@@ -75,7 +94,7 @@ class SmbFetcher(
             val processedSource = if (isVideo) {
                 object : ForwardingSource(rawSource) {
                     private var bytesRead = 0L
-                    private val limit = 20 * 1024 * 1024L // Increased to 20MB
+                    private val limit = 20 * 1024 * 1024L // 20MB
                     override fun read(sink: Buffer, byteCount: Long): Long {
                         if (bytesRead >= limit) return -1
                         val toRead = min(byteCount, limit - bytesRead)

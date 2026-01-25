@@ -3,6 +3,7 @@ package com.vargon.weirdstreamer
 import android.app.Application
 import android.content.Context
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -58,6 +59,9 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
     var selectedVideoPath by mutableStateOf<String?>(null)
         private set
 
+    var selectedImagePath by mutableStateOf<String?>(null)
+        private set
+
     fun toggleViewMode() {
         val current = isGridView
         val newState = !current
@@ -67,7 +71,7 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
 
     private var discoveredHosts = emptyList<String>()
     
-    private val selectionMap = mutableMapOf<String, String>()
+    private val selectionMap = mutableStateMapOf<String, String>()
 
     val baseContext: CIFSContext by lazy {
         val props = Properties().apply {
@@ -259,5 +263,25 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopPlayback() {
         selectedVideoPath = null
+    }
+
+    fun showImage(path: String) {
+        selectedImagePath = path
+    }
+
+    fun closeImage(lastViewedPath: String? = null) {
+        lastViewedPath?.let { recordSelection(currentPath, it) }
+        selectedImagePath = null
+    }
+
+    fun isImage(path: String): Boolean {
+        // More robust extension check
+        val cleanPath = path.substringBefore('?').removeSuffix("/")
+        val ext = cleanPath.substringAfterLast('.', "").lowercase()
+        return ext in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
+    }
+
+    fun getImagesInCurrentFolder(): List<String> {
+        return fileList.filter { !it.isDirectory && isImage(it.path) }.map { it.path }
     }
 }

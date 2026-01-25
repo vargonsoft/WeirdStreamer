@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.tv.material3.*
+import com.vargon.weirdstreamer.ui.components.ImageViewer
 import com.vargon.weirdstreamer.ui.components.SettingsScreen
 import com.vargon.weirdstreamer.ui.components.SmbBrowser
 import com.vargon.weirdstreamer.ui.components.VideoPlayer
@@ -26,12 +27,19 @@ class MainActivity : ComponentActivity() {
                 ) {
                     var showSettings by remember { mutableStateOf(false) }
                     val selectedVideo = viewModel.selectedVideoPath
+                    val selectedImage = viewModel.selectedImagePath
 
                     if (selectedVideo != null) {
                         VideoPlayer(
                             viewModel = viewModel,
                             path = selectedVideo,
                             onBack = { viewModel.stopPlayback() }
+                        )
+                    } else if (selectedImage != null) {
+                        ImageViewer(
+                            viewModel = viewModel,
+                            initialPath = selectedImage,
+                            onBack = { viewModel.closeImage() }
                         )
                     } else if (showSettings) {
                         SettingsScreen(

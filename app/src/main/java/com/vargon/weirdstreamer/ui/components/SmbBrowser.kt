@@ -111,28 +111,25 @@ fun SmbBrowser(viewModel: SmbViewModel, onOpenSettings: () -> Unit) {
                 initialSelection = viewModel.getSelection(viewModel.currentPath),
                 isGridView = viewModel.isGridView
             ) { item, modifier ->
+                val onItemClick = {
+                    if (item.name == "..") {
+                        viewModel.navigateUp()
+                    } else {
+                        viewModel.recordSelection(viewModel.currentPath, item.path)
+                        if (item.isDirectory) {
+                            viewModel.loadPath(item.path)
+                        } else if (viewModel.isImage(item.path)) {
+                            viewModel.showImage(item.path)
+                        } else {
+                            viewModel.playVideo(item.path)
+                        }
+                    }
+                }
+
                 if (viewModel.isGridView) {
-                    FileTileItem(item, modifier = modifier) {
-                        if (item.name == "..") {
-                            viewModel.navigateUp()
-                        } else if (item.isDirectory) {
-                            viewModel.recordSelection(viewModel.currentPath, item.path)
-                            viewModel.loadPath(item.path)
-                        } else {
-                            viewModel.playVideo(item.path)
-                        }
-                    }
+                    FileTileItem(item, modifier = modifier, onClick = onItemClick)
                 } else {
-                    FileItemRow(item, modifier = modifier) {
-                        if (item.name == "..") {
-                            viewModel.navigateUp()
-                        } else if (item.isDirectory) {
-                            viewModel.recordSelection(viewModel.currentPath, item.path)
-                            viewModel.loadPath(item.path)
-                        } else {
-                            viewModel.playVideo(item.path)
-                        }
-                    }
+                    FileItemRow(item, modifier = modifier, onClick = onItemClick)
                 }
             }
         }
