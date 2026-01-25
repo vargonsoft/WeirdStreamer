@@ -120,6 +120,8 @@ fun SmbBrowser(viewModel: SmbViewModel, onOpenSettings: () -> Unit) {
                             viewModel.loadPath(item.path)
                         } else if (viewModel.isImage(item.path)) {
                             viewModel.showImage(item.path)
+                        } else if (viewModel.isPdf(item.path)) {
+                            viewModel.showPdf(item.path)
                         } else {
                             viewModel.playVideo(item.path)
                         }

@@ -62,6 +62,9 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
     var selectedImagePath by mutableStateOf<String?>(null)
         private set
 
+    var selectedPdfPath by mutableStateOf<String?>(null)
+        private set
+
     fun toggleViewMode() {
         val current = isGridView
         val newState = !current
@@ -274,6 +277,15 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
         selectedImagePath = null
     }
 
+    fun showPdf(path: String) {
+        selectedPdfPath = path
+    }
+
+    fun closePdf(lastViewedPath: String? = null) {
+        lastViewedPath?.let { recordSelection(currentPath, it) }
+        selectedPdfPath = null
+    }
+
     fun isImage(path: String): Boolean {
         // More robust extension check
         val cleanPath = path.substringBefore('?').removeSuffix("/")
@@ -281,7 +293,39 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
         return ext in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
     }
 
+    fun isPdf(path: String): Boolean {
+        val cleanPath = path.substringBefore('?').removeSuffix("/")
+        val ext = cleanPath.substringAfterLast('.', "").lowercase()
+        return ext == "pdf"
+    }
+
     fun getImagesInCurrentFolder(): List<String> {
         return fileList.filter { !it.isDirectory && isImage(it.path) }.map { it.path }
+    }
+
+    suspend fun downloadToTempFile(smbPath: String, context: Context): File? = withContext(Dispatchers.IO) {
+        try {
+            val host = smbPath.removePrefix("smb://").substringBefore("/")
+            val creds = credentialManager.getCredentials(host)
+            val auth = if (creds.first != null && creds.second != null) {
+                NtlmPasswordAuthenticator(null, creds.first, creds.second)
+            } else {
+                NtlmPasswordAuthenticator(null, null, null)
+            }
+            val cifsContext = baseContext.withCredentials(auth)
+            
+            val tempFile = File(context.cacheDir, "temp_${System.currentTimeMillis()}.pdf")
+            SmbFile(smbPath, cifsContext).use { smbFile ->
+                smbFile.inputStream.use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+            tempFile
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
     }
 }

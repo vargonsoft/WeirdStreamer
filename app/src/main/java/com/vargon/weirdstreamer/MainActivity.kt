@@ -8,10 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.tv.material3.*
-import com.vargon.weirdstreamer.ui.components.ImageViewer
-import com.vargon.weirdstreamer.ui.components.SettingsScreen
-import com.vargon.weirdstreamer.ui.components.SmbBrowser
-import com.vargon.weirdstreamer.ui.components.VideoPlayer
+import com.vargon.weirdstreamer.ui.components.*
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 
 class MainActivity : ComponentActivity() {
@@ -28,6 +25,7 @@ class MainActivity : ComponentActivity() {
                     var showSettings by remember { mutableStateOf(false) }
                     val selectedVideo = viewModel.selectedVideoPath
                     val selectedImage = viewModel.selectedImagePath
+                    val selectedPdf = viewModel.selectedPdfPath
 
                     if (selectedVideo != null) {
                         VideoPlayer(
@@ -40,6 +38,12 @@ class MainActivity : ComponentActivity() {
                             viewModel = viewModel,
                             initialPath = selectedImage,
                             onBack = { viewModel.closeImage() }
+                        )
+                    } else if (selectedPdf != null) {
+                        PdfViewer(
+                            viewModel = viewModel,
+                            initialPath = selectedPdf,
+                            onBack = { viewModel.closePdf() }
                         )
                     } else if (showSettings) {
                         SettingsScreen(
