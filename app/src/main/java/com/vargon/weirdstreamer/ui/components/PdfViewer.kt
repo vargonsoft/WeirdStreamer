@@ -60,6 +60,9 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
+    // Used to trigger a retry if rendering fails due to concurrency
+    var retryTrigger by remember { mutableIntStateOf(0) }
+    
     val focusRequester = remember { FocusRequester() }
     val fileName = remember(initialPath) {
         initialPath.substringBefore('?').removeSuffix("/").substringAfterLast('/')
@@ -87,28 +90,48 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
         isLoading = false
     }
 
-    LaunchedEffect(currentPageIndex, pdfRenderer) {
+    LaunchedEffect(currentPageIndex, pdfRenderer, retryTrigger) {
         val renderer = pdfRenderer ?: return@LaunchedEffect
+        val targetIndex = currentPageIndex
         if (pageCount > 0) {
+            // Small delay to debounce rapid navigation
+            delay(150)
+            
             isLoading = true
             overlayTimerTrigger = System.currentTimeMillis()
-            withContext(Dispatchers.IO) {
+            withContext(Dispatchers.Default) { // Use Default for CPU intensive task
                 try {
-                    renderer.openPage(currentPageIndex).use { page ->
+                    if (targetIndex != currentPageIndex) return@withContext
+
+                    renderer.openPage(targetIndex).use { page ->
                         val width = (page.width * 1.5f).toInt()
                         val height = (page.height * 1.5f).toInt()
                         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                         val canvas = Canvas(bitmap)
                         canvas.drawColor(android.graphics.Color.WHITE)
                         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        currentPageBitmap = bitmap
-                        errorMessage = null // Clear any previous transient errors on success
+                        
+                        if (targetIndex == currentPageIndex) {
+                            currentPageBitmap = bitmap
+                            errorMessage = null
+                        }
                     }
                 } catch (e: Exception) {
-                    errorMessage = "Failed to render page: ${e.localizedMessage}"
+                    if (targetIndex == currentPageIndex) {
+                        val msg = e.localizedMessage ?: "Unknown error"
+                        if (msg.contains("Current page not closed")) {
+                            // Concurrency error, try again shortly
+                            delay(200)
+                            retryTrigger++
+                        } else {
+                            errorMessage = "Failed to render page: $msg"
+                        }
+                    }
                 }
             }
-            isLoading = false
+            if (targetIndex == currentPageIndex) {
+                isLoading = false
+            }
         }
     }
 
