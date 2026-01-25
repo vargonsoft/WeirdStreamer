@@ -15,30 +15,61 @@ import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
 import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okio.Buffer
+import okio.FileSystem
+import okio.ForwardingSource
 import okio.buffer
 import okio.source
-import okio.ForwardingSource
-import okio.Buffer
+import java.io.InterruptedIOException
 import java.util.Properties
 import kotlin.math.min
-import kotlinx.coroutines.CancellationException
-import java.io.InterruptedIOException
 
 class SmbFetcher(
     private val data: Any,
     private val options: Options,
     private val credentialManager: CredentialManager,
-    private val baseContext: CIFSContext
+    private val baseContext: CIFSContext,
+    private val imageLoader: ImageLoader
 ) : Fetcher {
 
+    companion object {
+        private const val TAG = "SmbFetcher"
+        
+        fun getStableKey(path: String): String {
+            return path.replaceFirst(Regex("smb://.*@"), "smb://").removeSuffix("/")
+        }
+    }
+
+    @OptIn(ExperimentalCoilApi::class)
     override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
         val path = data.toString()
-        Log.d("SmbFetcher", "Fetching: $path")
-        val host = try { path.removePrefix("smb://").substringBefore("/") } catch (e: Exception) { return@withContext null }
+        val diskCacheKey = options.diskCacheKey ?: getStableKey(path)
+        val diskCache = imageLoader.diskCache
         
+        // 1. FAST PATH: Check Coil's DiskCache for images
+        if (diskCache != null && options.diskCachePolicy.readEnabled) {
+            val snapshot = diskCache[diskCacheKey]
+            if (snapshot != null) {
+                Log.d(TAG, "Disk cache HIT for $path (key: $diskCacheKey)")
+                return@withContext SourceResult(
+                    source = ImageSource(
+                        file = snapshot.data,
+                        diskCacheKey = diskCacheKey,
+                        closeable = snapshot
+                    ),
+                    mimeType = getMimeType(path),
+                    dataSource = DataSource.DISK
+                )
+            } else {
+                Log.d(TAG, "Disk cache MISS for $path (key: $diskCacheKey)")
+            }
+        }
+
+        // 2. Fetch from SMB
+        val host = try { path.removePrefix("smb://").substringBefore("/") } catch (e: Exception) { return@withContext null }
         val creds = credentialManager.getCredentials(host)
         val auth = if (creds.first != null && creds.second != null) {
             NtlmPasswordAuthenticator(null, creds.first, creds.second)
@@ -55,47 +86,51 @@ class SmbFetcher(
                 return@withContext null
             }
 
-            val extension = path.substringBefore('?').substringAfterLast('.', "").lowercase()
-            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: when (extension) {
-                "flv" -> "video/x-flv"
-                "mkv" -> "video/x-matroska"
-                "wmv" -> "video/x-ms-wmv"
-                "3gp" -> "video/3gpp"
-                "mpg", "mpeg" -> "video/mpeg"
-                "m4v" -> "video/x-m4v"
-                "vob" -> "video/dvd"
-                "avi" -> "video/x-msvideo"
-                "ts" -> "video/mp2t"
-                "webm" -> "video/webm"
-                "mov" -> "video/quicktime"
-                "asf" -> "video/x-ms-asf"
-                "jpg", "jpeg" -> "image/jpeg"
-                "png" -> "image/png"
-                "webp" -> "image/webp"
-                "heic" -> "image/heic"
-                "heif" -> "image/heif"
-                else -> null
-            }
-
-            Log.d("SmbFetcher", "Mapped mimeType: $mimeType for ext: $extension")
-
+            val mimeType = getMimeType(path)
             val isVideo = mimeType?.startsWith("video/") == true
-            val isHeic = mimeType == "image/heic" || mimeType == "image/heif"
             val inputStream = smbFile.inputStream
-            
-            // Log file size if possible
-            try {
-                val length = smbFile.length()
-                Log.d("SmbFetcher", "File size: $length bytes")
-            } catch (e: Exception) {
-                Log.w("SmbFetcher", "Could not determine file length")
+
+            // For non-video images, we'll stream it into the DiskCache manually
+            if (!isVideo && diskCache != null && options.diskCachePolicy.writeEnabled) {
+                val editor = diskCache.edit(diskCacheKey)
+                if (editor != null) {
+                    try {
+                        FileSystem.SYSTEM.write(editor.data) {
+                            inputStream.source().use { source ->
+                                writeAll(source)
+                            }
+                        }
+                        editor.commit()
+                        Log.d(TAG, "Successfully cached $path (key: $diskCacheKey)")
+                        
+                        // Verification check
+                        val snapshot = diskCache[diskCacheKey]
+                        if (snapshot != null) {
+                            Log.d(TAG, "VERIFIED: Just saved $diskCacheKey and it is now retrievable!")
+                            return@withContext SourceResult(
+                                source = ImageSource(
+                                    file = snapshot.data,
+                                    diskCacheKey = diskCacheKey,
+                                    closeable = snapshot
+                                ),
+                                mimeType = mimeType,
+                                dataSource = DataSource.NETWORK
+                            )
+                        } else {
+                            Log.e(TAG, "VERIFICATION FAILED: Just saved $diskCacheKey but it is NOT retrievable!")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to write to disk cache for $path", e)
+                        editor.abort()
+                    } finally {
+                        inputStream.close()
+                        smbFile.close()
+                    }
+                }
             }
 
-            val rawSource = inputStream.source()
-            
-            // For video and HEIC, we might need a buffered source that supports some seeking or
-            // at least doesn't break if the decoder reads in chunks.
-            // Coil's ImageSource handles buffering if we provide it correctly.
+            // Fallback for videos or when cache write fails
+            val rawSource = if (!isVideo) smbFile.inputStream.source().buffer() else inputStream.source().buffer()
             
             val processedSource = if (isVideo) {
                 object : ForwardingSource(rawSource) {
@@ -122,9 +157,9 @@ class SmbFetcher(
                         try {
                             super.close()
                         } finally {
-                            inputStream.close()
+                            if (isVideo) inputStream.close()
                             smbFile.close()
-                            Log.d("SmbFetcher", "Closed SMB resources for: $path")
+                            Log.d(TAG, "SMB Stream Closed: $path")
                         }
                     }
                 }.buffer(),
@@ -135,14 +170,38 @@ class SmbFetcher(
             SourceResult(
                 source = imageSource,
                 mimeType = mimeType,
-                dataSource = DataSource.NETWORK
+                dataSource = if (isVideo) DataSource.DISK else DataSource.NETWORK
             )
         } catch (e: Exception) {
             smbFile.close()
             if (e !is CancellationException && e !is InterruptedException && e !is InterruptedIOException) {
-                Log.e("SmbFetcher", "Failed to fetch: $path", e)
+                Log.e(TAG, "Failed to fetch: $path", e)
             }
             null
+        }
+    }
+
+    private fun getMimeType(path: String): String? {
+        val extension = path.substringBefore('?').substringAfterLast('.', "").lowercase()
+        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: when (extension) {
+            "flv" -> "video/x-flv"
+            "mkv" -> "video/x-matroska"
+            "wmv" -> "video/x-ms-wmv"
+            "3gp" -> "video/3gpp"
+            "mpg", "mpeg" -> "video/mpeg"
+            "m4v" -> "video/x-m4v"
+            "vob" -> "video/dvd"
+            "avi" -> "video/x-msvideo"
+            "ts" -> "video/mp2t"
+            "webm" -> "video/webm"
+            "mov" -> "video/quicktime"
+            "asf" -> "video/x-ms-asf"
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "heic" -> "image/heic"
+            "heif" -> "image/heif"
+            else -> null
         }
     }
 
@@ -154,7 +213,6 @@ class SmbFetcher(
                 setProperty("jcifs.smb.client.ipcSigningEnforced", "false")
                 setProperty("jcifs.smb.client.connTimeout", "5000")
                 setProperty("jcifs.smb.client.responseTimeout", "10000")
-                // Added for better reliability with some decoders
                 setProperty("jcifs.smb.client.disableRequestValidation", "true")
             }
             BaseContext(PropertyConfiguration(props))
@@ -163,7 +221,7 @@ class SmbFetcher(
         override fun create(data: Any, options: Options, imageLoader: ImageLoader): Fetcher? {
             val path = data.toString()
             if (!path.startsWith("smb://")) return null
-            return SmbFetcher(data, options, credentialManager, baseContext)
+            return SmbFetcher(data, options, credentialManager, baseContext, imageLoader)
         }
     }
 }

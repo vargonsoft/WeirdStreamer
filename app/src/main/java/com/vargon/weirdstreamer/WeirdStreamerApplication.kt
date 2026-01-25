@@ -8,7 +8,17 @@ import coil.decode.GifDecoder
 import coil.decode.VideoFrameDecoder
 import coil.decode.SvgDecoder
 import coil.disk.DiskCache
+import coil.key.Keyer
 import coil.memory.MemoryCache
+import coil.request.Options
+
+class SmbKeyer : Keyer<String> {
+    override fun key(data: String, options: Options): String? {
+        if (!data.startsWith("smb://")) return null
+        // Strip credentials for a stable cache key: smb://user:pass@host/path -> smb://host/path
+        return data.replaceFirst(Regex("smb://.*@"), "smb://")
+    }
+}
 
 class WeirdStreamerApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
@@ -28,10 +38,11 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
             .diskCache {
                 DiskCache.Builder()
                     .directory(this.cacheDir.resolve("image_cache"))
-                    .maxSizePercent(0.02)
+                    .maxSizePercent(0.05) // Increased to 5% for better thumbnail persistence
                     .build()
             }
             .components {
+                add(SmbKeyer())
                 add(VideoThumbnailDecoder.Factory())
                 add(VideoFrameDecoder.Factory())
                 add(GifDecoder.Factory())

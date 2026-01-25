@@ -56,6 +56,12 @@ class VideoThumbnailDecoder(
         fun clearSessionCache() {
             sessionRefreshedPaths.clear()
         }
+
+        // Stable key for disk cache that survives credential changes
+        fun getStableCacheKey(path: String): String {
+            val normalized = path.replaceFirst(Regex("smb://.*@"), "smb://").removeSuffix("/")
+            return normalized.hashCode().toString()
+        }
     }
 
     override suspend fun decode(): DecodeResult? {
@@ -66,28 +72,23 @@ class VideoThumbnailDecoder(
         val extension = path.substringAfterLast(".", "").lowercase()
         val targetTimeMicros = 10_000_000L
         
-        val cacheKey = path.hashCode().toString()
+        val cacheKey = getStableCacheKey(path)
         val thumbCacheDir = File(options.context.cacheDir, "thumbnails")
         val thumbCacheFile = File(thumbCacheDir, "$cacheKey.webp")
         
-        val isRefreshed = sessionRefreshedPaths.contains(path)
-        
-        // 1. Initial Display: Use disk cache immediately if it was already refreshed this session
-        if (isRefreshed && thumbCacheFile.exists()) {
+        // 1. Check disk cache first.
+        if (thumbCacheFile.exists()) {
             val bitmap = loadFromDisk(thumbCacheFile)
             if (bitmap != null) return toResult(bitmap)
         }
 
         var bitmap: Bitmap? = null
+        val isRefreshed = sessionRefreshedPaths.contains(path)
 
-        // 2. Fresh Extraction: If not refreshed this session, try to get a new thumbnail from SMB
+        // 2. Fresh Extraction: If not refreshed this session (and not found in cache), extract from SMB
         if (!isRefreshed) {
             try {
-                // We use a timeout for the "initial display" fallback. 
-                // If SMB is slow, we'll fall back to the old disk cache if it exists.
-                val timeout = if (thumbCacheFile.exists()) 2000L else 15000L
-                
-                bitmap = withTimeoutOrNull(timeout) {
+                bitmap = withTimeoutOrNull(20000L) {
                     tryFreshExtraction(smbFile, path, extension, targetTimeMicros, cacheKey)
                 }
                 
@@ -99,11 +100,6 @@ class VideoThumbnailDecoder(
                 if (e is CancellationException || e is InterruptedException || e is InterruptedIOException) return null
                 Log.w(TAG, "Fresh extraction failed/timed out for $path")
             }
-        }
-
-        // 3. Fallback: If fresh extraction failed or timed out, use disk cache as a fallback.
-        if (bitmap == null && thumbCacheFile.exists()) {
-            bitmap = loadFromDisk(thumbCacheFile)
         }
 
         return bitmap?.let { toResult(it) }
@@ -139,43 +135,41 @@ class VideoThumbnailDecoder(
         // Strategy B: Persistent Temp File (System or Media3)
         if (bitmap == null) {
             val tempFile = File(options.context.cacheDir, "v_thumb_$cacheKey.tmp")
-            if (!tempFile.exists() || tempFile.length() == 0L) {
+            try {
                 runInterruptible(Dispatchers.IO) {
-                    try {
-                        source.source().use { input ->
-                            tempFile.outputStream().sink().buffer().use { output ->
-                                output.writeAll(input)
-                            }
+                    source.source().use { input ->
+                        tempFile.outputStream().sink().buffer().use { output ->
+                            output.writeAll(input)
                         }
-                    } catch (_: Exception) {
-                        if (tempFile.exists()) tempFile.delete()
-                    }
-                }
-            }
-
-            if (tempFile.exists() && tempFile.length() > 0) {
-                // B1: System Retriever on local file
-                bitmap = runInterruptible(Dispatchers.IO) {
-                    val retriever = MediaMetadataRetriever()
-                    var fis: FileInputStream? = null
-                    try {
-                        fis = FileInputStream(tempFile)
-                        retriever.setDataSource(fis.fd)
-                        tryGetFrame(retriever, targetTimeMicros)
-                    } catch (_: Exception) {
-                        null
-                    } finally {
-                        try { fis?.close() } catch (_: Exception) {}
-                        try { retriever.close() } catch (_: Exception) {}
                     }
                 }
 
-                // B2: Media3 as last resort
-                if (bitmap == null && MEDIA3_PREFERRED_EXTENSIONS.contains(extension)) {
-                    if (isLikelyDecodableByMedia3(tempFile)) {
-                        bitmap = tryExtractWithMedia3(tempFile, targetTimeMicros / 1000)
+                if (tempFile.exists() && tempFile.length() > 0) {
+                    // B1: System Retriever
+                    bitmap = runInterruptible(Dispatchers.IO) {
+                        val retriever = MediaMetadataRetriever()
+                        var fis: FileInputStream? = null
+                        try {
+                            fis = FileInputStream(tempFile)
+                            retriever.setDataSource(fis.fd)
+                            tryGetFrame(retriever, targetTimeMicros)
+                        } catch (_: Exception) {
+                            null
+                        } finally {
+                            try { fis?.close() } catch (_: Exception) {}
+                            try { retriever.close() } catch (_: Exception) {}
+                        }
+                    }
+
+                    // B2: Media3
+                    if (bitmap == null && MEDIA3_PREFERRED_EXTENSIONS.contains(extension)) {
+                        if (isLikelyDecodableByMedia3(tempFile)) {
+                            bitmap = tryExtractWithMedia3(tempFile, targetTimeMicros / 1000)
+                        }
                     }
                 }
+            } finally {
+                if (tempFile.exists()) tempFile.delete()
             }
         }
         return bitmap

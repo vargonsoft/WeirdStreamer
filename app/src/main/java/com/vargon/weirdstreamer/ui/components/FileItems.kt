@@ -7,6 +7,10 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,7 +76,7 @@ fun FileTileItem(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -
         icon = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description,
         modifier = modifier,
         onClick = onClick,
-        thumbnailUrl = if (!item.isDirectory) item.path else null
+        thumbnailUrl = if (!item.isDirectory && item.name != "..") item.path else null
     )
 }
 
@@ -109,9 +113,18 @@ fun TileItem(
         ) {
             Box(
                 contentAlignment = Alignment.Center, 
-                modifier = Modifier.fillMaxSize().padding(10.dp)
+                modifier = Modifier.fillMaxSize()
             ) {
-                Icon(icon, contentDescription = null, modifier = Modifier.fillMaxSize(0.7f))
+                var isImageLoaded by remember { mutableStateOf(false) }
+                
+                if (!isImageLoaded) {
+                    Icon(
+                        icon, 
+                        contentDescription = null, 
+                        modifier = Modifier.fillMaxSize(0.5f).padding(10.dp)
+                    )
+                }
+                
                 if (thumbnailUrl != null) {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
@@ -120,6 +133,7 @@ fun TileItem(
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
+                        onSuccess = { isImageLoaded = true },
                         modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.small)
                     )
                 }
@@ -169,8 +183,13 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(48.dp).padding(8.dp), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
+            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                var isImageLoaded by remember { mutableStateOf(false) }
+                
+                if (!isImageLoaded) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
+                }
+                
                 if (!item.isDirectory && item.name != "..") {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
@@ -179,6 +198,7 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
+                        onSuccess = { isImageLoaded = true },
                         modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall)
                     )
                 }
