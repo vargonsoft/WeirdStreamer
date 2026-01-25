@@ -23,6 +23,7 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
@@ -42,12 +43,29 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
     var panY by remember { mutableFloatStateOf(0f) }
     var isZoomMode by remember { mutableStateOf(false) }
     
+    var showFilename by remember { mutableStateOf(false) }
+    var filenameTimerTrigger by remember { mutableLongStateOf(0L) }
     var loopFeedback by remember { mutableStateOf<Pair<Boolean, Long>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
     val focusRequester = remember { FocusRequester() }
     val currentPath = images.getOrNull(currentIndex) ?: initialPath
+    val fileName = remember(currentPath) {
+        currentPath.substringBefore('?').removeSuffix("/").substringAfterLast('/')
+    }
+
+    LaunchedEffect(currentPath) {
+        filenameTimerTrigger = System.currentTimeMillis()
+    }
+
+    LaunchedEffect(filenameTimerTrigger) {
+        if (filenameTimerTrigger > 0) {
+            showFilename = true
+            delay(1500)
+            showFilename = false
+        }
+    }
 
     LaunchedEffect(loopFeedback) {
         if (loopFeedback != null) {
@@ -66,16 +84,20 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
     val navigate = { forward: Boolean ->
         val oldIndex = currentIndex
         if (images.isNotEmpty()) {
-            if (forward) {
-                currentIndex = (currentIndex + 1) % images.size
-                if (currentIndex < oldIndex) loopFeedback = true to System.currentTimeMillis()
+            if (images.size == 1) {
+                filenameTimerTrigger = System.currentTimeMillis()
             } else {
-                currentIndex = (currentIndex - 1 + images.size) % images.size
-                if (currentIndex > oldIndex) loopFeedback = false to System.currentTimeMillis()
+                if (forward) {
+                    currentIndex = (currentIndex + 1) % images.size
+                    if (currentIndex < oldIndex) loopFeedback = true to System.currentTimeMillis()
+                } else {
+                    currentIndex = (currentIndex - 1 + images.size) % images.size
+                    if (currentIndex > oldIndex) loopFeedback = false to System.currentTimeMillis()
+                }
+                resetZoom()
+                errorMessage = null
+                isLoading = true
             }
-            resetZoom()
-            errorMessage = null
-            isLoading = true
         }
     }
 
@@ -192,6 +214,26 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
                 Text("Error", style = MaterialTheme.typography.headlineMedium, color = Color.Red)
                 Text(errorMessage!!, style = MaterialTheme.typography.bodyMedium, color = Color.White, textAlign = TextAlign.Center)
             }
+        }
+
+        // Filename Overlay
+        AnimatedVisibility(
+            visible = showFilename && !isZoomMode,
+            enter = fadeIn() + slideInVertically(),
+            exit = fadeOut() + slideOutVertically(),
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            Text(
+                text = fileName,
+                modifier = Modifier
+                    .padding(top = 32.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
         // Loop Feedback
