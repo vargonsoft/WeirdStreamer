@@ -33,6 +33,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -47,7 +48,17 @@ import java.util.Locale
 fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
     val context = LocalContext.current
     val exoPlayer = remember {
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                50_000, // minBufferMs (increased from 32s to 50s)
+                120_000, // maxBufferMs (increased from 50s to 120s)
+                5_000, // bufferForPlaybackMs
+                10_000 // bufferForPlaybackAfterRebufferMs
+            )
+            .build()
+
         ExoPlayer.Builder(context)
+            .setLoadControl(loadControl)
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context)
                     .setDataSourceFactory(SmbDataSourceFactory(viewModel.credentialManager, viewModel.baseContext))

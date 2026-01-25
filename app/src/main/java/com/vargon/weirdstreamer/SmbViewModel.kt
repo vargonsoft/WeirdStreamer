@@ -85,6 +85,20 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
             setProperty("jcifs.smb.client.maxVersion", "SMB311")
             setProperty("jcifs.smb.client.ipcSigningEnforced", "false")
             setProperty("jcifs.netbios.cachePolicy", "0")
+            // Advanced performance optimizations for high-throughput SMB streaming
+            setProperty("jcifs.smb.client.responseTimeout", "60000")
+            setProperty("jcifs.smb.client.soTimeout", "65000")
+            setProperty("jcifs.smb.client.connTimeout", "10000")
+            setProperty("jcifs.smb.client.sessionLimit", "200")
+            setProperty("jcifs.smb.client.listCount", "1000")
+            // Significantly increase buffer sizes for SMB2/3 large read/write support
+            setProperty("jcifs.smb.client.maxBufSize", "1048576") // 1MB buffer
+            setProperty("jcifs.smb.client.transactionBuffer", "1048576")
+            setProperty("jcifs.smb.client.rcvBufSize", "1048576")
+            setProperty("jcifs.smb.client.sndBufSize", "1048576")
+            // Enable credit-based flow control optimization
+            setProperty("jcifs.smb.client.signingEnforced", "false")
+            setProperty("jcifs.smb.client.useBatching", "true")
         }
         BaseContext(PropertyConfiguration(props))
     }

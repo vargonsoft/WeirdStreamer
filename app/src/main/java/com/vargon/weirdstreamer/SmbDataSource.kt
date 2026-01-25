@@ -11,6 +11,7 @@ import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbFile
 import jcifs.smb.SmbRandomAccessFile
 import java.io.IOException
+import java.io.InputStream
 
 @UnstableApi
 class SmbDataSource(
@@ -18,7 +19,7 @@ class SmbDataSource(
     private val baseContext: CIFSContext
 ) : BaseDataSource(false) {
 
-    private var raf: SmbRandomAccessFile? = null
+    private var smbInputStream: InputStream? = null
     private var uri: Uri? = null
     private var bytesRemaining: Long = 0
     private var opened = false
@@ -42,15 +43,17 @@ class SmbDataSource(
         
         transferInitializing(dataSpec)
         return try {
-            val currentRaf = smbFile.openRandomAccess("r")
-            raf = currentRaf
-            
-            val fileLength = currentRaf.length()
+            val fileLength = smbFile.length()
             if (dataSpec.position > fileLength) {
                 throw IOException("Position out of range")
             }
             
-            currentRaf.seek(dataSpec.position)
+            val inputStream = smbFile.inputStream
+            if (dataSpec.position > 0) {
+                inputStream.skip(dataSpec.position)
+            }
+            smbInputStream = inputStream
+            
             bytesRemaining = if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
                 dataSpec.length
             } else {
@@ -76,7 +79,7 @@ class SmbDataSource(
         }
 
         return try {
-            val bytesRead = raf?.read(buffer, offset, bytesToRead) ?: -1
+            val bytesRead = smbInputStream?.read(buffer, offset, bytesToRead) ?: -1
             if (bytesRead == -1) {
                 if (bytesRemaining != C.LENGTH_UNSET.toLong() && bytesRemaining != 0L) {
                     throw IOException("End of stream reached before reading all bytes")
@@ -98,11 +101,11 @@ class SmbDataSource(
     override fun close() {
         uri = null
         try {
-            raf?.close()
+            smbInputStream?.close()
         } catch (e: IOException) {
             // Ignore
         } finally {
-            raf = null
+            smbInputStream = null
             if (opened) {
                 opened = false
                 transferEnded()

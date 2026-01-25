@@ -14,12 +14,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.vargon.weirdstreamer.SmbFileItem
+import java.util.Locale
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -66,6 +68,7 @@ fun HostTileItem(host: String, modifier: Modifier = Modifier, onClick: () -> Uni
 fun FileTileItem(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     TileItem(
         title = item.name,
+        subtitle = if (!item.isDirectory && item.name != "..") formatFileSize(item.size) else null,
         icon = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description,
         modifier = modifier,
         onClick = onClick,
@@ -79,6 +82,7 @@ fun TileItem(
     title: String,
     icon: ImageVector,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
     thumbnailUrl: String? = null,
     onClick: () -> Unit
 ) {
@@ -125,9 +129,18 @@ fun TileItem(
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
         )
+        if (subtitle != null) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
@@ -174,9 +187,16 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
             Column {
                 Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
                 if (!item.isDirectory && item.name != "..") {
-                    Text(text = "${item.size / 1024} KB", style = MaterialTheme.typography.bodySmall)
+                    Text(text = formatFileSize(item.size), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
     }
+}
+
+private fun formatFileSize(size: Long): String {
+    if (size <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
+    return String.format(Locale.US, "%.1f %s", size / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
 }
