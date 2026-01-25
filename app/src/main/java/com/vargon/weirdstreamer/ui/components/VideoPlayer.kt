@@ -8,14 +8,18 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -23,6 +27,7 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -33,6 +38,7 @@ import androidx.media3.ui.PlayerView
 import com.vargon.weirdstreamer.SmbDataSourceFactory
 import com.vargon.weirdstreamer.SmbViewModel
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -54,6 +60,7 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
     }
 
     var isPlaying by remember { mutableStateOf(true) }
+    var isBuffering by remember { mutableStateOf(true) }
     var showControls by remember { mutableStateOf(false) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var lastControlsHideTime by remember { mutableLongStateOf(0L) }
@@ -74,6 +81,7 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
                 if (state == Player.STATE_READY) {
                     duration = exoPlayer.duration
                 }
+                isBuffering = state == Player.STATE_BUFFERING || state == Player.STATE_IDLE
             }
         }
         exoPlayer.addListener(listener)
@@ -118,7 +126,9 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
     }
 
     val performSkip = { amount: Int ->
-        val newPos = (exoPlayer.currentPosition + amount * 1000).coerceIn(0, exoPlayer.duration)
+        val currentDuration = exoPlayer.duration
+        val maxPos = if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration
+        val newPos = (exoPlayer.currentPosition + amount * 1000).coerceIn(0L, maxPos)
         exoPlayer.seekTo(newPos)
         skipFeedback = amount to (amount > 0)
         updateInteraction()
@@ -174,7 +184,7 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
                         Key.DirectionLeft -> {
                             if (isSeekingSlider) {
                                 performSkip(-30)
-                            } else if (showControls) {
+                            } else {
                                 performSkip(-5)
                             }
                             true
@@ -182,7 +192,7 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
                         Key.DirectionRight -> {
                             if (isSeekingSlider) {
                                 performSkip(30)
-                            } else if (showControls) {
+                            } else {
                                 performSkip(5)
                             }
                             true
@@ -212,6 +222,14 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Loading Spinner
+        if (isBuffering) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = Color.Red
+            )
+        }
 
         // Skip Feedback Overlay
         Box(modifier = Modifier.fillMaxSize()) {
@@ -246,19 +264,65 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
                     .padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Progress Slider (Simple representation)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .background(Color.Gray.copy(alpha = 0.5f))
+                // Progress Slider and Timestamps
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val progress = if (duration > 0) playbackPosition.toFloat() / duration else 0f
+                    androidx.tv.material3.Text(
+                        text = formatTime(playbackPosition),
+                        style = androidx.tv.material3.MaterialTheme.typography.bodySmall,
+                        color = Color.White
+                    )
+                    
+                    Spacer(modifier = Modifier.width(16.dp))
+                    
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(progress)
-                            .fillMaxHeight()
-                            .background(if (isSeekingSlider) Color.White else Color.Red)
+                            .weight(1f)
+                            .height(24.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        // Background track
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .background(Color.Gray.copy(alpha = 0.5f))
+                        )
+                        
+                        val progress = if (duration > 0) playbackPosition.toFloat() / duration else 0f
+                        
+                        // Progress bar
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(progress)
+                                .height(4.dp)
+                                .background(Color.Red)
+                        )
+
+                        // Thumb
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.CenterStart)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .align(BiasAlignment(2 * progress - 1, 0f))
+                                    .size(if (isSeekingSlider) 16.dp else 12.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isSeekingSlider) Color.White else Color.Red)
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.width(16.dp))
+                    
+                    androidx.tv.material3.Text(
+                        text = if (duration > 0) formatTime(duration) else "0:00:00",
+                        style = androidx.tv.material3.MaterialTheme.typography.bodySmall,
+                        color = Color.White
                     )
                 }
                 
@@ -296,4 +360,12 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
+}
+
+private fun formatTime(ms: Long): String {
+    val totalSeconds = ms / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
 }
