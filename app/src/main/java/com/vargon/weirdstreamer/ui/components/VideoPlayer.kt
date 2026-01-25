@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
@@ -25,6 +26,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
@@ -70,6 +72,10 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
     var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) } // value to show, isForward
     
     val focusRequester = remember { FocusRequester() }
+    
+    val filename = remember(path) {
+        path.substringAfterLast('/').substringBefore('?')
+    }
 
     // Sync playback state
     DisposableEffect(exoPlayer) {
@@ -102,7 +108,7 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
     // Auto-hide controls
     LaunchedEffect(showControls, lastInteractionTime) {
         if (showControls) {
-            val timeToWait = 6000L - (System.currentTimeMillis() - lastInteractionTime)
+            val timeToWait = 3000L - (System.currentTimeMillis() - lastInteractionTime)
             if (timeToWait > 0) {
                 delay(timeToWait)
             }
@@ -228,6 +234,26 @@ fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
             CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),
                 color = Color.Red
+            )
+        }
+
+        // Filename Overlay
+        AnimatedVisibility(
+            visible = showControls,
+            enter = slideInVertically { -it } + fadeIn(),
+            exit = slideOutVertically { -it } + fadeOut(),
+            modifier = Modifier.align(Alignment.TopStart)
+        ) {
+            androidx.tv.material3.Text(
+                text = filename,
+                style = androidx.tv.material3.MaterialTheme.typography.headlineMedium,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .padding(32.dp)
+                    .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
 
