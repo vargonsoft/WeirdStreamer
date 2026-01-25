@@ -24,6 +24,7 @@ import androidx.tv.material3.*
 import com.vargon.weirdstreamer.SmbFileItem
 import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -33,6 +34,7 @@ fun <T> FocusableList(
     isGridView: Boolean,
     itemContent: @Composable (T, Modifier) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     val focusRequesters = remember(items) { List(items.size) { FocusRequester() } }
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
@@ -75,7 +77,6 @@ fun <T> FocusableList(
     fun getFirstChar(item: T): Char? {
         val name = getName(item)
         if (name == "..") return null
-        if (isDirectory(item)) return null // Group all directories together
         return name.firstOrNull()?.lowercaseChar()
     }
 
@@ -100,7 +101,7 @@ fun <T> FocusableList(
         val listModifier = Modifier
             .fillMaxSize()
             .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && items.isNotEmpty()) {
+                if (!isGridView && event.type == KeyEventType.KeyDown && items.isNotEmpty()) {
                     when (event.key) {
                         Key.DirectionRight -> {
                             val currentItem = items.getOrNull(focusedIndex) ?: return@onPreviewKeyEvent false
@@ -116,16 +117,20 @@ fun <T> FocusableList(
                                 if (targetChar != null) {
                                     jumpLabel = targetChar.toString().uppercase()
                                     showJumpChar = true
-                                    focusRequesters[targetIndex].requestFocus()
+                                    scope.launch {
+                                        listState.scrollToItem(targetIndex)
+                                        delay(50)
+                                        awaitFrame()
+                                        focusRequesters[targetIndex].requestFocus()
+                                    }
                                     return@onPreviewKeyEvent true
                                 }
                             }
                         }
                         Key.DirectionLeft -> {
                             val currentItem = items.getOrNull(focusedIndex) ?: return@onPreviewKeyEvent false
-                            if (isDirectory(currentItem)) return@onPreviewKeyEvent false
-                            
                             val currentChar = getFirstChar(currentItem)
+                            
                             val prevDiffIndex = (focusedIndex - 1 downTo 0).firstOrNull {
                                 val char = getFirstChar(items[it])
                                 char != null && char != currentChar
@@ -139,16 +144,12 @@ fun <T> FocusableList(
                                     }
                                     jumpLabel = targetChar.toString().uppercase()
                                     showJumpChar = true
-                                    focusRequesters[firstOfGroup].requestFocus()
-                                    return@onPreviewKeyEvent true
-                                }
-                            } else {
-                                // If no previous character group, jump to first directory if exists
-                                val firstDir = items.indexOfFirst { isDirectory(it) && getName(it) != ".." }
-                                if (firstDir != -1 && firstDir < focusedIndex) {
-                                    jumpLabel = "Folders"
-                                    showJumpChar = true
-                                    focusRequesters[firstDir].requestFocus()
+                                    scope.launch {
+                                        listState.scrollToItem(firstOfGroup)
+                                        delay(50)
+                                        awaitFrame()
+                                        focusRequesters[firstOfGroup].requestFocus()
+                                    }
                                     return@onPreviewKeyEvent true
                                 }
                             }
@@ -162,7 +163,7 @@ fun <T> FocusableList(
             LazyVerticalGrid(
                 columns = GridCells.Fixed(4),
                 state = gridState,
-                modifier = listModifier,
+                modifier = Modifier.fillMaxSize(), // Grid doesn't use jump logic
                 contentPadding = PaddingValues(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
