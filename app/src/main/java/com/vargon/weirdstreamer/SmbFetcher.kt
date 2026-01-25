@@ -16,6 +16,7 @@ import jcifs.context.BaseContext
 import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okio.buffer
 import okio.source
@@ -71,12 +72,15 @@ class SmbFetcher(
                 "jpg", "jpeg" -> "image/jpeg"
                 "png" -> "image/png"
                 "webp" -> "image/webp"
+                "heic" -> "image/heic"
+                "heif" -> "image/heif"
                 else -> null
             }
 
             Log.d("SmbFetcher", "Mapped mimeType: $mimeType for ext: $extension")
 
             val isVideo = mimeType?.startsWith("video/") == true
+            val isHeic = mimeType == "image/heic" || mimeType == "image/heif"
             val inputStream = smbFile.inputStream
             
             // Log file size if possible
@@ -89,8 +93,10 @@ class SmbFetcher(
 
             val rawSource = inputStream.source()
             
-            // If it's a video, we wrap it in a limited source.
-            // This prevents accidental full download if a decoder doesn't use random access.
+            // For video and HEIC, we might need a buffered source that supports some seeking or
+            // at least doesn't break if the decoder reads in chunks.
+            // Coil's ImageSource handles buffering if we provide it correctly.
+            
             val processedSource = if (isVideo) {
                 object : ForwardingSource(rawSource) {
                     private var bytesRead = 0L
@@ -148,6 +154,8 @@ class SmbFetcher(
                 setProperty("jcifs.smb.client.ipcSigningEnforced", "false")
                 setProperty("jcifs.smb.client.connTimeout", "5000")
                 setProperty("jcifs.smb.client.responseTimeout", "10000")
+                // Added for better reliability with some decoders
+                setProperty("jcifs.smb.client.disableRequestValidation", "true")
             }
             BaseContext(PropertyConfiguration(props))
         }

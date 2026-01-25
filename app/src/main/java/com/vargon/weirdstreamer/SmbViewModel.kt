@@ -303,7 +303,7 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
         return fileList.filter { !it.isDirectory && isImage(it.path) }.map { it.path }
     }
 
-    suspend fun downloadToTempFile(smbPath: String, context: Context): File? = withContext(Dispatchers.IO) {
+    suspend fun downloadToTempFile(smbPath: String, context: Context, suffix: String = ".pdf"): File? = withContext(Dispatchers.IO) {
         try {
             val host = smbPath.removePrefix("smb://").substringBefore("/")
             val creds = credentialManager.getCredentials(host)
@@ -314,7 +314,7 @@ class SmbViewModel(application: Application) : AndroidViewModel(application) {
             }
             val cifsContext = baseContext.withCredentials(auth)
             
-            val tempFile = File(context.cacheDir, "temp_${System.currentTimeMillis()}.pdf")
+            val tempFile = File(context.cacheDir, "temp_${System.currentTimeMillis()}$suffix")
             SmbFile(smbPath, cifsContext).use { smbFile ->
                 smbFile.inputStream.use { input ->
                     tempFile.outputStream().use { output ->

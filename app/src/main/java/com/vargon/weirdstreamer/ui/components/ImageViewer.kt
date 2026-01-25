@@ -31,10 +31,12 @@ import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.vargon.weirdstreamer.SmbViewModel
 import kotlinx.coroutines.delay
+import java.io.File
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> Unit) {
+    val context = LocalContext.current
     val images = remember { viewModel.getImagesInCurrentFolder() }
     var currentIndex by remember { mutableIntStateOf(images.indexOf(initialPath).coerceAtLeast(0)) }
     
@@ -50,13 +52,49 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
     val focusRequester = remember { FocusRequester() }
-    val currentPath = images.getOrNull(currentIndex) ?: initialPath
-    val fileName = remember(currentPath) {
-        currentPath.substringBefore('?').removeSuffix("/").substringAfterLast('/')
+    val currentSmbPath = images.getOrNull(currentIndex) ?: initialPath
+    
+    // For HEIC support on some devices (like Google TV), we download to a temp file
+    // because the system's HEIF decoder often requires a seekable FileDescriptor.
+    var localImagePath by remember { mutableStateOf<String?>(null) }
+    var tempFile by remember { mutableStateOf<File?>(null) }
+
+    val fileName = remember(currentSmbPath) {
+        currentSmbPath.substringBefore('?').removeSuffix("/").substringAfterLast('/')
     }
 
-    LaunchedEffect(currentPath) {
+    LaunchedEffect(currentSmbPath) {
         filenameTimerTrigger = System.currentTimeMillis()
+        isLoading = true
+        errorMessage = null
+        
+        // Cleanup old temp file
+        tempFile?.delete()
+        tempFile = null
+        
+        if (viewModel.isImage(currentSmbPath)) {
+            val extension = currentSmbPath.substringBefore('?').substringAfterLast('.', "").lowercase()
+            if (extension == "heic" || extension == "heif") {
+                val file = viewModel.downloadToTempFile(currentSmbPath, context, ".$extension")
+                if (file != null) {
+                    tempFile = file
+                    localImagePath = file.absolutePath
+                } else {
+                    errorMessage = "Failed to download HEIC for decoding"
+                    localImagePath = currentSmbPath // Fallback to stream
+                }
+            } else {
+                localImagePath = currentSmbPath
+            }
+        } else {
+            localImagePath = currentSmbPath
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            tempFile?.delete()
+        }
     }
 
     LaunchedEffect(filenameTimerTrigger) {
@@ -95,8 +133,6 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
                     if (currentIndex > oldIndex) loopFeedback = false to System.currentTimeMillis()
                 }
                 resetZoom()
-                errorMessage = null
-                isLoading = true
             }
         }
     }
@@ -105,7 +141,7 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
         if (isZoomMode) {
             resetZoom()
         } else {
-            onBack(currentPath)
+            onBack(currentSmbPath)
         }
     }
 
@@ -139,7 +175,7 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
                                 }
                                 true
                             } else {
-                                onBack(currentPath)
+                                onBack(currentSmbPath)
                                 true
                             }
                         }
@@ -174,30 +210,32 @@ fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -
             .focusRequester(focusRequester)
             .focusable()
     ) {
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(currentPath)
-                .crossfade(true)
-                .build(),
-            contentDescription = null,
-            contentScale = if (isZoomMode) ContentScale.None else ContentScale.Fit,
-            onState = { state ->
-                isLoading = state is AsyncImagePainter.State.Loading
-                if (state is AsyncImagePainter.State.Error) {
-                    errorMessage = state.result.throwable.message ?: "Failed to load image"
-                    Log.e("ImageViewer", "Error loading $currentPath: $errorMessage", state.result.throwable)
-                }
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .clipToBounds()
-                .graphicsLayer(
-                    scaleX = zoomLevel,
-                    scaleY = zoomLevel,
-                    translationX = panX * 1000f * zoomLevel, // Adjusted scaling for pan
-                    translationY = panY * 1000f * zoomLevel
-                )
-        )
+        localImagePath?.let { path ->
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(path)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = if (isZoomMode) ContentScale.None else ContentScale.Fit,
+                onState = { state ->
+                    isLoading = state is AsyncImagePainter.State.Loading
+                    if (state is AsyncImagePainter.State.Error) {
+                        errorMessage = state.result.throwable.message ?: "Failed to load image"
+                        Log.e("ImageViewer", "Error loading $path: $errorMessage", state.result.throwable)
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clipToBounds()
+                    .graphicsLayer(
+                        scaleX = zoomLevel,
+                        scaleY = zoomLevel,
+                        translationX = panX * 1000f * zoomLevel,
+                        translationY = panY * 1000f * zoomLevel
+                    )
+            )
+        }
 
         if (isLoading) {
             CircularProgressIndicator(
