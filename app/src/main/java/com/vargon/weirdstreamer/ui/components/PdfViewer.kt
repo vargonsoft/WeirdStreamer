@@ -42,6 +42,7 @@ import androidx.tv.material3.*
 import com.vargon.weirdstreamer.SmbViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -53,6 +54,7 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
+    val scope = rememberCoroutineScope()
     
     var tempFile by remember { mutableStateOf<File?>(null) }
     var pdfRenderer by remember { mutableStateOf<PdfRenderer?>(null) }
@@ -235,6 +237,8 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
             resetZoom()
         } else if (isThumbnailView) {
             isThumbnailView = false
+        } else if (isTwoPageView) {
+            isTwoPageView = false
         } else {
             onBack(initialPath)
         }
@@ -275,6 +279,9 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
                                 true
                             } else if (isThumbnailView) {
                                 isThumbnailView = false
+                                true
+                            } else if (isTwoPageView) {
+                                isTwoPageView = false
                                 true
                             } else {
                                 onBack(initialPath)
@@ -344,6 +351,10 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
     ) {
         if (isThumbnailView) {
             val thumbHeight = screenHeight * 0.4f
+            val itemMinWidth = 150.dp
+            val spacing = 16.dp
+            val gridPadding = 16.dp * 2
+            val columnCount = ((configuration.screenWidthDp.dp - gridPadding + spacing) / (itemMinWidth + spacing)).toInt().coerceAtLeast(1)
             
             // To ensure the current page is focused when opening the grid
             val focusRequesters = remember(pageCount) { List(pageCount) { FocusRequester() } }
@@ -355,7 +366,7 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
             }
 
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 150.dp),
+                columns = GridCells.Fixed(columnCount),
                 state = gridState,
                 modifier = Modifier.fillMaxSize().padding(16.dp),
                 contentPadding = PaddingValues(16.dp),
@@ -396,24 +407,67 @@ fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> 
                             isThumbnailView = false
                             isTwoPageView = false
                         },
-                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
+                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
                         border = ClickableSurfaceDefaults.border(
                             focusedBorder = Border(
                                 border = BorderStroke(4.dp, Color.White),
-                                shape = RoundedCornerShape(8.dp)
+                                inset = 0.dp,
+                                shape = MaterialTheme.shapes.medium
                             )
                         ),
                         modifier = Modifier
                             .height(thumbHeight)
                             .aspectRatio(0.75f)
-                            .focusRequester(focusRequesters[index]),
-                        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                            .focusRequester(focusRequesters[index])
+                            .onPreviewKeyEvent { event ->
+                                if (event.type == KeyEventType.KeyDown) {
+                                    val rowCount = (pageCount + columnCount - 1) / columnCount
+                                    if (rowCount > 1) {
+                                        when (event.key) {
+                                            Key.DirectionUp -> {
+                                                if (index < columnCount) {
+                                                    val c = index % columnCount
+                                                    var target = ((pageCount - 1) / columnCount) * columnCount + c
+                                                    if (target >= pageCount) target = pageCount - 1
+                                                    
+                                                    scope.launch {
+                                                        gridState.scrollToItem(target)
+                                                        focusRequesters[target].requestFocus()
+                                                    }
+                                                    return@onPreviewKeyEvent true
+                                                }
+                                            }
+                                            Key.DirectionDown -> {
+                                                val currentRow = index / columnCount
+                                                if (currentRow == rowCount - 1) {
+                                                    val target = index % columnCount
+                                                    scope.launch {
+                                                        gridState.scrollToItem(target)
+                                                        focusRequesters[target].requestFocus()
+                                                    }
+                                                    return@onPreviewKeyEvent true
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                false
+                            },
+                        shape = ClickableSurfaceDefaults.shape(shape = MaterialTheme.shapes.medium),
                         colors = ClickableSurfaceDefaults.colors(
-                            containerColor = Color.DarkGray,
-                            focusedContainerColor = Color.DarkGray
+                            containerColor = Color.Transparent,
+                            focusedContainerColor = Color.Transparent,
+                            pressedContainerColor = Color.Transparent
                         )
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Box(
+                            contentAlignment = Alignment.Center, 
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(10.dp)
+                                .background(Color.DarkGray, MaterialTheme.shapes.small)
+                                .clip(MaterialTheme.shapes.small)
+                        ) {
                             if (thumbBitmap != null) {
                                 Image(
                                     bitmap = thumbBitmap!!.asImageBitmap(),
