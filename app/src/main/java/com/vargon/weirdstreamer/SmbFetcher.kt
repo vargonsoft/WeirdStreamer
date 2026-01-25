@@ -20,19 +20,12 @@ import kotlinx.coroutines.withContext
 import okio.buffer
 import okio.source
 import okio.ForwardingSource
-import okio.Source
 import okio.Buffer
 import java.io.File
 import java.util.Properties
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import java.io.InterruptedIOException
-
-/**
- * Metadata to pass the SmbFile to the decoder for random access.
- */
-@OptIn(ExperimentalCoilApi::class)
-class SmbMetadata(val smbFile: SmbFile) : ImageSource.Metadata()
 
 class SmbFetcher(
     private val data: Any,

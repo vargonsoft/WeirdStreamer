@@ -2,7 +2,6 @@ package com.vargon.weirdstreamer
 
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
-import android.media.MediaDataSource
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
@@ -19,8 +18,6 @@ import coil.decode.Decoder
 import coil.decode.ImageSource
 import coil.fetch.SourceResult
 import coil.request.Options
-import jcifs.smb.SmbFile
-import jcifs.smb.SmbRandomAccessFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.runInterruptible
@@ -29,10 +26,8 @@ import okio.buffer
 import okio.sink
 import java.io.File
 import java.io.FileInputStream
-import java.io.IOException
 import java.io.InterruptedIOException
 import java.util.concurrent.CancellationException
-import kotlin.math.min
 
 /**
  * Advanced multi-stage video thumbnail decoder:
@@ -102,16 +97,12 @@ class VideoThumbnailDecoder(
 
                 if (tempFile.exists() && tempFile.length() > 0) {
                     // A. Try system retriever on local file (very stable)
-                    var hasVideo = false
-                    var retrieverSuccess = false
                     bitmap = runInterruptible(Dispatchers.IO) {
                         val retriever = MediaMetadataRetriever()
                         var fis: FileInputStream? = null
                         try {
                             fis = FileInputStream(tempFile)
                             retriever.setDataSource(fis.fd)
-                            retrieverSuccess = true
-                            hasVideo = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO) == "yes"
                             tryGetFrame(retriever, targetTimeMicros)
                         } catch (e: Exception) {
                             null
@@ -224,52 +215,6 @@ class VideoThumbnailDecoder(
                 ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
         } catch (e: Exception) {
             null
-        }
-    }
-
-    private class SmbMediaDataSource(smbFile: SmbFile) : MediaDataSource() {
-        private var raf: SmbRandomAccessFile? = try { smbFile.openRandomAccess("r") } catch (e: IOException) { null }
-        private var closed = false
-        private val buffer = ByteArray(64 * 1024) 
-        private var bufferPos = -1L
-        private var bufferSize = 0
-
-        override fun readAt(position: Long, data: ByteArray, offset: Int, size: Int): Int {
-            if (closed || raf == null) return -1
-            if (size <= 0) return 0
-
-            if (bufferPos != -1L && position >= bufferPos && position < bufferPos + bufferSize) {
-                val available = (bufferPos + bufferSize - position).toInt()
-                val toCopy = min(size, available)
-                System.arraycopy(buffer, (position - bufferPos).toInt(), data, offset, toCopy)
-                return toCopy
-            }
-
-            return try {
-                val currentRaf = raf!!
-                if (size >= buffer.size) {
-                    currentRaf.seek(position)
-                    currentRaf.read(data, offset, size)
-                } else {
-                    currentRaf.seek(position)
-                    bufferPos = position
-                    bufferSize = currentRaf.read(buffer, 0, buffer.size)
-                    if (bufferSize <= 0) {
-                        bufferPos = -1
-                        return -1
-                    }
-                    val toCopy = min(size, bufferSize)
-                    System.arraycopy(buffer, 0, data, offset, toCopy)
-                    toCopy
-                }
-            } catch (e: IOException) { -1 }
-        }
-
-        override fun getSize(): Long = try { raf?.length() ?: -1L } catch (e: IOException) { -1L }
-        override fun close() {
-            closed = true
-            try { raf?.close() } catch (e: IOException) {}
-            raf = null
         }
     }
 
