@@ -252,6 +252,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         items
                     }
+                    
+                    // Refresh sources list to show newly added servers
+                    if (source is MediaSource.Server) {
+                        refreshSources()
+                    }
                 } else {
                     val exception = result.exceptionOrNull()
                     if (exception is SmbAuthException) {

@@ -178,6 +178,11 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
 
 @Composable
 private fun SourceSelectionScreen(viewModel: MediaViewModel) {
+    // Refresh sources when this screen is shown
+    LaunchedEffect(Unit) {
+        viewModel.refreshSources()
+    }
+    
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
             "SMB Shares",
