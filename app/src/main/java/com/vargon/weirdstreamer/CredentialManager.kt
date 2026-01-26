@@ -80,4 +80,49 @@ class CredentialManager(context: Context) {
     fun isGridView(path: String): Boolean {
         return sharedPreferences.getBoolean("grid_view_$path", false)
     }
+
+    // Server API token management
+    fun saveServerToken(serverUrl: String, token: String, expiresAt: Long) {
+        sharedPreferences.edit().apply {
+            putString("${serverUrl}_token", token)
+            putLong("${serverUrl}_expires", expiresAt)
+            apply()
+        }
+    }
+
+    fun getServerToken(serverUrl: String): String? {
+        val token = sharedPreferences.getString("${serverUrl}_token", null)
+        val expiresAt = sharedPreferences.getLong("${serverUrl}_expires", 0)
+        
+        // Check if token is expired
+        if (token != null && System.currentTimeMillis() / 1000 < expiresAt) {
+            return token
+        }
+        return null
+    }
+
+    fun clearServerToken(serverUrl: String) {
+        sharedPreferences.edit().apply {
+            remove("${serverUrl}_token")
+            remove("${serverUrl}_expires")
+            apply()
+        }
+    }
+
+    fun addApiServer(serverUrl: String) {
+        val servers = getApiServers().toMutableSet()
+        servers.add(serverUrl)
+        sharedPreferences.edit().putStringSet("api_servers", servers).apply()
+    }
+
+    fun removeApiServer(serverUrl: String) {
+        val servers = getApiServers().toMutableSet()
+        servers.remove(serverUrl)
+        sharedPreferences.edit().putStringSet("api_servers", servers).apply()
+        clearServerToken(serverUrl)
+    }
+
+    fun getApiServers(): Set<String> {
+        return sharedPreferences.getStringSet("api_servers", emptySet()) ?: emptySet()
+    }
 }

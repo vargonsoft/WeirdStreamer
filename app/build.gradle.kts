@@ -57,6 +57,11 @@ dependencies {
     implementation(libs.media3.common)
     implementation(libs.media3.inspector)
     implementation(libs.kotlinx.coroutines.guava)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.gson)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.gson)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

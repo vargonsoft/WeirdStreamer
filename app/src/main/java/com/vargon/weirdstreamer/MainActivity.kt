@@ -12,7 +12,10 @@ import com.vargon.weirdstreamer.ui.components.*
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 
 class MainActivity : ComponentActivity() {
-    private val viewModel: SmbViewModel by viewModels()
+    // Use the new MediaViewModel that supports both SMB and Server API
+    private val viewModel: MediaViewModel by viewModels()
+    // Uncomment below to use legacy SMB-only mode:
+    // private val smbViewModel: SmbViewModel by viewModels()
 
     @OptIn(ExperimentalTvMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,10 +54,12 @@ class MainActivity : ComponentActivity() {
                             onBack = { showSettings = false }
                         )
                     } else {
-                        SmbBrowser(
+                        MediaBrowser(
                             viewModel = viewModel,
                             onOpenSettings = { showSettings = true }
                         )
+                        // For legacy SMB-only mode, use:
+                        // SmbBrowser(viewModel = smbViewModel, onOpenSettings = { showSettings = true })
                     }
                 }
             }

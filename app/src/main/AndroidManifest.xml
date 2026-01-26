@@ -19,6 +19,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.WeirdStreamer"
+        android:usesCleartextTraffic="true"
         tools:replace="android:allowBackup,android:icon,android:label,android:supportsRtl,android:theme,android:banner">
         <activity
             android:name=".MainActivity"

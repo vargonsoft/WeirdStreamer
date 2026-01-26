@@ -25,6 +25,7 @@ import androidx.tv.material3.*
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.vargon.weirdstreamer.SmbFileItem
+import com.vargon.weirdstreamer.repository.FileItem
 import java.util.Locale
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -77,6 +78,19 @@ fun FileTileItem(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -
         modifier = modifier,
         onClick = onClick,
         thumbnailUrl = if (!item.isDirectory && item.name != "..") item.path else null
+    )
+}
+
+// Overload for new FileItem from repository
+@Composable
+fun FileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    TileItem(
+        title = item.name,
+        subtitle = if (!item.isDirectory && item.name != "..") formatFileSize(item.size) else null,
+        icon = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description,
+        modifier = modifier,
+        onClick = onClick,
+        thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && item.name != "..") item.path else null
     )
 }
 
@@ -210,6 +224,96 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
                     Text(text = formatFileSize(item.size), style = MaterialTheme.typography.bodySmall)
                 }
             }
+        }
+    }
+}
+
+// Overload for new FileItem from repository
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val icon = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description
+    Surface(
+        onClick = onClick,
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent,
+            pressedContainerColor = Color.Transparent
+        ),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, Color.White),
+                inset = 0.dp,
+                shape = MaterialTheme.shapes.small
+            )
+        ),
+        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                var isImageLoaded by remember { mutableStateOf(false) }
+                
+                if (!isImageLoaded) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
+                }
+                
+                val thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && item.name != "..") item.path else null
+                if (thumbnailUrl != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(thumbnailUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        onSuccess = { isImageLoaded = true },
+                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
+                if (!item.isDirectory && item.name != "..") {
+                    Text(text = formatFileSize(item.size), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+// Overload for host row with delete action
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun HostRowItem(host: String, modifier: Modifier = Modifier, onDelete: () -> Unit = {}, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent,
+            pressedContainerColor = Color.Transparent
+        ),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, Color.White),
+                inset = 0.dp,
+                shape = MaterialTheme.shapes.small
+            )
+        ),
+        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(32.dp))
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(text = host, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         }
     }
 }
