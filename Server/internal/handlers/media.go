@@ -1,0 +1,276 @@
+package handlers
+
+import (
+	"encoding/base64"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/gorilla/mux"
+	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/media"
+	"github.com/weirdstreamer/server/internal/models"
+)
+
+type MediaHandler struct {
+	db       *database.DB
+	streamer *media.Streamer
+	scanner  *media.Scanner
+}
+
+func NewMediaHandler(db *database.DB) *MediaHandler {
+	return &MediaHandler{
+		db:       db,
+		streamer: media.NewStreamer(),
+		scanner:  media.NewScanner(db),
+	}
+}
+
+// ListMedia godoc
+// @Summary List media items
+// @Description Get list of all media items, optionally filtered by type
+// @Tags media
+// @Produce json
+// @Param type query string false "Media type filter (video, image, document)"
+// @Success 200 {array} models.MediaItem
+// @Failure 500 {object} models.ErrorResponse
+// @Security BearerAuth
+// @Router /api/media [get]
+func (h *MediaHandler) ListMedia(w http.ResponseWriter, r *http.Request) {
+	mediaType := r.URL.Query().Get("type")
+
+	items, err := h.db.ListMediaItems(mediaType)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list media")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, items)
+}
+
+// GetMediaInfo godoc
+// @Summary Get media item info
+// @Description Get detailed information about a specific media item
+// @Tags media
+// @Produce json
+// @Param id path string true "Media ID"
+// @Success 200 {object} models.MediaItem
+// @Failure 404 {object} models.ErrorResponse
+// @Security BearerAuth
+// @Router /api/media/{id} [get]
+func (h *MediaHandler) GetMediaInfo(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	path := vars["path"]
+
+	item, err := h.db.GetMediaItem(path)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Media not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, item)
+}
+
+// StreamMedia godoc
+// @Summary Stream media file
+// @Description Stream video or image file with range request support
+// @Tags media
+// @Produce application/octet-stream
+// @Param path query string true "File path"
+// @Success 200
+// @Success 206
+// @Failure 404 {object} models.ErrorResponse
+// @Security BearerAuth
+// @Router /api/media/stream [get]
+func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
+	encodedPath := r.URL.Query().Get("path")
+	if encodedPath == "" {
+		respondError(w, http.StatusBadRequest, "Missing path parameter")
+		return
+	}
+
+	// Base64 decode the path
+	pathBytes, err := base64.StdEncoding.DecodeString(encodedPath)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid path encoding")
+		return
+	}
+	path := string(pathBytes)
+
+	// Log the request for debugging
+	log.Printf("Stream request - Path: %s, User-Agent: %s", path, r.Header.Get("User-Agent"))
+
+	// Check if user wants to force transcoding
+	forceTranscode := r.URL.Query().Get("transcode") == "1"
+
+	// Validate path is within allowed media paths
+	if !h.isValidMediaPath(path) {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
+	item, err := h.db.GetMediaItem(path)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Media not found")
+		return
+	}
+
+	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to stream media")
+		return
+	}
+}
+
+// BrowseDirectory godoc
+// @Summary Browse directory
+// @Description Browse media directory structure
+// @Tags media
+// @Produce json
+// @Param path query string false "Directory path (relative to media root)"
+// @Success 200 {object} models.Directory
+// @Failure 500 {object} models.ErrorResponse
+// @Security BearerAuth
+// @Router /api/media/browse [get]
+func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
+	relativePath := r.URL.Query().Get("path")
+	
+	var dirs []models.Directory
+	var items []models.MediaItem
+
+	// If no path specified, show root media directories
+	if relativePath == "" {
+		for _, mediaPath := range config.GlobalConfig.Media.Paths {
+			if stat, err := os.Stat(mediaPath.Path); err == nil && stat.IsDir() {
+				dirs = append(dirs, models.Directory{
+					Path: filepath.Base(mediaPath.Path),
+					Name: filepath.Base(mediaPath.Path),
+				})
+			}
+		}
+		
+		result := models.Directory{
+			Path:  "",
+			Name:  "Media",
+			Dirs:  dirs,
+			Items: []models.MediaItem{},
+		}
+		respondJSON(w, http.StatusOK, result)
+		return
+	}
+
+	// Browse within a specific media path
+	var targetPath string
+	pathParts := strings.Split(strings.Trim(relativePath, "/"), "/")
+	
+	// Find which root this belongs to
+	for _, mediaPath := range config.GlobalConfig.Media.Paths {
+		if filepath.Base(mediaPath.Path) == pathParts[0] {
+			if len(pathParts) > 1 {
+				targetPath = filepath.Join(mediaPath.Path, filepath.Join(pathParts[1:]...))
+			} else {
+				targetPath = mediaPath.Path
+			}
+			break
+		}
+	}
+	
+	if targetPath == "" {
+		respondError(w, http.StatusNotFound, "Path not found")
+		return
+	}
+	
+	// Validate path is within allowed media paths
+	if !h.isValidMediaPath(targetPath) {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
+	entries, err := os.ReadDir(targetPath)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Directory not found")
+		return
+	}
+
+	for _, entry := range entries {
+		entryPath := filepath.Join(targetPath, entry.Name())
+		relPath := filepath.Join(relativePath, entry.Name())
+		
+		if entry.IsDir() {
+			dirs = append(dirs, models.Directory{
+				Path: relPath,
+				Name: entry.Name(),
+			})
+		} else {
+			// Try to get from database
+			if item, err := h.db.GetMediaItem(entryPath); err == nil {
+				items = append(items, *item)
+			}
+		}
+	}
+
+	result := models.Directory{
+		Path:  relativePath,
+		Name:  filepath.Base(relativePath),
+		Dirs:  dirs,
+		Items: items,
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// ScanMedia godoc
+// @Summary Scan media directories
+// @Description Trigger a scan of configured media directories
+// @Tags media
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} models.ErrorResponse
+// @Security BearerAuth
+// @Router /api/media/scan [post]
+func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
+	go h.scanner.ScanMediaPaths()
+	respondJSON(w, http.StatusOK, map[string]string{"status": "scan started"})
+}
+
+// ServeThumbnail serves thumbnail files
+func (h *MediaHandler) ServeThumbnail(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	filename := vars["filename"]
+
+	// Security: prevent path traversal
+	filename = filepath.Clean("/" + filename)[1:]
+	if strings.Contains(filename, "..") {
+		respondError(w, http.StatusBadRequest, "Invalid filename")
+		return
+	}
+
+	thumbnailPath := filepath.Join(config.GlobalConfig.Media.ThumbnailPath, filename)
+	
+	if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
+		respondError(w, http.StatusNotFound, "Thumbnail not found")
+		return
+	}
+
+	http.ServeFile(w, r, thumbnailPath)
+}
+
+func (h *MediaHandler) isValidMediaPath(path string) bool {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+
+	for _, mediaPath := range config.GlobalConfig.Media.Paths {
+		absRoot, err := filepath.Abs(mediaPath.Path)
+		if err != nil {
+			continue
+		}
+		if strings.HasPrefix(absPath, absRoot) {
+			return true
+		}
+	}
+	return false
+}

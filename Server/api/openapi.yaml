@@ -1,0 +1,369 @@
+openapi: 3.0.3
+info:
+  title: Media Streaming Server API
+  description: High-performance media streaming server with authentication and thumbnail generation
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: AGPL-3.0-or-later
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://your-server.com
+    description: Production server
+
+tags:
+  - name: auth
+    description: Authentication endpoints
+  - name: media
+    description: Media management and streaming endpoints
+
+paths:
+  /api/auth/login:
+    post:
+      tags:
+        - auth
+      summary: Login user
+      description: Authenticate user and receive JWT token
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/media:
+    get:
+      tags:
+        - media
+      summary: List media items
+      description: Get list of all media items, optionally filtered by type
+      operationId: listMedia
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          description: Filter by media type
+          required: false
+          schema:
+            type: string
+            enum: [video, image, document]
+      responses:
+        '200':
+          description: List of media items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/media/browse:
+    get:
+      tags:
+        - media
+      summary: Browse directory
+      description: Browse media directory structure
+      operationId: browseDirectory
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: path
+          in: query
+          description: Directory path relative to media root
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Directory contents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Directory'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/media/stream:
+    get:
+      tags:
+        - media
+      summary: Stream media file
+      description: Stream video or image file with HTTP range request support
+      operationId: streamMedia
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: path
+          in: query
+          description: Full file path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Full file content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: Partial content (range request)
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Media not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/media/scan:
+    post:
+      tags:
+        - media
+      summary: Scan media directories
+      description: Trigger a scan of configured media directories
+      operationId: scanMedia
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Scan started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: scan started
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/media/{path}:
+    get:
+      tags:
+        - media
+      summary: Get media item info
+      description: Get detailed information about a specific media item
+      operationId: getMediaInfo
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: path
+          in: path
+          description: Media file path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Media item details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Media not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /thumbnails/{filename}:
+    get:
+      tags:
+        - media
+      summary: Get thumbnail
+      description: Retrieve thumbnail image for media file
+      operationId: getThumbnail
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Thumbnail image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Thumbnail not found
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /api/auth/login
+
+  responses:
+    UnauthorizedError:
+      description: Authentication required or token invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          format: password
+          example: password123
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT authentication token
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        expires_at:
+          type: integer
+          format: int64
+          description: Token expiration timestamp (Unix)
+          example: 1735689600
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: admin
+        is_admin:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-01-26T10:00:00Z
+
+    MediaItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 42
+        path:
+          type: string
+          example: /media/videos/movie.mp4
+        name:
+          type: string
+          example: movie.mp4
+        type:
+          type: string
+          enum: [video, image, document]
+          example: video
+        size:
+          type: integer
+          format: int64
+          description: File size in bytes
+          example: 1073741824
+        mime_type:
+          type: string
+          example: video/mp4
+        thumbnail_url:
+          type: string
+          nullable: true
+          example: /thumbnails/movie.mp4.jpg
+        duration:
+          type: number
+          format: double
+          nullable: true
+          description: Duration in seconds (videos only)
+          example: 7200.5
+        width:
+          type: integer
+          nullable: true
+          example: 1920
+        height:
+          type: integer
+          nullable: true
+          example: 1080
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-01-26T10:00:00Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-01-26T10:00:00Z
+
+    Directory:
+      type: object
+      properties:
+        path:
+          type: string
+          example: /videos/movies
+        name:
+          type: string
+          example: movies
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaItem'
+        dirs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Directory'
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Unauthorized
+        message:
+          type: string
+          example: Invalid credentials

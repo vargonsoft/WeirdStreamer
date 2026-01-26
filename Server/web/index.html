@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Streaming Server</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Login Screen -->
+        <div id="login-screen" class="screen active">
+            <div class="login-container">
+                <h1>Media Streaming Server</h1>
+                <form id="login-form">
+                    <input type="text" id="username" placeholder="Username" required>
+                    <input type="password" id="password" placeholder="Password" required>
+                    <button type="submit">Login</button>
+                    <div id="login-error" class="error"></div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Screen -->
+        <div id="main-screen" class="screen">
+            <header>
+                <h1>Media Library</h1>
+                <div class="header-controls">
+                    <button id="scan-btn" class="btn">Scan Media</button>
+                    <button id="settings-btn" class="btn" style="display: none;">⚙️ Settings</button>
+                    <button id="logout-btn" class="btn">Logout</button>
+                </div>
+            </header>
+
+            <nav class="tabs">
+                <button class="tab active" data-type="all">All</button>
+                <button class="tab" data-type="video">Videos</button>
+                <button class="tab" data-type="image">Images</button>
+                <button class="tab" data-type="document">Documents</button>
+            </nav>
+
+            <div class="breadcrumb" id="breadcrumb"></div>
+
+            <div class="content">
+                <div id="directory-list" class="directory-list"></div>
+                <div id="media-grid" class="media-grid"></div>
+            </div>
+        </div>
+
+        </div>
+
+        <!-- Settings Screen -->
+        <div id="settings-screen" class="screen">
+            <div class="settings-container">
+                <h1>⚙️ Settings</h1>
+                <button id="close-settings-btn" class="btn">← Back to Media</button>
+                
+                <div class="settings-tabs">
+                    <button class="settings-tab active" data-tab="server">Server & Media</button>
+                    <button class="settings-tab" data-tab="users">User Management</button>
+                    <button class="settings-tab" data-tab="account">My Account</button>
+                </div>
+
+                <!-- Server & Media Tab -->
+                <div id="server-tab" class="settings-tab-content active">
+                    <div class="settings-group">
+                        <h3>Media Paths</h3>
+                        <div id="media-paths-list"></div>
+                        <div style="margin-top: 10px;">
+                            <input type="text" id="new-path-input" placeholder="/path/to/media" class="settings-input">
+                            <button id="add-path-btn" class="btn">Add Path</button>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <h3>Server Settings</h3>
+                        <label>Port: <input type="number" id="server-port" class="settings-input" style="width: 100px;"></label><br><br>
+                        <label>Host: <input type="text" id="server-host" class="settings-input" style="width: 250px;"></label>
+                    </div>
+
+                    <div class="settings-group">
+                        <h3>Streaming Settings</h3>
+                        <label><input type="checkbox" id="enable-http2"> Enable HTTP/2</label><br><br>
+                        <label>Chunk Size (bytes): <input type="number" id="chunk-size" class="settings-input" style="width: 150px;"></label>
+                    </div>
+
+                    <button id="save-settings-btn" class="btn" style="margin-top: 20px;">💾 Save Settings</button>
+                    <p id="settings-message" style="margin-top: 10px; color: #667eea; font-weight: bold;"></p>
+                </div>
+
+                <!-- User Management Tab (Admin Only) -->
+                <div id="users-tab" class="settings-tab-content">
+                    <div class="settings-group">
+                        <h3>Create New User</h3>
+                        <input type="text" id="new-username" placeholder="Username" class="settings-input" style="margin-bottom: 10px;"><br>
+                        <input type="password" id="new-password" placeholder="Password" class="settings-input" style="margin-bottom: 10px;"><br>
+                        <label><input type="checkbox" id="new-user-admin"> Administrator</label><br><br>
+                        <button id="create-user-btn" class="btn">➕ Create User</button>
+                    </div>
+
+                    <div class="settings-group">
+                        <h3>Existing Users</h3>
+                        <div id="users-list"></div>
+                    </div>
+                    <p id="users-message" style="margin-top: 10px; color: #667eea; font-weight: bold;"></p>
+                </div>
+
+                <!-- My Account Tab -->
+                <div id="account-tab" class="settings-tab-content">
+                    <div class="settings-group">
+                        <h3>Change Password</h3>
+                        <input type="password" id="new-user-password" placeholder="New Password" class="settings-input" style="margin-bottom: 10px;"><br>
+                        <input type="password" id="confirm-user-password" placeholder="Confirm Password" class="settings-input" style="margin-bottom: 10px;"><br>
+                        <button id="change-password-btn" class="btn">🔑 Change Password</button>
+                        <p id="account-message" style="margin-top: 10px; color: #667eea; font-weight: bold;"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Video Player Modal -->
+        <div id="player-modal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2 id="player-title"></h2>
+                <button id="transcode-btn" class="btn" style="margin-bottom: 10px;">🔄 Transcode to MP4</button>
+                <video id="video-player" controls></video>
+            </div>
+        </div>
+
+        <!-- Image Viewer Modal -->
+        <div id="image-modal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2 id="image-title"></h2>
+                <img id="image-viewer" src="" alt="">
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
