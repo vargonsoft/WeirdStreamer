@@ -50,6 +50,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var authRequiredHost by mutableStateOf<String?>(null)
         private set
 
+    var authRequiredServerUrl by mutableStateOf<String?>(null)
+
     var smbHosts by mutableStateOf<List<String>>(emptyList())
         private set
 
@@ -195,9 +197,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         loadPath(source, "smb://$host/")
     }
 
-    fun selectServerSource(serverUrl: String) {
+    fun selectServerSource(serverUrl: String, username: String? = null, password: String? = null) {
         val source = MediaSource.Server(serverUrl, "")
-        loadPath(source, "")
+        loadPath(source, "", username, password, save = false)
     }
 
     fun loadPath(source: MediaSource, path: String, user: String? = null, pass: String? = null, save: Boolean = false) {
@@ -254,6 +256,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     val exception = result.exceptionOrNull()
                     if (exception is SmbAuthException) {
                         authRequiredHost = (source as? MediaSource.Smb)?.host
+                    } else if (source is MediaSource.Server && exception?.message?.contains("401") == true) {
+                        // Server returned 401 - authentication required
+                        authRequiredServerUrl = source.serverUrl
                     } else {
                         throw exception ?: Exception("Unknown error")
                     }

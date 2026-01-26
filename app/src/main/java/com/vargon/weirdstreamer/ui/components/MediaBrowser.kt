@@ -144,7 +144,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         )
     }
 
-    // Auth Dialog
+    // Auth Dialog for SMB
     if (showAuthDialog && viewModel.authRequiredHost != null) {
         AuthDialog(
             host = viewModel.authRequiredHost!!,
@@ -155,6 +155,22 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             onLogin = { user, pass, save ->
                 showAuthDialog = false
                 currentSource?.let { viewModel.loadPath(it, viewModel.currentPath, user, pass, save) }
+            }
+        )
+    }
+    
+    // Auth Dialog for Server API
+    if (viewModel.authRequiredServerUrl != null) {
+        AuthDialog(
+            host = viewModel.authRequiredServerUrl!!,
+            onDismiss = { 
+                viewModel.authRequiredServerUrl = null
+                viewModel.returnToSourceSelection()
+            },
+            onLogin = { user, pass, save ->
+                val serverUrl = viewModel.authRequiredServerUrl!!
+                viewModel.authRequiredServerUrl = null
+                viewModel.selectServerSource(serverUrl, user, pass)
             }
         )
     }
@@ -289,7 +305,7 @@ private fun AddServerDialog(
     onAddSmb: (String) -> Unit,
     onAddServer: (String) -> Unit
 ) {
-    var selectedType by remember { mutableStateOf(0) } // 0 = SMB, 1 = Server
+    var selectedType by remember { mutableStateOf<Int?>(null) } // null = not selected, 0 = SMB, 1 = Server
     var address by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -301,70 +317,89 @@ private fun AddServerDialog(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                Row(modifier = Modifier.fillMaxWidth()) {
+                if (selectedType == null) {
+                    // Step 1: Select source type
+                    Text("Select source type:", style = MaterialTheme.typography.bodyLarge)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
                     Button(
                         onClick = { selectedType = 0 },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("SMB")
+                        Text("SMB Share")
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = { selectedType = 1 },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("API Server")
+                        Text("WeirdStreamer Server")
                     }
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                TextField(
-                    value = address,
-                    onValueChange = { address = it },
-                    label = { Text(if (selectedType == 0) "SMB Host (e.g., 192.168.1.100)" else "Server URL (e.g., http://192.168.1.100:8080)") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = {
-                        keyboardController?.hide()
-                        if (address.isNotBlank()) {
-                            when (selectedType) {
-                                0 -> onAddSmb(address)
-                                1 -> onAddServer(address)
-                            }
-                        }
-                    })
-                )
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Button(onClick = onDismiss) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                         Text("Cancel")
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = {
-                        if (address.isNotBlank()) {
-                            when (selectedType) {
-                                0 -> onAddSmb(address)
-                                1 -> onAddServer(address)
+                } else {
+                    // Step 2: Enter address
+                    Text(
+                        if (selectedType == 0) "Enter SMB Host" else "Enter Server URL",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    TextField(
+                        value = address,
+                        onValueChange = { address = it },
+                        label = { Text(if (selectedType == 0) "Host (e.g., 192.168.1.100)" else "URL (e.g., http://192.168.1.100:8080)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            keyboardController?.hide()
+                            if (address.isNotBlank()) {
+                                when (selectedType) {
+                                    0 -> onAddSmb(address)
+                                    1 -> onAddServer(address)
+                                }
                             }
+                        })
+                    )
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(onClick = { selectedType = null; address = "" }) {
+                            Text("Back")
                         }
-                    }) {
-                        Text("Add")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(onClick = onDismiss) {
+                            Text("Cancel")
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(onClick = {
+                            if (address.isNotBlank()) {
+                                when (selectedType) {
+                                    0 -> onAddSmb(address)
+                                    1 -> onAddServer(address)
+                                }
+                            }
+                        }) {
+                            Text("Add")
+                        }
                     }
                 }
             }
         }
     }
 
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+    LaunchedEffect(selectedType) {
+        if (selectedType != null) {
+            focusRequester.requestFocus()
+        }
     }
 }
