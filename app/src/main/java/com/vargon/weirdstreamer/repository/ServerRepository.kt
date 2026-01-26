@@ -36,10 +36,12 @@ class ServerRepository(
                     
                     // Add media items
                     directory.items?.forEach { mediaItem ->
+                        // For server items, store the streaming URL in the path
+                        val streamingPath = getStreamUrl(mediaItem.path)
                         items.add(
                             FileItem(
                                 name = mediaItem.name,
-                                path = mediaItem.path,
+                                path = streamingPath,
                                 isDirectory = false,
                                 size = mediaItem.size,
                                 mimeType = mediaItem.mimeType,

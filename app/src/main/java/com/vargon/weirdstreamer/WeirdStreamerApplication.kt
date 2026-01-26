@@ -11,6 +11,11 @@ import coil.disk.DiskCache
 import coil.key.Keyer
 import coil.memory.MemoryCache
 import coil.request.Options
+import okhttp3.OkHttpClient
+import java.security.cert.X509Certificate
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 class SmbKeyer : Keyer<String> {
     override fun key(data: String, options: Options): String? {
@@ -29,7 +34,47 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader {
         Log.d("WeirdStreamerApp", "Creating new ImageLoader")
         val credentialManager = CredentialManager(this)
+        
+        // Create OkHttp client with SSL bypass and auth for server thumbnails
+        val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+        })
+        
+        val sslContext = SSLContext.getInstance("SSL")
+        sslContext.init(null, trustAllCerts, java.security.SecureRandom())
+        val sslSocketFactory = sslContext.socketFactory
+        
+        val okHttpClient = OkHttpClient.Builder()
+            .sslSocketFactory(sslSocketFactory, trustAllCerts[0] as X509TrustManager)
+            .hostnameVerifier { _, _ -> true }
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val url = request.url.toString()
+                
+                // If it's a server API thumbnail request, add auth header
+                if (url.contains("/thumbnails/") || url.contains("/api/")) {
+                    // Extract server URL from the thumbnail URL
+                    val serverUrl = url.substringBefore("/thumbnails/").substringBefore("/api/")
+                    val token = credentialManager.getServerToken(serverUrl)
+                    
+                    if (token != null) {
+                        val authenticatedRequest = request.newBuilder()
+                            .header("Authorization", "Bearer $token")
+                            .build()
+                        chain.proceed(authenticatedRequest)
+                    } else {
+                        chain.proceed(request)
+                    }
+                } else {
+                    chain.proceed(request)
+                }
+            }
+            .build()
+        
         return ImageLoader.Builder(this)
+            .okHttpClient(okHttpClient)
             .memoryCache {
                 MemoryCache.Builder(this)
                     .maxSizePercent(0.25)
