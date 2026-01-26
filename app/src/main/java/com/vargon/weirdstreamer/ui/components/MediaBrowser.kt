@@ -2,8 +2,6 @@ package com.vargon.weirdstreamer.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -11,6 +9,7 @@ import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -188,68 +187,74 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
     android.util.Log.d("SourceSelection", "SMB hosts: ${viewModel.smbHosts.size}, API servers: ${viewModel.apiServers.size}")
     android.util.Log.d("SourceSelection", "API servers list: ${viewModel.apiServers}")
     
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // SMB Shares Section
         Text(
             "SMB Shares",
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(bottom = 16.dp)
         )
         
-        if (viewModel.smbHosts.isEmpty()) {
-            Text("No SMB shares found. Use 'Add Source' to add manually.", 
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray)
-        } else {
-            FocusableList(
-                items = viewModel.smbHosts,
-                initialSelection = null,
-                isGridView = viewModel.isGridView
-            ) { host, modifier ->
-                if (viewModel.isGridView) {
-                    HostTileItem(host, modifier = modifier) {
-                        viewModel.selectSmbSource(host)
-                    }
-                } else {
-                    HostRowItem(host, modifier = modifier, onDelete = {
-                        viewModel.deleteServer(host)
-                    }) {
-                        viewModel.selectSmbSource(host)
+        Box(modifier = Modifier.weight(1f)) {
+            if (viewModel.smbHosts.isEmpty()) {
+                Text("No SMB shares found. Use 'Add Source' to add manually.", 
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(top = 16.dp))
+            } else {
+                FocusableList(
+                    items = viewModel.smbHosts,
+                    initialSelection = null,
+                    isGridView = viewModel.isGridView
+                ) { host, modifier ->
+                    if (viewModel.isGridView) {
+                        HostTileItem(host, modifier = modifier) {
+                            viewModel.selectSmbSource(host)
+                        }
+                    } else {
+                        HostRowItem(host, modifier = modifier, onDelete = {
+                            viewModel.deleteServer(host)
+                        }) {
+                            viewModel.selectSmbSource(host)
+                        }
                     }
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(32.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(32.dp))
 
+        // API Servers Section
         Text(
             "API Servers",
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(bottom = 16.dp)
         )
         
-        if (viewModel.apiServers.isEmpty()) {
-            Text("No API servers configured. Use 'Add Source' to add a server.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray)
-        } else {
-            FocusableList(
-                items = viewModel.apiServers,
-                initialSelection = null,
-                isGridView = viewModel.isGridView
-            ) { serverUrl, modifier ->
-                if (viewModel.isGridView) {
-                    HostTileItem(serverUrl, modifier = modifier) {
-                        viewModel.selectServerSource(serverUrl)
-                    }
-                } else {
-                    HostRowItem(serverUrl, modifier = modifier, onDelete = {
-                        viewModel.deleteApiServer(serverUrl)
-                    }) {
-                        viewModel.selectServerSource(serverUrl)
+        Box(modifier = Modifier.weight(1f)) {
+            if (viewModel.apiServers.isEmpty()) {
+                Text("No API servers configured. Use 'Add Source' to add a server.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(top = 16.dp))
+            } else {
+                FocusableList(
+                    items = viewModel.apiServers,
+                    initialSelection = null,
+                    isGridView = viewModel.isGridView
+                ) { serverUrl, modifier ->
+                    if (viewModel.isGridView) {
+                        HostTileItem(serverUrl, modifier = modifier) {
+                            viewModel.selectServerSource(serverUrl)
+                        }
+                    } else {
+                        HostRowItem(serverUrl, modifier = modifier, onDelete = {
+                            viewModel.deleteApiServer(serverUrl)
+                        }) {
+                            viewModel.selectServerSource(serverUrl)
+                        }
                     }
                 }
             }
@@ -277,6 +282,8 @@ private fun FileBrowserScreen(viewModel: MediaViewModel) {
 }
 
 private fun handleFileClick(viewModel: MediaViewModel, path: String, isDirectory: Boolean) {
+    android.util.Log.d("MediaBrowser", "handleFileClick: path=$path, isDirectory=$isDirectory")
+    
     if (path == "UP") {
         viewModel.navigateUp()
         return
@@ -294,19 +301,31 @@ private fun handleFileClick(viewModel: MediaViewModel, path: String, isDirectory
             }
         }
     } else {
+        val isVideo = path.endsWith(".mp4", true) || 
+                      path.endsWith(".mkv", true) ||
+                      path.endsWith(".avi", true) ||
+                      path.endsWith(".mov", true) ||
+                      path.endsWith(".webm", true)
+        val isImage = viewModel.isImage(path)
+        val isPdf = viewModel.isPdf(path)
+        
+        android.util.Log.d("MediaBrowser", "File type check: isVideo=$isVideo, isImage=$isImage, isPdf=$isPdf")
+        
         when {
-            path.endsWith(".mp4", true) || 
-            path.endsWith(".mkv", true) ||
-            path.endsWith(".avi", true) ||
-            path.endsWith(".mov", true) ||
-            path.endsWith(".webm", true) -> {
+            isVideo -> {
+                android.util.Log.d("MediaBrowser", "Playing video: $path")
                 viewModel.playVideo(path)
             }
-            viewModel.isImage(path) -> {
+            isImage -> {
+                android.util.Log.d("MediaBrowser", "Showing image: $path")
                 viewModel.showImage(path)
             }
-            viewModel.isPdf(path) -> {
+            isPdf -> {
+                android.util.Log.d("MediaBrowser", "Showing PDF: $path")
                 viewModel.showPdf(path)
+            }
+            else -> {
+                android.util.Log.w("MediaBrowser", "Unknown file type: $path")
             }
         }
     }

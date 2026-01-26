@@ -2,6 +2,7 @@ package com.vargon.weirdstreamer
 
 import android.app.Application
 import android.content.Context
+import android.util.Base64
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -331,7 +332,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun showImage(path: String) {
+        android.util.Log.d("MediaViewModel", "showImage called with path: $path")
         selectedImagePath = path
+        android.util.Log.d("MediaViewModel", "selectedImagePath set to: $selectedImagePath")
     }
 
     fun closeImage(lastViewedPath: String? = null) {
@@ -348,14 +351,29 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         selectedPdfPath = null
     }
 
+    private fun getActualFilename(path: String): String {
+        // If it's a server URL with base64-encoded path, decode it
+        if (path.contains("/api/media/stream?path=")) {
+            val base64Path = path.substringAfter("path=")
+            return try {
+                String(Base64.decode(base64Path, Base64.NO_WRAP))
+            } catch (e: Exception) {
+                path
+            }
+        }
+        return path
+    }
+
     fun isImage(path: String): Boolean {
-        val cleanPath = path.substringBefore('?').removeSuffix("/")
+        val actualPath = getActualFilename(path)
+        val cleanPath = actualPath.substringBefore('?').removeSuffix("/")
         val ext = cleanPath.substringAfterLast('.', "").lowercase()
         return ext in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
     }
 
     fun isPdf(path: String): Boolean {
-        val cleanPath = path.substringBefore('?').removeSuffix("/")
+        val actualPath = getActualFilename(path)
+        val cleanPath = actualPath.substringBefore('?').removeSuffix("/")
         val ext = cleanPath.substringAfterLast('.', "").lowercase()
         return ext == "pdf"
     }
