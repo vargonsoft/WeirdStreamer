@@ -39,7 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
-import com.vargon.weirdstreamer.SmbViewModel
+import com.vargon.weirdstreamer.MediaViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -50,7 +50,7 @@ import java.io.File
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun PdfViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> Unit) {
+fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp

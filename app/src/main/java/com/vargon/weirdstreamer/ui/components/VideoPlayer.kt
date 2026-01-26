@@ -39,13 +39,13 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.vargon.weirdstreamer.SmbDataSourceFactory
-import com.vargon.weirdstreamer.SmbViewModel
+import com.vargon.weirdstreamer.MediaViewModel
 import kotlinx.coroutines.delay
 import java.util.Locale
 
 @OptIn(UnstableApi::class)
 @Composable
-fun VideoPlayer(viewModel: SmbViewModel, path: String, onBack: () -> Unit) {
+fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: () -> Unit) {
     val context = LocalContext.current
     val exoPlayer = remember {
         val loadControl = DefaultLoadControl.Builder()

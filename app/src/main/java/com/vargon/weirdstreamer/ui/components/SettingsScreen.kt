@@ -27,12 +27,12 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
-import com.vargon.weirdstreamer.SmbViewModel
+import com.vargon.weirdstreamer.MediaViewModel
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SmbViewModel, onBack: () -> Unit) {
+fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val backFocus = remember { FocusRequester() }
@@ -146,11 +146,12 @@ fun SettingsScreen(viewModel: SmbViewModel, onBack: () -> Unit) {
         HorizontalDivider()
         Spacer(modifier = Modifier.height(24.dp))
 
-        Text("Saved Servers", style = MaterialTheme.typography.headlineSmall)
+        Text("SMB Shares", style = MaterialTheme.typography.headlineSmall)
         Spacer(modifier = Modifier.height(16.dp))
 
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(viewModel.savedServers) { host ->
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(viewModel.smbHosts.size) { index ->
+                val host = viewModel.smbHosts[index]
                 Surface(
                     onClick = { /* Could auto-connect here if desired */ },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
@@ -162,6 +163,32 @@ fun SettingsScreen(viewModel: SmbViewModel, onBack: () -> Unit) {
                         Spacer(modifier = Modifier.width(16.dp))
                         Text(host, modifier = Modifier.weight(1f))
                         Button(onClick = { viewModel.deleteServer(host) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Text("API Servers", style = MaterialTheme.typography.headlineSmall)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(viewModel.apiServers.size) { index ->
+                val serverUrl = viewModel.apiServers[index]
+                Surface(
+                    onClick = { /* Could auto-connect here if desired */ },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Dns, contentDescription = null)
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(serverUrl, modifier = Modifier.weight(1f))
+                        Button(onClick = { viewModel.deleteApiServer(serverUrl) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
                     }

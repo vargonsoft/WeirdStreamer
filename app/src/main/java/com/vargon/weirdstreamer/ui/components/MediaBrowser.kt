@@ -2,20 +2,27 @@ package com.vargon.weirdstreamer.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
@@ -284,27 +291,16 @@ private fun AddServerDialog(
 ) {
     var selectedType by remember { mutableStateOf(0) } // 0 = SMB, 1 = Server
     var address by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            Button(onClick = {
-                when (selectedType) {
-                    0 -> onAddSmb(address)
-                    1 -> onAddServer(address)
-                }
-            }) {
-                Text("Add")
-            }
-        },
-        dismissButton = {
-            Button(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-        title = { Text("Add Media Source") },
-        text = {
-            Column {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Surface(modifier = Modifier.width(500.dp)) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text("Add Media Source", style = MaterialTheme.typography.headlineSmall)
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Button(
                         onClick = { selectedType = 0 },
@@ -323,14 +319,52 @@ private fun AddServerDialog(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                OutlinedTextField(
+                TextField(
                     value = address,
                     onValueChange = { address = it },
                     label = { Text(if (selectedType == 0) "SMB Host (e.g., 192.168.1.100)" else "Server URL (e.g., http://192.168.1.100:8080)") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        keyboardController?.hide()
+                        if (address.isNotBlank()) {
+                            when (selectedType) {
+                                0 -> onAddSmb(address)
+                                1 -> onAddServer(address)
+                            }
+                        }
+                    })
                 )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Button(onClick = onDismiss) {
+                        Text("Cancel")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = {
+                        if (address.isNotBlank()) {
+                            when (selectedType) {
+                                0 -> onAddSmb(address)
+                                1 -> onAddServer(address)
+                            }
+                        }
+                    }) {
+                        Text("Add")
+                    }
+                }
             }
         }
-    )
+    }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
 }

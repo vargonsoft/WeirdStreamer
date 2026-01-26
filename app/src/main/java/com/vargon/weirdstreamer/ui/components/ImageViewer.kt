@@ -31,13 +31,13 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import coil.size.Size as CoilSize
-import com.vargon.weirdstreamer.SmbViewModel
+import com.vargon.weirdstreamer.MediaViewModel
 import kotlinx.coroutines.delay
 import java.io.File
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun ImageViewer(viewModel: SmbViewModel, initialPath: String, onBack: (String) -> Unit) {
+fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
     val images = remember { viewModel.getImagesInCurrentFolder() }
     var currentIndex by remember { mutableIntStateOf(images.indexOf(initialPath).coerceAtLeast(0)) }
