@@ -2,6 +2,8 @@ package com.vargon.weirdstreamer.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -183,7 +185,14 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
         viewModel.refreshSources()
     }
     
-    Column(modifier = Modifier.fillMaxSize()) {
+    android.util.Log.d("SourceSelection", "SMB hosts: ${viewModel.smbHosts.size}, API servers: ${viewModel.apiServers.size}")
+    android.util.Log.d("SourceSelection", "API servers list: ${viewModel.apiServers}")
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
         Text(
             "SMB Shares",
             style = MaterialTheme.typography.titleLarge,

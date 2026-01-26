@@ -155,8 +155,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshSources() {
         val savedSmb = credentialManager.getSavedServers()
         val savedApi = credentialManager.getApiServers()
+        android.util.Log.d("MediaViewModel", "refreshSources - SMB: $savedSmb, API: $savedApi")
         smbHosts = (savedSmb + discoveredHosts).distinct().sorted()
         apiServers = savedApi.toList().sorted()
+        android.util.Log.d("MediaViewModel", "refreshSources - smbHosts: $smbHosts, apiServers: $apiServers")
         discoverHosts()
     }
 
