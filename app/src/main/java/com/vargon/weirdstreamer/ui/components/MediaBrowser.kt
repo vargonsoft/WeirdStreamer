@@ -25,7 +25,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
 import com.vargon.weirdstreamer.MediaViewModel
@@ -80,17 +79,74 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 }
             }
         ) {
-            Text(
-                text = when (currentSource) {
-                    is MediaSource.Smb -> "SMB: ${viewModel.currentPath}"
-                    is MediaSource.Server -> "Server: ${currentSource.displayName()}${if (viewModel.currentPath.isNotEmpty()) " / ${viewModel.currentPath}" else ""}"
-                    null -> "Select Media Source"
-                },
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            // Display server/source and path in stacked layout
+            Column(modifier = Modifier.weight(1f)) {
+                when (currentSource) {
+                    is MediaSource.Smb -> {
+                        val pathWithoutScheme = viewModel.currentPath.removePrefix("smb://")
+                        val firstSlashIndex = pathWithoutScheme.indexOf('/')
+                        val serverName = if (firstSlashIndex > 0) {
+                            pathWithoutScheme.substring(0, firstSlashIndex)
+                        } else {
+                            pathWithoutScheme
+                        }
+                        val relativePath = if (firstSlashIndex > 0) {
+                            pathWithoutScheme.substring(firstSlashIndex)
+                        } else {
+                            "/"
+                        }
+                        
+                        Text(
+                            text = "SMB: $serverName",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Color.Gray
+                        )
+                        if (relativePath.isNotEmpty() && relativePath != "/") {
+                            TextWithStartEllipsis(
+                                text = relativePath.removePrefix("/"),
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(end = 16.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "/",
+                                style = MaterialTheme.typography.headlineMedium
+                            )
+                        }
+                    }
+                    is MediaSource.Server -> {
+                        Text(
+                            text = "Server: ${currentSource.displayName()}",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Color.Gray
+                        )
+                        if (viewModel.currentPath.isNotEmpty()) {
+                            TextWithStartEllipsis(
+                                text = viewModel.currentPath,
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(end = 16.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "/",
+                                style = MaterialTheme.typography.headlineMedium
+                            )
+                        }
+                    }
+                    null -> {
+                        Text(
+                            text = "Select Media Source",
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+                    }
+                }
+            }
             
             if (currentSource != null) {
                 Button(
