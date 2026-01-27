@@ -7,9 +7,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.*
@@ -27,6 +31,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
+import com.vargon.weirdstreamer.ContentFilter
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.repository.MediaSource
 
@@ -160,6 +165,18 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     Icon(
                         if (viewModel.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
                         contentDescription = "Switch View"
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Button(onClick = { viewModel.toggleContentFilter() }) {
+                    Icon(
+                        when (viewModel.contentFilter) {
+                            ContentFilter.ALL -> Icons.Default.FilterList
+                            ContentFilter.IMAGE -> Icons.Default.Image
+                            ContentFilter.VIDEO -> Icons.Default.VideoLibrary
+                            ContentFilter.PDF -> Icons.Default.PictureAsPdf
+                        },
+                        contentDescription = "Content Filter"
                     )
                 }
                 Spacer(modifier = Modifier.width(16.dp))
@@ -369,7 +386,7 @@ private fun FileBrowserScreen(
     }
 
     FocusableList(
-        items = viewModel.fileList,
+        items = viewModel.getFilteredFileList(),
         initialSelection = viewModel.getSelection(viewModel.currentPath),
         isGridView = viewModel.isGridView,
         onRequestToolbarFocus = {

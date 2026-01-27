@@ -30,6 +30,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Properties
 
+enum class ContentFilter {
+    ALL, IMAGE, VIDEO, PDF
+}
+
 class MediaViewModel(application: Application) : AndroidViewModel(application) {
     val credentialManager = CredentialManager(application)
     
@@ -62,6 +66,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var showHiddenFiles by mutableStateOf(credentialManager.getShowHiddenFiles())
         private set
 
+    var contentFilter by mutableStateOf(ContentFilter.ALL)
+        private set
+
     private var viewModeMap by mutableStateOf(mapOf<String, Boolean>())
 
     val isGridView: Boolean
@@ -86,6 +93,24 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val newState = !current
         viewModeMap = viewModeMap + (currentPath to newState)
         credentialManager.setGridView(currentPath, newState)
+    }
+
+    fun toggleContentFilter() {
+        contentFilter = when (contentFilter) {
+            ContentFilter.ALL -> ContentFilter.IMAGE
+            ContentFilter.IMAGE -> ContentFilter.VIDEO
+            ContentFilter.VIDEO -> ContentFilter.PDF
+            ContentFilter.PDF -> ContentFilter.ALL
+        }
+    }
+
+    fun getFilteredFileList(): List<FileItem> {
+        return when (contentFilter) {
+            ContentFilter.ALL -> fileList
+            ContentFilter.IMAGE -> fileList.filter { !it.isDirectory && isImage(it.path) }
+            ContentFilter.VIDEO -> fileList.filter { !it.isDirectory && isVideo(it.path) }
+            ContentFilter.PDF -> fileList.filter { !it.isDirectory && isPdf(it.path) }
+        }
     }
 
     private var discoveredHosts = emptyList<String>()

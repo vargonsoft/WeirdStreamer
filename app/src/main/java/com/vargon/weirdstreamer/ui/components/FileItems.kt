@@ -129,7 +129,7 @@ fun TileItem(
                 contentAlignment = Alignment.Center, 
                 modifier = Modifier.fillMaxSize()
             ) {
-                var isImageLoaded by remember { mutableStateOf(false) }
+                var isImageLoaded by remember(thumbnailUrl) { mutableStateOf(false) }
                 
                 if (!isImageLoaded) {
                     Icon(
@@ -198,7 +198,7 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                var isImageLoaded by remember { mutableStateOf(false) }
+                var isImageLoaded by remember(item.path) { mutableStateOf(false) }
                 
                 if (!isImageLoaded) {
                     Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
@@ -255,13 +255,13 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                var isImageLoaded by remember { mutableStateOf(false) }
+                val thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && item.name != "..") item.path else null
+                var isImageLoaded by remember(thumbnailUrl) { mutableStateOf(false) }
                 
                 if (!isImageLoaded) {
                     Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
                 }
                 
-                val thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && item.name != "..") item.path else null
                 if (thumbnailUrl != null) {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
