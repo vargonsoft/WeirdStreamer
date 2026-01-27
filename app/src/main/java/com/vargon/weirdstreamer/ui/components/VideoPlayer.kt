@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.VideoSettings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,7 +54,24 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     // Determine if this is an SMB or Server source
     val isSmbSource = remember(path) { path.startsWith("smb://") }
 
-    val exoPlayer = remember(path) {
+    // Transcode state - only applicable for server sources
+    var enableTranscode by remember { mutableStateOf(false) }
+
+    // Build the actual video URL with transcode parameter if needed
+    val videoUrl = remember(path, enableTranscode) {
+        if (!isSmbSource && enableTranscode) {
+            // Add transcode=1 parameter to the URL
+            if (path.contains("?")) {
+                "$path&transcode=1"
+            } else {
+                "$path?transcode=1"
+            }
+        } else {
+            path
+        }
+    }
+
+    val exoPlayer = remember(videoUrl) {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 50_000, // minBufferMs (increased from 32s to 50s)
@@ -87,7 +105,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             .build()
 
         player.apply {
-            val mediaItem = MediaItem.fromUri(path)
+            val mediaItem = MediaItem.fromUri(videoUrl)
             setMediaItem(mediaItem)
             prepare()
             playWhenReady = true
@@ -100,6 +118,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var lastControlsHideTime by remember { mutableLongStateOf(0L) }
     var isSeekingSlider by remember { mutableStateOf(false) }
+    var isFocusedOnTranscode by remember { mutableStateOf(false) }
     var playbackPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) } // value to show, isForward
@@ -148,6 +167,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             showControls = false
             lastControlsHideTime = System.currentTimeMillis()
             isSeekingSlider = false
+            isFocusedOnTranscode = false
         }
     }
 
@@ -179,6 +199,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             showControls = false
             lastControlsHideTime = now
             isSeekingSlider = false
+            isFocusedOnTranscode = false
         } else {
             // If back is pressed within 1 second of controls disappearing, ignore it.
             if (now - lastControlsHideTime > 1000) {
@@ -199,42 +220,86 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.DirectionUp -> {
-                            if (showControls && !isSeekingSlider) {
+                            if (isFocusedOnTranscode) {
+                                // Already on transcode button, do nothing or hide controls
+                                false
+                            } else if (isSeekingSlider && !isSmbSource) {
+                                // Move from slider to transcode button
+                                isFocusedOnTranscode = true
+                                isSeekingSlider = false
+                                updateInteraction()
+                                true
+                            } else if (showControls && !isSeekingSlider && !isSmbSource) {
+                                // Move from playback controls to slider
                                 isSeekingSlider = true
+                                updateInteraction()
+                                true
+                            } else if (showControls && !isSeekingSlider && isSmbSource) {
+                                // For SMB, just go to slider (no transcode button)
+                                isSeekingSlider = true
+                                updateInteraction()
+                                true
                             } else {
                                 updateInteraction()
+                                false
                             }
-                            true
                         }
                         Key.DirectionDown -> {
-                            if (isSeekingSlider) {
+                            if (isFocusedOnTranscode) {
+                                // Move from transcode button to slider
+                                isFocusedOnTranscode = false
+                                isSeekingSlider = true
+                                updateInteraction()
+                                true
+                            } else if (isSeekingSlider) {
+                                // Move from slider to playback controls
                                 isSeekingSlider = false
+                                updateInteraction()
+                                true
                             } else if (showControls) {
                                 showControls = false
                                 lastControlsHideTime = System.currentTimeMillis()
+                                isFocusedOnTranscode = false
+                                true
+                            } else {
+                                false
                             }
-                            true
                         }
                         Key.DirectionCenter, Key.Enter -> {
-                            updateInteraction()
-                            if (isPlaying) exoPlayer.pause() else exoPlayer.play()
-                            true
+                            if (isFocusedOnTranscode) {
+                                // Toggle transcode
+                                enableTranscode = !enableTranscode
+                                updateInteraction()
+                                true
+                            } else {
+                                updateInteraction()
+                                if (isPlaying) exoPlayer.pause() else exoPlayer.play()
+                                true
+                            }
                         }
                         Key.DirectionLeft -> {
-                            if (isSeekingSlider) {
+                            if (isFocusedOnTranscode) {
+                                // Do nothing on transcode button
+                                false
+                            } else if (isSeekingSlider) {
                                 performSkip(-30)
+                                true
                             } else {
                                 performSkip(-5)
+                                true
                             }
-                            true
                         }
                         Key.DirectionRight -> {
-                            if (isSeekingSlider) {
+                            if (isFocusedOnTranscode) {
+                                // Do nothing on transcode button
+                                false
+                            } else if (isSeekingSlider) {
                                 performSkip(30)
+                                true
                             } else {
                                 performSkip(5)
+                                true
                             }
-                            true
                         }
                         Key.Backspace -> {
                             handleBackAction()
@@ -258,6 +323,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                 }
+            },
+            update = { view ->
+                // Update the player reference when exoPlayer changes (e.g., when transcoding is toggled)
+                view.player = exoPlayer
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -289,6 +358,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
+
 
         // Skip Feedback Overlay
         Box(modifier = Modifier.fillMaxSize()) {
@@ -323,6 +393,50 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     .padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Transcode button - only show for server sources, above the slider
+                if (!isSmbSource) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        androidx.tv.material3.Surface(
+                            onClick = {
+                                enableTranscode = !enableTranscode
+                                updateInteraction()
+                            },
+                            shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(
+                                shape = RoundedCornerShape(8.dp)
+                            ),
+                            colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+                                containerColor = if (isFocusedOnTranscode)
+                                    Color.White.copy(alpha = 0.2f)
+                                else
+                                    Color.Transparent,
+                                focusedContainerColor = Color.White.copy(alpha = 0.3f)
+                            ),
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.tv.material3.Icon(
+                                    Icons.Default.VideoSettings,
+                                    contentDescription = "Toggle Transcode",
+                                    tint = if (enableTranscode) Color.Green else Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                androidx.tv.material3.Text(
+                                    text = if (enableTranscode) "Transcoding ON" else "Transcoding OFF",
+                                    style = androidx.tv.material3.MaterialTheme.typography.bodyMedium,
+                                    color = if (enableTranscode) Color.Green else Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Progress Slider and Timestamps
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -387,28 +501,30 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Playback controls
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
                     androidx.tv.material3.Icon(
                         Icons.Default.FastRewind,
                         contentDescription = null,
-                        tint = if (showControls && !isSeekingSlider) Color.White else Color.Gray,
+                        tint = if (showControls && !isSeekingSlider && !isFocusedOnTranscode) Color.White else Color.Gray,
                         modifier = Modifier.size(48.dp)
                     )
                     Spacer(modifier = Modifier.width(32.dp))
                     androidx.tv.material3.Icon(
                         if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = null,
-                        tint = if (showControls && !isSeekingSlider) Color.White else Color.Gray,
+                        tint = if (showControls && !isSeekingSlider && !isFocusedOnTranscode) Color.White else Color.Gray,
                         modifier = Modifier.size(64.dp)
                     )
                     Spacer(modifier = Modifier.width(32.dp))
                     androidx.tv.material3.Icon(
                         Icons.Default.FastForward,
                         contentDescription = null,
-                        tint = if (showControls && !isSeekingSlider) Color.White else Color.Gray,
+                        tint = if (showControls && !isSeekingSlider && !isFocusedOnTranscode) Color.White else Color.Gray,
                         modifier = Modifier.size(48.dp)
                     )
                 }

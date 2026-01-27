@@ -399,7 +399,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val actualPath = getActualFilename(path)
         val cleanPath = actualPath.substringBefore('?').removeSuffix("/")
         val ext = cleanPath.substringAfterLast('.', "").lowercase()
-        val result = ext in setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg")
+        val result = ext in setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp")
         android.util.Log.d("MediaViewModel", "isVideo - path: $path, actualPath: $actualPath, ext: $ext, result: $result")
         return result
     }

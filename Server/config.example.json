@@ -12,7 +12,7 @@
       "/path/to/media/folder2"
     ],
     "thumbnailPath": "./thumbnails",
-    "supportedVideoFormats": [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"],
+    "supportedVideoFormats": [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".3gp", ".3gpp", ".m4v", ".mpg", ".mpeg"],
     "supportedImageFormats": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
     "supportedDocFormats": [".pdf"]
   },
