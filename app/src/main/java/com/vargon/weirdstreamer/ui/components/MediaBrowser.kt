@@ -36,10 +36,12 @@ import com.vargon.weirdstreamer.repository.MediaSource
 fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     var showAddServerDialog by remember { mutableStateOf(false) }
     var showAuthDialog by remember { mutableStateOf(false) }
+    val toolbarFocusRequester = remember { FocusRequester() }
+    var dialogFocusRequester by remember { mutableStateOf<FocusRequester?>(null) }
 
     val currentSource = viewModel.currentSource
 
-    BackHandler(enabled = currentSource != null) {
+    BackHandler(enabled = currentSource != null && dialogFocusRequester == null) {
         viewModel.navigateUp()
     }
 
@@ -49,7 +51,8 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             .padding(48.dp)
             .onPreviewKeyEvent { 
                 if (it.key == Key.Backspace && it.type == KeyEventType.KeyUp) {
-                    if (currentSource != null) {
+                    // Don't handle if dialog is showing
+                    if (currentSource != null && dialogFocusRequester == null) {
                         viewModel.navigateUp()
                         true
                     } else {
@@ -61,7 +64,22 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             }
     ) {
         // Header with current path and controls
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.onPreviewKeyEvent { event ->
+                // Handle down navigation - if dialog is open, focus it instead of file list
+                if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+                    if (dialogFocusRequester != null) {
+                        dialogFocusRequester?.requestFocus()
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+        ) {
             Text(
                 text = when (currentSource) {
                     is MediaSource.Smb -> "SMB: ${viewModel.currentPath}"
@@ -75,7 +93,10 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             )
             
             if (currentSource != null) {
-                Button(onClick = { viewModel.returnToSourceSelection() }) {
+                Button(
+                    onClick = { viewModel.returnToSourceSelection() },
+                    modifier = Modifier.focusRequester(toolbarFocusRequester)
+                ) {
                     Icon(Icons.Default.Home, contentDescription = "Back to Servers")
                 }
                 Spacer(modifier = Modifier.width(16.dp))
@@ -88,7 +109,10 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 Spacer(modifier = Modifier.width(16.dp))
             } else {
                 // Only show Add Source button on server selection screen
-                Button(onClick = { showAddServerDialog = true }) {
+                Button(
+                    onClick = { showAddServerDialog = true },
+                    modifier = Modifier.focusRequester(toolbarFocusRequester)
+                ) {
                     Icon(Icons.Default.Add, contentDescription = "Add Source")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Add Source")
@@ -132,7 +156,13 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             }
             else -> {
                 // File browser
-                FileBrowserScreen(viewModel)
+                FileBrowserScreen(
+                    viewModel = viewModel,
+                    toolbarFocusRequester = toolbarFocusRequester,
+                    onDialogFocusChanged = { focusRequester ->
+                        dialogFocusRequester = focusRequester
+                    }
+                )
             }
         }
     }
@@ -270,11 +300,28 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
 }
 
 @Composable
-private fun FileBrowserScreen(viewModel: MediaViewModel) {
+private fun FileBrowserScreen(
+    viewModel: MediaViewModel,
+    toolbarFocusRequester: FocusRequester,
+    onDialogFocusChanged: (FocusRequester?) -> Unit
+) {
+    var dialogFocusRequester by remember { mutableStateOf<FocusRequester?>(null) }
+
+    // Notify parent when dialog focus changes
+    LaunchedEffect(dialogFocusRequester) {
+        onDialogFocusChanged(dialogFocusRequester)
+    }
+
     FocusableList(
         items = viewModel.fileList,
         initialSelection = viewModel.getSelection(viewModel.currentPath),
-        isGridView = viewModel.isGridView
+        isGridView = viewModel.isGridView,
+        onRequestToolbarFocus = {
+            toolbarFocusRequester.requestFocus()
+        },
+        onRequestDialogFocus = { focusRequester ->
+            dialogFocusRequester = focusRequester
+        }
     ) { item, modifier ->
         if (viewModel.isGridView) {
             FileTileItem(item, modifier = modifier) {
