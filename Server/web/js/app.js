@@ -33,6 +33,9 @@ const imageTitle = document.getElementById('image-title');
 
 // Initialize
 function init() {
+    // Apply saved theme
+    applyTheme();
+    
     if (api.isAuthenticated()) {
         showMainScreen();
     } else {
@@ -87,6 +90,9 @@ function setupEventListeners() {
     // User management
     document.getElementById('create-user-btn')?.addEventListener('click', handleCreateUser);
     document.getElementById('change-password-btn')?.addEventListener('click', handleChangePassword);
+    
+    // Theme management
+    document.getElementById('save-theme-btn')?.addEventListener('click', handleSaveTheme);
     
     // Browser back/forward buttons
     window.addEventListener('popstate', (e) => {
@@ -556,6 +562,16 @@ async function showSettings() {
         document.getElementById('enable-http2').checked = config.streaming.enableHTTP2;
         document.getElementById('chunk-size').value = config.streaming.chunkSize;
         
+        // Apply theme selection
+        applyTheme();
+        
+        // Setup theme radio button listeners for immediate preview
+        document.querySelectorAll('input[name="theme"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                document.documentElement.setAttribute('data-theme', e.target.value);
+            });
+        });
+        
         // Render media paths
         renderMediaPaths(config.media.paths);
         
@@ -774,6 +790,34 @@ async function handleChangePassword() {
         messageEl.textContent = 'Failed to change password: ' + error.message;
         messageEl.style.color = '#e74c3c';
     }
+}
+
+// Theme Management
+function applyTheme() {
+    const savedTheme = localStorage.getItem('app-theme') || 'default';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    
+    // Update radio buttons if on settings page
+    const themeRadio = document.getElementById(`theme-${savedTheme}`);
+    if (themeRadio) {
+        themeRadio.checked = true;
+    }
+}
+
+function handleSaveTheme() {
+    const selectedTheme = document.querySelector('input[name="theme"]:checked')?.value;
+    if (!selectedTheme) return;
+    
+    localStorage.setItem('app-theme', selectedTheme);
+    document.documentElement.setAttribute('data-theme', selectedTheme);
+    
+    const messageEl = document.getElementById('theme-message');
+    messageEl.textContent = 'Theme saved successfully!';
+    messageEl.style.color = '#27ae60';
+    
+    setTimeout(() => {
+        messageEl.textContent = '';
+    }, 2000);
 }
 
 // Initialize app when DOM is ready

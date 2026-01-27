@@ -289,7 +289,7 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
 // Overload for host row with delete action
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun HostRowItem(host: String, modifier: Modifier = Modifier, onDelete: () -> Unit = {}, onClick: () -> Unit) {
+fun HostRowItem(host: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),

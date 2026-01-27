@@ -2,6 +2,11 @@ package com.vargon.weirdstreamer.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -297,74 +302,68 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
     android.util.Log.d("SourceSelection", "SMB hosts: ${viewModel.smbHosts.size}, API servers: ${viewModel.apiServers.size}")
     android.util.Log.d("SourceSelection", "API servers list: ${viewModel.apiServers}")
     
-    Column(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
         // SMB Shares Section
-        Text(
-            "SMB Shares",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
+        item {
+            Text(
+                "SMB Shares",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+        }
         
-        Box(modifier = Modifier.weight(1f)) {
-            if (viewModel.smbHosts.isEmpty()) {
+        if (viewModel.smbHosts.isEmpty()) {
+            item {
                 Text("No SMB shares found. Use 'Add Source' to add manually.", 
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.Gray,
-                    modifier = Modifier.padding(top = 16.dp))
-            } else {
-                FocusableList(
-                    items = viewModel.smbHosts,
-                    initialSelection = null,
-                    isGridView = viewModel.isGridView
-                ) { host, modifier ->
-                    if (viewModel.isGridView) {
-                        HostTileItem(host, modifier = modifier) {
-                            viewModel.selectSmbSource(host)
-                        }
-                    } else {
-                        HostRowItem(host, modifier = modifier, onDelete = {
-                            viewModel.deleteServer(host)
-                        }) {
-                            viewModel.selectSmbSource(host)
-                        }
+                    modifier = Modifier.padding(top = 16.dp, bottom = 32.dp))
+            }
+        } else {
+            items(viewModel.smbHosts) { host ->
+                if (viewModel.isGridView) {
+                    HostTileItem(host) {
+                        viewModel.selectSmbSource(host)
+                    }
+                } else {
+                    HostRowItem(host) {
+                        viewModel.selectSmbSource(host)
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
-        HorizontalDivider()
-        Spacer(modifier = Modifier.height(32.dp))
+        item {
+            Spacer(modifier = Modifier.height(32.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(32.dp))
+        }
 
         // API Servers Section
-        Text(
-            "API Servers",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
+        item {
+            Text(
+                "API Servers",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+        }
         
-        Box(modifier = Modifier.weight(1f)) {
-            if (viewModel.apiServers.isEmpty()) {
+        if (viewModel.apiServers.isEmpty()) {
+            item {
                 Text("No API servers configured. Use 'Add Source' to add a server.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.Gray,
                     modifier = Modifier.padding(top = 16.dp))
-            } else {
-                FocusableList(
-                    items = viewModel.apiServers,
-                    initialSelection = null,
-                    isGridView = viewModel.isGridView
-                ) { serverUrl, modifier ->
-                    if (viewModel.isGridView) {
-                        HostTileItem(serverUrl, modifier = modifier) {
-                            viewModel.selectServerSource(serverUrl)
-                        }
-                    } else {
-                        HostRowItem(serverUrl, modifier = modifier, onDelete = {
-                            viewModel.deleteApiServer(serverUrl)
-                        }) {
-                            viewModel.selectServerSource(serverUrl)
-                        }
+            }
+        } else {
+            items(viewModel.apiServers) { serverUrl ->
+                if (viewModel.isGridView) {
+                    HostTileItem(serverUrl) {
+                        viewModel.selectServerSource(serverUrl)
+                    }
+                } else {
+                    HostRowItem(serverUrl) {
+                        viewModel.selectServerSource(serverUrl)
                     }
                 }
             }

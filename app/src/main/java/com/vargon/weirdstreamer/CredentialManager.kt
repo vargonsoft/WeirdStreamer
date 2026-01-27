@@ -125,4 +125,12 @@ class CredentialManager(context: Context) {
     fun getApiServers(): Set<String> {
         return sharedPreferences.getStringSet("api_servers", emptySet()) ?: emptySet()
     }
+
+    fun setAppTheme(theme: String) {
+        sharedPreferences.edit().putString("app_theme", theme).apply()
+    }
+
+    fun getAppTheme(): String {
+        return sharedPreferences.getString("app_theme", "DEFAULT") ?: "DEFAULT"
+    }
 }

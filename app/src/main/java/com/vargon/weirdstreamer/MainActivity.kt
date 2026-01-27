@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.tv.material3.*
 import com.vargon.weirdstreamer.ui.components.*
+import com.vargon.weirdstreamer.ui.theme.AppTheme
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 
 class MainActivity : ComponentActivity() {
@@ -22,7 +23,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            WeirdStreamerTheme {
+            val credentialManager = remember { CredentialManager(applicationContext) }
+            var currentTheme by remember { 
+                mutableStateOf(
+                    when (credentialManager.getAppTheme()) {
+                        "CINEMA_BLUE" -> AppTheme.CINEMA_BLUE
+                        "CINEMA_RED" -> AppTheme.CINEMA_RED
+                        else -> AppTheme.DEFAULT
+                    }
+                )
+            }
+            
+            WeirdStreamerTheme(appTheme = currentTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                 ) {
@@ -65,7 +77,14 @@ class MainActivity : ComponentActivity() {
                     } else if (showSettings) {
                         SettingsScreen(
                             viewModel = viewModel,
-                            onBack = { showSettings = false }
+                            onBack = { showSettings = false },
+                            onThemeChanged = {
+                                currentTheme = when (credentialManager.getAppTheme()) {
+                                    "CINEMA_BLUE" -> AppTheme.CINEMA_BLUE
+                                    "CINEMA_RED" -> AppTheme.CINEMA_RED
+                                    else -> AppTheme.DEFAULT
+                                }
+                            }
                         )
                     } else {
                         MediaBrowser(

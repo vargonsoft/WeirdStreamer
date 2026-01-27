@@ -109,11 +109,26 @@
                 <!-- My Account Tab -->
                 <div id="account-tab" class="settings-tab-content">
                     <div class="settings-group">
+                        <h3>🎨 Theme</h3>
+                        <label>
+                            <input type="radio" name="theme" value="default" id="theme-default"> Default (Purple)
+                        </label><br>
+                        <label>
+                            <input type="radio" name="theme" value="cinema-blue" id="theme-cinema-blue"> Cinema Blue (Gold & Blue)
+                        </label><br>
+                        <label>
+                            <input type="radio" name="theme" value="cinema-red" id="theme-cinema-red"> Cinema Red (Gold & Red)
+                        </label><br><br>
+                        <button id="save-theme-btn" class="btn">💾 Save Theme</button>
+                        <p id="theme-message" style="margin-top: 10px; font-weight: bold;"></p>
+                    </div>
+                    
+                    <div class="settings-group">
                         <h3>Change Password</h3>
                         <input type="password" id="new-user-password" placeholder="New Password" class="settings-input" style="margin-bottom: 10px;"><br>
                         <input type="password" id="confirm-user-password" placeholder="Confirm Password" class="settings-input" style="margin-bottom: 10px;"><br>
                         <button id="change-password-btn" class="btn">🔑 Change Password</button>
-                        <p id="account-message" style="margin-top: 10px; color: #667eea; font-weight: bold;"></p>
+                        <p id="account-message" style="margin-top: 10px; font-weight: bold;"></p>
                     </div>
                 </div>
             </div>
