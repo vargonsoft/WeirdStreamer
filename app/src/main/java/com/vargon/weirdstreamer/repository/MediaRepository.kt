@@ -44,4 +44,6 @@ interface MediaRepository {
     suspend fun authenticate(username: String?, password: String?): Result<Boolean>
     fun getStreamUrl(path: String): String
     fun getThumbnailUrl(path: String): String?
+    fun getDisplayName(path: String): String
+    suspend fun getInputStream(path: String): Result<java.io.InputStream>
 }

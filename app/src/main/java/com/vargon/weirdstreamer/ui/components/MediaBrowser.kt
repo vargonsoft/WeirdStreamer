@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextField
@@ -74,6 +75,10 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             )
             
             if (currentSource != null) {
+                Button(onClick = { viewModel.returnToSourceSelection() }) {
+                    Icon(Icons.Default.Home, contentDescription = "Back to Servers")
+                }
+                Spacer(modifier = Modifier.width(16.dp))
                 Button(onClick = { viewModel.toggleViewMode() }) {
                     Icon(
                         if (viewModel.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
@@ -81,14 +86,16 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     )
                 }
                 Spacer(modifier = Modifier.width(16.dp))
+            } else {
+                // Only show Add Source button on server selection screen
+                Button(onClick = { showAddServerDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Source")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Add Source")
+                }
+                Spacer(modifier = Modifier.width(16.dp))
             }
-            
-            Button(onClick = { showAddServerDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add Source")
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Add Source")
-            }
-            Spacer(modifier = Modifier.width(16.dp))
+
             Button(onClick = onOpenSettings) {
                 Icon(Icons.Default.Settings, contentDescription = "Settings")
             }
@@ -301,11 +308,7 @@ private fun handleFileClick(viewModel: MediaViewModel, path: String, isDirectory
             }
         }
     } else {
-        val isVideo = path.endsWith(".mp4", true) || 
-                      path.endsWith(".mkv", true) ||
-                      path.endsWith(".avi", true) ||
-                      path.endsWith(".mov", true) ||
-                      path.endsWith(".webm", true)
+        val isVideo = viewModel.isVideo(path)
         val isImage = viewModel.isImage(path)
         val isPdf = viewModel.isPdf(path)
         

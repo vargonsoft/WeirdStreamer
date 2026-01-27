@@ -46,6 +46,7 @@ fun <T> FocusableList(
                 when (item) {
                     is String -> item == initialSelection
                     is SmbFileItem -> item.path == initialSelection || item.name == initialSelection
+                    is com.vargon.weirdstreamer.repository.FileItem -> item.path == initialSelection || item.name == initialSelection
                     else -> false
                 }
             }.let { if (it == -1) 0 else it }
@@ -65,12 +66,14 @@ fun <T> FocusableList(
 
     fun isDirectory(item: T): Boolean = when (item) {
         is SmbFileItem -> item.isDirectory
+        is com.vargon.weirdstreamer.repository.FileItem -> item.isDirectory
         else -> false
     }
 
     fun getName(item: T): String = when (item) {
         is String -> item
         is SmbFileItem -> item.name
+        is com.vargon.weirdstreamer.repository.FileItem -> item.name
         else -> ""
     }
 

@@ -68,6 +68,28 @@ class SmbRepository(
         return null
     }
     
+    override fun getDisplayName(path: String): String {
+        return path.substringAfterLast('/').substringBefore('?')
+    }
+
+    override suspend fun getInputStream(path: String): Result<java.io.InputStream> = withContext(Dispatchers.IO) {
+        try {
+            val host = path.removePrefix("smb://").substringBefore("/")
+            val creds = credentialManager.getCredentials(host)
+            val auth = if (creds.first != null && creds.second != null) {
+                NtlmPasswordAuthenticator(null, creds.first, creds.second)
+            } else {
+                NtlmPasswordAuthenticator(null, null, null)
+            }
+
+            val context = baseContext.withCredentials(auth)
+            val smbFile = SmbFile(path, context)
+            Result.success(smbFile.inputStream)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private fun guessMimeType(filename: String): String {
         val ext = filename.substringAfterLast('.', "").lowercase()
         return when (ext) {

@@ -79,6 +79,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var downloadProgress by mutableStateOf<Float?>(null)
         private set
 
+    private var currentRepository: MediaRepository? = null
+
     fun toggleViewMode() {
         val current = isGridView
         val newState = !current
@@ -116,11 +118,14 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun recordSelection(parentPath: String, childPath: String) {
+        android.util.Log.d("MediaViewModel", "recordSelection - parent: $parentPath, child: $childPath")
         selectionMap[parentPath] = childPath
     }
 
     fun getSelection(parentPath: String): String? {
-        return selectionMap[parentPath]
+        val selection = selectionMap[parentPath]
+        android.util.Log.d("MediaViewModel", "getSelection - parent: $parentPath, selection: $selection")
+        return selection
     }
 
     fun updateShowHiddenFiles(show: Boolean) {
@@ -196,8 +201,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectSmbSource(host: String) {
-        val source = MediaSource.Smb(host, "", "")
-        loadPath(source, "smb://$host/")
+        // Extract just the hostname, removing any path components or smb:// prefix
+        val cleanHost = host.removePrefix("smb://").substringBefore("/").trim()
+        android.util.Log.d("MediaViewModel", "selectSmbSource - input: '$host', cleaned: '$cleanHost'")
+        val source = MediaSource.Smb(cleanHost, "", "")
+        loadPath(source, "smb://$cleanHost/")
     }
 
     fun selectServerSource(serverUrl: String, username: String? = null, password: String? = null) {
@@ -236,6 +244,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
+                // Store the repository for later use
+                currentRepository = repository
+
                 val browsePath = when (source) {
                     is MediaSource.Smb -> {
                         val normalizedPath = if (path.startsWith("smb://")) path else "smb://$path"
@@ -249,6 +260,13 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 if (result.isSuccess) {
                     val items = result.getOrNull() ?: emptyList()
                     
+                    // Save SMB host to saved servers list after successful browse
+                    if (source is MediaSource.Smb) {
+                        val host = browsePath.removePrefix("smb://").substringBefore("/")
+                        android.util.Log.d("MediaViewModel", "Saving SMB host after successful browse: $host from path: $browsePath")
+                        credentialManager.addSavedServer(host)
+                    }
+
                     // Add parent directory entry for non-root paths
                     fileList = if (shouldShowParentDir(source, path)) {
                         listOf(FileItem("..", "UP", true)) + items
@@ -317,8 +335,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun returnToSourceSelection() {
+        android.util.Log.d("MediaViewModel", "returnToSourceSelection - clearing source, path, error, and file list")
         currentSource = null
         currentPath = ""
+        errorMessage = null
         fileList = emptyList()
         refreshSources()
     }
@@ -327,7 +347,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         selectedVideoPath = path
     }
 
-    fun stopPlayback() {
+    fun stopPlayback(lastViewedPath: String? = null) {
+        android.util.Log.d("MediaViewModel", "stopPlayback - lastViewedPath: $lastViewedPath, currentPath: $currentPath")
+        lastViewedPath?.let { recordSelection(currentPath, it) }
         selectedVideoPath = null
     }
 
@@ -338,6 +360,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeImage(lastViewedPath: String? = null) {
+        android.util.Log.d("MediaViewModel", "closeImage - lastViewedPath: $lastViewedPath, currentPath: $currentPath")
         lastViewedPath?.let { recordSelection(currentPath, it) }
         selectedImagePath = null
     }
@@ -347,6 +370,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closePdf(lastViewedPath: String? = null) {
+        android.util.Log.d("MediaViewModel", "closePdf - lastViewedPath: $lastViewedPath, currentPath: $currentPath")
         lastViewedPath?.let { recordSelection(currentPath, it) }
         selectedPdfPath = null
     }
@@ -371,6 +395,15 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         return ext in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
     }
 
+    fun isVideo(path: String): Boolean {
+        val actualPath = getActualFilename(path)
+        val cleanPath = actualPath.substringBefore('?').removeSuffix("/")
+        val ext = cleanPath.substringAfterLast('.', "").lowercase()
+        val result = ext in setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg")
+        android.util.Log.d("MediaViewModel", "isVideo - path: $path, actualPath: $actualPath, ext: $ext, result: $result")
+        return result
+    }
+
     fun isPdf(path: String): Boolean {
         val actualPath = getActualFilename(path)
         val cleanPath = actualPath.substringBefore('?').removeSuffix("/")
@@ -382,40 +415,61 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         return fileList.filter { !it.isDirectory && isImage(it.path) }.map { it.path }
     }
 
-    suspend fun downloadToTempFile(smbPath: String, context: Context, suffix: String = ".pdf"): File? = withContext(Dispatchers.IO) {
+    fun getDisplayName(path: String): String {
+        return currentRepository?.getDisplayName(path) ?: path.substringAfterLast('/')
+    }
+
+    suspend fun downloadToTempFile(path: String, context: Context, suffix: String = ".pdf"): File? = withContext(Dispatchers.IO) {
         try {
             downloadProgress = 0f
-            val host = smbPath.removePrefix("smb://").substringBefore("/")
-            val creds = credentialManager.getCredentials(host)
-            val auth = if (creds.first != null && creds.second != null) {
-                NtlmPasswordAuthenticator(null, creds.first, creds.second)
-            } else {
-                NtlmPasswordAuthenticator(null, null, null)
+            val repository = currentRepository
+
+            if (repository == null) {
+                android.util.Log.e("MediaViewModel", "downloadToTempFile - no repository set")
+                downloadProgress = null
+                return@withContext null
             }
-            val cifsContext = baseContext.withCredentials(auth)
-            
+
+            android.util.Log.d("MediaViewModel", "downloadToTempFile - path: $path, repository: ${repository::class.simpleName}")
+
             val tempFile = File(context.cacheDir, "temp_${System.currentTimeMillis()}$suffix")
-            SmbFile(smbPath, cifsContext).use { smbFile ->
-                val totalSize = smbFile.length()
-                smbFile.inputStream.use { input ->
+            val result = repository.getInputStream(path)
+
+            if (result.isSuccess) {
+                val inputStream = result.getOrNull()
+                if (inputStream == null) {
+                    android.util.Log.e("MediaViewModel", "downloadToTempFile - inputStream is null despite success")
+                    downloadProgress = null
+                    return@withContext null
+                }
+
+                android.util.Log.d("MediaViewModel", "downloadToTempFile - downloading to ${tempFile.absolutePath}")
+
+                inputStream.use { input ->
                     tempFile.outputStream().use { output ->
                         val buffer = ByteArray(64 * 1024)
                         var bytesRead: Int
                         var totalRead = 0L
+
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             output.write(buffer, 0, bytesRead)
                             totalRead += bytesRead
-                            if (totalSize > 0) {
-                                downloadProgress = totalRead.toFloat() / totalSize.toFloat()
-                            }
+                            downloadProgress = totalRead.toFloat() / 1000000f // Approximate progress
                         }
                     }
                 }
+
+                android.util.Log.d("MediaViewModel", "downloadToTempFile - success, file size: ${tempFile.length()} bytes")
+                downloadProgress = null
+                tempFile
+            } else {
+                val error = result.exceptionOrNull()
+                android.util.Log.e("MediaViewModel", "downloadToTempFile - failed: ${error?.message}", error)
+                downloadProgress = null
+                null
             }
-            downloadProgress = null
-            tempFile
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("MediaViewModel", "downloadToTempFile - exception", e)
             downloadProgress = null
             null
         }

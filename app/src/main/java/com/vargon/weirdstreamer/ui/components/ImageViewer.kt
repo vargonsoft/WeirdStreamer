@@ -62,7 +62,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
     var tempFile by remember { mutableStateOf<File?>(null) }
 
     val fileName = remember(currentSmbPath) {
-        currentSmbPath.substringBefore('?').removeSuffix("/").substringAfterLast('/')
+        viewModel.getDisplayName(currentSmbPath)
     }
 
     LaunchedEffect(currentSmbPath) {

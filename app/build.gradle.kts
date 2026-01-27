@@ -56,6 +56,7 @@ dependencies {
     implementation(libs.media3.ui)
     implementation(libs.media3.common)
     implementation(libs.media3.inspector)
+    implementation(libs.media3.datasource.okhttp)
     implementation(libs.kotlinx.coroutines.guava)
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)

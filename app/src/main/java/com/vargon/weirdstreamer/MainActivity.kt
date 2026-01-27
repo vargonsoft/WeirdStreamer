@@ -34,19 +34,19 @@ class MainActivity : ComponentActivity() {
                         VideoPlayer(
                             viewModel = viewModel,
                             path = selectedVideo,
-                            onBack = { viewModel.stopPlayback() }
+                            onBack = { lastViewedPath -> viewModel.stopPlayback(lastViewedPath) }
                         )
                     } else if (selectedImage != null) {
                         ImageViewer(
                             viewModel = viewModel,
                             initialPath = selectedImage,
-                            onBack = { viewModel.closeImage() }
+                            onBack = { lastViewedPath -> viewModel.closeImage(lastViewedPath) }
                         )
                     } else if (selectedPdf != null) {
                         PdfViewer(
                             viewModel = viewModel,
                             initialPath = selectedPdf,
-                            onBack = { viewModel.closePdf() }
+                            onBack = { lastViewedPath -> viewModel.closePdf(lastViewedPath) }
                         )
                     } else if (showSettings) {
                         SettingsScreen(

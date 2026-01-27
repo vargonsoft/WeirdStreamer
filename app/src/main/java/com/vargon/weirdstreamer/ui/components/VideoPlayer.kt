@@ -38,16 +38,22 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.vargon.weirdstreamer.SmbDataSourceFactory
 import com.vargon.weirdstreamer.MediaViewModel
+import com.vargon.weirdstreamer.WeirdStreamerApplication
 import kotlinx.coroutines.delay
 import java.util.Locale
 
 @OptIn(UnstableApi::class)
 @Composable
-fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: () -> Unit) {
+fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
-    val exoPlayer = remember {
+
+    // Determine if this is an SMB or Server source
+    val isSmbSource = remember(path) { path.startsWith("smb://") }
+
+    val exoPlayer = remember(path) {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 50_000, // minBufferMs (increased from 32s to 50s)
@@ -57,19 +63,35 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: () -> Unit) {
             )
             .build()
 
-        ExoPlayer.Builder(context)
+        val player = ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
-            .setMediaSourceFactory(
-                DefaultMediaSourceFactory(context)
-                    .setDataSourceFactory(SmbDataSourceFactory(viewModel.credentialManager, viewModel.baseContext))
-            )
-            .build()
             .apply {
-                val mediaItem = MediaItem.fromUri(path)
-                setMediaItem(mediaItem)
-                prepare()
-                playWhenReady = true
+                if (isSmbSource) {
+                    // Use SMB DataSource for SMB paths
+                    setMediaSourceFactory(
+                        DefaultMediaSourceFactory(context)
+                            .setDataSourceFactory(SmbDataSourceFactory(viewModel.credentialManager, viewModel.baseContext))
+                    )
+                } else {
+                    // Use OkHttp DataSource for server URLs (handles SSL and auth)
+                    val okHttpClient = WeirdStreamerApplication.getOkHttpClient()
+                    val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
+                        .setUserAgent("WeirdStreamer/1.0")
+
+                    setMediaSourceFactory(
+                        DefaultMediaSourceFactory(context)
+                            .setDataSourceFactory(okHttpDataSourceFactory)
+                    )
+                }
             }
+            .build()
+
+        player.apply {
+            val mediaItem = MediaItem.fromUri(path)
+            setMediaItem(mediaItem)
+            prepare()
+            playWhenReady = true
+        }
     }
 
     var isPlaying by remember { mutableStateOf(true) }
@@ -85,7 +107,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: () -> Unit) {
     val focusRequester = remember { FocusRequester() }
     
     val filename = remember(path) {
-        path.substringAfterLast('/').substringBefore('?')
+        viewModel.getDisplayName(path)
     }
 
     // Sync playback state
@@ -160,7 +182,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: () -> Unit) {
         } else {
             // If back is pressed within 1 second of controls disappearing, ignore it.
             if (now - lastControlsHideTime > 1000) {
-                onBack()
+                onBack(path)
             }
         }
     }

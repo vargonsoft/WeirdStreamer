@@ -89,7 +89,7 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
     val gridState = rememberLazyGridState()
     
     val fileName = remember(initialPath) {
-        initialPath.substringBefore('?').removeSuffix("/").substringAfterLast('/')
+        viewModel.getDisplayName(initialPath)
     }
 
     LaunchedEffect(initialPath) {

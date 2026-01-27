@@ -26,8 +26,20 @@ class SmbKeyer : Keyer<String> {
 }
 
 class WeirdStreamerApplication : Application(), ImageLoaderFactory {
+
+    companion object {
+        private var instance: WeirdStreamerApplication? = null
+
+        fun getOkHttpClient(): OkHttpClient {
+            return instance?.okHttpClient ?: throw IllegalStateException("Application not initialized")
+        }
+    }
+
+    private lateinit var okHttpClient: OkHttpClient
+
     override fun onCreate() {
         super.onCreate()
+        instance = this
         Log.d("WeirdStreamerApp", "Application created")
     }
 
@@ -46,7 +58,7 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
         sslContext.init(null, trustAllCerts, java.security.SecureRandom())
         val sslSocketFactory = sslContext.socketFactory
         
-        val okHttpClient = OkHttpClient.Builder()
+        okHttpClient = OkHttpClient.Builder()
             .sslSocketFactory(sslSocketFactory, trustAllCerts[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
             .addInterceptor { chain ->

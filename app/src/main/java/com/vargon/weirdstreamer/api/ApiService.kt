@@ -10,6 +10,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface ApiService {
     
@@ -24,4 +25,8 @@ interface ApiService {
     
     @GET("/api/media/stream")
     suspend fun stream(@Query("path") path: String): Response<ResponseBody>
+
+    @GET("/api/media/stream")
+    @Streaming
+    suspend fun streamFile(@Query("path") path: String): Response<ResponseBody>
 }

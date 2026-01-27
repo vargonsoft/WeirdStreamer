@@ -110,4 +110,63 @@ class ServerRepository(
         // This method might not be needed for server source
         return null
     }
+
+    override fun getDisplayName(path: String): String {
+        // Extract filename from path - handle both regular paths and stream URLs
+        return if (path.contains("/api/media/stream?path=")) {
+            // Decode base64 path to get actual filename
+            try {
+                val encodedPath = path.substringAfter("path=")
+                val decodedPath = String(Base64.decode(encodedPath, Base64.NO_WRAP))
+                decodedPath.substringAfterLast('/')
+            } catch (e: Exception) {
+                "stream"
+            }
+        } else {
+            path.substringAfterLast('/')
+        }
+    }
+
+    override suspend fun getInputStream(path: String): Result<java.io.InputStream> = withContext(Dispatchers.IO) {
+        try {
+            // Extract the original path from the stream URL if needed
+            val actualPath = if (path.contains("/api/media/stream?path=")) {
+                try {
+                    val encodedPath = path.substringAfter("path=").substringBefore("&")
+                    String(Base64.decode(encodedPath, Base64.NO_WRAP))
+                } catch (_: Exception) {
+                    path
+                }
+            } else {
+                path
+            }
+
+            android.util.Log.d("ServerRepository", "getInputStream - actualPath: $actualPath")
+
+            // Encode the path for the API (server expects base64-encoded paths)
+            val encodedPath = Base64.encodeToString(actualPath.toByteArray(), Base64.NO_WRAP)
+            android.util.Log.d("ServerRepository", "getInputStream - encodedPath: $encodedPath")
+
+            val response = apiService.stream(encodedPath)
+            android.util.Log.d("ServerRepository", "getInputStream - response code: ${response.code()}")
+
+            if (response.isSuccessful) {
+                val inputStream = response.body()?.byteStream()
+                if (inputStream != null) {
+                    android.util.Log.d("ServerRepository", "getInputStream - success")
+                    Result.success<java.io.InputStream>(inputStream)
+                } else {
+                    android.util.Log.e("ServerRepository", "getInputStream - empty response body")
+                    Result.failure(Exception("Empty response body"))
+                }
+            } else {
+                val errorMsg = "Server error: ${response.code()} ${response.message()}"
+                android.util.Log.e("ServerRepository", "getInputStream - $errorMsg")
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ServerRepository", "getInputStream - exception", e)
+            Result.failure(e)
+        }
+    }
 }
