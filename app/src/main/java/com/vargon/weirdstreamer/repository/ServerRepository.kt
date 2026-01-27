@@ -117,7 +117,7 @@ class ServerRepository(
         return if (path.contains("/api/media/stream?path=")) {
             // Decode base64 path to get actual filename
             try {
-                val encodedPath = path.substringAfter("path=")
+                val encodedPath = path.substringAfter("path=").substringBefore("&")
                 val decodedPath = String(Base64.decode(encodedPath, Base64.NO_WRAP))
                 decodedPath.substringAfterLast('/')
             } catch (e: Exception) {

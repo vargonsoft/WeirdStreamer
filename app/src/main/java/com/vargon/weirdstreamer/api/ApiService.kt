@@ -23,6 +23,9 @@ interface ApiService {
     @GET("/api/media/browse")
     suspend fun browse(@Query("path") path: String): Response<Directory>
     
+    @GET("/api/media/metadata")
+    suspend fun getMetadata(@Query("path") path: String): Response<MediaItem>
+    
     @GET("/api/media/stream")
     suspend fun stream(@Query("path") path: String): Response<ResponseBody>
 

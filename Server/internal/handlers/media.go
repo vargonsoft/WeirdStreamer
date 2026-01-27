@@ -107,9 +107,12 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 
 	// Check if user wants to force transcoding
 	forceTranscode := r.URL.Query().Get("transcode") == "1"
-	
+
 	// Check if client wants to disable auto-transcoding (e.g., native apps)
 	autoTranscode := r.URL.Query().Get("auto-transcode") != "0"
+
+	// Get start time for seeking in transcoded streams
+	startTime := r.URL.Query().Get("start")
 
 	// Validate path is within allowed media paths
 	if !h.isValidMediaPath(path) {
@@ -123,10 +126,59 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, autoTranscode); err != nil {
+	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, autoTranscode, startTime); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to stream media")
 		return
 	}
+}
+
+// GetMediaMetadata godoc
+// @Summary Get media metadata
+// @Description Get metadata (duration, dimensions, etc.) for a media file
+// @Tags media
+// @Produce json
+// @Param path query string true "Base64-encoded file path"
+// @Success 200 {object} models.MediaItem
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Security BearerAuth
+// @Router /api/media/metadata [get]
+func (h *MediaHandler) GetMediaMetadata(w http.ResponseWriter, r *http.Request) {
+	encodedPath := r.URL.Query().Get("path")
+	if encodedPath == "" {
+		respondError(w, http.StatusBadRequest, "Missing path parameter")
+		return
+	}
+
+	// Base64 decode the path
+	pathBytes, err := base64.StdEncoding.DecodeString(encodedPath)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid path encoding")
+		return
+	}
+	path := string(pathBytes)
+
+	// Validate path is within allowed media paths
+	if !h.isValidMediaPath(path) {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
+	// Try to get from database first
+	item, err := h.db.GetMediaItem(path)
+	if err != nil || item.Duration == 0 {
+		// Not in database or no duration - get metadata in real-time
+		log.Printf("Getting metadata in real-time for: %s", path)
+		metadata, err := h.scanner.GetFileMetadata(path)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to get metadata")
+			return
+		}
+		respondJSON(w, http.StatusOK, metadata)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, item)
 }
 
 // BrowseDirectory godoc
@@ -141,7 +193,7 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 // @Router /api/media/browse [get]
 func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	relativePath := r.URL.Query().Get("path")
-	
+
 	var dirs []models.Directory
 	var items []models.MediaItem
 
@@ -160,7 +212,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
-		
+
 		result := models.Directory{
 			Path:  "",
 			Name:  "Media",
@@ -174,7 +226,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	// Browse within a specific media path
 	var targetPath string
 	pathParts := strings.Split(strings.Trim(relativePath, "/"), "/")
-	
+
 	// Find which root this belongs to
 	for _, mediaPath := range config.GlobalConfig.Media.Paths {
 		if filepath.Base(mediaPath.Path) == pathParts[0] {
@@ -186,12 +238,12 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	
+
 	if targetPath == "" {
 		respondError(w, http.StatusNotFound, "Path not found")
 		return
 	}
-	
+
 	// Validate path is within allowed media paths
 	if !h.isValidMediaPath(targetPath) {
 		respondError(w, http.StatusForbidden, "Access denied")
@@ -207,7 +259,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	for _, entry := range entries {
 		entryPath := filepath.Join(targetPath, entry.Name())
 		relPath := filepath.Join(relativePath, entry.Name())
-		
+
 		if entry.IsDir() {
 			dirs = append(dirs, models.Directory{
 				Path: relPath,

@@ -78,17 +78,18 @@ func main() {
 	// Protected API routes
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(authHandler.AuthMiddleware)
-	
+
 	api.HandleFunc("/media", mediaHandler.ListMedia).Methods("GET")
 	api.HandleFunc("/media/browse", mediaHandler.BrowseDirectory).Methods("GET")
 	api.HandleFunc("/media/stream", mediaHandler.StreamMedia).Methods("GET")
+	api.HandleFunc("/media/metadata", mediaHandler.GetMediaMetadata).Methods("GET")
 	api.HandleFunc("/media/scan", mediaHandler.ScanMedia).Methods("POST")
 	api.HandleFunc("/media/{path}", mediaHandler.GetMediaInfo).Methods("GET")
-	
+
 	// Config endpoints (admin only)
 	api.HandleFunc("/config", configHandler.GetConfig).Methods("GET")
 	api.HandleFunc("/config", configHandler.UpdateConfig).Methods("PUT")
-	
+
 	// User management endpoints
 	api.HandleFunc("/users", userHandler.ListUsers).Methods("GET")
 	api.HandleFunc("/users", userHandler.CreateUser).Methods("POST")
@@ -107,12 +108,12 @@ func main() {
 	// Start server
 	addr := fmt.Sprintf("%s:%d", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)
 	log.Printf("Starting server on %s", addr)
-	
+
 	// Check if HTTP/2 is enabled and certificates exist
 	if config.GlobalConfig.Streaming.EnableHTTP2 {
 		certFile := "cert.pem"
 		keyFile := "key.pem"
-		
+
 		if _, err := os.Stat(certFile); os.IsNotExist(err) {
 			log.Printf("Warning: %s not found, falling back to HTTP", certFile)
 			log.Fatal(http.ListenAndServe(addr, r))

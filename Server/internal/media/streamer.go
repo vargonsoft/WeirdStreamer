@@ -18,7 +18,7 @@ func NewStreamer() *Streamer {
 }
 
 // ServeContent handles HTTP range requests for efficient streaming
-func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool) error {
+func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool, startTime string) error {
 	// Check if transcoding is needed
 	// 1. Explicitly requested via ?transcode=1
 	// 2. Auto-transcoding enabled and file needs transcoding
@@ -32,7 +32,7 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 		if forceTranscode {
 			fmt.Printf("Transcoding %s (requested by client)\n", filePath)
 		}
-		return s.transcodeAndServe(w, r, filePath)
+		return s.transcodeAndServe(w, r, filePath, startTime)
 	}
 
 	file, err := os.Open(filePath)
@@ -167,10 +167,15 @@ func (s *Streamer) needsTranscoding(filePath string) bool {
 }
 
 // transcodeAndServe transcodes video on-the-fly and streams to client
-func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, filePath string) error {
-	fmt.Printf("Starting transcoding for: %s\n", filePath)
+func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, filePath string, startTime string) error {
+	if startTime != "" {
+		fmt.Printf("Starting transcoding from %s seconds for: %s\n", startTime, filePath)
+	} else {
+		fmt.Printf("Starting transcoding from beginning for: %s\n", filePath)
+	}
 	
 	// FFmpeg command for fast transcoding
+	// -ss: seek to start position (before -i for faster seeking)
 	// -i: input file
 	// -c:v libx264: encode video with h264
 	// -preset ultrafast: fastest encoding (lower quality but real-time)
@@ -179,7 +184,12 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	// -b:a 128k: audio bitrate
 	// -movflags frag_keyframe+empty_moov: enable streaming for mp4
 	// -f mp4: output format
-	cmd := exec.CommandContext(r.Context(), "ffmpeg",
+	args := []string{}
+	if startTime != "" {
+		// Add -ss before -i for faster seeking
+		args = append(args, "-ss", startTime)
+	}
+	args = append(args,
 		"-i", filePath,
 		"-c:v", "libx264",
 		"-preset", "ultrafast",
@@ -190,6 +200,8 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 		"-f", "mp4",
 		"pipe:1",
 	)
+	
+	cmd := exec.CommandContext(r.Context(), "ffmpeg", args...)
 
 	// Get stdout and stderr pipes
 	stdout, err := cmd.StdoutPipe()

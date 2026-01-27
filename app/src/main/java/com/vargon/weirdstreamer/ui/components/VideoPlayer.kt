@@ -45,10 +45,12 @@ import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.WeirdStreamerApplication
 import kotlinx.coroutines.delay
 import java.util.Locale
+// Test comment - this is a test edit
 
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Unit) {
+    // Test edit: Another comment here
     val context = LocalContext.current
 
     // Determine if this is an SMB or Server source
@@ -56,9 +58,18 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     // Transcode state - only applicable for server sources
     var enableTranscode by remember { mutableStateOf(false) }
+    
+    // Track the start offset for transcoded streams
+    var transcodeStartOffset by remember { mutableStateOf(0L) }
+    
+    // Store the original full duration (before any transcoding)
+    var fullDuration by remember { mutableStateOf(0L) }
 
     // Build the actual video URL with transcode parameter if needed
     val videoUrl = remember(path, enableTranscode) {
+        // Reset offset when transcoding is toggled
+        transcodeStartOffset = 0L
+        
         if (!isSmbSource && enableTranscode) {
             // Add transcode=1 parameter to the URL
             if (path.contains("?")) {
@@ -117,6 +128,37 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var showControls by remember { mutableStateOf(false) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var lastControlsHideTime by remember { mutableLongStateOf(0L) }
+    
+    // Fetch metadata for server sources to get accurate duration
+    LaunchedEffect(path) {
+        if (!isSmbSource) {
+            try {
+                // Extract the base64 path parameter
+                val encodedPath = path.substringAfter("path=").substringBefore("&")
+                val okHttpClient = WeirdStreamerApplication.getOkHttpClient()
+                val retrofit = retrofit2.Retrofit.Builder()
+                    .baseUrl(path.substringBefore("/api"))
+                    .client(okHttpClient)
+                    .addConverterFactory(retrofit2.converter.gson.GsonConverterFactory.create())
+                    .build()
+                
+                val api = retrofit.create(com.vargon.weirdstreamer.api.ApiService::class.java)
+                val response = api.getMetadata(encodedPath)
+                
+                if (response.isSuccessful) {
+                    response.body()?.let { metadata ->
+                        // Convert duration from seconds to milliseconds
+                        metadata.duration?.let { durationSecs ->
+                            fullDuration = (durationSecs * 1000).toLong()
+                            android.util.Log.d("VideoPlayer", "Loaded metadata: duration=${durationSecs}s ($fullDuration ms)")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("VideoPlayer", "Failed to load metadata", e)
+            }
+        }
+    }
     var isSeekingSlider by remember { mutableStateOf(false) }
     var isFocusedOnTranscode by remember { mutableStateOf(false) }
     var playbackPosition by remember { mutableLongStateOf(0L) }
@@ -137,7 +179,22 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
-                    duration = exoPlayer.duration
+                    val currentDuration = exoPlayer.duration
+                    if (fullDuration > 0) {
+                        // Use the metadata duration if available
+                        duration = fullDuration
+                    } else if (enableTranscode) {
+                        // Fallback: calculate from transcode offset
+                        val calculatedFullDuration = currentDuration + transcodeStartOffset
+                        if (calculatedFullDuration > fullDuration) {
+                            fullDuration = calculatedFullDuration
+                        }
+                        duration = fullDuration
+                    } else {
+                        // Use actual stream duration
+                        fullDuration = currentDuration
+                        duration = currentDuration
+                    }
                 }
                 isBuffering = state == Player.STATE_BUFFERING || state == Player.STATE_IDLE
             }
@@ -150,9 +207,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     }
 
     // Progress updates
-    LaunchedEffect(exoPlayer) {
+    LaunchedEffect(exoPlayer, transcodeStartOffset) {
         while (true) {
-            playbackPosition = exoPlayer.currentPosition
+            playbackPosition = if (enableTranscode) {
+                exoPlayer.currentPosition + transcodeStartOffset
+            } else {
+                exoPlayer.currentPosition
+            }
             delay(500)
         }
     }
@@ -185,10 +246,40 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     }
 
     val performSkip = { amount: Int ->
+        android.util.Log.d("VideoPlayer", "performSkip - amount: $amount, enableTranscode: $enableTranscode")
+        
         val currentDuration = exoPlayer.duration
         val maxPos = if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration
         val newPos = (exoPlayer.currentPosition + amount * 1000).coerceIn(0L, maxPos)
-        exoPlayer.seekTo(newPos)
+        
+        if (!isSmbSource && enableTranscode) {
+            // For transcoded streams, use time-based seeking
+            val actualPosition = exoPlayer.currentPosition + transcodeStartOffset
+            val newTimePosition = (actualPosition + amount * 1000).coerceIn(0L, if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration + transcodeStartOffset)
+            val startTimeSeconds = newTimePosition / 1000f
+            
+            // Extract the base URL and path parameter, then rebuild with new parameters
+            val baseUrlWithPath = if (path.contains("?")) {
+                val base = path.substringBefore("?")
+                val pathParam = path.substringAfter("path=").substringBefore("&")
+                "$base?path=$pathParam"
+            } else {
+                path
+            }
+            val newUrl = "$baseUrlWithPath&auto-transcode=0&transcode=1&start=$startTimeSeconds"
+            
+            android.util.Log.d("VideoPlayer", "Transcode seek to $startTimeSeconds sec, URL: $newUrl")
+            
+            transcodeStartOffset = newTimePosition
+            
+            val mediaItem = MediaItem.fromUri(newUrl)
+            exoPlayer.setMediaItem(mediaItem)
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+        } else {
+            exoPlayer.seekTo(newPos)
+        }
+        
         skipFeedback = amount to (amount > 0)
         updateInteraction()
     }
