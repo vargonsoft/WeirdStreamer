@@ -1,58 +1,31 @@
 package media
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"image"
 	_ "image/gif"
-	"image/jpeg"
-	"image/png"
+	_ "image/png"
 	_ "golang.org/x/image/webp"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/rwcarlsen/goexif/exif"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/models"
 )
 
 type Scanner struct {
-	db *database.DB
+	db                 *database.DB
+	thumbnailGenerator *ThumbnailGenerator
 }
 
 func NewScanner(db *database.DB) *Scanner {
-	return &Scanner{db: db}
-}
-
-// generateThumbnailHash creates a unique hash for a file path
-func generateThumbnailHash(filePath string) string {
-	hash := sha256.Sum256([]byte(filePath))
-	return hex.EncodeToString(hash[:])
-}
-
-// getThumbnailPath returns the full path and URL path for a thumbnail
-// hash is stored in subdirectories: hash "ab123..." -> "/a/b/ab123..."
-func getThumbnailPath(baseDir, hash, ext string) (fullPath, urlPath string) {
-	if len(hash) < 2 {
-		// Fallback for short hashes (shouldn't happen with SHA256)
-		fullPath = filepath.Join(baseDir, hash+ext)
-		urlPath = "/thumbnails/" + hash + ext
-		return
+	return &Scanner{
+		db:                 db,
+		thumbnailGenerator: NewThumbnailGenerator(),
 	}
-	
-	subDir1 := string(hash[0])
-	subDir2 := string(hash[1])
-	fileName := hash + ext
-	
-	// Create full filesystem path
-	fullPath = filepath.Join(baseDir, subDir1, subDir2, fileName)
-	// Create URL path
-	urlPath = "/thumbnails/" + subDir1 + "/" + subDir2 + "/" + fileName
-	return
 }
 
 func (s *Scanner) ScanMediaPaths() error {
@@ -230,31 +203,12 @@ func (s *Scanner) getImageMetadata(item *models.MediaItem) error {
 
 func (s *Scanner) generateVideoThumbnail(videoPath string) string {
 	thumbnailDir := config.GlobalConfig.Media.ThumbnailPath
+	hash := GenerateThumbnailHash(videoPath)
+	_, thumbnailURL := GetThumbnailPath(thumbnailDir, hash, ".jpg")
 
-	hash := generateThumbnailHash(videoPath)
-	thumbnailPath, thumbnailURL := getThumbnailPath(thumbnailDir, hash, ".jpg")
-
-	// Skip if thumbnail already exists
-	if _, err := os.Stat(thumbnailPath); err == nil {
-		return thumbnailURL
-	}
-
-	// Create subdirectories
-	if err := os.MkdirAll(filepath.Dir(thumbnailPath), 0755); err != nil {
-		return ""
-	}
-
-	// Use ffmpeg to extract thumbnail
-	cmd := exec.Command("ffmpeg",
-		"-i", videoPath,
-		"-ss", "00:00:01.000",
-		"-vframes", "1",
-		"-vf", "scale=320:-1",
-		"-y",
-		thumbnailPath,
-	)
-
-	if err := cmd.Run(); err != nil {
+	// Use the shared thumbnail generator
+	if _, err := s.thumbnailGenerator.GenerateThumbnail(videoPath); err != nil {
+		fmt.Printf("Warning: failed to generate video thumbnail for %s: %v\n", videoPath, err)
 		return ""
 	}
 
@@ -263,11 +217,10 @@ func (s *Scanner) generateVideoThumbnail(videoPath string) string {
 
 func (s *Scanner) generateImageThumbnail(imagePath string) string {
 	thumbnailDir := config.GlobalConfig.Media.ThumbnailPath
-
-	hash := generateThumbnailHash(imagePath)
+	hash := GenerateThumbnailHash(imagePath)
 	ext := filepath.Ext(imagePath)
-	var thumbnailExt string
 	
+	var thumbnailExt string
 	// Preserve original format for PNG, use JPEG for others
 	if strings.ToLower(ext) == ".png" {
 		thumbnailExt = ".png"
@@ -275,208 +228,21 @@ func (s *Scanner) generateImageThumbnail(imagePath string) string {
 		thumbnailExt = ".jpg"
 	}
 	
-	thumbnailPath, thumbnailURL := getThumbnailPath(thumbnailDir, hash, thumbnailExt)
+	_, thumbnailURL := GetThumbnailPath(thumbnailDir, hash, thumbnailExt)
 
-	// Skip if thumbnail already exists
-	if _, err := os.Stat(thumbnailPath); err == nil {
-		return thumbnailURL
-	}
-
-	file, err := os.Open(imagePath)
-	if err != nil {
+	// Use the shared thumbnail generator
+	if _, err := s.thumbnailGenerator.GenerateThumbnail(imagePath); err != nil {
+		fmt.Printf("Warning: failed to generate image thumbnail for %s: %v\n", imagePath, err)
 		return ""
-	}
-	defer file.Close()
-
-	// Try to read EXIF data for orientation
-	orientation := 1
-	file.Seek(0, 0)
-	if exifData, err := exif.Decode(file); err == nil {
-		if orientTag, err := exifData.Get(exif.Orientation); err == nil {
-			if orientVal, err := orientTag.Int(0); err == nil {
-				orientation = orientVal
-			}
-		}
-	}
-
-	// Reset file pointer for image decoding
-	file.Seek(0, 0)
-	img, _, err := image.Decode(file)
-	if err != nil {
-		return ""
-	}
-
-	// Apply orientation correction
-	img = applyOrientation(img, orientation)
-
-	// Generate thumbnail
-	thumbnail := resizeImage(img, 320, 320)
-
-	// Create subdirectories
-	if err := os.MkdirAll(filepath.Dir(thumbnailPath), 0755); err != nil {
-		return ""
-	}
-
-	out, err := os.Create(thumbnailPath)
-	if err != nil {
-		return ""
-	}
-	defer out.Close()
-
-	if strings.ToLower(ext) == ".png" {
-		png.Encode(out, thumbnail)
-	} else {
-		jpeg.Encode(out, thumbnail, &jpeg.Options{Quality: 85})
 	}
 
 	return thumbnailURL
-}
-
-// applyOrientation rotates/flips an image according to EXIF orientation tag
-func applyOrientation(img image.Image, orientation int) image.Image {
-	switch orientation {
-	case 1:
-		// Normal - no transformation needed
-		return img
-	case 2:
-		// Flip horizontal
-		return flipHorizontal(img)
-	case 3:
-		// Rotate 180
-		return rotate180(img)
-	case 4:
-		// Flip vertical
-		return flipVertical(img)
-	case 5:
-		// Rotate 90 CW and flip horizontal
-		return flipHorizontal(rotate90(img))
-	case 6:
-		// Rotate 90 CW
-		return rotate90(img)
-	case 7:
-		// Rotate 270 CW and flip horizontal
-		return flipHorizontal(rotate270(img))
-	case 8:
-		// Rotate 270 CW
-		return rotate270(img)
-	default:
-		return img
-	}
-}
-
-func rotate90(img image.Image) image.Image {
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	rotated := image.NewRGBA(image.Rect(0, 0, h, w))
-	
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			rotated.Set(h-y-1, x, img.At(bounds.Min.X+x, bounds.Min.Y+y))
-		}
-	}
-	return rotated
-}
-
-func rotate180(img image.Image) image.Image {
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	rotated := image.NewRGBA(image.Rect(0, 0, w, h))
-	
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			rotated.Set(w-x-1, h-y-1, img.At(bounds.Min.X+x, bounds.Min.Y+y))
-		}
-	}
-	return rotated
-}
-
-func rotate270(img image.Image) image.Image {
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	rotated := image.NewRGBA(image.Rect(0, 0, h, w))
-	
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			rotated.Set(y, w-x-1, img.At(bounds.Min.X+x, bounds.Min.Y+y))
-		}
-	}
-	return rotated
-}
-
-func flipHorizontal(img image.Image) image.Image {
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	flipped := image.NewRGBA(image.Rect(0, 0, w, h))
-	
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			flipped.Set(w-x-1, y, img.At(bounds.Min.X+x, bounds.Min.Y+y))
-		}
-	}
-	return flipped
-}
-
-func flipVertical(img image.Image) image.Image {
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	flipped := image.NewRGBA(image.Rect(0, 0, w, h))
-	
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			flipped.Set(x, h-y-1, img.At(bounds.Min.X+x, bounds.Min.Y+y))
-		}
-	}
-	return flipped
 }
 
 func (s *Scanner) generateDocThumbnail(docPath string) string {
 	// For PDFs, we could use a library like pdfcpu or poppler
 	// For now, return a placeholder
 	return "/static/pdf-icon.png"
-}
-
-// resizeImage creates a thumbnail maintaining aspect ratio
-func resizeImage(src image.Image, maxWidth, maxHeight int) image.Image {
-	bounds := src.Bounds()
-	srcW := bounds.Dx()
-	srcH := bounds.Dy()
-
-	// Calculate new dimensions maintaining aspect ratio
-	ratio := float64(srcW) / float64(srcH)
-	var dstW, dstH int
-
-	if srcW > srcH {
-		dstW = maxWidth
-		dstH = int(float64(maxWidth) / ratio)
-	} else {
-		dstH = maxHeight
-		dstW = int(float64(maxHeight) * ratio)
-	}
-
-	// Ensure dimensions are at least 1
-	if dstW < 1 {
-		dstW = 1
-	}
-	if dstH < 1 {
-		dstH = 1
-	}
-
-	// Create destination image
-	dst := image.NewRGBA(image.Rect(0, 0, dstW, dstH))
-
-	// Simple bilinear scaling
-	xRatio := float64(srcW) / float64(dstW)
-	yRatio := float64(srcH) / float64(dstH)
-
-	for y := 0; y < dstH; y++ {
-		for x := 0; x < dstW; x++ {
-			srcX := int(float64(x) * xRatio)
-			srcY := int(float64(y) * yRatio)
-			dst.Set(x, y, src.At(bounds.Min.X+srcX, bounds.Min.Y+srcY))
-		}
-	}
-
-	return dst
 }
 
 // cleanupOrphanedThumbnails removes thumbnails for files that no longer exist

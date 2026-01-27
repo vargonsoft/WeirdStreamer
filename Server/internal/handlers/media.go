@@ -16,16 +16,18 @@ import (
 )
 
 type MediaHandler struct {
-	db       *database.DB
-	streamer *media.Streamer
-	scanner  *media.Scanner
+	db                 *database.DB
+	streamer           *media.Streamer
+	scanner            *media.Scanner
+	thumbnailGenerator *media.ThumbnailGenerator
 }
 
 func NewMediaHandler(db *database.DB) *MediaHandler {
 	return &MediaHandler{
-		db:       db,
-		streamer: media.NewStreamer(),
-		scanner:  media.NewScanner(db),
+		db:                 db,
+		streamer:           media.NewStreamer(),
+		scanner:            media.NewScanner(db),
+		thumbnailGenerator: media.NewThumbnailGenerator(),
 	}
 }
 
@@ -235,7 +237,7 @@ func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "scan started"})
 }
 
-// ServeThumbnail serves thumbnail files
+// ServeThumbnail serves thumbnail files with on-the-fly generation
 func (h *MediaHandler) ServeThumbnail(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	filename := vars["filename"]
@@ -248,13 +250,60 @@ func (h *MediaHandler) ServeThumbnail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	thumbnailPath := filepath.Join(config.GlobalConfig.Media.ThumbnailPath, filename)
-	
-	if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
+
+	// Check if thumbnail exists
+	if _, err := os.Stat(thumbnailPath); err == nil {
+		// Thumbnail exists, serve it
+		http.ServeFile(w, r, thumbnailPath)
+		return
+	}
+
+	// Thumbnail doesn't exist - try to find the source file and generate it
+	// Extract hash from filename (e.g., "abc123.jpg" -> "abc123")
+	hash := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+
+	// Look up the media item by thumbnail hash
+	// We need to find which file this thumbnail belongs to
+	mediaItems, err := h.db.ListMediaItems("")
+	if err != nil {
+		log.Printf("Failed to list media items for thumbnail generation: %v", err)
 		respondError(w, http.StatusNotFound, "Thumbnail not found")
 		return
 	}
 
-	http.ServeFile(w, r, thumbnailPath)
+	// Find the media item that matches this thumbnail hash
+	var sourceFile string
+	for _, item := range mediaItems {
+		itemHash := media.GenerateThumbnailHash(item.Path)
+		if itemHash == hash {
+			sourceFile = item.Path
+			break
+		}
+	}
+
+	if sourceFile == "" {
+		// No matching source file found
+		respondError(w, http.StatusNotFound, "Thumbnail source not found")
+		return
+	}
+
+	// Verify the source file still exists
+	if _, err := os.Stat(sourceFile); os.IsNotExist(err) {
+		respondError(w, http.StatusNotFound, "Source file not found")
+		return
+	}
+
+	// Generate thumbnail on-the-fly
+	log.Printf("Generating thumbnail on-the-fly for: %s", sourceFile)
+	generatedPath, err := h.thumbnailGenerator.GenerateThumbnail(sourceFile)
+	if err != nil {
+		log.Printf("Failed to generate thumbnail for %s: %v", sourceFile, err)
+		respondError(w, http.StatusInternalServerError, "Failed to generate thumbnail")
+		return
+	}
+
+	// Serve the newly generated thumbnail
+	http.ServeFile(w, r, generatedPath)
 }
 
 func (h *MediaHandler) isValidMediaPath(path string) bool {
