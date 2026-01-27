@@ -8,8 +8,18 @@
   },
   "media": {
     "paths": [
-      "/path/to/media/folder1",
-      "/path/to/media/folder2"
+      {
+        "name": "Movies",
+        "path": "/path/to/media/movies"
+      },
+      {
+        "name": "TV Shows",
+        "path": "/path/to/media/tv"
+      },
+      {
+        "name": "Photos",
+        "path": "/path/to/media/photos"
+      }
     ],
     "thumbnailPath": "./thumbnails",
     "supportedVideoFormats": [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".3gp", ".3gpp", ".m4v", ".mpg", ".mpeg", ".ts", ".mp2"],

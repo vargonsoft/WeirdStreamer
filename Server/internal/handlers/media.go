@@ -146,9 +146,14 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	if relativePath == "" {
 		for _, mediaPath := range config.GlobalConfig.Media.Paths {
 			if stat, err := os.Stat(mediaPath.Path); err == nil && stat.IsDir() {
+				// Use configured name if available, otherwise fall back to base path
+				displayName := mediaPath.Name
+				if displayName == "" {
+					displayName = filepath.Base(mediaPath.Path)
+				}
 				dirs = append(dirs, models.Directory{
 					Path: filepath.Base(mediaPath.Path),
-					Name: filepath.Base(mediaPath.Path),
+					Name: displayName,
 				})
 			}
 		}
