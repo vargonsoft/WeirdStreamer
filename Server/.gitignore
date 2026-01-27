@@ -4,8 +4,9 @@
 *.dll
 *.so
 *.dylib
-server
-cli
+/cli
+/server
+
 
 # Test binary, built with `go test -c`
 *.test
