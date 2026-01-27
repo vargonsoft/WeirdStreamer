@@ -107,6 +107,9 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 
 	// Check if user wants to force transcoding
 	forceTranscode := r.URL.Query().Get("transcode") == "1"
+	
+	// Check if client wants to disable auto-transcoding (e.g., native apps)
+	autoTranscode := r.URL.Query().Get("auto-transcode") != "0"
 
 	// Validate path is within allowed media paths
 	if !h.isValidMediaPath(path) {
@@ -120,7 +123,7 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode); err != nil {
+	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, autoTranscode); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to stream media")
 		return
 	}

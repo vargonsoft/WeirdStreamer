@@ -378,7 +378,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     private fun getActualFilename(path: String): String {
         // If it's a server URL with base64-encoded path, decode it
         if (path.contains("/api/media/stream?path=")) {
-            val base64Path = path.substringAfter("path=")
+            // Extract just the base64 path parameter, removing any additional query params
+            val base64Path = path.substringAfter("path=").substringBefore("&")
             return try {
                 String(Base64.decode(base64Path, Base64.NO_WRAP))
             } catch (e: Exception) {

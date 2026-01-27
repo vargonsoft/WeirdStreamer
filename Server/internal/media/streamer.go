@@ -18,10 +18,20 @@ func NewStreamer() *Streamer {
 }
 
 // ServeContent handles HTTP range requests for efficient streaming
-func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool) error {
-	// Check if transcoding is needed for browser compatibility or forced by user
-	if forceTranscode || s.needsTranscoding(filePath) {
-		fmt.Printf("Transcoding %s for browser compatibility (forced: %v)\n", filePath, forceTranscode)
+func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool) error {
+	// Check if transcoding is needed
+	// 1. Explicitly requested via ?transcode=1
+	// 2. Auto-transcoding enabled and file needs transcoding
+	shouldTranscode := forceTranscode
+	if !shouldTranscode && autoTranscode && s.needsTranscoding(filePath) {
+		shouldTranscode = true
+		fmt.Printf("Auto-transcoding %s for compatibility\n", filePath)
+	}
+	
+	if shouldTranscode {
+		if forceTranscode {
+			fmt.Printf("Transcoding %s (requested by client)\n", filePath)
+		}
 		return s.transcodeAndServe(w, r, filePath)
 	}
 

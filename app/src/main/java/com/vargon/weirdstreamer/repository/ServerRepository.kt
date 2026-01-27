@@ -102,7 +102,8 @@ class ServerRepository(
     override fun getStreamUrl(path: String): String {
         // Server requires base64-encoded paths
         val encodedPath = Base64.encodeToString(path.toByteArray(), Base64.NO_WRAP)
-        return "$serverUrl/api/media/stream?path=$encodedPath"
+        // Disable auto-transcoding since Android supports most formats natively
+        return "$serverUrl/api/media/stream?path=$encodedPath&auto-transcode=0"
     }
     
     override fun getThumbnailUrl(path: String): String? {
