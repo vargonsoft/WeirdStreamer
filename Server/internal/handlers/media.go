@@ -294,25 +294,18 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 					MimeType: h.getMimeTypeFromExtension(ext),
 				}
 
-				// Generate thumbnail on-demand for images and videos
-				if mediaType == "image" || mediaType == "video" {
-					// Generate thumbnail in background (non-blocking)
-					go func(path string, mType string) {
-						var thumbnailURL string
-						if mType == "image" {
-							thumbnailURL = h.scanner.GenerateImageThumbnail(path)
-						} else if mType == "video" {
-							thumbnailURL = h.scanner.GenerateVideoThumbnail(path)
-						}
-
-						// Update item in database if it doesn't exist
-						if thumbnailURL != "" {
-							item.ThumbnailURL = thumbnailURL
-							// Save to database for future requests
-							h.db.SaveMediaItem(item)
-						}
-					}(entryPath, mediaType)
+				// Generate thumbnail immediately for images and videos
+				// This ensures thumbnails appear on first browse
+				if mediaType == "image" {
+					item.ThumbnailURL = h.scanner.GenerateImageThumbnail(entryPath)
+				} else if mediaType == "video" {
+					item.ThumbnailURL = h.scanner.GenerateVideoThumbnail(entryPath)
 				}
+
+				// Save to database in background for future requests
+				go func(itemCopy *models.MediaItem) {
+					h.db.SaveMediaItem(itemCopy)
+				}(item)
 			}
 
 			items = append(items, *item)
@@ -341,6 +334,121 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
 	go h.scanner.ScanMediaPaths()
 	respondJSON(w, http.StatusOK, map[string]string{"status": "scan started"})
+}
+
+// RegenerateThumbnails godoc
+// @Summary Regenerate thumbnails for a directory
+// @Description Force regeneration of all thumbnails in the specified directory (admin only)
+// @Tags media
+// @Produce json
+// @Param path query string false "Directory path (relative to media root)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Security BearerAuth
+// @Router /api/media/regenerate-thumbnails [post]
+func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Request) {
+	// Check if user is admin
+	user := r.Context().Value("user")
+	if user == nil {
+		respondError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	userMap, ok := user.(map[string]interface{})
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid user context")
+		return
+	}
+
+	isAdmin, _ := userMap["is_admin"].(bool)
+	if !isAdmin {
+		respondError(w, http.StatusForbidden, "Admin access required")
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+
+	// Determine target directory
+	var targetPath string
+	if relativePath == "" {
+		// Regenerate all thumbnails
+		respondError(w, http.StatusBadRequest, "Path parameter required")
+		return
+	}
+
+	pathParts := strings.Split(strings.Trim(relativePath, "/"), "/")
+
+	// Find which root this belongs to
+	for _, mediaPath := range config.GlobalConfig.Media.Paths {
+		if filepath.Base(mediaPath.Path) == pathParts[0] {
+			if len(pathParts) > 1 {
+				targetPath = filepath.Join(mediaPath.Path, filepath.Join(pathParts[1:]...))
+			} else {
+				targetPath = mediaPath.Path
+			}
+			break
+		}
+	}
+
+	if targetPath == "" {
+		respondError(w, http.StatusNotFound, "Path not found")
+		return
+	}
+
+	// Validate path is within allowed media paths
+	if !h.isValidMediaPath(targetPath) {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
+	// Start regeneration in background
+	go func() {
+		count := 0
+		entries, err := os.ReadDir(targetPath)
+		if err != nil {
+			log.Printf("Failed to read directory for thumbnail regeneration: %v", err)
+			return
+		}
+
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+
+			entryPath := filepath.Join(targetPath, entry.Name())
+			ext := strings.ToLower(filepath.Ext(entry.Name()))
+			mediaType := h.getMediaTypeFromExtension(ext)
+
+			if mediaType == "image" || mediaType == "video" {
+				// Delete existing thumbnail
+				hash := media.GenerateThumbnailHash(entryPath)
+				var thumbExt string
+				if mediaType == "image" && strings.ToLower(ext) == ".png" {
+					thumbExt = ".png"
+				} else {
+					thumbExt = ".jpg"
+				}
+				thumbPath, _ := media.GetThumbnailPath(config.GlobalConfig.Media.ThumbnailPath, hash, thumbExt)
+				os.Remove(thumbPath)
+
+				// Regenerate thumbnail
+				if mediaType == "image" {
+					h.scanner.GenerateImageThumbnail(entryPath)
+				} else {
+					h.scanner.GenerateVideoThumbnail(entryPath)
+				}
+				count++
+			}
+		}
+
+		log.Printf("Regenerated %d thumbnails for path: %s", count, relativePath)
+	}()
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "regeneration started",
+		"path":   relativePath,
+	})
 }
 
 // ServeThumbnail serves thumbnail files with on-the-fly generation

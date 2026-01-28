@@ -17,6 +17,7 @@ const loginForm = document.getElementById('login-form');
 const loginError = document.getElementById('login-error');
 const logoutBtn = document.getElementById('logout-btn');
 const scanBtn = document.getElementById('scan-btn');
+const regenerateThumbnailsBtn = document.getElementById('regenerate-thumbnails-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const closeSettingsBtn = document.getElementById('close-settings-btn');
 const tabs = document.querySelectorAll('.tab');
@@ -51,6 +52,11 @@ function setupEventListeners() {
     // Scan
     scanBtn.addEventListener('click', handleScan);
     
+    // Regenerate Thumbnails
+    if (regenerateThumbnailsBtn) {
+        regenerateThumbnailsBtn.addEventListener('click', handleRegenerateThumbnails);
+    }
+
     // Settings
     if (settingsBtn) {
         settingsBtn.addEventListener('click', showSettings);
@@ -158,6 +164,9 @@ function showMainScreen() {
         settingsBtn.style.display = 'inline-block';
     }
     
+    // Update regenerate thumbnails button visibility
+    updateRegenerateThumbnailsButton();
+
     // Load config for friendly path names
     if (!state.currentConfig) {
         api.getConfig().then(config => {
@@ -223,6 +232,41 @@ async function handleScan() {
     }
 }
 
+async function handleRegenerateThumbnails() {
+    if (!state.currentPath) {
+        alert('Please navigate to a folder first');
+        return;
+    }
+
+    if (!confirm(`Regenerate all thumbnails for this folder?\n\nPath: ${state.currentPath}\n\nThis will delete and regenerate all thumbnails. Continue?`)) {
+        return;
+    }
+
+    try {
+        regenerateThumbnailsBtn.disabled = true;
+        regenerateThumbnailsBtn.textContent = '🔄 Regenerating...';
+        await api.regenerateThumbnails(state.currentPath);
+        alert('Thumbnail regeneration started. This may take a while.\n\nRefresh the page in a few moments to see updated thumbnails.');
+    } catch (error) {
+        alert('Failed to regenerate thumbnails: ' + error.message);
+    } finally {
+        regenerateThumbnailsBtn.disabled = false;
+        regenerateThumbnailsBtn.textContent = '🔄 Regenerate Thumbnails';
+    }
+}
+
+function updateRegenerateThumbnailsButton() {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    if (regenerateThumbnailsBtn) {
+        // Show button only for admins when in a folder (not root)
+        if (user.is_admin && state.currentPath) {
+            regenerateThumbnailsBtn.style.display = 'inline-block';
+        } else {
+            regenerateThumbnailsBtn.style.display = 'none';
+        }
+    }
+}
+
 async function loadMedia(pushHistory = true) {
     try {
         const data = await api.browseDirectory(state.currentPath);
@@ -247,6 +291,7 @@ async function loadMedia(pushHistory = true) {
         }
         
         updateBreadcrumb();
+        updateRegenerateThumbnailsButton();
         renderMedia();
     } catch (error) {
         console.error('Failed to load media:', error);

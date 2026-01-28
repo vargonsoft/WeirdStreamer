@@ -108,6 +108,13 @@ class MediaAPI {
         });
     }
 
+    async regenerateThumbnails(path) {
+        const query = path ? `?path=${encodeURIComponent(path)}` : '';
+        return this.request(`/api/media/regenerate-thumbnails${query}`, {
+            method: 'POST',
+        });
+    }
+
     async getConfig() {
         return this.request('/api/config');
     }
