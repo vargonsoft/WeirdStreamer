@@ -8,13 +8,14 @@ import (
 	_ "image/gif"
 	"image/jpeg"
 	"image/png"
-	_ "golang.org/x/image/webp"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	_ "golang.org/x/image/webp"
 
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/weirdstreamer/server/internal/config"
@@ -88,7 +89,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 	case "video":
 		thumbnailExt = ".jpg"
 		thumbnailPath, thumbnailURL = GetThumbnailPath(thumbnailDir, hash, thumbnailExt)
-		
+
 		// Check if already exists and is valid size (> 1KB)
 		if info, err := os.Stat(thumbnailPath); err == nil {
 			if info.Size() > 1024 {
@@ -128,7 +129,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 				"-i", filePath,
 				"-ss", seekTime,
 				"-vframes", "1",
-				"-update", "1",         // Silence image2 muxer warning about hash filenames
+				"-update", "1", // Silence image2 muxer warning about hash filenames
 				"-vf", "scale=320:-1",
 				"-y",
 				thumbnailPath,
@@ -152,7 +153,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			cmd := exec.Command("ffmpeg",
 				"-i", filePath,
 				"-vframes", "1",
-				"-update", "1",         // Silence image2 muxer warning
+				"-update", "1", // Silence image2 muxer warning
 				"-vf", "scale=320:-1",
 				"-y",
 				thumbnailPath,
@@ -189,7 +190,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		} else {
 			thumbnailExt = ".jpg"
 		}
-		
+
 		thumbnailPath, thumbnailURL = GetThumbnailPath(thumbnailDir, hash, thumbnailExt)
 
 		// Check if already exists and is valid size (> 1KB)

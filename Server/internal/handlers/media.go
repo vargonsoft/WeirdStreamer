@@ -473,24 +473,24 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 				os.Remove(thumbPath)
 
 				// Regenerate thumbnail
-			var thumbnailURL string
-			if mediaType == "image" {
-				thumbnailURL = h.scanner.GenerateImageThumbnail(entryPath)
-			} else {
-				thumbnailURL = h.scanner.GenerateVideoThumbnail(entryPath)
-			}
-			
-			// Notify SSE clients about the regenerated thumbnail
-			if thumbnailURL != "" {
-				h.notifyThumbnailReady(entryPath, thumbnailURL)
-			}
-			
-			count++
-		}
-	}
+				var thumbnailURL string
+				if mediaType == "image" {
+					thumbnailURL = h.scanner.GenerateImageThumbnail(entryPath)
+				} else {
+					thumbnailURL = h.scanner.GenerateVideoThumbnail(entryPath)
+				}
 
-	log.Printf("Regenerated %d thumbnails for path: %s", count, relativePath)
-}()
+				// Notify SSE clients about the regenerated thumbnail
+				if thumbnailURL != "" {
+					h.notifyThumbnailReady(entryPath, thumbnailURL)
+				}
+
+				count++
+			}
+		}
+
+		log.Printf("Regenerated %d thumbnails for path: %s", count, relativePath)
+	}()
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "regeneration started",

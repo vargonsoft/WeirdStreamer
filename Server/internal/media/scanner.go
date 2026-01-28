@@ -364,4 +364,3 @@ func (s *Scanner) cleanupOrphanedThumbnails() error {
 
 	return nil
 }
-

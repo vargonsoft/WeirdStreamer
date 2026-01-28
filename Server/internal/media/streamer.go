@@ -27,7 +27,7 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 		shouldTranscode = true
 		fmt.Printf("Auto-transcoding %s for browser compatibility\n", filePath)
 	}
-	
+
 	if shouldTranscode {
 		if forceTranscode {
 			fmt.Printf("Transcoding %s (explicitly requested)\n", filePath)
@@ -176,7 +176,7 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	} else {
 		fmt.Printf("Starting transcoding from beginning for: %s\n", filePath)
 	}
-	
+
 	// FFmpeg command for fast transcoding
 	// -ss: seek to start position (before -i for faster seeking)
 	// -i: input file
@@ -203,7 +203,7 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 		"-f", "mp4",
 		"pipe:1",
 	)
-	
+
 	cmd := exec.CommandContext(r.Context(), "ffmpeg", args...)
 
 	// Get stdout and stderr pipes
@@ -211,7 +211,7 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
-	
+
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
@@ -221,7 +221,7 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
-	
+
 	// Monitor for client disconnect and kill process
 	done := make(chan struct{})
 	go func() {
@@ -233,7 +233,7 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 			// Normal completion
 		}
 	}()
-	
+
 	// Log stderr in background
 	go func() {
 		buf := make([]byte, 1024)
@@ -258,7 +258,7 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	// Wait for ffmpeg to finish
 	cmdErr := cmd.Wait()
 	close(done)
-	
+
 	fmt.Printf("Transcoding finished for: %s\n", filePath)
 
 	if copyErr != nil {
