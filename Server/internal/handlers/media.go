@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/media"
@@ -371,20 +372,13 @@ func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
 // @Router /api/media/regenerate-thumbnails [post]
 func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Request) {
 	// Check if user is admin
-	user := r.Context().Value("user")
-	if user == nil {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
 		respondError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	userMap, ok := user.(map[string]interface{})
-	if !ok {
-		respondError(w, http.StatusUnauthorized, "Invalid user context")
-		return
-	}
-
-	isAdmin, _ := userMap["is_admin"].(bool)
-	if !isAdmin {
+	if !claims.IsAdmin {
 		respondError(w, http.StatusForbidden, "Admin access required")
 		return
 	}

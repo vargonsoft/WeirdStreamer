@@ -1,10 +1,27 @@
-# Black Thumbnails - Root Cause and Fix
+# Black Thumbnails - Root Cause and Fix ✅ APPLIED
 
-## Root Cause Identified
+## Status: Changes Applied
 
+All code changes have been successfully applied to fix:
+1. ✅ Black thumbnails (regenerating empty thumbnail URLs)
+2. ✅ Unauthorized error on regenerate (using proper auth.GetClaims())
+
+**Next Steps:**
+1. Commit and push changes from local machine
+2. Pull and rebuild on babylon5
+3. Hard refresh browser to clear JavaScript cache
+
+## Issues Fixed
+
+### 1. Black Thumbnails
 The black thumbnails issue was caused by **database entries with empty thumbnail URLs** from the previous async generation bug.
 
-### Why This Happened:
+### 2. Unauthorized Error on Regenerate
+The regenerate thumbnails endpoint was using incorrect method to check admin status, causing "Unauthorized" errors and signing users out.
+
+## Root Causes
+
+### Black Thumbnails:
 
 1. **Old Code (Async Bug):**
    - Thumbnails generated in background goroutine
@@ -23,11 +40,23 @@ The black thumbnails issue was caused by **database entries with empty thumbnail
    - Update database with new URL
    - This fixes BOTH new and old items
 
+### Unauthorized Error:
+
+1. **Wrong Admin Check:**
+   - Code tried to get user from context as `map[string]interface{}`
+   - This caused type assertion failure
+   - Result: "Unauthorized" error and user signed out
+
+2. **Correct Admin Check:**
+   - Use `auth.GetClaims(r.Context())` to get Claims struct
+   - Check `claims.IsAdmin` boolean directly
+   - Proper error handling without invalidating session
+
 ## Changes Made
 
 ### File: Server/internal/handlers/media.go
 
-**Added Logic:**
+**Fix 1: Regenerate Missing Thumbnails**
 ```go
 // Item found in database
 if item.ThumbnailURL == "" && (mediaType == "image" || mediaType == "video") {
@@ -43,6 +72,30 @@ if item.ThumbnailURL == "" && (mediaType == "image" || mediaType == "video") {
         h.db.SaveMediaItem(itemCopy)
     }(item)
 }
+```
+
+**Fix 2: Correct Admin Check**
+```go
+// OLD (WRONG):
+user := r.Context().Value("user")
+userMap, ok := user.(map[string]interface{})
+isAdmin, _ := userMap["is_admin"].(bool)
+
+// NEW (CORRECT):
+claims := auth.GetClaims(r.Context())
+if claims == nil {
+    respondError(w, http.StatusUnauthorized, "Unauthorized")
+    return
+}
+if !claims.IsAdmin {
+    respondError(w, http.StatusForbidden, "Admin access required")
+    return
+}
+```
+
+**Added Import:**
+```go
+import "github.com/weirdstreamer/server/internal/auth"
 ```
 
 **Added Debug Logging:**
@@ -66,10 +119,11 @@ git status
 git add Server/
 
 # Commit
-git commit -m "Fix black thumbnails - regenerate missing thumbnails from database
+git commit -m "Fix black thumbnails and admin check for regenerate
 
-- Database had old entries with empty thumbnail URLs
-- Now checks if thumbnailURL is empty and regenerates
+- Database had old entries with empty thumbnail URLs - now regenerates them
+- Fixed admin check to use auth.GetClaims() instead of map assertion
+- Prevents unauthorized errors and user sign-out
 - Added debug logging for troubleshooting
 - Fixes both new and old database entries"
 
