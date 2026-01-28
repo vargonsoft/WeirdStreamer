@@ -366,7 +366,17 @@ function updateBreadcrumb() {
             breadcrumb.appendChild(document.createTextNode(' / '));
             const link = document.createElement('a');
             link.href = '#';
-            link.textContent = part;
+            
+            // For the first part (root directory), use friendly name if available
+            let displayName = part;
+            if (index === 0 && state.currentConfig && state.currentConfig.media.paths) {
+                const mediaPath = state.currentConfig.media.paths.find(mp => mp.id === part);
+                if (mediaPath) {
+                    displayName = mediaPath.name;
+                }
+            }
+            
+            link.textContent = displayName;
             currentPath += '/' + part;
             const pathCopy = currentPath;
             link.onclick = (e) => {
