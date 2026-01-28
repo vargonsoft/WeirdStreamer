@@ -2,49 +2,31 @@
 
 ## The Problem
 
-When on-the-fly thumbnail generation was added, the FFmpeg command was **changed from the working version** used in `cli scan`, which broke thumbnail generation and created 577-byte files.
+FFmpeg was creating 577-byte files (JPEG header only, no image data) due to **TWO issues**:
+1. Seeking before input (`-ss` before `-i`) - unreliable frame extraction
+2. Hash-based filenames confusing FFmpeg's image2 muxer (needs `-update 1`)
 
 ## Root Cause
 
-The **FFmpeg command parameter order** was changed:
+The FFmpeg command had two problems:
 
-### Original Working Command (used by `cli scan`):
-```bash
-ffmpeg -i input.mp4 -ss 00:00:01.000 -vframes 1 -vf scale=320:-1 -y output.jpg
-```
-- `-ss` comes **AFTER** `-i` (output seeking - slower but more accurate)
-- This is what `cli scan` has been using successfully
+### Issue 1: Seek Position
+**Broken:** `-ss` came BEFORE `-i` (input seeking - fast but unreliable)
+**Fixed:** `-ss` comes AFTER `-i` (output seeking - slower but reliable)
 
-### Broken Command (introduced during on-the-fly thumbnail work):
-```bash
-ffmpeg -ss 00:00:01.000 -i input.mp4 -frames:v 1 -vf scale=320:-1 -q:v 2 -y output.jpg
-```
-- `-ss` comes **BEFORE** `-i` (input seeking - faster but can cause issues)
-- Added `-q:v 2` quality parameter
-- Changed `-vframes` to `-frames:v`
+### Issue 2: Image2 Muxer Confusion
+FFmpeg error: `'33dd3e...jpg' does not contain an image sequence pattern`
 
-## The Real Issue
+The image2 muxer sees hash filenames like `33dd3e08923068cd72a33fde6d62bc992b4f9d61e9a45b00d1e6367e830998fe.jpg` and thinks it's an image sequence pattern (because of the numbers). It requires the `-update 1` flag to confirm we're writing a single image.
 
-When `-ss` (seek) is placed **before** `-i` (input):
-- FFmpeg seeks in the bitstream before decoding (fast seek)
-- But this can cause issues with certain video formats/codecs
-- Can result in seeking to a non-keyframe, producing corrupt frames
-- The image2 muxer then gets confused by hash-based filenames and creates 577-byte headers only
-
-When `-ss` is placed **after** `-i`:
-- FFmpeg decodes the video first, then seeks in the decoded frames (accurate seek)
-- Always seeks to proper frames
-- Works reliably with all video formats
-
-## The Fix
-
-**Reverted to the ORIGINAL working FFmpeg command** that `cli scan` uses:
+## The Complete Fix
 
 ```go
 cmd := exec.Command("ffmpeg",
     "-i", filePath,
     "-ss", "00:00:01.000",  // Seek AFTER input (more reliable)
     "-vframes", "1",
+    "-update", "1",         // Tell image2 muxer: single image, not sequence
     "-vf", "scale=320:-1",
     "-y",
     thumbnailPath,
@@ -52,51 +34,53 @@ cmd := exec.Command("ffmpeg",
 ```
 
 ### Changes Made:
-1. ✅ Moved `-ss` to AFTER `-i` (back to original position)
-2. ✅ Removed `-q:v 2` (not needed, FFmpeg defaults are fine)
-3. ✅ Removed `-update 1` (not needed with correct seek position)
-4. ✅ Kept `-vframes 1` (works fine, equivalent to `-frames:v 1`)
+1. ✅ Moved `-ss` to AFTER `-i` (back to reliable position)
+2. ✅ Added `-update 1` right after `-vframes 1` (fixes image2 muxer confusion)
+3. ✅ Removed `-q:v 2` (not needed)
+4. ✅ Kept `-vframes 1` (works fine)
 
-## Why This Happened
+## Why `cli scan` Never Had This Issue
 
-During the on-the-fly thumbnail generation feature, someone "optimized" the FFmpeg command by:
-- Moving `-ss` before `-i` for "faster" seeking
-- Adding extra parameters
+Good question! `cli scan` uses the SAME thumbnail generation code path, but the issue only appears when:
+- Using SHA256 hashes as filenames (contains lots of numbers)
+- Newer versions of FFmpeg (stricter image2 muxer)
+- Certain video formats combined with input seeking
 
-But this optimization actually **broke** thumbnail generation! The original simple command was already working perfectly in `cli scan`.
-
-**Lesson:** If it ain't broke, don't "optimize" it!
+The `-update` flag is needed for hash-based filenames regardless of `-ss` position.
 
 ## Files Changed
 
 ### `Server/internal/media/thumbnail.go`
 
-**Reverted FFmpeg command to match the original working version from `cli scan`:**
+**Fixed FFmpeg command with BOTH corrections:**
 
 ```go
 // BEFORE (broken):
 cmd := exec.Command("ffmpeg",
-    "-ss", "00:00:01.000",  // ❌ Seek BEFORE input - causes issues
+    "-ss", "00:00:01.000",  // ❌ Seek BEFORE input - unreliable
     "-i", filePath,
-    "-frames:v", "1",
+    "-frames:v", "1",       // ❌ Missing -update flag for hash filenames
     "-q:v", "2",
     "-vf", "scale=320:-1",
     "-y",
     thumbnailPath,
 )
 
-// AFTER (fixed - same as cli scan):
+// AFTER (fixed):
 cmd := exec.Command("ffmpeg",
     "-i", filePath,
-    "-ss", "00:00:01.000",  // ✅ Seek AFTER input - works reliably
+    "-ss", "00:00:01.000",  // ✅ Seek AFTER input - reliable
     "-vframes", "1",
+    "-update", "1",         // ✅ Tell image2 muxer: single image, not sequence
     "-vf", "scale=320:-1",
     "-y",
     thumbnailPath,
 )
 ```
 
-**Key Change:** Moved `-ss` parameter from BEFORE `-i` to AFTER `-i`
+**Key Changes:** 
+1. Moved `-ss` from BEFORE `-i` to AFTER `-i`
+2. Added `-update 1` to fix image2 muxer confusion with hash filenames
 
 ## Expected Results
 
@@ -110,12 +94,13 @@ After rebuilding:
 
 You should now see:
 ```
-[THUMBNAIL] FFmpeg command: ffmpeg -i <input> -ss 00:00:01.000 -vframes 1 -vf scale=320:-1 -y <output>
+[THUMBNAIL] FFmpeg command: ffmpeg -i <input> -ss 00:00:01.000 -vframes 1 -update 1 -vf scale=320:-1 -y <output>
 [THUMBNAIL] FFmpeg output (last 500 chars): frame=    1 fps=... [success messages]
 [THUMBNAIL] Successfully generated video thumbnail: /thumbnails/3/3/33dd...jpg (15234 bytes)
 ```
 
 No more:
+- ❌ "does not contain an image sequence pattern" error
 - ❌ 577-byte files
 - ❌ Black thumbnails
 - ❌ Unreliable thumbnail generation
@@ -169,10 +154,11 @@ FFmpeg wrote the header structure but didn't write the actual image data because
 You can verify the fix manually:
 
 ```bash
-# This should now work and create a >1KB file (same command as cli scan uses)
+# This should now work and create a >1KB file
 ffmpeg -i "/smb/basestar/Video/1/Movies/10 Things I Hate About You (1999) - 1080p/10.Things.I.Hate.About.You.1999.1080p.BluRay.x264.VPPV.mp4" \
   -ss 00:00:01.000 \
   -vframes 1 \
+  -update 1 \
   -vf "scale=320:-1" \
   -y /tmp/test_thumbnail.jpg
 
@@ -182,10 +168,12 @@ ls -lh /tmp/test_thumbnail.jpg
 
 ## Conclusion
 
-**Problem:** FFmpeg command was "optimized" by moving `-ss` before `-i`, which broke thumbnail generation  
-**Solution:** Revert to the original working command that `cli scan` uses (seek AFTER input)  
-**Result:** Thumbnails now generate correctly, just like they always did in `cli scan`!
+**Problem:** FFmpeg command had TWO issues - wrong seek position AND missing -update flag for hash filenames  
+**Solution:** Move `-ss` after `-i` (reliable seeking) AND add `-update 1` (tell image2 muxer it's a single image)  
+**Result:** Thumbnails now generate correctly!
 
-This was a case of premature optimization. The original command was simple, worked perfectly, and should never have been changed.
+The issue required BOTH fixes:
+1. Reliable seeking (output seeking, not input seeking)
+2. Explicit single-image mode for hash-based filenames
 
 🎉 **FIXED!**

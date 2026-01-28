@@ -122,16 +122,17 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		// Use ffmpeg to extract thumbnail
 		log.Printf("[THUMBNAIL] Generating video thumbnail: source=%s, output=%s", filePath, thumbnailPath)
 
-		// Use the ORIGINAL working command from cli scan
+		// Use the ORIGINAL working command from cli scan, with -update flag for hash filenames
 		cmd := exec.Command("ffmpeg",
 			"-i", filePath,
 			"-ss", "00:00:01.000",  // Seek AFTER input (more reliable than before)
 			"-vframes", "1",
+			"-update", "1",         // Required for hash-based filenames (image2 muxer)
 			"-vf", "scale=320:-1",
 			"-y",
 			thumbnailPath,
 		)
-		log.Printf("[THUMBNAIL] FFmpeg command: ffmpeg -i <input> -ss 00:00:01.000 -vframes 1 -vf scale=320:-1 -y <output>")
+		log.Printf("[THUMBNAIL] FFmpeg command: ffmpeg -i <input> -ss 00:00:01.000 -vframes 1 -update 1 -vf scale=320:-1 -y <output>")
 
 		// Capture output for debugging
 		output, err := cmd.CombinedOutput()
@@ -142,6 +143,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			cmd = exec.Command("ffmpeg",
 				"-i", filePath,
 				"-vframes", "1",
+				"-update", "1",         // Required for hash-based filenames
 				"-vf", "scale=320:-1",
 				"-y",
 				thumbnailPath,
