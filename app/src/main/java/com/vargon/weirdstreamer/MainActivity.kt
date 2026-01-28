@@ -36,7 +36,7 @@ class MainActivity : ComponentActivity() {
             
             WeirdStreamerTheme(appTheme = currentTheme) {
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     var showSettings by remember { mutableStateOf(false) }
                     val selectedVideo = viewModel.selectedVideoPath

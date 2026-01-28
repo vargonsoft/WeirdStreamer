@@ -1,6 +1,7 @@
 package com.vargon.weirdstreamer.ui.components
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -25,6 +26,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -33,13 +35,18 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.tv.material3.*
 import com.vargon.weirdstreamer.ContentFilter
 import com.vargon.weirdstreamer.MediaViewModel
+import com.vargon.weirdstreamer.R
 import com.vargon.weirdstreamer.repository.MediaSource
+import com.vargon.weirdstreamer.ui.theme.AppTheme
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -56,11 +63,27 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         viewModel.navigateUp()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(48.dp)
-            .onPreviewKeyEvent { 
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Background image for Cinema Blue theme - on the right side
+        if (MaterialTheme.colorScheme.primary == com.vargon.weirdstreamer.ui.theme.CinemaGold) {
+            Image(
+                painter = painterResource(id = R.drawable.film_reel),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .align(Alignment.CenterEnd)
+                    .offset { IntOffset(125.dp.roundToPx(), 0) }
+                    .alpha(0.10f),
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.CenterEnd
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(48.dp)
+                .onPreviewKeyEvent { 
                 if (it.key == Key.Backspace && it.type == KeyEventType.KeyUp) {
                     // Don't handle if dialog is showing
                     if (currentSource != null && dialogFocusRequester == null) {
@@ -248,6 +271,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     }
                 )
             }
+        }
         }
     }
 

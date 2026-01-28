@@ -14,6 +14,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -26,7 +29,19 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.vargon.weirdstreamer.SmbFileItem
 import com.vargon.weirdstreamer.repository.FileItem
+import com.vargon.weirdstreamer.ui.theme.CinemaGold
 import java.util.Locale
+
+// Helper to get folder icon color based on theme
+@Composable
+private fun folderIconColor(isDirectory: Boolean): Color {
+    if (!isDirectory) return LocalContentColor.current
+    
+    // Only apply gold color in Cinema Blue theme (check if primary color is gold)
+    val isCinemaBlue = MaterialTheme.colorScheme.primary == CinemaGold
+    
+    return if (isCinemaBlue) CinemaGold else LocalContentColor.current
+}
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -135,7 +150,8 @@ fun TileItem(
                     Icon(
                         icon, 
                         contentDescription = null, 
-                        modifier = Modifier.fillMaxSize(0.5f).padding(10.dp)
+                        modifier = Modifier.fillMaxSize(0.5f).padding(10.dp),
+                        tint = folderIconColor(icon == Icons.Default.Folder)
                     )
                 }
                 
@@ -201,7 +217,12 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
                 var isImageLoaded by remember(item.path) { mutableStateOf(false) }
                 
                 if (!isImageLoaded) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp),
+                        tint = folderIconColor(icon == Icons.Default.Folder)
+                    )
                 }
                 
                 if (!item.isDirectory && item.name != "..") {
@@ -259,7 +280,12 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
                 var isImageLoaded by remember(thumbnailUrl) { mutableStateOf(false) }
                 
                 if (!isImageLoaded) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp),
+                        tint = folderIconColor(icon == Icons.Default.Folder)
+                    )
                 }
                 
                 if (thumbnailUrl != null) {

@@ -22,14 +22,15 @@ fun WeirdStreamerTheme(
         AppTheme.CINEMA_BLUE -> {
             darkColorScheme(
                 primary = CinemaGold,
-                onPrimary = CinemaNavy,
+                onPrimary = CinemaBlueDeep,
                 secondary = CinemaBlueLight,
                 onSecondary = CinemaSilver,
                 tertiary = CinemaGoldDark,
-                background = CinemaNavy,
+                background = CinemaBlueDeep, // Deepest blue for background
                 onBackground = CinemaSilver,
-                surface = CinemaBlue,
-                onSurface = CinemaSilver
+                surface = CinemaBlueMid, // Mid-gradient for surfaces
+                onSurface = CinemaSilver,
+                surfaceVariant = CinemaBlue // Original blue for surface variants
             )
         }
         AppTheme.CINEMA_RED -> {
