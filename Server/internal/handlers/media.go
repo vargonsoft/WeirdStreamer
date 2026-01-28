@@ -286,6 +286,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			item, err := h.db.GetMediaItem(entryPath)
 			if err != nil {
 				// Not in database - create item with basic info
+				log.Printf("Item not in DB, creating new: %s", entryPath)
 				item = &models.MediaItem{
 					Path:     entryPath,
 					Name:     entry.Name(),
@@ -298,14 +299,35 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 				// This ensures thumbnails appear on first browse
 				if mediaType == "image" {
 					item.ThumbnailURL = h.scanner.GenerateImageThumbnail(entryPath)
+					log.Printf("Generated image thumbnail: path=%s, url=%s", entryPath, item.ThumbnailURL)
 				} else if mediaType == "video" {
 					item.ThumbnailURL = h.scanner.GenerateVideoThumbnail(entryPath)
+					log.Printf("Generated video thumbnail: path=%s, url=%s", entryPath, item.ThumbnailURL)
 				}
 
 				// Save to database in background for future requests
 				go func(itemCopy *models.MediaItem) {
 					h.db.SaveMediaItem(itemCopy)
 				}(item)
+			} else {
+				// Item found in database
+				log.Printf("Item from DB: path=%s, thumbnailURL=%s", entryPath, item.ThumbnailURL)
+
+				// If thumbnail URL is empty, regenerate it
+				// This fixes items saved with the old async bug
+				if item.ThumbnailURL == "" && (mediaType == "image" || mediaType == "video") {
+					log.Printf("Regenerating missing thumbnail for: %s", entryPath)
+					if mediaType == "image" {
+						item.ThumbnailURL = h.scanner.GenerateImageThumbnail(entryPath)
+					} else if mediaType == "video" {
+						item.ThumbnailURL = h.scanner.GenerateVideoThumbnail(entryPath)
+					}
+
+					// Update database with new thumbnail URL
+					go func(itemCopy *models.MediaItem) {
+						h.db.SaveMediaItem(itemCopy)
+					}(item)
+				}
 			}
 
 			items = append(items, *item)
