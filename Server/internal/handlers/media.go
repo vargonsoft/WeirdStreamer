@@ -266,10 +266,56 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 				Name: entry.Name(),
 			})
 		} else {
-			// Try to get from database
-			if item, err := h.db.GetMediaItem(entryPath); err == nil {
-				items = append(items, *item)
+			// Get file info
+			fileInfo, err := entry.Info()
+			if err != nil {
+				log.Printf("Failed to get file info for %s: %v", entryPath, err)
+				continue
 			}
+
+			// Determine media type based on extension
+			ext := strings.ToLower(filepath.Ext(entry.Name()))
+			mediaType := h.getMediaTypeFromExtension(ext)
+
+			// Only include supported media files
+			if mediaType == "" {
+				continue
+			}
+
+			// Try to get from database first (for cached metadata/thumbnails)
+			item, err := h.db.GetMediaItem(entryPath)
+			if err != nil {
+				// Not in database - create item with basic info
+				item = &models.MediaItem{
+					Path:     entryPath,
+					Name:     entry.Name(),
+					Type:     mediaType,
+					Size:     fileInfo.Size(),
+					MimeType: h.getMimeTypeFromExtension(ext),
+				}
+
+				// Generate thumbnail on-demand for images and videos
+				if mediaType == "image" || mediaType == "video" {
+					// Generate thumbnail in background (non-blocking)
+					go func(path string, mType string) {
+						var thumbnailURL string
+						if mType == "image" {
+							thumbnailURL = h.scanner.GenerateImageThumbnail(path)
+						} else if mType == "video" {
+							thumbnailURL = h.scanner.GenerateVideoThumbnail(path)
+						}
+
+						// Update item in database if it doesn't exist
+						if thumbnailURL != "" {
+							item.ThumbnailURL = thumbnailURL
+							// Save to database for future requests
+							h.db.SaveMediaItem(item)
+						}
+					}(entryPath, mediaType)
+				}
+			}
+
+			items = append(items, *item)
 		}
 	}
 
@@ -383,3 +429,60 @@ func (h *MediaHandler) isValidMediaPath(path string) bool {
 	}
 	return false
 }
+
+// getMediaTypeFromExtension determines the media type based on file extension
+func (h *MediaHandler) getMediaTypeFromExtension(ext string) string {
+	// Check against configured formats
+	for _, videoExt := range config.GlobalConfig.Media.SupportedVideoFormats {
+		if ext == videoExt {
+			return "video"
+		}
+	}
+	for _, imageExt := range config.GlobalConfig.Media.SupportedImageFormats {
+		if ext == imageExt {
+			return "image"
+		}
+	}
+	for _, docExt := range config.GlobalConfig.Media.SupportedDocFormats {
+		if ext == docExt {
+			return "document"
+		}
+	}
+	return ""
+}
+
+// getMimeTypeFromExtension returns the MIME type for a file extension
+func (h *MediaHandler) getMimeTypeFromExtension(ext string) string {
+	mimeTypes := map[string]string{
+		// Video
+		".mp4":  "video/mp4",
+		".mkv":  "video/x-matroska",
+		".avi":  "video/x-msvideo",
+		".mov":  "video/quicktime",
+		".wmv":  "video/x-ms-wmv",
+		".flv":  "video/x-flv",
+		".webm": "video/webm",
+		".3gp":  "video/3gpp",
+		".3gpp": "video/3gpp",
+		".m4v":  "video/x-m4v",
+		".mpg":  "video/mpeg",
+		".mpeg": "video/mpeg",
+		".ts":   "video/mp2t",
+		".mp2":  "video/mpeg",
+		// Image
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".png":  "image/png",
+		".gif":  "image/gif",
+		".bmp":  "image/bmp",
+		".webp": "image/webp",
+		// Document
+		".pdf": "application/pdf",
+	}
+
+	if mimeType, ok := mimeTypes[ext]; ok {
+		return mimeType
+	}
+	return "application/octet-stream"
+}
+

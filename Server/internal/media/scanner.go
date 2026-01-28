@@ -99,11 +99,11 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 		switch mediaType {
 		case "video":
 			if err := s.getVideoMetadata(item); err == nil {
-				item.ThumbnailURL = s.generateVideoThumbnail(path)
+				item.ThumbnailURL = s.GenerateVideoThumbnail(path)
 			}
 		case "image":
 			if err := s.getImageMetadata(item); err == nil {
-				item.ThumbnailURL = s.generateImageThumbnail(path)
+				item.ThumbnailURL = s.GenerateImageThumbnail(path)
 			}
 		case "document":
 			item.ThumbnailURL = s.generateDocThumbnail(path)
@@ -240,7 +240,7 @@ func (s *Scanner) getImageMetadata(item *models.MediaItem) error {
 	return nil
 }
 
-func (s *Scanner) generateVideoThumbnail(videoPath string) string {
+func (s *Scanner) GenerateVideoThumbnail(videoPath string) string {
 	thumbnailDir := config.GlobalConfig.Media.ThumbnailPath
 	hash := GenerateThumbnailHash(videoPath)
 	_, thumbnailURL := GetThumbnailPath(thumbnailDir, hash, ".jpg")
@@ -254,7 +254,7 @@ func (s *Scanner) generateVideoThumbnail(videoPath string) string {
 	return thumbnailURL
 }
 
-func (s *Scanner) generateImageThumbnail(imagePath string) string {
+func (s *Scanner) GenerateImageThumbnail(imagePath string) string {
 	thumbnailDir := config.GlobalConfig.Media.ThumbnailPath
 	hash := GenerateThumbnailHash(imagePath)
 	ext := filepath.Ext(imagePath)
@@ -362,3 +362,35 @@ func (s *Scanner) cleanupOrphanedThumbnails() error {
 
 	return nil
 }
+
+// GetFileMetadata gets metadata for a single file without saving to database
+func (s *Scanner) GetFileMetadata(path string) (*models.MediaItem, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("file not found: %w", err)
+	}
+
+	mediaType := s.getMediaType(path)
+	if mediaType == "" {
+		return nil, fmt.Errorf("unsupported file type")
+	}
+
+	item := &models.MediaItem{
+		Path:     path,
+		Name:     filepath.Base(path),
+		Type:     mediaType,
+		Size:     fileInfo.Size(),
+		MimeType: s.getMimeType(path),
+	}
+
+	// Get metadata based on type
+	switch mediaType {
+	case "video":
+		s.getVideoMetadata(item)
+	case "image":
+		s.getImageMetadata(item)
+	}
+
+	return item, nil
+}
+
