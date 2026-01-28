@@ -418,9 +418,9 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 
 	pathParts := strings.Split(strings.Trim(relativePath, "/"), "/")
 
-	// Find which root this belongs to
+	// Find which root this belongs to. Match only by the stable ID.
 	for _, mediaPath := range config.GlobalConfig.Media.Paths {
-		if filepath.Base(mediaPath.Path) == pathParts[0] {
+		if mediaPath.ID != "" && mediaPath.ID == pathParts[0] {
 			if len(pathParts) > 1 {
 				targetPath = filepath.Join(mediaPath.Path, filepath.Join(pathParts[1:]...))
 			} else {
