@@ -448,6 +448,19 @@ function createMediaElement(item) {
         thumbnail.appendChild(icon);
     }
     
+    // Add transcode button for videos
+    if (item.type === 'video') {
+        const transcodeBtn = document.createElement('button');
+        transcodeBtn.className = 'transcode-btn';
+        transcodeBtn.innerHTML = '🔄';
+        transcodeBtn.title = 'Play with transcoding';
+        transcodeBtn.onclick = (e) => {
+            e.stopPropagation(); // Prevent triggering item click
+            playVideo(item, true); // Play with transcoding enabled
+        };
+        thumbnail.appendChild(transcodeBtn);
+    }
+
     const info = document.createElement('div');
     info.className = 'media-info';
     
