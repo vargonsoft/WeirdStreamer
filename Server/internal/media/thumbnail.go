@@ -122,19 +122,16 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		// Use ffmpeg to extract thumbnail
 		log.Printf("[THUMBNAIL] Generating video thumbnail: source=%s, output=%s", filePath, thumbnailPath)
 
-		ffmpegArgs := []string{
-			"-ss", "00:00:01.000",  // Seek to 1 second (before input for faster seeking)
+		// Use the ORIGINAL working command from cli scan
+		cmd := exec.Command("ffmpeg",
 			"-i", filePath,
-			"-frames:v", "1",       // Extract one frame
-			"-update", "1",         // Tell image2 muxer to write a single image (not a sequence)
-			"-vf", "scale=320:-1",  // Scale to 320px width, maintain aspect ratio
-			"-q:v", "2",            // High quality JPEG
-			"-y",                   // Overwrite output file
+			"-ss", "00:00:01.000",  // Seek AFTER input (more reliable than before)
+			"-vframes", "1",
+			"-vf", "scale=320:-1",
+			"-y",
 			thumbnailPath,
-		}
-		log.Printf("[THUMBNAIL] FFmpeg command: ffmpeg %v", ffmpegArgs)
-
-		cmd := exec.Command("ffmpeg", ffmpegArgs...)
+		)
+		log.Printf("[THUMBNAIL] FFmpeg command: ffmpeg -i <input> -ss 00:00:01.000 -vframes 1 -vf scale=320:-1 -y <output>")
 
 		// Capture output for debugging
 		output, err := cmd.CombinedOutput()
@@ -144,10 +141,8 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			log.Printf("[THUMBNAIL] FFmpeg output from failed attempt: %s", string(output))
 			cmd = exec.Command("ffmpeg",
 				"-i", filePath,
-				"-frames:v", "1",       // Extract first frame
-				"-update", "1",         // Tell image2 muxer to write a single image
-				"-vf", "scale=320:-1",  // Scale to 320px width
-				"-q:v", "2",            // High quality JPEG
+				"-vframes", "1",
+				"-vf", "scale=320:-1",
 				"-y",
 				thumbnailPath,
 			)
