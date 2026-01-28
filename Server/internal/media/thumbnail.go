@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	_ "golang.org/x/image/webp"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,6 +62,8 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 
+	log.Printf("[THUMBNAIL] GenerateThumbnail called for: %s", filePath)
+
 	// Determine media type
 	ext := strings.ToLower(filepath.Ext(filePath))
 	var mediaType string
@@ -75,6 +78,8 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 	default:
 		return "", fmt.Errorf("unsupported media type: %s", ext)
 	}
+
+	log.Printf("[THUMBNAIL] Media type determined: %s (ext: %s)", mediaType, ext)
 
 	thumbnailDir := config.GlobalConfig.Media.ThumbnailPath
 	hash := GenerateThumbnailHash(filePath)
@@ -94,8 +99,13 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 				return thumbnailPath, nil
 			}
 			// File exists but is too small - delete and regenerate
-			fmt.Printf("Removing corrupted thumbnail (size=%d): %s\n", info.Size(), thumbnailPath)
+			log.Printf("[THUMBNAIL] Removing corrupted thumbnail (size=%d): %s", info.Size(), thumbnailPath)
 			os.Remove(thumbnailPath)
+		}
+
+		// Verify source file exists
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			return "", fmt.Errorf("source video file not found: %s", filePath)
 		}
 
 		// Create subdirectories
@@ -104,18 +114,47 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		}
 
 		// Use ffmpeg to extract thumbnail
+		log.Printf("[THUMBNAIL] Generating video thumbnail: source=%s, output=%s", filePath, thumbnailPath)
 		cmd := exec.Command("ffmpeg",
+			"-ss", "00:00:01.000",  // Seek to 1 second (before input for faster seeking)
 			"-i", filePath,
-			"-ss", "00:00:01.000",
-			"-vframes", "1",
-			"-vf", "scale=320:-1",
-			"-y",
+			"-frames:v", "1",       // Extract one frame
+			"-vf", "scale=320:-1",  // Scale to 320px width, maintain aspect ratio
+			"-q:v", "2",            // High quality JPEG
+			"-y",                   // Overwrite output file
 			thumbnailPath,
 		)
 
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("ffmpeg failed: %w", err)
+		// Capture output for debugging
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Try again without seeking (for videos shorter than 1 second)
+			log.Printf("[THUMBNAIL] FFmpeg failed with seek, trying without seek for: %s", filePath)
+			cmd = exec.Command("ffmpeg",
+				"-i", filePath,
+				"-frames:v", "1",       // Extract first frame
+				"-vf", "scale=320:-1",  // Scale to 320px width
+				"-q:v", "2",            // High quality JPEG
+				"-y",
+				thumbnailPath,
+			)
+			output, err = cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("[THUMBNAIL] FFmpeg error for %s: %v\nOutput: %s", filePath, err, string(output))
+				return "", fmt.Errorf("ffmpeg failed: %w (output: %s)", err, string(output))
+			}
 		}
+
+		// Verify the file was actually created and has content
+		if info, err := os.Stat(thumbnailPath); err != nil {
+			log.Printf("[THUMBNAIL] FFmpeg completed but thumbnail not found: %s", thumbnailPath)
+			return "", fmt.Errorf("thumbnail not created")
+		} else if info.Size() < 1024 {
+			log.Printf("[THUMBNAIL] FFmpeg created thumbnail but size too small: %d bytes for %s", info.Size(), thumbnailPath)
+			return "", fmt.Errorf("thumbnail too small: %d bytes", info.Size())
+		}
+
+		log.Printf("[THUMBNAIL] Successfully generated video thumbnail: %s (%d bytes)", thumbnailPath, info.Size())
 
 	case "image":
 		// Preserve original format for PNG, use JPEG for others
@@ -133,7 +172,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 				return thumbnailPath, nil
 			}
 			// File exists but is too small - delete and regenerate
-			fmt.Printf("Removing corrupted thumbnail (size=%d): %s\n", info.Size(), thumbnailPath)
+			log.Printf("[THUMBNAIL] Removing corrupted thumbnail (size=%d): %s", info.Size(), thumbnailPath)
 			os.Remove(thumbnailPath)
 		}
 
@@ -186,6 +225,19 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			if err := jpeg.Encode(out, thumbnail, &jpeg.Options{Quality: 85}); err != nil {
 				return "", fmt.Errorf("failed to encode JPEG thumbnail: %w", err)
 			}
+		}
+
+		out.Close() // Ensure file is flushed
+
+		// Verify the thumbnail was created with valid size
+		if info, err := os.Stat(thumbnailPath); err != nil {
+			log.Printf("[THUMBNAIL] Image thumbnail not found after encoding: %s", thumbnailPath)
+			return "", fmt.Errorf("thumbnail not created")
+		} else if info.Size() < 1024 {
+			log.Printf("[THUMBNAIL] Image thumbnail too small: %d bytes for %s", info.Size(), thumbnailPath)
+			return "", fmt.Errorf("thumbnail too small: %d bytes", info.Size())
+		} else {
+			log.Printf("[THUMBNAIL] Successfully generated image thumbnail: %s (%d bytes)", thumbnailPath, info.Size())
 		}
 
 	case "document":

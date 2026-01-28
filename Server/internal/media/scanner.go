@@ -245,12 +245,15 @@ func (s *Scanner) GenerateVideoThumbnail(videoPath string) string {
 	hash := GenerateThumbnailHash(videoPath)
 	_, thumbnailURL := GetThumbnailPath(thumbnailDir, hash, ".jpg")
 
+	log.Printf("[SCANNER] Calling GenerateThumbnail for video: %s", videoPath)
+
 	// Use the shared thumbnail generator
 	if _, err := s.thumbnailGenerator.GenerateThumbnail(videoPath); err != nil {
-		fmt.Printf("Warning: failed to generate video thumbnail for %s: %v\n", videoPath, err)
+		log.Printf("[SCANNER] WARNING: Failed to generate video thumbnail for %s: %v", videoPath, err)
 		return ""
 	}
 
+	log.Printf("[SCANNER] Successfully generated thumbnail URL: %s", thumbnailURL)
 	return thumbnailURL
 }
 
@@ -269,12 +272,15 @@ func (s *Scanner) GenerateImageThumbnail(imagePath string) string {
 
 	_, thumbnailURL := GetThumbnailPath(thumbnailDir, hash, thumbnailExt)
 
+	log.Printf("[SCANNER] Calling GenerateThumbnail for image: %s", imagePath)
+
 	// Use the shared thumbnail generator
 	if _, err := s.thumbnailGenerator.GenerateThumbnail(imagePath); err != nil {
-		fmt.Printf("Warning: failed to generate image thumbnail for %s: %v\n", imagePath, err)
+		log.Printf("[SCANNER] WARNING: Failed to generate image thumbnail for %s: %v", imagePath, err)
 		return ""
 	}
 
+	log.Printf("[SCANNER] Successfully generated thumbnail URL: %s", thumbnailURL)
 	return thumbnailURL
 }
 
