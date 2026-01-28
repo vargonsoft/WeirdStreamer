@@ -1,6 +1,7 @@
 package com.vargon.weirdstreamer
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -29,6 +30,19 @@ class MainActivity : ComponentActivity() {
                     val selectedVideo = viewModel.selectedVideoPath
                     val selectedImage = viewModel.selectedImagePath
                     val selectedPdf = viewModel.selectedPdfPath
+
+                    // Keep screen on when viewing media (video, image, or PDF)
+                    val isViewingMedia = selectedVideo != null || selectedImage != null || selectedPdf != null
+                    DisposableEffect(isViewingMedia) {
+                        if (isViewingMedia) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
+                        onDispose {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
+                    }
 
                     if (selectedVideo != null) {
                         VideoPlayer(
