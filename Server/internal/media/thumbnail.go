@@ -126,6 +126,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			"-ss", "00:00:01.000",  // Seek to 1 second (before input for faster seeking)
 			"-i", filePath,
 			"-frames:v", "1",       // Extract one frame
+			"-update", "1",         // Tell image2 muxer to write a single image (not a sequence)
 			"-vf", "scale=320:-1",  // Scale to 320px width, maintain aspect ratio
 			"-q:v", "2",            // High quality JPEG
 			"-y",                   // Overwrite output file
@@ -144,6 +145,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			cmd = exec.Command("ffmpeg",
 				"-i", filePath,
 				"-frames:v", "1",       // Extract first frame
+				"-update", "1",         // Tell image2 muxer to write a single image
 				"-vf", "scale=320:-1",  // Scale to 320px width
 				"-q:v", "2",            // High quality JPEG
 				"-y",
