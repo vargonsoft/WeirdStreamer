@@ -133,4 +133,14 @@ class CredentialManager(context: Context) {
     fun getAppTheme(): String {
         return sharedPreferences.getString("app_theme", "DEFAULT") ?: "DEFAULT"
     }
+
+    // Thumbnail cache versioning - increment when thumbnails are regenerated
+    fun getThumbnailCacheVersion(serverUrl: String, path: String): Long {
+        return sharedPreferences.getLong("thumb_ver_${serverUrl}_${path}", 0)
+    }
+
+    fun incrementThumbnailCacheVersion(serverUrl: String, path: String) {
+        val currentVersion = getThumbnailCacheVersion(serverUrl, path)
+        sharedPreferences.edit().putLong("thumb_ver_${serverUrl}_${path}", currentVersion + 1).apply()
+    }
 }

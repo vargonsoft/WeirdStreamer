@@ -38,12 +38,12 @@ fun <T> FocusableList(
     itemContent: @Composable (T, Modifier) -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val focusRequesters = remember(items) { List(items.size) { FocusRequester() } }
+    val focusRequesters = remember(items.size) { List(items.size) { FocusRequester() } }
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
     val dialogFocusRequester = remember { FocusRequester() }
 
-    val initialIndex = remember(items, initialSelection) {
+    val initialIndex = remember(initialSelection) {
         if (initialSelection == null) 0
         else {
             items.indexOfFirst { item ->
@@ -57,7 +57,7 @@ fun <T> FocusableList(
         }
     }
 
-    var focusedIndex by remember(items) { mutableIntStateOf(initialIndex) }
+    var focusedIndex by remember(initialSelection) { mutableIntStateOf(initialIndex) }
     var showJumpChar by remember { mutableStateOf(false) }
     var jumpLabel by remember { mutableStateOf("") }
     var showCharacterSelector by remember { mutableStateOf(false) }
@@ -117,7 +117,7 @@ fun <T> FocusableList(
         Pair(folders.sorted(), files.sorted())
     }
 
-    LaunchedEffect(items, initialIndex, isGridView) {
+    LaunchedEffect(initialSelection, isGridView) {
         if (items.isNotEmpty()) {
             val safeIndex = initialIndex.coerceIn(items.indices)
             if (isGridView) gridState.scrollToItem(safeIndex)
@@ -168,7 +168,16 @@ fun <T> FocusableList(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                gridItemsIndexed(items) { index, item ->
+                gridItemsIndexed(
+                    items = items,
+                    key = { _, item ->
+                        when (item) {
+                            is SmbFileItem -> item.path
+                            is com.vargon.weirdstreamer.repository.FileItem -> item.path
+                            else -> item.hashCode()
+                        }
+                    }
+                ) { index, item ->
                     itemContent(item, Modifier
                         .focusRequester(focusRequesters[index])
                         .onFocusChanged { if (it.isFocused) focusedIndex = index }
@@ -210,7 +219,16 @@ fun <T> FocusableList(
                         }
                     }
             ) {
-                itemsIndexed(items) { index, item ->
+                itemsIndexed(
+                    items = items,
+                    key = { _, item ->
+                        when (item) {
+                            is SmbFileItem -> item.path
+                            is com.vargon.weirdstreamer.repository.FileItem -> item.path
+                            else -> item.hashCode()
+                        }
+                    }
+                ) { index, item ->
                     itemContent(item, Modifier
                         .focusRequester(focusRequesters[index])
                         .onFocusChanged { if (it.isFocused) focusedIndex = index }

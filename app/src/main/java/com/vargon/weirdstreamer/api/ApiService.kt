@@ -32,4 +32,7 @@ interface ApiService {
     @GET("/api/media/stream")
     @Streaming
     suspend fun streamFile(@Query("path") path: String): Response<ResponseBody>
+    
+    @POST("/api/media/regenerate-thumbnails")
+    suspend fun regenerateThumbnails(@Query("path") path: String): Response<Map<String, String>>
 }

@@ -23,6 +23,9 @@ class ServerRepository(
                 if (directory != null) {
                     val items = mutableListOf<FileItem>()
                     
+                    // Get cache version for this path to invalidate cached thumbnails
+                    val cacheVersion = credentialManager.getThumbnailCacheVersion(serverUrl, path)
+                    
                     // Add subdirectories
                     directory.dirs?.forEach { dir ->
                         items.add(
@@ -46,11 +49,14 @@ class ServerRepository(
                                 size = mediaItem.size,
                                 mimeType = mediaItem.mimeType,
                                 thumbnailUrl = mediaItem.thumbnailUrl?.let { 
-                                    if (it.startsWith("http")) it else "$serverUrl$it" 
+                                    val baseUrl = if (it.startsWith("http")) it else "$serverUrl$it"
+                                    // Add cache version to invalidate Coil cache on regeneration
+                                    if (cacheVersion > 0) "$baseUrl?v=$cacheVersion" else baseUrl
                                 },
                                 duration = mediaItem.duration,
                                 width = mediaItem.width,
-                                height = mediaItem.height
+                                height = mediaItem.height,
+                                originalPath = mediaItem.path // Store original path for SSE matching
                             )
                         )
                     }
@@ -169,5 +175,24 @@ class ServerRepository(
             android.util.Log.e("ServerRepository", "getInputStream - exception", e)
             Result.failure(e)
         }
+    }
+    
+    suspend fun regenerateThumbnails(path: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.regenerateThumbnails(path)
+            if (response.isSuccessful) {
+                // Increment cache version to invalidate Coil cache
+                credentialManager.incrementThumbnailCacheVersion(serverUrl, path)
+                Result.success(true)
+            } else {
+                Result.failure(Exception("Failed to regenerate thumbnails: ${response.code()} ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    fun getToken(): String? {
+        return credentialManager.getServerToken(serverUrl)
     }
 }

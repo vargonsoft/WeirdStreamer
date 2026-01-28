@@ -12,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
+import com.vargon.weirdstreamer.api.ThumbnailUpdateListener
 import com.vargon.weirdstreamer.repository.FileItem
 import com.vargon.weirdstreamer.repository.MediaRepository
 import com.vargon.weirdstreamer.repository.MediaSource
@@ -25,6 +26,7 @@ import jcifs.smb.SmbFile
 import jcifs.smb.SmbUnsupportedOperationException
 import jcifs.smb.SmbAuthException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -89,6 +91,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     private var currentRepository: MediaRepository? = null
+    
+    private var thumbnailListener: ThumbnailUpdateListener? = null
+    private var thumbnailListenerJob: Job? = null
 
     fun toggleViewMode() {
         val current = isGridView
@@ -267,6 +272,13 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                                 throw result.exceptionOrNull() ?: Exception("Authentication failed")
                             }
                         }
+                        
+                        // Start listening for thumbnail updates
+                        val token = repo.getToken()
+                        if (token != null) {
+                            startThumbnailUpdates(source.serverUrl, token)
+                        }
+                        
                         repo
                     }
                 }
@@ -504,5 +516,68 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             downloadProgress = null
             null
         }
+    }
+    
+    fun startThumbnailUpdates(serverUrl: String, token: String) {
+        android.util.Log.d("MediaViewModel", "Starting thumbnail updates for $serverUrl")
+        stopThumbnailUpdates()
+        
+        thumbnailListener = ThumbnailUpdateListener(serverUrl, token)
+        thumbnailListenerJob = viewModelScope.launch {
+            thumbnailListener?.connect()?.collect { update ->
+                android.util.Log.d("MediaViewModel", "Thumbnail update received: ${update.path}")
+                // Update the file list if the original path matches
+                fileList = fileList.map { item ->
+                    if (item.originalPath == update.path) {
+                        val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) {
+                            update.thumbnailURL
+                        } else {
+                            "$serverUrl${update.thumbnailURL}"
+                        }
+                        // Add cache-busting timestamp to force Coil to reload
+                        val cacheBustedUrl = "$fullThumbnailUrl?t=${System.currentTimeMillis()}"
+                        android.util.Log.d("MediaViewModel", "Updating thumbnail for ${item.name}: $cacheBustedUrl")
+                        item.copy(thumbnailUrl = cacheBustedUrl)
+                    } else {
+                        item
+                    }
+                }
+            }
+        }
+    }
+    
+    fun stopThumbnailUpdates() {
+        thumbnailListenerJob?.cancel()
+        thumbnailListenerJob = null
+        thumbnailListener?.disconnect()
+        thumbnailListener = null
+    }
+    
+    fun regenerateThumbnails() {
+        val repo = currentRepository
+        if (repo !is ServerRepository) {
+            errorMessage = "Regenerate thumbnails is only available for server sources"
+            return
+        }
+        
+        if (currentPath.isEmpty()) {
+            errorMessage = "Please navigate to a folder first"
+            return
+        }
+        
+        viewModelScope.launch {
+            isLoading = true
+            val result = repo.regenerateThumbnails(currentPath)
+            isLoading = false
+            
+            if (result.isFailure) {
+                errorMessage = "Failed to regenerate thumbnails: ${result.exceptionOrNull()?.message}"
+            }
+        }
+    }
+    
+    override fun onCleared() {
+        super.onCleared()
+        stopThumbnailUpdates()
     }
 }

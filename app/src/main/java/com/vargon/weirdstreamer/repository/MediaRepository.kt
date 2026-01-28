@@ -35,7 +35,8 @@ data class FileItem(
     val thumbnailUrl: String? = null,
     val duration: Double? = null,
     val width: Int? = null,
-    val height: Int? = null
+    val height: Int? = null,
+    val originalPath: String? = null // Server filesystem path for SSE matching
 )
 
 // Repository interface for media browsing

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.HorizontalDivider
@@ -45,6 +46,7 @@ import com.vargon.weirdstreamer.repository.MediaSource
 fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     var showAddServerDialog by remember { mutableStateOf(false) }
     var showAuthDialog by remember { mutableStateOf(false) }
+    var showRegenerateThumbnailsDialog by remember { mutableStateOf(false) }
     val toolbarFocusRequester = remember { FocusRequester() }
     var dialogFocusRequester by remember { mutableStateOf<FocusRequester?>(null) }
 
@@ -179,6 +181,15 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         contentDescription = "Content Filter"
                     )
                 }
+                
+                // Show regenerate button only for Server sources when in a folder
+                if (currentSource is MediaSource.Server && viewModel.currentPath.isNotEmpty()) {
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Button(onClick = { showRegenerateThumbnailsDialog = true }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Regenerate Thumbnails")
+                    }
+                }
+                
                 Spacer(modifier = Modifier.width(16.dp))
             } else {
                 // Only show Add Source button on server selection screen
@@ -266,6 +277,19 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             onLogin = { user, pass, save ->
                 showAuthDialog = false
                 currentSource?.let { viewModel.loadPath(it, viewModel.currentPath, user, pass, save) }
+            }
+        )
+    }
+    
+    // Regenerate Thumbnails Confirmation Dialog
+    if (showRegenerateThumbnailsDialog) {
+        ConfirmDialog(
+            title = "Regenerate Thumbnails",
+            message = "Regenerate all thumbnails for this folder? This will delete and recreate all thumbnails.",
+            onDismiss = { showRegenerateThumbnailsDialog = false },
+            onConfirm = {
+                showRegenerateThumbnailsDialog = false
+                viewModel.regenerateThumbnails()
             }
         )
     }
@@ -555,5 +579,55 @@ private fun AddServerDialog(
         if (selectedType != null) {
             focusRequester.requestFocus()
         }
+    }
+}
+
+@Composable
+private fun ConfirmDialog(
+    title: String,
+    message: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val cancelFocusRequester = remember { FocusRequester() }
+    
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            tonalElevation = 8.dp,
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.focusRequester(cancelFocusRequester)
+                    ) {
+                        Text("Cancel")
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Button(onClick = onConfirm) {
+                        Text("Confirm")
+                    }
+                }
+            }
+        }
+    }
+    
+    LaunchedEffect(Unit) {
+        cancelFocusRequester.requestFocus()
     }
 }
