@@ -85,6 +85,7 @@ func main() {
 	api.HandleFunc("/media/metadata", mediaHandler.GetMediaMetadata).Methods("GET")
 	api.HandleFunc("/media/scan", mediaHandler.ScanMedia).Methods("POST")
 	api.HandleFunc("/media/regenerate-thumbnails", mediaHandler.RegenerateThumbnails).Methods("POST")
+	api.HandleFunc("/media/thumbnail-updates", mediaHandler.ThumbnailUpdates).Methods("GET")
 	api.HandleFunc("/media/{path}", mediaHandler.GetMediaInfo).Methods("GET")
 
 	// Config endpoints (admin only)

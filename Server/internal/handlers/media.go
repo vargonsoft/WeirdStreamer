@@ -2,11 +2,14 @@ package handlers
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/mux"
 	"github.com/weirdstreamer/server/internal/auth"
@@ -16,11 +19,18 @@ import (
 	"github.com/weirdstreamer/server/internal/models"
 )
 
+// SSE client for thumbnail notifications
+type thumbnailClient struct {
+	channel chan string
+}
+
 type MediaHandler struct {
 	db                 *database.DB
 	streamer           *media.Streamer
 	scanner            *media.Scanner
 	thumbnailGenerator *media.ThumbnailGenerator
+	thumbnailClients   map[string]*thumbnailClient
+	clientsMux         sync.RWMutex
 }
 
 func NewMediaHandler(db *database.DB) *MediaHandler {
@@ -29,6 +39,7 @@ func NewMediaHandler(db *database.DB) *MediaHandler {
 		streamer:           media.NewStreamer(),
 		scanner:            media.NewScanner(db),
 		thumbnailGenerator: media.NewThumbnailGenerator(),
+		thumbnailClients:   make(map[string]*thumbnailClient),
 	}
 }
 
@@ -287,7 +298,6 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			item, err := h.db.GetMediaItem(entryPath)
 			if err != nil {
 				// Not in database - create item with basic info
-				log.Printf("Item not in DB, creating new: %s", entryPath)
 				item = &models.MediaItem{
 					Path:     entryPath,
 					Name:     entry.Name(),
@@ -296,37 +306,42 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 					MimeType: h.getMimeTypeFromExtension(ext),
 				}
 
-				// Generate thumbnail immediately for images and videos
-				// This ensures thumbnails appear on first browse
-				if mediaType == "image" {
-					item.ThumbnailURL = h.scanner.GenerateImageThumbnail(entryPath)
-					log.Printf("Generated image thumbnail: path=%s, url=%s", entryPath, item.ThumbnailURL)
-				} else if mediaType == "video" {
-					item.ThumbnailURL = h.scanner.GenerateVideoThumbnail(entryPath)
-					log.Printf("Generated video thumbnail: path=%s, url=%s", entryPath, item.ThumbnailURL)
-				}
+				// Generate thumbnail in background for images and videos
+				// Don't block the browse request
+				if mediaType == "image" || mediaType == "video" {
+					go func(itemCopy *models.MediaItem) {
+						var thumbnailURL string
+						if itemCopy.Type == "image" {
+							thumbnailURL = h.scanner.GenerateImageThumbnail(itemCopy.Path)
+						} else {
+							thumbnailURL = h.scanner.GenerateVideoThumbnail(itemCopy.Path)
+						}
+						itemCopy.ThumbnailURL = thumbnailURL
+						h.db.SaveMediaItem(itemCopy)
 
-				// Save to database in background for future requests
-				go func(itemCopy *models.MediaItem) {
-					h.db.SaveMediaItem(itemCopy)
-				}(item)
+						// Notify thumbnail ready via SSE
+						h.notifyThumbnailReady(itemCopy.Path, thumbnailURL)
+					}(item)
+				} else {
+					// Save non-media items immediately
+					go h.db.SaveMediaItem(item)
+				}
 			} else {
 				// Item found in database
-				log.Printf("Item from DB: path=%s, thumbnailURL=%s", entryPath, item.ThumbnailURL)
-
-				// If thumbnail URL is empty, regenerate it
-				// This fixes items saved with the old async bug
+				// If thumbnail URL is empty, regenerate it in background
 				if item.ThumbnailURL == "" && (mediaType == "image" || mediaType == "video") {
-					log.Printf("Regenerating missing thumbnail for: %s", entryPath)
-					if mediaType == "image" {
-						item.ThumbnailURL = h.scanner.GenerateImageThumbnail(entryPath)
-					} else if mediaType == "video" {
-						item.ThumbnailURL = h.scanner.GenerateVideoThumbnail(entryPath)
-					}
-
-					// Update database with new thumbnail URL
 					go func(itemCopy *models.MediaItem) {
+						var thumbnailURL string
+						if itemCopy.Type == "image" {
+							thumbnailURL = h.scanner.GenerateImageThumbnail(itemCopy.Path)
+						} else {
+							thumbnailURL = h.scanner.GenerateVideoThumbnail(itemCopy.Path)
+						}
+						itemCopy.ThumbnailURL = thumbnailURL
 						h.db.SaveMediaItem(itemCopy)
+
+						// Notify thumbnail ready via SSE
+						h.notifyThumbnailReady(itemCopy.Path, thumbnailURL)
 					}(item)
 				}
 			}
@@ -610,3 +625,78 @@ func (h *MediaHandler) getMimeTypeFromExtension(ext string) string {
 	return "application/octet-stream"
 }
 
+// ThumbnailUpdates handles Server-Sent Events for thumbnail generation progress
+func (h *MediaHandler) ThumbnailUpdates(w http.ResponseWriter, r *http.Request) {
+	// Set headers for SSE
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Create unique client ID
+	clientID := fmt.Sprintf("client_%d", len(h.thumbnailClients))
+
+	// Create channel for this client
+	client := &thumbnailClient{
+		channel: make(chan string, 10),
+	}
+
+	// Register client
+	h.clientsMux.Lock()
+	h.thumbnailClients[clientID] = client
+	h.clientsMux.Unlock()
+
+	// Remove client on disconnect
+	defer func() {
+		h.clientsMux.Lock()
+		delete(h.thumbnailClients, clientID)
+		close(client.channel)
+		h.clientsMux.Unlock()
+	}()
+
+	// Send keep-alive comments periodically
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Listen for messages
+	for {
+		select {
+		case msg := <-client.channel:
+			fmt.Fprintf(w, "data: %s\n\n", msg)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+// notifyThumbnailReady sends notification to all SSE clients about a new thumbnail
+func (h *MediaHandler) notifyThumbnailReady(filePath, thumbnailURL string) {
+	if thumbnailURL == "" {
+		return
+	}
+
+	notification := map[string]string{
+		"path":         filePath,
+		"thumbnailURL": thumbnailURL,
+	}
+
+	jsonData, err := json.Marshal(notification)
+	if err != nil {
+		return
+	}
+
+	h.clientsMux.RLock()
+	defer h.clientsMux.RUnlock()
+
+	for _, client := range h.thumbnailClients {
+		select {
+		case client.channel <- string(jsonData):
+		default:
+			// Channel full, skip
+		}
+	}
+}

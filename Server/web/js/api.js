@@ -7,6 +7,8 @@ console.log('API_BASE:', API_BASE);
 class MediaAPI {
     constructor() {
         this.token = localStorage.getItem('auth_token');
+        this.eventSource = null;
+        this.thumbnailCallbacks = [];
         console.log('MediaAPI initialized, token:', this.token ? 'exists' : 'null');
     }
 
@@ -36,6 +38,48 @@ class MediaAPI {
         }
 
         return response.json();
+    }
+
+    connectThumbnailUpdates() {
+        if (this.eventSource) {
+            return; // Already connected
+        }
+
+        const url = `${API_BASE}/api/media/thumbnail-updates`;
+        this.eventSource = new EventSource(url);
+
+        this.eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                // Notify all registered callbacks
+                this.thumbnailCallbacks.forEach(callback => callback(data));
+            } catch (error) {
+                console.error('Error parsing SSE data:', error);
+            }
+        };
+
+        this.eventSource.onerror = (error) => {
+            console.error('SSE connection error:', error);
+            this.eventSource.close();
+            this.eventSource = null;
+            // Reconnect after 5 seconds
+            setTimeout(() => this.connectThumbnailUpdates(), 5000);
+        };
+    }
+
+    disconnectThumbnailUpdates() {
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+        }
+    }
+
+    onThumbnailUpdate(callback) {
+        this.thumbnailCallbacks.push(callback);
+    }
+
+    clearThumbnailCallbacks() {
+        this.thumbnailCallbacks = [];
     }
 
     async login(username, password) {

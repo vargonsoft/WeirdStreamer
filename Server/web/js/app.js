@@ -182,6 +182,10 @@ function showMainScreen() {
         });
     }
     
+    // Connect to thumbnail updates
+    api.connectThumbnailUpdates();
+    api.onThumbnailUpdate(handleThumbnailUpdate);
+
     // Initialize from URL parameters if present
     const url = new URL(window.location);
     const urlPath = url.searchParams.get('path');
@@ -219,8 +223,35 @@ async function handleLogin(e) {
 }
 
 function handleLogout() {
+    api.disconnectThumbnailUpdates();
+    api.clearThumbnailCallbacks();
     api.logout();
     showLoginScreen();
+}
+
+function handleThumbnailUpdate(data) {
+    // data contains { path, thumbnailURL }
+    const { path, thumbnailURL } = data;
+
+    // Find the media item element and update its thumbnail
+    const mediaItems = document.querySelectorAll('.media-item');
+    mediaItems.forEach(item => {
+        const itemPath = item.dataset.path;
+        if (itemPath === path) {
+            const img = item.querySelector('img');
+            if (img) {
+                // Add cache buster to ensure image reloads
+                img.src = thumbnailURL + '?t=' + Date.now();
+                img.classList.remove('placeholder');
+
+                // Add a subtle flash effect to show it updated
+                item.style.animation = 'none';
+                setTimeout(() => {
+                    item.style.animation = 'thumbnailUpdate 0.5s ease-in-out';
+                }, 10);
+            }
+        }
+    });
 }
 
 async function handleScan() {
@@ -387,6 +418,7 @@ function createDirectoryElement(dir) {
 function createMediaElement(item) {
     const div = document.createElement('div');
     div.className = 'media-item';
+    div.dataset.path = item.path; // Add path for thumbnail updates
     div.onclick = () => handleMediaClick(item);
     
     const thumbnail = document.createElement('div');
@@ -403,8 +435,17 @@ function createMediaElement(item) {
         };
         thumbnail.appendChild(img);
     } else {
+        // No thumbnail yet - show placeholder and icon
         thumbnail.classList.add('no-thumb');
-        thumbnail.textContent = getMediaIcon(item.type);
+        const img = document.createElement('img');
+        img.className = 'placeholder';
+        img.alt = item.name;
+        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23eee" width="200" height="200"/%3E%3Ctext fill="%23999" font-size="16" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ELoading...%3C/text%3E%3C/svg%3E';
+        thumbnail.appendChild(img);
+        const icon = document.createElement('div');
+        icon.className = 'loading-icon';
+        icon.textContent = getMediaIcon(item.type);
+        thumbnail.appendChild(icon);
     }
     
     const info = document.createElement('div');

@@ -455,3 +455,33 @@ header h1 {
     padding: 5px 15px;
     font-size: 12px;
 }
+
+/* Thumbnail loading and update animations */
+.media-thumbnail img.placeholder {
+    opacity: 0.5;
+    filter: grayscale(100%);
+}
+
+.media-thumbnail .loading-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    opacity: 0.3;
+}
+
+@keyframes thumbnailUpdate {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+}
+
+.media-thumbnail img.placeholder {
+    animation: pulse 2s ease-in-out infinite;
+}
+
