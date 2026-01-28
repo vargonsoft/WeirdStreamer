@@ -1,44 +1,77 @@
 # Black Thumbnails - Root Cause and Fix ✅ APPLIED
 
-## Status: Changes Applied
+## Status: Changes Applied - CRITICAL FIX ADDED
 
 All code changes have been successfully applied to fix:
-1. ✅ Black thumbnails (regenerating empty thumbnail URLs)
+1. ✅ Black thumbnails (regenerating empty thumbnail URLs in DB)
 2. ✅ Unauthorized error on regenerate (using proper auth.GetClaims())
+3. ✅ **CRITICAL**: Corrupted thumbnail files on disk (577 bytes) blocking regeneration
 
 **Next Steps:**
 1. Commit and push changes from local machine
 2. Pull and rebuild on babylon5
-3. Hard refresh browser to clear JavaScript cache
+3. **Thumbnails will auto-regenerate** when browsing (corrupted files deleted automatically)
+4. Hard refresh browser to clear JavaScript cache
 
 ## Issues Fixed
 
-### 1. Black Thumbnails
-The black thumbnails issue was caused by **database entries with empty thumbnail URLs** from the previous async generation bug.
+### 1. Black Thumbnails - REAL ROOT CAUSE
+The black thumbnails issue had **TWO** causes:
+- **Database entries with empty thumbnail URLs** ✅ Fixed previously
+- **Corrupted thumbnail files on disk (577 bytes)** ✅ **NEW FIX**
 
 ### 2. Unauthorized Error on Regenerate
 The regenerate thumbnails endpoint was using incorrect method to check admin status, causing "Unauthorized" errors and signing users out.
 
 ## Root Causes
 
-### Black Thumbnails:
+### Black Thumbnails - THE FULL STORY:
 
+**Problem 1: Empty URLs in Database**
 1. **Old Code (Async Bug):**
    - Thumbnails generated in background goroutine
    - Items saved to database with empty `ThumbnailURL`
    - Goroutine tried to update URL after item was already in response
 
-2. **First Fix Attempt:**
+2. **First Fix:**
    - Changed to synchronous generation for NEW items
-   - BUT: Database still had OLD items with empty URLs
-   - Code found items in DB and used them (with empty thumbnails)
-   - Never reached the thumbnail generation code
+   - Added check for empty URLs and regeneration
+   - ✅ This fixed the database issue
 
-3. **Current Fix:**
-   - Check if database item has empty `ThumbnailURL`
-   - If empty, regenerate thumbnail immediately
-   - Update database with new URL
-   - This fixes BOTH new and old items
+**Problem 2: Corrupted Files on Disk (577 bytes) - THE REAL CULPRIT**
+1. **What Happened:**
+   - Old async code created **empty/corrupted thumbnail files** (577 bytes)
+   - These files physically exist on disk
+   - When we tried to regenerate, code checked: "Does file exist?"
+   - Answer: YES (the corrupted 577-byte file exists)
+   - Code returned early without regenerating!
+
+2. **Why Regeneration Failed:**
+   ```go
+   // OLD CODE - Bug!
+   if _, err := os.Stat(thumbnailPath); err == nil {
+       return thumbnailPath, nil  // File exists, don't regenerate
+   }
+   ```
+   - Checked if file exists, not if file is VALID
+   - 577-byte corrupted files passed this check
+   - Never reached FFmpeg generation code
+
+3. **NEW FIX:**
+   ```go
+   // Check if already exists and is valid size (> 1KB)
+   if info, err := os.Stat(thumbnailPath); err == nil {
+       if info.Size() > 1024 {
+           return thumbnailPath, nil  // Valid file, use it
+       }
+       // File exists but is too small - delete and regenerate
+       fmt.Printf("Removing corrupted thumbnail (size=%d): %s\n", info.Size(), thumbnailPath)
+       os.Remove(thumbnailPath)
+   }
+   ```
+   - Checks file size, not just existence
+   - If < 1KB (1024 bytes), delete and regenerate
+   - Automatically fixes all corrupted thumbnails
 
 ### Unauthorized Error:
 
@@ -53,6 +86,52 @@ The regenerate thumbnails endpoint was using incorrect method to check admin sta
    - Proper error handling without invalidating session
 
 ## Changes Made
+
+### File: Server/internal/media/thumbnail.go ⭐ CRITICAL FIX
+
+**Fix: Check File Size Before Returning Cached Thumbnail**
+
+This is the REAL fix for the 577-byte black thumbnail issue!
+
+```go
+// For VIDEO thumbnails:
+case "video":
+    thumbnailExt = ".jpg"
+    thumbnailPath, thumbnailURL = GetThumbnailPath(thumbnailDir, hash, thumbnailExt)
+    
+    // Check if already exists and is valid size (> 1KB)
+    if info, err := os.Stat(thumbnailPath); err == nil {
+        if info.Size() > 1024 {
+            return thumbnailPath, nil  // Valid thumbnail
+        }
+        // File exists but is too small - delete and regenerate
+        fmt.Printf("Removing corrupted thumbnail (size=%d): %s\n", info.Size(), thumbnailPath)
+        os.Remove(thumbnailPath)
+    }
+    // ... continue to FFmpeg generation ...
+
+// For IMAGE thumbnails:
+case "image":
+    // ... determine extension ...
+    thumbnailPath, thumbnailURL = GetThumbnailPath(thumbnailDir, hash, thumbnailExt)
+
+    // Check if already exists and is valid size (> 1KB)
+    if info, err := os.Stat(thumbnailPath); err == nil {
+        if info.Size() > 1024 {
+            return thumbnailPath, nil  // Valid thumbnail
+        }
+        // File exists but is too small - delete and regenerate
+        fmt.Printf("Removing corrupted thumbnail (size=%d): %s\n", info.Size(), thumbnailPath)
+        os.Remove(thumbnailPath)
+    }
+    // ... continue to image processing ...
+```
+
+**What This Does:**
+- Gets file info instead of just checking existence
+- If file size > 1KB (1024 bytes), use it (valid thumbnail)
+- If file size ≤ 1KB (like 577 bytes), DELETE it and regenerate
+- Automatically fixes all corrupted thumbnails on next access
 
 ### File: Server/internal/handlers/media.go
 

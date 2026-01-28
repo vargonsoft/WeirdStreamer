@@ -88,9 +88,14 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		thumbnailExt = ".jpg"
 		thumbnailPath, thumbnailURL = GetThumbnailPath(thumbnailDir, hash, thumbnailExt)
 		
-		// Check if already exists
-		if _, err := os.Stat(thumbnailPath); err == nil {
-			return thumbnailPath, nil
+		// Check if already exists and is valid size (> 1KB)
+		if info, err := os.Stat(thumbnailPath); err == nil {
+			if info.Size() > 1024 {
+				return thumbnailPath, nil
+			}
+			// File exists but is too small - delete and regenerate
+			fmt.Printf("Removing corrupted thumbnail (size=%d): %s\n", info.Size(), thumbnailPath)
+			os.Remove(thumbnailPath)
 		}
 
 		// Create subdirectories
@@ -122,9 +127,14 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		
 		thumbnailPath, thumbnailURL = GetThumbnailPath(thumbnailDir, hash, thumbnailExt)
 
-		// Check if already exists
-		if _, err := os.Stat(thumbnailPath); err == nil {
-			return thumbnailPath, nil
+		// Check if already exists and is valid size (> 1KB)
+		if info, err := os.Stat(thumbnailPath); err == nil {
+			if info.Size() > 1024 {
+				return thumbnailPath, nil
+			}
+			// File exists but is too small - delete and regenerate
+			fmt.Printf("Removing corrupted thumbnail (size=%d): %s\n", info.Size(), thumbnailPath)
+			os.Remove(thumbnailPath)
 		}
 
 		file, err := os.Open(filePath)
