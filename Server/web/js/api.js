@@ -125,6 +125,11 @@ class MediaAPI {
         // Base64 encode the path to avoid special character issues in URLs
         const encodedPath = btoa(path);
         let url = `${API_BASE}/api/media/stream?path=${encodedPath}`;
+
+        // Disable auto-transcoding for WebUI - let browser attempt native playback first
+        // User can explicitly transcode via the button if needed
+        url += '&auto-transcode=0';
+
         if (forceTranscode) {
             url += '&transcode=1';
         }

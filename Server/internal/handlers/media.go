@@ -122,7 +122,8 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 	// Check if user wants to force transcoding
 	forceTranscode := r.URL.Query().Get("transcode") == "1"
 
-	// Check if client wants to disable auto-transcoding (e.g., native apps)
+	// Check if client wants to disable auto-transcoding (enabled by default)
+	// WebUI can set auto-transcode=0 to let browser attempt native playback first
 	autoTranscode := r.URL.Query().Get("auto-transcode") != "0"
 
 	// Get start time for seeking in transcoded streams

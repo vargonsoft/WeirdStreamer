@@ -61,22 +61,26 @@
 
 **Result:** Clean, actionable logs
 
-### 5. **Transcode Button on Video Items** 🎬
-**Problem:** No easy way to force transcoding from the WebUI
+### 5. **Transcode Button on Video Items + Disabled Auto-Transcoding** 🎬
+**Problem:** No easy way to force transcoding from the WebUI, and automatic transcoding prevented browsers from attempting native playback
 
-**Solution:** Added transcode button overlay on video thumbnails
+**Solution:** 
+- Added transcode button overlay on video thumbnails
 - Button appears on hover (bottom-right corner)
 - Click to play with transcoding enabled
-- Prevents click event propagation (doesn't trigger normal play)
-- Styled with semi-transparent background and smooth animations
-- **Removed automatic transcoding** - Browser now attempts to play original format first
-- Transcoding only happens when explicitly requested via button
+- **Removed automatic transcoding from WebUI client** - Browser attempts original format first
+- **Disabled automatic transcoding on server** - Changed from opt-out to opt-in
+  - Before: `?auto-transcode=0` to disable (default ON)
+  - After: `?auto-transcode=1` to enable (default OFF)
+- Transcoding only happens when explicitly requested via button (`?transcode=1`)
 
-**Result:** Easy one-click transcoding for any video, browser tries original format first
+**Result:** Easy one-click transcoding for any video, browser tries original format first for better performance and quality
 
 **Files Modified:**
 - `Server/web/js/app.js` - Added transcode button to video items + removed automatic transcoding logic
 - `Server/web/css/style.css` - Button styling and hover effects
+- `Server/internal/handlers/media.go` - Changed auto-transcode default to OFF
+- `Server/internal/media/streamer.go` - Updated comments and logging
 
 ## User Experience Improvements
 
@@ -106,9 +110,10 @@
 ## Files Changed Summary
 
 ### Go Backend
-- `Server/internal/handlers/media.go` - Major refactor for async + SSE
+- `Server/internal/handlers/media.go` - Major refactor for async + SSE + auto-transcode disabled
 - `Server/internal/media/thumbnail.go` - Progressive seek fallback + logging
 - `Server/internal/media/scanner.go` - Logging cleanup
+- `Server/internal/media/streamer.go` - Auto-transcode disabled by default
 - `Server/cmd/server/main.go` - SSE route + authService injection
 
 ### JavaScript Frontend

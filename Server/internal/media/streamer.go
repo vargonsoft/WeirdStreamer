@@ -21,19 +21,22 @@ func NewStreamer() *Streamer {
 func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool, startTime string) error {
 	// Check if transcoding is needed
 	// 1. Explicitly requested via ?transcode=1
-	// 2. Auto-transcoding enabled and file needs transcoding
+	// 2. Auto-transcoding enabled (default) and file needs transcoding
 	shouldTranscode := forceTranscode
 	if !shouldTranscode && autoTranscode && s.needsTranscoding(filePath) {
 		shouldTranscode = true
-		fmt.Printf("Auto-transcoding %s for compatibility\n", filePath)
+		fmt.Printf("Auto-transcoding %s for browser compatibility\n", filePath)
 	}
 	
 	if shouldTranscode {
 		if forceTranscode {
-			fmt.Printf("Transcoding %s (requested by client)\n", filePath)
+			fmt.Printf("Transcoding %s (explicitly requested)\n", filePath)
 		}
 		return s.transcodeAndServe(w, r, filePath, startTime)
 	}
+
+	// Serve original file
+	fmt.Printf("Serving original file: %s\n", filePath)
 
 	file, err := os.Open(filePath)
 	if err != nil {
