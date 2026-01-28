@@ -135,6 +135,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 				"-i", filePath,
 				"-ss", seekTime,
 				"-vframes", "1",
+				"-update", "1",         // Silence image2 muxer warning about hash filenames
 				"-vf", "scale=320:-1",
 				"-y",
 				thumbnailPath,
@@ -163,6 +164,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			cmd := exec.Command("ffmpeg",
 				"-i", filePath,
 				"-vframes", "1",
+				"-update", "1",         // Silence image2 muxer warning
 				"-vf", "scale=320:-1",
 				"-y",
 				thumbnailPath,
