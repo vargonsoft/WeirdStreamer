@@ -119,31 +119,50 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			return "", fmt.Errorf("failed to create thumbnail directory: %w", err)
 		}
 
-		// Use ffmpeg to extract thumbnail
+		// Use ffmpeg to extract thumbnail with progressive fallback
 		log.Printf("[THUMBNAIL] Generating video thumbnail: source=%s, output=%s", filePath, thumbnailPath)
 
-		// Use the ORIGINAL working command from cli scan, with -update flag for hash filenames
-		cmd := exec.Command("ffmpeg",
-			"-i", filePath,
-			"-ss", "00:00:01.000",  // Seek AFTER input (more reliable than before)
-			"-vframes", "1",
-			"-update", "1",         // Required for hash-based filenames (image2 muxer)
-			"-vf", "scale=320:-1",
-			"-y",
-			thumbnailPath,
-		)
-		log.Printf("[THUMBNAIL] FFmpeg command: ffmpeg -i <input> -ss 00:00:01.000 -vframes 1 -update 1 -vf scale=320:-1 -y <output>")
+		// Try different seek positions: 1 minute, 30 seconds, 1 second
+		seekTimes := []string{"00:01:00.000", "00:00:30.000", "00:00:01.000"}
+		var output []byte
+		var err error
+		var successSeek string
 
-		// Capture output for debugging
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			// Try again without seeking (for videos shorter than 1 second)
-			log.Printf("[THUMBNAIL] FFmpeg failed with seek, trying without seek for: %s", filePath)
-			log.Printf("[THUMBNAIL] FFmpeg output from failed attempt: %s", string(output))
-			cmd = exec.Command("ffmpeg",
+		for _, seekTime := range seekTimes {
+			log.Printf("[THUMBNAIL] Attempting thumbnail extraction at %s", seekTime)
+
+			cmd := exec.Command("ffmpeg",
+				"-i", filePath,
+				"-ss", seekTime,
+				"-vframes", "1",
+				"-vf", "scale=320:-1",
+				"-y",
+				thumbnailPath,
+			)
+
+			output, err = cmd.CombinedOutput()
+
+			// Check if file was created with valid size
+			if err == nil {
+				if info, statErr := os.Stat(thumbnailPath); statErr == nil && info.Size() > 1024 {
+					successSeek = seekTime
+					log.Printf("[THUMBNAIL] Successfully extracted frame at %s", seekTime)
+					break
+				} else if statErr == nil {
+					log.Printf("[THUMBNAIL] Frame at %s created but too small (%d bytes), trying next position", seekTime, info.Size())
+					os.Remove(thumbnailPath) // Clean up small file
+				}
+			} else {
+				log.Printf("[THUMBNAIL] Failed at %s: %v", seekTime, err)
+			}
+		}
+
+		// If all seek attempts failed, try without seeking
+		if successSeek == "" {
+			log.Printf("[THUMBNAIL] All seek positions failed, trying without seek")
+			cmd := exec.Command("ffmpeg",
 				"-i", filePath,
 				"-vframes", "1",
-				"-update", "1",         // Required for hash-based filenames
 				"-vf", "scale=320:-1",
 				"-y",
 				thumbnailPath,
@@ -153,9 +172,10 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 				log.Printf("[THUMBNAIL] FFmpeg error for %s: %v\nOutput: %s", filePath, err, string(output))
 				return "", fmt.Errorf("ffmpeg failed: %w (output: %s)", err, string(output))
 			}
+			successSeek = "no seek (first frame)"
 		}
 
-		// Log FFmpeg output even on success (may contain warnings)
+		// Log FFmpeg output
 		if len(output) > 0 {
 			outputStr := string(output)
 			if len(outputStr) > 500 {
@@ -176,7 +196,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			return "", fmt.Errorf("thumbnail too small: %d bytes", info.Size())
 		}
 
-		log.Printf("[THUMBNAIL] Successfully generated video thumbnail: %s (%d bytes)", thumbnailPath, info.Size())
+		log.Printf("[THUMBNAIL] Successfully generated video thumbnail at %s: %s (%d bytes)", successSeek, thumbnailPath, info.Size())
 
 	case "image":
 		// Preserve original format for PNG, use JPEG for others
