@@ -363,34 +363,3 @@ func (s *Scanner) cleanupOrphanedThumbnails() error {
 	return nil
 }
 
-// GetFileMetadata gets metadata for a single file without saving to database
-func (s *Scanner) GetFileMetadata(path string) (*models.MediaItem, error) {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return nil, fmt.Errorf("file not found: %w", err)
-	}
-
-	mediaType := s.getMediaType(path)
-	if mediaType == "" {
-		return nil, fmt.Errorf("unsupported file type")
-	}
-
-	item := &models.MediaItem{
-		Path:     path,
-		Name:     filepath.Base(path),
-		Type:     mediaType,
-		Size:     fileInfo.Size(),
-		MimeType: s.getMimeType(path),
-	}
-
-	// Get metadata based on type
-	switch mediaType {
-	case "video":
-		s.getVideoMetadata(item)
-	case "image":
-		s.getImageMetadata(item)
-	}
-
-	return item, nil
-}
-
