@@ -146,10 +146,13 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		}
 
 		// Verify the file was actually created and has content
-		if info, err := os.Stat(thumbnailPath); err != nil {
+		info, err := os.Stat(thumbnailPath)
+		if err != nil {
 			log.Printf("[THUMBNAIL] FFmpeg completed but thumbnail not found: %s", thumbnailPath)
 			return "", fmt.Errorf("thumbnail not created")
-		} else if info.Size() < 1024 {
+		}
+
+		if info.Size() < 1024 {
 			log.Printf("[THUMBNAIL] FFmpeg created thumbnail but size too small: %d bytes for %s", info.Size(), thumbnailPath)
 			return "", fmt.Errorf("thumbnail too small: %d bytes", info.Size())
 		}
