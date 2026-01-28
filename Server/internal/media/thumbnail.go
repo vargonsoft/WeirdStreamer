@@ -103,9 +103,15 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			os.Remove(thumbnailPath)
 		}
 
-		// Verify source file exists
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		// Verify source file exists and log details
+		if stat, err := os.Stat(filePath); os.IsNotExist(err) {
+			log.Printf("[THUMBNAIL] ERROR: Source video file not found: %s", filePath)
 			return "", fmt.Errorf("source video file not found: %s", filePath)
+		} else if err != nil {
+			log.Printf("[THUMBNAIL] ERROR: Cannot stat source file %s: %v", filePath, err)
+			return "", fmt.Errorf("cannot access source file: %w", err)
+		} else {
+			log.Printf("[THUMBNAIL] Source file exists: size=%d bytes, path=%s", stat.Size(), filePath)
 		}
 
 		// Create subdirectories
@@ -115,7 +121,8 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 
 		// Use ffmpeg to extract thumbnail
 		log.Printf("[THUMBNAIL] Generating video thumbnail: source=%s, output=%s", filePath, thumbnailPath)
-		cmd := exec.Command("ffmpeg",
+
+		ffmpegArgs := []string{
 			"-ss", "00:00:01.000",  // Seek to 1 second (before input for faster seeking)
 			"-i", filePath,
 			"-frames:v", "1",       // Extract one frame
@@ -123,13 +130,17 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			"-q:v", "2",            // High quality JPEG
 			"-y",                   // Overwrite output file
 			thumbnailPath,
-		)
+		}
+		log.Printf("[THUMBNAIL] FFmpeg command: ffmpeg %v", ffmpegArgs)
+
+		cmd := exec.Command("ffmpeg", ffmpegArgs...)
 
 		// Capture output for debugging
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			// Try again without seeking (for videos shorter than 1 second)
 			log.Printf("[THUMBNAIL] FFmpeg failed with seek, trying without seek for: %s", filePath)
+			log.Printf("[THUMBNAIL] FFmpeg output from failed attempt: %s", string(output))
 			cmd = exec.Command("ffmpeg",
 				"-i", filePath,
 				"-frames:v", "1",       // Extract first frame
@@ -143,6 +154,15 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 				log.Printf("[THUMBNAIL] FFmpeg error for %s: %v\nOutput: %s", filePath, err, string(output))
 				return "", fmt.Errorf("ffmpeg failed: %w (output: %s)", err, string(output))
 			}
+		}
+
+		// Log FFmpeg output even on success (may contain warnings)
+		if len(output) > 0 {
+			outputStr := string(output)
+			if len(outputStr) > 500 {
+				outputStr = outputStr[len(outputStr)-500:]
+			}
+			log.Printf("[THUMBNAIL] FFmpeg output (last 500 chars): %s", outputStr)
 		}
 
 		// Verify the file was actually created and has content
