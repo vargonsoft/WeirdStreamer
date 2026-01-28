@@ -107,6 +107,11 @@ function setupEventListeners() {
         }
     });
     
+    // Cleanup SSE connection on page unload
+    window.addEventListener('beforeunload', () => {
+        api.disconnectThumbnailUpdates();
+    });
+    
     // Tabs
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -182,6 +187,43 @@ function showMainScreen() {
         });
     }
     
+    // Connect to thumbnail updates via SSE
+    api.connectThumbnailUpdates();
+    api.onThumbnailUpdate((data) => {
+        console.log('[SSE] Thumbnail update received:', data);
+        // Find and update the thumbnail for this item
+        const item = state.mediaItems.find(i => i.path === data.path);
+        if (item) {
+            console.log('[SSE] Found matching item:', item.name);
+            item.thumbnail_url = data.thumbnailURL;
+            
+            // Find the DOM element and update it directly to avoid full re-render
+            const mediaItems = document.querySelectorAll('.media-item:not(.directory-item)');
+            mediaItems.forEach(element => {
+                const nameDiv = element.querySelector('.media-name');
+                if (nameDiv && nameDiv.textContent === item.name) {
+                    const thumbnailDiv = element.querySelector('.media-thumbnail');
+                    if (thumbnailDiv) {
+                        thumbnailDiv.classList.remove('no-thumb');
+                        thumbnailDiv.innerHTML = '';
+                        const img = document.createElement('img');
+                        // Add cache buster to force reload
+                        img.src = api.getThumbnailUrl(data.thumbnailURL) + '?t=' + Date.now();
+                        img.alt = item.name;
+                        img.onerror = () => {
+                            thumbnailDiv.classList.add('no-thumb');
+                            thumbnailDiv.innerHTML = getMediaIcon(item.type);
+                        };
+                        thumbnailDiv.appendChild(img);
+                        console.log('[SSE] Updated thumbnail for:', item.name);
+                    }
+                }
+            });
+        } else {
+            console.log('[SSE] No matching item found for path:', data.path);
+        }
+    });
+    
     // Initialize from URL parameters if present
     const url = new URL(window.location);
     const urlPath = url.searchParams.get('path');
@@ -219,6 +261,7 @@ async function handleLogin(e) {
 }
 
 function handleLogout() {
+    api.disconnectThumbnailUpdates();
     api.logout();
     showLoginScreen();
 }
@@ -252,7 +295,6 @@ async function handleRegenerateThumbnails() {
         regenerateThumbnailsBtn.disabled = true;
         regenerateThumbnailsBtn.textContent = '🔄 Regenerating...';
         await api.regenerateThumbnails(state.currentPath);
-        alert('Thumbnail regeneration started. This may take a while.\n\nRefresh the page in a few moments to see updated thumbnails.');
     } catch (error) {
         alert('Failed to regenerate thumbnails: ' + error.message);
     } finally {

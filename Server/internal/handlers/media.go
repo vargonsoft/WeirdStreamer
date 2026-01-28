@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/weirdstreamer/server/internal/auth"
@@ -472,17 +473,24 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 				os.Remove(thumbPath)
 
 				// Regenerate thumbnail
-				if mediaType == "image" {
-					h.scanner.GenerateImageThumbnail(entryPath)
-				} else {
-					h.scanner.GenerateVideoThumbnail(entryPath)
-				}
-				count++
+			var thumbnailURL string
+			if mediaType == "image" {
+				thumbnailURL = h.scanner.GenerateImageThumbnail(entryPath)
+			} else {
+				thumbnailURL = h.scanner.GenerateVideoThumbnail(entryPath)
 			}
+			
+			// Notify SSE clients about the regenerated thumbnail
+			if thumbnailURL != "" {
+				h.notifyThumbnailReady(entryPath, thumbnailURL)
+			}
+			
+			count++
 		}
+	}
 
-		log.Printf("Regenerated %d thumbnails for path: %s", count, relativePath)
-	}()
+	log.Printf("Regenerated %d thumbnails for path: %s", count, relativePath)
+}()
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "regeneration started",
@@ -683,11 +691,23 @@ func (h *MediaHandler) ThumbnailUpdates(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Send initial connection message to trigger onopen event
+	fmt.Fprintf(w, ": connected\n\n")
+	flusher.Flush()
+
+	// Create ticker for keep-alive comments (every 30 seconds)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
 	// Listen for messages
 	for {
 		select {
 		case msg := <-client.channel:
 			fmt.Fprintf(w, "data: %s\n\n", msg)
+			flusher.Flush()
+		case <-ticker.C:
+			// Send keep-alive comment to prevent connection timeout
+			fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		case <-r.Context().Done():
 			return

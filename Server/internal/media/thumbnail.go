@@ -67,7 +67,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 	var mediaType string
 
 	switch ext {
-	case ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp", ".ts", ".mp2":
+	case ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp", ".3gpp", ".ts", ".mp2":
 		mediaType = "video"
 	case ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".jfif", ".heif", ".heic":
 		mediaType = "image"
@@ -111,6 +111,8 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		if err := os.MkdirAll(filepath.Dir(thumbnailPath), 0755); err != nil {
 			return "", fmt.Errorf("failed to create thumbnail directory: %w", err)
 		}
+
+		log.Printf("[THUMBNAIL] Generating video thumbnail for %s -> %s", filePath, thumbnailPath)
 
 		// Use ffmpeg to extract thumbnail with progressive fallback
 		// ...existing code for thumbnail generation...
@@ -178,6 +180,8 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			return "", fmt.Errorf("thumbnail too small: %d bytes", info.Size())
 		}
 
+		log.Printf("[THUMBNAIL] Successfully generated video thumbnail: %s (%d bytes)", thumbnailPath, info.Size())
+
 	case "image":
 		// Preserve original format for PNG, use JPEG for others
 		if strings.ToLower(ext) == ".png" {
@@ -196,6 +200,8 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			// File exists but is too small - delete and regenerate
 			os.Remove(thumbnailPath)
 		}
+
+		log.Printf("[THUMBNAIL] Generating image thumbnail for %s -> %s", filePath, thumbnailPath)
 
 		file, err := os.Open(filePath)
 		if err != nil {
@@ -255,6 +261,8 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			return "", fmt.Errorf("thumbnail not created")
 		} else if info.Size() < 1024 {
 			return "", fmt.Errorf("thumbnail too small: %d bytes", info.Size())
+		} else {
+			log.Printf("[THUMBNAIL] Successfully generated image thumbnail: %s (%d bytes)", thumbnailPath, info.Size())
 		}
 
 	case "document":

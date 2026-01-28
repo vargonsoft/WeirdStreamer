@@ -41,30 +41,45 @@ class MediaAPI {
     }
 
     connectThumbnailUpdates() {
+        // Close existing connection if any
         if (this.eventSource) {
-            return; // Already connected
+            console.log('[SSE] Closing existing connection before reconnecting');
+            this.eventSource.close();
+            this.eventSource = null;
+        }
+
+        if (!this.token) {
+            console.error('[SSE] No auth token available');
+            return;
         }
 
         // EventSource doesn't support custom headers, so pass token as query param
         const url = `${API_BASE}/api/media/thumbnail-updates?token=${encodeURIComponent(this.token)}`;
+        console.log('[SSE] Connecting to thumbnail updates...', url);
         this.eventSource = new EventSource(url);
 
+        this.eventSource.onopen = (event) => {
+            console.log('[SSE] Connection established', event);
+        };
+
         this.eventSource.onmessage = (event) => {
+            console.log('[SSE] Message received:', event.data);
             try {
                 const data = JSON.parse(event.data);
                 // Notify all registered callbacks
                 this.thumbnailCallbacks.forEach(callback => callback(data));
             } catch (error) {
-                console.error('Error parsing SSE data:', error);
+                console.error('[SSE] Error parsing data:', error);
             }
         };
 
         this.eventSource.onerror = (error) => {
-            console.error('SSE connection error:', error);
-            this.eventSource.close();
-            this.eventSource = null;
-            // Reconnect after 5 seconds
-            setTimeout(() => this.connectThumbnailUpdates(), 5000);
+            console.error('[SSE] Connection error', error);
+            console.log('[SSE] ReadyState:', this.eventSource?.readyState);
+            if (this.eventSource) {
+                this.eventSource.close();
+                this.eventSource = null;
+            }
         };
     }
 

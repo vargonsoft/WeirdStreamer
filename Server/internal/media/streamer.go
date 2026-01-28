@@ -160,7 +160,7 @@ func parseRange(s string, size int64) ([]httpRange, error) {
 func (s *Streamer) needsTranscoding(filePath string) bool {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	// Formats that need transcoding for browser compatibility
-	incompatibleFormats := []string{".3gp", ".avi", ".wmv", ".asf", ".flv", ".mkv"}
+	incompatibleFormats := []string{".3gp", ".3gpp", ".avi", ".wmv", ".asf", ".flv", ".mkv"}
 	for _, fmt := range incompatibleFormats {
 		if ext == fmt {
 			return true

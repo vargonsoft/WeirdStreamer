@@ -188,6 +188,7 @@ func (s *Scanner) getMimeType(path string) string {
 		".flv":  "video/x-flv",
 		".webm": "video/webm",
 		".3gp":  "video/3gpp",
+		".3gpp": "video/3gpp",
 		".jpg":  "image/jpeg",
 		".jpeg": "image/jpeg",
 		".png":  "image/png",
