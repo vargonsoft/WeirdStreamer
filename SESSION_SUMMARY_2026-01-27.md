@@ -69,11 +69,13 @@
 - Click to play with transcoding enabled
 - Prevents click event propagation (doesn't trigger normal play)
 - Styled with semi-transparent background and smooth animations
+- **Removed automatic transcoding** - Browser now attempts to play original format first
+- Transcoding only happens when explicitly requested via button
 
-**Result:** Easy one-click transcoding for any video
+**Result:** Easy one-click transcoding for any video, browser tries original format first
 
 **Files Modified:**
-- `Server/web/js/app.js` - Added transcode button to video items
+- `Server/web/js/app.js` - Added transcode button to video items + removed automatic transcoding logic
 - `Server/web/css/style.css` - Button styling and hover effects
 
 ## User Experience Improvements

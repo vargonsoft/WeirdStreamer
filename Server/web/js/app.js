@@ -494,13 +494,6 @@ function handleMediaClick(item) {
     }
 }
 
-// Check if video needs transcoding (will be converted to MP4 by server)
-function needsTranscoding(filename) {
-    const ext = filename.toLowerCase().split('.').pop();
-    const incompatibleFormats = ['3gp', 'avi', 'wmv', 'asf', 'flv', 'mkv'];
-    return incompatibleFormats.includes(ext);
-}
-
 function playVideo(item, forceTranscode = false) {
     console.log('Playing video:', item, 'Force transcode:', forceTranscode);
     console.log('API token exists:', !!api.token);
@@ -518,11 +511,12 @@ function playVideo(item, forceTranscode = false) {
     const source = document.createElement('source');
     source.src = streamUrl;
     
-    // If file needs transcoding or forced, server will send MP4
-    if (forceTranscode || needsTranscoding(item.name)) {
+    // Only transcode if explicitly requested via the button
+    if (forceTranscode) {
         console.log('File will be transcoded to MP4');
         source.type = 'video/mp4';
     } else {
+        // Play original video format
         source.type = item.mime_type || 'video/mp4';
     }
     
@@ -533,9 +527,11 @@ function playVideo(item, forceTranscode = false) {
     
     // Show/hide transcode button based on whether we're already transcoding
     const transcodeBtn = document.getElementById('transcode-btn');
-    if (forceTranscode || needsTranscoding(item.name)) {
+    if (forceTranscode) {
+        // Already transcoding, hide the button
         transcodeBtn.style.display = 'none';
     } else {
+        // Not transcoding, show button so user can transcode if needed
         transcodeBtn.style.display = 'inline-block';
         transcodeBtn.onclick = () => {
             playerModal.classList.remove('active');
