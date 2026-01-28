@@ -5,6 +5,7 @@ import (
 	"image"
 	_ "image/gif"
 	_ "image/png"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
