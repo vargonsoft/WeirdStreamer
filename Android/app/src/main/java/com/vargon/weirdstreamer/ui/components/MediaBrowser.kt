@@ -41,6 +41,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Dialog
 import androidx.tv.material3.*
 import com.vargon.weirdstreamer.ContentFilter
 import com.vargon.weirdstreamer.MediaViewModel
@@ -510,9 +511,10 @@ private fun AddServerDialog(
     var selectedType by remember { mutableStateOf<Int?>(null) } // null = not selected, 0 = SMB, 1 = Server
     var address by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
+    val smbButtonFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Surface(modifier = Modifier.width(500.dp)) {
             Column(modifier = Modifier.padding(24.dp)) {
                 Text("Add Media Source", style = MaterialTheme.typography.headlineSmall)
@@ -526,7 +528,9 @@ private fun AddServerDialog(
                     
                     Button(
                         onClick = { selectedType = 0 },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(smbButtonFocusRequester)
                     ) {
                         Text("SMB Share")
                     }
@@ -602,6 +606,8 @@ private fun AddServerDialog(
     LaunchedEffect(selectedType) {
         if (selectedType != null) {
             focusRequester.requestFocus()
+        } else {
+            smbButtonFocusRequester.requestFocus()
         }
     }
 }

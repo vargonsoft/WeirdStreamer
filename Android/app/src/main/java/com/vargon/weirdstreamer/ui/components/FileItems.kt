@@ -32,10 +32,11 @@ import com.vargon.weirdstreamer.repository.FileItem
 import com.vargon.weirdstreamer.ui.theme.CinemaGold
 import java.util.Locale
 
-// Helper to get folder icon color based on theme
+// Helper to get icon color based on theme
 @Composable
-private fun folderIconColor(isDirectory: Boolean): Color {
-    if (!isDirectory) return LocalContentColor.current
+private fun getIconTint(icon: ImageVector): Color {
+    val isGoldenIcon = icon == Icons.Default.Folder || icon == Icons.Default.Dns
+    if (!isGoldenIcon) return LocalContentColor.current
     
     // Only apply gold color in Cinema Blue theme (check if primary color is gold)
     val isCinemaBlue = MaterialTheme.colorScheme.primary == CinemaGold
@@ -67,7 +68,12 @@ fun HostItemRow(host: String, modifier: Modifier = Modifier, onClick: () -> Unit
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(32.dp))
+            Icon(
+                Icons.Default.Dns, 
+                contentDescription = null, 
+                modifier = Modifier.size(32.dp),
+                tint = getIconTint(Icons.Default.Dns)
+            )
             Spacer(modifier = Modifier.width(16.dp))
             Text(text = host, style = MaterialTheme.typography.bodyLarge)
         }
@@ -151,7 +157,7 @@ fun TileItem(
                         icon, 
                         contentDescription = null, 
                         modifier = Modifier.fillMaxSize(0.5f).padding(10.dp),
-                        tint = folderIconColor(icon == Icons.Default.Folder)
+                        tint = getIconTint(icon)
                     )
                 }
                 
@@ -221,7 +227,7 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
                         icon,
                         contentDescription = null,
                         modifier = Modifier.size(32.dp),
-                        tint = folderIconColor(icon == Icons.Default.Folder)
+                        tint = getIconTint(icon)
                     )
                 }
                 
@@ -284,7 +290,7 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
                         icon,
                         contentDescription = null,
                         modifier = Modifier.size(32.dp),
-                        tint = folderIconColor(icon == Icons.Default.Folder)
+                        tint = getIconTint(icon)
                     )
                 }
                 
@@ -337,7 +343,12 @@ fun HostRowItem(host: String, modifier: Modifier = Modifier, onClick: () -> Unit
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(32.dp))
+            Icon(
+                Icons.Default.Dns, 
+                contentDescription = null, 
+                modifier = Modifier.size(32.dp),
+                tint = getIconTint(Icons.Default.Dns)
+            )
             Spacer(modifier = Modifier.width(16.dp))
             Text(text = host, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         }
