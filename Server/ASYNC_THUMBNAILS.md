@@ -129,6 +129,12 @@ function handleThumbnailUpdate(data) {
 - Built-in browser support (EventSource API)
 - No additional dependencies
 
+**Authentication:**
+- EventSource API doesn't support custom headers
+- Solution: Pass JWT token as query parameter
+- Server validates token before establishing SSE connection
+- URL format: `/api/media/thumbnail-updates?token=<JWT>`
+
 **SSE Message Format:**
 ```
 data: {"path":"/path/to/video.mp4","thumbnailURL":"/thumbnails/a/b/abc123.jpg"}

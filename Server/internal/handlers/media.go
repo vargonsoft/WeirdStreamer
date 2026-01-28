@@ -31,15 +31,17 @@ type MediaHandler struct {
 	thumbnailGenerator *media.ThumbnailGenerator
 	thumbnailClients   map[string]*thumbnailClient
 	clientsMux         sync.RWMutex
+	authService        *auth.Service
 }
 
-func NewMediaHandler(db *database.DB) *MediaHandler {
+func NewMediaHandler(db *database.DB, authService *auth.Service) *MediaHandler {
 	return &MediaHandler{
 		db:                 db,
 		streamer:           media.NewStreamer(),
 		scanner:            media.NewScanner(db),
 		thumbnailGenerator: media.NewThumbnailGenerator(),
 		thumbnailClients:   make(map[string]*thumbnailClient),
+		authService:        authService,
 	}
 }
 
@@ -627,6 +629,20 @@ func (h *MediaHandler) getMimeTypeFromExtension(ext string) string {
 
 // ThumbnailUpdates handles Server-Sent Events for thumbnail generation progress
 func (h *MediaHandler) ThumbnailUpdates(w http.ResponseWriter, r *http.Request) {
+	// EventSource doesn't support custom headers, so we accept token via query param
+	tokenString := r.URL.Query().Get("token")
+	if tokenString == "" {
+		http.Error(w, "Unauthorized: token required", http.StatusUnauthorized)
+		return
+	}
+
+	// Validate the token using authService
+	_, err := h.authService.ValidateToken(tokenString)
+	if err != nil {
+		http.Error(w, "Unauthorized: invalid token", http.StatusUnauthorized)
+		return
+	}
+
 	// Set headers for SSE
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

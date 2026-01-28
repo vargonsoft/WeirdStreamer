@@ -45,7 +45,8 @@ class MediaAPI {
             return; // Already connected
         }
 
-        const url = `${API_BASE}/api/media/thumbnail-updates`;
+        // EventSource doesn't support custom headers, so pass token as query param
+        const url = `${API_BASE}/api/media/thumbnail-updates?token=${encodeURIComponent(this.token)}`;
         this.eventSource = new EventSource(url);
 
         this.eventSource.onmessage = (event) => {

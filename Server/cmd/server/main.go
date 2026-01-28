@@ -61,7 +61,7 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
-	mediaHandler := handlers.NewMediaHandler(db)
+	mediaHandler := handlers.NewMediaHandler(db, authService)
 	configHandler := handlers.NewConfigHandler()
 	userHandler := handlers.NewUserHandler(db)
 
