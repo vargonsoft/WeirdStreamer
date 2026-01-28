@@ -182,10 +182,6 @@ function showMainScreen() {
         });
     }
     
-    // Connect to thumbnail updates
-    api.connectThumbnailUpdates();
-    api.onThumbnailUpdate(handleThumbnailUpdate);
-
     // Initialize from URL parameters if present
     const url = new URL(window.location);
     const urlPath = url.searchParams.get('path');
@@ -223,35 +219,8 @@ async function handleLogin(e) {
 }
 
 function handleLogout() {
-    api.disconnectThumbnailUpdates();
-    api.clearThumbnailCallbacks();
     api.logout();
     showLoginScreen();
-}
-
-function handleThumbnailUpdate(data) {
-    // data contains { path, thumbnailURL }
-    const { path, thumbnailURL } = data;
-
-    // Find the media item element and update its thumbnail
-    const mediaItems = document.querySelectorAll('.media-item');
-    mediaItems.forEach(item => {
-        const itemPath = item.dataset.path;
-        if (itemPath === path) {
-            const img = item.querySelector('img');
-            if (img) {
-                // Add cache buster to ensure image reloads
-                img.src = thumbnailURL + '?t=' + Date.now();
-                img.classList.remove('placeholder');
-
-                // Add a subtle flash effect to show it updated
-                item.style.animation = 'none';
-                setTimeout(() => {
-                    item.style.animation = 'thumbnailUpdate 0.5s ease-in-out';
-                }, 10);
-            }
-        }
-    });
 }
 
 async function handleScan() {
@@ -402,7 +371,8 @@ function createDirectoryElement(dir) {
     // Use friendly name for root paths if configured
     let displayName = dir.name;
     if (!state.currentPath && state.currentConfig && state.currentConfig.media.paths) {
-        const mediaPath = state.currentConfig.media.paths.find(mp => mp.path === dir.path);
+        // Match only by configured ID (server enforces ID-only API)
+        const mediaPath = state.currentConfig.media.paths.find(mp => mp.id === dir.path);
         if (mediaPath) {
             displayName = mediaPath.name;
         }
@@ -418,7 +388,6 @@ function createDirectoryElement(dir) {
 function createMediaElement(item) {
     const div = document.createElement('div');
     div.className = 'media-item';
-    div.dataset.path = item.path; // Add path for thumbnail updates
     div.onclick = () => handleMediaClick(item);
     
     const thumbnail = document.createElement('div');
@@ -435,32 +404,10 @@ function createMediaElement(item) {
         };
         thumbnail.appendChild(img);
     } else {
-        // No thumbnail yet - show placeholder and icon
         thumbnail.classList.add('no-thumb');
-        const img = document.createElement('img');
-        img.className = 'placeholder';
-        img.alt = item.name;
-        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23eee" width="200" height="200"/%3E%3Ctext fill="%23999" font-size="16" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ELoading...%3C/text%3E%3C/svg%3E';
-        thumbnail.appendChild(img);
-        const icon = document.createElement('div');
-        icon.className = 'loading-icon';
-        icon.textContent = getMediaIcon(item.type);
-        thumbnail.appendChild(icon);
+        thumbnail.textContent = getMediaIcon(item.type);
     }
     
-    // Add transcode button for videos
-    if (item.type === 'video') {
-        const transcodeBtn = document.createElement('button');
-        transcodeBtn.className = 'transcode-btn';
-        transcodeBtn.innerHTML = '🔄';
-        transcodeBtn.title = 'Play with transcoding';
-        transcodeBtn.onclick = (e) => {
-            e.stopPropagation(); // Prevent triggering item click
-            playVideo(item, true); // Play with transcoding enabled
-        };
-        thumbnail.appendChild(transcodeBtn);
-    }
-
     const info = document.createElement('div');
     info.className = 'media-info';
     
@@ -494,6 +441,13 @@ function handleMediaClick(item) {
     }
 }
 
+// Check if video needs transcoding (will be converted to MP4 by server)
+function needsTranscoding(filename) {
+    const ext = filename.toLowerCase().split('.').pop();
+    const incompatibleFormats = ['3gp', 'avi', 'wmv', 'asf', 'flv', 'mkv'];
+    return incompatibleFormats.includes(ext);
+}
+
 function playVideo(item, forceTranscode = false) {
     console.log('Playing video:', item, 'Force transcode:', forceTranscode);
     console.log('API token exists:', !!api.token);
@@ -511,12 +465,11 @@ function playVideo(item, forceTranscode = false) {
     const source = document.createElement('source');
     source.src = streamUrl;
     
-    // Only transcode if explicitly requested via the button
-    if (forceTranscode) {
+    // If file needs transcoding or forced, server will send MP4
+    if (forceTranscode || needsTranscoding(item.name)) {
         console.log('File will be transcoded to MP4');
         source.type = 'video/mp4';
     } else {
-        // Play original video format
         source.type = item.mime_type || 'video/mp4';
     }
     
@@ -527,11 +480,9 @@ function playVideo(item, forceTranscode = false) {
     
     // Show/hide transcode button based on whether we're already transcoding
     const transcodeBtn = document.getElementById('transcode-btn');
-    if (forceTranscode) {
-        // Already transcoding, hide the button
+    if (forceTranscode || needsTranscoding(item.name)) {
         transcodeBtn.style.display = 'none';
     } else {
-        // Not transcoding, show button so user can transcode if needed
         transcodeBtn.style.display = 'inline-block';
         transcodeBtn.onclick = () => {
             playerModal.classList.remove('active');
@@ -717,7 +668,11 @@ async function handleSaveSettings() {
         state.currentConfig.streaming.chunkSize = parseInt(document.getElementById('chunk-size').value);
         
         const result = await api.updateConfig(state.currentConfig);
-        messageEl.textContent = result.message;
+        // If server returned updated config (with IDs), adopt it locally
+        if (result && result.config) {
+            state.currentConfig = result.config;
+        }
+        messageEl.textContent = (result && result.message) ? result.message : 'Configuration updated.';
         messageEl.style.color = '#27ae60';
         
         setTimeout(() => {

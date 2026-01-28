@@ -47,10 +47,14 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update global config
-	config.GlobalConfig = &newConfig
+	// Reload configuration so the server can generate stable IDs and normalize values
+	if err := config.Load("./config.json"); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to reload configuration")
+		return
+	}
 
-	respondJSON(w, http.StatusOK, map[string]string{
-		"message": "Configuration updated successfully. Restart server for all changes to take effect.",
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "Configuration updated successfully.",
+		"config":  config.GlobalConfig,
 	})
 }

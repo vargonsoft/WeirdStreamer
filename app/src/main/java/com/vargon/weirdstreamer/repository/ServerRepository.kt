@@ -28,7 +28,7 @@ class ServerRepository(
                         items.add(
                             FileItem(
                                 name = dir.name,
-                                path = dir.path,
+                                path = dir.id,
                                 isDirectory = true
                             )
                         )

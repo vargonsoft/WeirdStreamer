@@ -221,8 +221,13 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 				if displayName == "" {
 					displayName = filepath.Base(mediaPath.Path)
 				}
+				// Expose stable ID as the directory path at root so clients can reference it
+				dirPath := mediaPath.ID
+				if dirPath == "" {
+					dirPath = filepath.Base(mediaPath.Path)
+				}
 				dirs = append(dirs, models.Directory{
-					Path: filepath.Base(mediaPath.Path),
+					Path: dirPath,
 					Name: displayName,
 				})
 			}
@@ -242,9 +247,9 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	var targetPath string
 	pathParts := strings.Split(strings.Trim(relativePath, "/"), "/")
 
-	// Find which root this belongs to
+	// Find which root this belongs to. Match only by the stable ID.
 	for _, mediaPath := range config.GlobalConfig.Media.Paths {
-		if filepath.Base(mediaPath.Path) == pathParts[0] {
+		if mediaPath.ID != "" && mediaPath.ID == pathParts[0] {
 			if len(pathParts) > 1 {
 				targetPath = filepath.Join(mediaPath.Path, filepath.Join(pathParts[1:]...))
 			} else {

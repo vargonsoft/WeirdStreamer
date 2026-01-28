@@ -46,6 +46,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var currentPath by mutableStateOf("")
         private set
 
+    var currentPathDisplayName by mutableStateOf<String?>(null)
+
     var isLoading by mutableStateOf(false)
         private set
 
@@ -365,8 +367,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         currentPath = ""
         errorMessage = null
         fileList = emptyList()
+        currentPathDisplayName = null
         refreshSources()
     }
+
+    
 
     fun playVideo(path: String) {
         selectedVideoPath = path

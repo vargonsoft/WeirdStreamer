@@ -133,21 +133,16 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                             style = MaterialTheme.typography.titleSmall,
                             color = Color.Gray
                         )
-                        if (viewModel.currentPath.isNotEmpty()) {
-                            TextWithStartEllipsis(
-                                text = viewModel.currentPath,
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(end = 16.dp)
-                            )
-                        } else {
-                            Text(
-                                text = "/",
-                                style = MaterialTheme.typography.headlineMedium
-                            )
-                        }
+                        // If we have a friendly display name for the current path (root ID), show it.
+                        val display = viewModel.currentPathDisplayName ?: if (viewModel.currentPath.isNotEmpty()) viewModel.currentPath else "/"
+                        TextWithStartEllipsis(
+                            text = display,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(end = 16.dp)
+                        )
                     }
                     null -> {
                         Text(
@@ -397,17 +392,17 @@ private fun FileBrowserScreen(
     ) { item, modifier ->
         if (viewModel.isGridView) {
             FileTileItem(item, modifier = modifier) {
-                handleFileClick(viewModel, item.path, item.isDirectory)
+                handleFileClick(viewModel, item.path, item.isDirectory, item.name)
             }
         } else {
             FileRowItem(item, modifier = modifier) {
-                handleFileClick(viewModel, item.path, item.isDirectory)
+                handleFileClick(viewModel, item.path, item.isDirectory, item.name)
             }
         }
     }
 }
 
-private fun handleFileClick(viewModel: MediaViewModel, path: String, isDirectory: Boolean) {
+private fun handleFileClick(viewModel: MediaViewModel, path: String, isDirectory: Boolean, name: String) {
     android.util.Log.d("MediaBrowser", "handleFileClick: path=$path, isDirectory=$isDirectory")
     
     if (path == "UP") {
@@ -419,9 +414,13 @@ private fun handleFileClick(viewModel: MediaViewModel, path: String, isDirectory
         viewModel.recordSelection(viewModel.currentPath, path)
         viewModel.currentSource?.let { source ->
             when (source) {
-                is MediaSource.Smb -> viewModel.loadPath(source, path)
+                is MediaSource.Smb -> {
+                    viewModel.currentPathDisplayName = null
+                    viewModel.loadPath(source, path)
+                }
                 is MediaSource.Server -> {
-                    // Extract just the path part from the full path
+                    // Preserve the friendly name for this server root (name) so the UI can show it
+                    viewModel.currentPathDisplayName = name
                     viewModel.loadPath(source, path)
                 }
             }

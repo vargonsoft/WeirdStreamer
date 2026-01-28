@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -27,6 +29,7 @@ type DatabaseConfig struct {
 type MediaPath struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
+	ID   string `json:"id,omitempty"`
 }
 
 type MediaConfig struct {
@@ -62,7 +65,7 @@ func Load(path string) error {
 	}
 
 	config := &Config{}
-	
+
 	// Check if we need to migrate from old format
 	needsMigration := false
 	if mediaConfig, ok := rawConfig["media"].(map[string]interface{}); ok {
@@ -76,9 +79,9 @@ func Load(path string) error {
 	if needsMigration {
 		// Load as old format
 		var oldConfig struct {
-			Server    ServerConfig `json:"server"`
-			Database  DatabaseConfig `json:"database"`
-			Media     struct {
+			Server   ServerConfig   `json:"server"`
+			Database DatabaseConfig `json:"database"`
+			Media    struct {
 				Paths                 []string `json:"paths"`
 				ThumbnailPath         string   `json:"thumbnailPath"`
 				SupportedVideoFormats []string `json:"supportedVideoFormats"`
@@ -88,33 +91,48 @@ func Load(path string) error {
 			Auth      AuthConfig      `json:"auth"`
 			Streaming StreamingConfig `json:"streaming"`
 		}
-		
+
 		if err := json.Unmarshal(data, &oldConfig); err != nil {
 			return err
 		}
-		
+
 		// Migrate to new format
 		config.Server = oldConfig.Server
 		config.Database = oldConfig.Database
 		config.Auth = oldConfig.Auth
 		config.Streaming = oldConfig.Streaming
-		
+
 		config.Media.ThumbnailPath = oldConfig.Media.ThumbnailPath
 		config.Media.SupportedVideoFormats = oldConfig.Media.SupportedVideoFormats
 		config.Media.SupportedImageFormats = oldConfig.Media.SupportedImageFormats
 		config.Media.SupportedDocFormats = oldConfig.Media.SupportedDocFormats
-		
+
 		config.Media.Paths = make([]MediaPath, len(oldConfig.Media.Paths))
 		for i, p := range oldConfig.Media.Paths {
-			config.Media.Paths[i] = MediaPath{
+			mp := MediaPath{
 				Name: filepath.Base(p),
 				Path: p,
 			}
+			// Generate stable ID from the absolute path
+			if abs, err := filepath.Abs(p); err == nil {
+				sum := sha1.Sum([]byte(abs))
+				mp.ID = hex.EncodeToString(sum[:])[:8]
+			}
+			config.Media.Paths[i] = mp
 		}
 	} else {
 		// Load as new format
 		if err := json.Unmarshal(data, config); err != nil {
 			return err
+		}
+		// Ensure each configured media path has a stable ID (for clients)
+		for i := range config.Media.Paths {
+			if config.Media.Paths[i].ID == "" {
+				if abs, err := filepath.Abs(config.Media.Paths[i].Path); err == nil {
+					sum := sha1.Sum([]byte(abs))
+					config.Media.Paths[i].ID = hex.EncodeToString(sum[:])[:8]
+				}
+			}
 		}
 	}
 

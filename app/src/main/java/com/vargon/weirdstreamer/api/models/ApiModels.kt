@@ -25,7 +25,8 @@ data class MediaItem(
 )
 
 data class Directory(
-    @SerializedName("path") val path: String,
+    // `path` JSON key now carries the root ID or the relative id-based path
+    @SerializedName("path") val id: String,
     @SerializedName("name") val name: String,
     @SerializedName("items") val items: List<MediaItem>? = null,
     @SerializedName("dirs") val dirs: List<Directory>? = null
