@@ -20,21 +20,21 @@ interface WeirdStreamerThemeSpec {
     val backgroundImage: Int?
 }
 
-private object DefaultThemeSpec : WeirdStreamerThemeSpec {
+object DefaultThemeSpec : WeirdStreamerThemeSpec {
     override val folderIconTint: Color = Color.Unspecified
     override val serverIconTint: Color = Color.Unspecified
     override val parentIconTint: Color = Color.Unspecified
     override val backgroundImage: Int? = null
 }
 
-private object CinemaBlueThemeSpec : WeirdStreamerThemeSpec {
+object CinemaBlueThemeSpec : WeirdStreamerThemeSpec {
     override val folderIconTint: Color = CinemaGold
     override val serverIconTint: Color = CinemaGold
     override val parentIconTint: Color = CinemaGold
     override val backgroundImage: Int? = R.drawable.film_reel
 }
 
-private object CinemaRedThemeSpec : WeirdStreamerThemeSpec {
+object CinemaRedThemeSpec : WeirdStreamerThemeSpec {
     override val folderIconTint: Color = Color.Unspecified
     override val serverIconTint: Color = Color.Unspecified
     override val parentIconTint: Color = Color.Unspecified
@@ -65,11 +65,11 @@ fun WeirdStreamerTheme(
                 secondary = CinemaBlueLight,
                 onSecondary = CinemaSilver,
                 tertiary = CinemaGoldDark,
-                background = CinemaBlueDeep, // Deepest blue for background
+                background = CinemaBlueDeep,
                 onBackground = CinemaSilver,
-                surface = CinemaBlueMid, // Mid-gradient for surfaces
+                surface = CinemaBlueMid,
                 onSurface = CinemaSilver,
-                surfaceVariant = CinemaBlue // Original blue for surface variants
+                surfaceVariant = CinemaBlue
             )
         }
         AppTheme.CINEMA_RED -> {
@@ -105,7 +105,7 @@ fun WeirdStreamerTheme(
     val themeSpec = when (appTheme) {
         AppTheme.CINEMA_BLUE -> CinemaBlueThemeSpec
         AppTheme.CINEMA_RED -> CinemaRedThemeSpec
-        AppTheme.DEFAULT -> DefaultThemeSpec
+        else -> DefaultThemeSpec
     }
 
     CompositionLocalProvider(LocalThemeSpec provides themeSpec) {
