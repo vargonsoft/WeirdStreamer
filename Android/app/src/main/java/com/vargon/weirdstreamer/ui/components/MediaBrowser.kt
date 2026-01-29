@@ -40,6 +40,7 @@ import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.R
 import com.vargon.weirdstreamer.repository.MediaSource
 import com.vargon.weirdstreamer.repository.SourceProvider
+import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -57,10 +58,11 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Background image for Cinema Blue theme
-        if (MaterialTheme.colorScheme.primary == com.vargon.weirdstreamer.ui.theme.CinemaGold) {
+        // Background image from theme spec
+        val themeSpec = WeirdStreamerTheme.spec
+        themeSpec.backgroundImage?.let { bgRes ->
             Image(
-                painter = painterResource(id = R.drawable.film_reel),
+                painter = painterResource(id = bgRes),
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
@@ -159,13 +161,6 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                             contentDescription = "Content Filter"
                         )
                     }
-                    
-                    // Show regenerate button only if supported
-                    if (viewModel.getFilteredFileList().isNotEmpty()) {
-                        // Check if current source repository supports it
-                        // This logic is hidden in VM but we can add a check if needed.
-                    }
-                    
                     Spacer(modifier = Modifier.width(16.dp))
                 }
 

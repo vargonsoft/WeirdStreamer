@@ -15,9 +15,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -31,23 +28,23 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.vargon.weirdstreamer.SmbFileItem
 import com.vargon.weirdstreamer.repository.FileItem
-import com.vargon.weirdstreamer.ui.theme.CinemaGold
+import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import java.util.Locale
 
-// Helper to get icon color based on theme
+// Helper to get icon color based on theme spec
 @Composable
 private fun getIconTint(icon: ImageVector): Color {
-    val isGoldenIcon = icon == Icons.Default.Folder || 
-                       icon == Icons.Default.Dns || 
-                       icon == Icons.Default.SubdirectoryArrowLeft
-    
-    if (!isGoldenIcon) return LocalContentColor.current
-    
-    // Only apply gold color in Cinema Blue theme (check if primary color is gold)
-    val isCinemaBlue = MaterialTheme.colorScheme.primary == CinemaGold
-    
-    return if (isCinemaBlue) CinemaGold else LocalContentColor.current
+    val spec = WeirdStreamerTheme.spec
+    val defaultColor = LocalContentColor.current
+    return when (icon) {
+        Icons.Default.Folder -> spec.folderIconTint.takeOrElse { defaultColor }
+        Icons.Default.Dns -> spec.serverIconTint.takeOrElse { defaultColor }
+        Icons.Default.SubdirectoryArrowLeft -> spec.parentIconTint.takeOrElse { defaultColor }
+        else -> defaultColor
+    }
 }
+
+private fun Color.takeOrElse(block: () -> Color): Color = if (this != Color.Unspecified) this else block()
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable

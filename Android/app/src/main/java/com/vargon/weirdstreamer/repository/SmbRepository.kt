@@ -13,6 +13,7 @@ import java.io.InputStream
 class SmbRepository(
     private val baseContext: CIFSContext,
     private val credentialManager: CredentialManager,
+    private val serverAddress: String,
     private val showHiddenFiles: Boolean = false
 ) : MediaRepository {
     
@@ -83,7 +84,7 @@ class SmbRepository(
 
     override fun isAuthRequired(exception: Throwable): Boolean = exception is SmbAuthException
 
-    override fun getInitialPath(): String = ""
+    override fun getInitialPath(): String = "smb://$serverAddress/"
 
     override fun getParentPath(currentPath: String): String? {
         if (currentPath == "smb://" || currentPath.isEmpty()) return null
@@ -120,5 +121,5 @@ class SmbSourceProvider(
     override fun getServers(): List<String> = credentialManager.getSavedServers().toList()
     override fun addServer(address: String) { credentialManager.addSavedServer(address) }
     override fun removeServer(address: String) { credentialManager.removeSavedServer(address) }
-    override fun createRepository(serverAddress: String): MediaRepository = SmbRepository(baseContextLoader(), credentialManager)
+    override fun createRepository(serverAddress: String): MediaRepository = SmbRepository(baseContextLoader(), credentialManager, serverAddress)
 }

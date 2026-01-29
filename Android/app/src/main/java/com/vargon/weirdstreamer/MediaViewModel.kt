@@ -49,11 +49,13 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             setProperty("jcifs.smb.client.sndBufSize", "1048576")
             setProperty("jcifs.smb.client.signingEnforced", "false")
             setProperty("jcifs.smb.client.useBatching", "true")
+            // Set static hostname to avoid network lookup during BaseContext init
+            setProperty("jcifs.netbios.hostname", "WeirdStreamer")
         }
         BaseContext(PropertyConfiguration(props))
     }
 
-    // Abstract source providers - pass baseContext as a lambda to avoid NetworkOnMainThread during init
+    // Abstract source providers - pass baseContext as a lambda to avoid main-thread init
     val sourceProviders: List<SourceProvider> = listOf(
         SmbSourceProvider({ baseContext }, credentialManager),
         ServerSourceProvider(credentialManager)
@@ -173,8 +175,22 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         } else address
         
         val source = MediaSource(provider.typeId, cleanAddress)
-        val repository = provider.createRepository(cleanAddress)
-        loadPath(source, repository.getInitialPath())
+        
+        viewModelScope.launch {
+            isLoading = true
+            errorMessage = null
+            try {
+                // Ensure repository creation (and potential BaseContext init) happens off-main-thread
+                val initialPath = withContext(Dispatchers.IO) {
+                    provider.createRepository(cleanAddress).getInitialPath()
+                }
+                loadPath(source, initialPath)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                errorMessage = e.localizedMessage ?: "Failed to initialize source"
+                isLoading = false
+            }
+        }
     }
 
     fun loadPath(source: MediaSource, path: String, user: String? = null, pass: String? = null, save: Boolean = false) {
@@ -218,6 +234,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     fileList = if (repository.getParentPath(path) != null || path != repository.getInitialPath()) {
                         listOf(FileItem("..", "UP", true)) + items
                     } else {
+                        // At the Share level root, always show .. to go back to Server Selection
                         listOf(FileItem("..", "UP", true)) + items.filter { it.name != ".." }
                     }
                 } else {
