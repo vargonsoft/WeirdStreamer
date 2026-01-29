@@ -75,8 +75,19 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     private var viewModeMap by mutableStateOf(mapOf<String, Boolean>())
 
+    private val currentViewModeKey: String
+        get() {
+            val source = currentSource
+            return when {
+                source == null -> "__source_selection_view__"
+                source is MediaSource.Smb -> "smb_${source.host}_${currentPath}_view"
+                source is MediaSource.Server -> "server_${source.serverUrl}_${currentPath}_view"
+                else -> currentPath.ifEmpty { "__root__" }
+            }
+        }
+
     val isGridView: Boolean
-        get() = viewModeMap[currentPath] ?: credentialManager.isGridView(currentPath)
+        get() = viewModeMap[currentViewModeKey] ?: credentialManager.isGridView(currentViewModeKey)
 
     var selectedVideoPath by mutableStateOf<String?>(null)
         private set
@@ -96,10 +107,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     private var thumbnailListenerJob: Job? = null
 
     fun toggleViewMode() {
-        val current = isGridView
-        val newState = !current
-        viewModeMap = viewModeMap + (currentPath to newState)
-        credentialManager.setGridView(currentPath, newState)
+        val key = currentViewModeKey
+        val newState = !isGridView
+        viewModeMap = viewModeMap + (key to newState)
+        credentialManager.setGridView(key, newState)
     }
 
     fun toggleContentFilter() {
@@ -114,9 +125,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun getFilteredFileList(): List<FileItem> {
         return when (contentFilter) {
             ContentFilter.ALL -> fileList
-            ContentFilter.IMAGE -> fileList.filter { !it.isDirectory && isImage(it.path) }
-            ContentFilter.VIDEO -> fileList.filter { !it.isDirectory && isVideo(it.path) }
-            ContentFilter.PDF -> fileList.filter { !it.isDirectory && isPdf(it.path) }
+            ContentFilter.IMAGE -> fileList.filter { it.isDirectory || it.name == ".." || it.path == "UP" || isImage(it.path) }
+            ContentFilter.VIDEO -> fileList.filter { it.isDirectory || it.name == ".." || it.path == "UP" || isVideo(it.path) }
+            ContentFilter.PDF -> fileList.filter { it.isDirectory || it.name == ".." || it.path == "UP" || isPdf(it.path) }
         }
     }
 
@@ -307,7 +318,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     // Add parent directory entry for non-root paths
-                    fileList = if (shouldShowParentDir(source, path)) {
+                    fileList = if (shouldShowParentDir(source, browsePath)) {
                         listOf(FileItem("..", "UP", true)) + items
                     } else {
                         items
@@ -340,10 +351,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     private fun shouldShowParentDir(source: MediaSource, path: String): Boolean {
         return when (source) {
             is MediaSource.Smb -> {
-                val pathWithoutTrailing = path.removeSuffix("/")
-                pathWithoutTrailing.count { it == '/' } > 2
+                // smb://host/ has 3 slashes.
+                // Any path with at least this many should have .. to allow going back to source selection
+                path.count { it == '/' } >= 3
             }
-            is MediaSource.Server -> path.isNotEmpty()
+            is MediaSource.Server -> true // Always show parent dir for Server source folders
         }
     }
 

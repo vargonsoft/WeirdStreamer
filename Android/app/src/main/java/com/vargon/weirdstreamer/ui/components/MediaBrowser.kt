@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -187,13 +188,29 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     Icon(Icons.Default.Home, contentDescription = "Back to Servers")
                 }
                 Spacer(modifier = Modifier.width(16.dp))
-                Button(onClick = { viewModel.toggleViewMode() }) {
-                    Icon(
-                        if (viewModel.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
-                        contentDescription = "Switch View"
-                    )
+            } else {
+                // Only show Add Source button on server selection screen
+                Button(
+                    onClick = { showAddServerDialog = true },
+                    modifier = Modifier.focusRequester(toolbarFocusRequester)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Source")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Add Source")
                 }
                 Spacer(modifier = Modifier.width(16.dp))
+            }
+
+            // View mode toggle button - always show it
+            Button(onClick = { viewModel.toggleViewMode() }) {
+                Icon(
+                    if (viewModel.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
+                    contentDescription = "Switch View"
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+
+            if (currentSource != null) {
                 Button(onClick = { viewModel.toggleContentFilter() }) {
                     Icon(
                         when (viewModel.contentFilter) {
@@ -214,17 +231,6 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     }
                 }
                 
-                Spacer(modifier = Modifier.width(16.dp))
-            } else {
-                // Only show Add Source button on server selection screen
-                Button(
-                    onClick = { showAddServerDialog = true },
-                    modifier = Modifier.focusRequester(toolbarFocusRequester)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Source")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add Source")
-                }
                 Spacer(modifier = Modifier.width(16.dp))
             }
 
@@ -346,66 +352,118 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
     android.util.Log.d("SourceSelection", "SMB hosts: ${viewModel.smbHosts.size}, API servers: ${viewModel.apiServers.size}")
     android.util.Log.d("SourceSelection", "API servers list: ${viewModel.apiServers}")
     
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        // SMB Shares Section
-        item {
-            Text(
-                "SMB Shares",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-        }
-        
-        if (viewModel.smbHosts.isEmpty()) {
-            item {
-                Text("No SMB shares found. Use 'Add Source' to add manually.", 
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 32.dp))
+    if (viewModel.isGridView) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // SMB Shares Section
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    "SMB Shares",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
             }
-        } else {
-            items(viewModel.smbHosts) { host ->
-                if (viewModel.isGridView) {
+            
+            if (viewModel.smbHosts.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text("No SMB shares found. Use 'Add Source' to add manually.", 
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(top = 16.dp, bottom = 32.dp))
+                }
+            } else {
+                items(viewModel.smbHosts) { host ->
                     HostTileItem(host) {
                         viewModel.selectSmbSource(host)
                     }
-                } else {
+                }
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Spacer(modifier = Modifier.height(32.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(32.dp))
+            }
+
+            // API Servers Section
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    "API Servers",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
+            
+            if (viewModel.apiServers.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text("No API servers configured. Use 'Add Source' to add a server.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(top = 16.dp))
+                }
+            } else {
+                items(viewModel.apiServers) { serverUrl ->
+                    HostTileItem(serverUrl) {
+                        viewModel.selectServerSource(serverUrl)
+                    }
+                }
+            }
+        }
+    } else {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            // SMB Shares Section
+            item {
+                Text(
+                    "SMB Shares",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
+            
+            if (viewModel.smbHosts.isEmpty()) {
+                item {
+                    Text("No SMB shares found. Use 'Add Source' to add manually.", 
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(top = 16.dp, bottom = 32.dp))
+                }
+            } else {
+                items(viewModel.smbHosts) { host ->
                     HostRowItem(host) {
                         viewModel.selectSmbSource(host)
                     }
                 }
             }
-        }
 
-        item {
-            Spacer(modifier = Modifier.height(32.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(32.dp))
-        }
-
-        // API Servers Section
-        item {
-            Text(
-                "API Servers",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-        }
-        
-        if (viewModel.apiServers.isEmpty()) {
             item {
-                Text("No API servers configured. Use 'Add Source' to add a server.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(top = 16.dp))
+                Spacer(modifier = Modifier.height(32.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(32.dp))
             }
-        } else {
-            items(viewModel.apiServers) { serverUrl ->
-                if (viewModel.isGridView) {
-                    HostTileItem(serverUrl) {
-                        viewModel.selectServerSource(serverUrl)
-                    }
-                } else {
+
+            // API Servers Section
+            item {
+                Text(
+                    "API Servers",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
+            
+            if (viewModel.apiServers.isEmpty()) {
+                item {
+                    Text("No API servers configured. Use 'Add Source' to add a server.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(top = 16.dp))
+                }
+            } else {
+                items(viewModel.apiServers) { serverUrl ->
                     HostRowItem(serverUrl) {
                         viewModel.selectServerSource(serverUrl)
                     }

@@ -151,7 +151,7 @@ fun TileItem(
                 modifier = Modifier.fillMaxSize()
             ) {
                 var isImageLoaded by remember(thumbnailUrl) { mutableStateOf(false) }
-                
+
                 if (!isImageLoaded) {
                     val iconSizeFraction = if (icon == Icons.Default.Folder) 0.7f else 0.5f
                     Icon(
