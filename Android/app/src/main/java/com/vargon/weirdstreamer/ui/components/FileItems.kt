@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.SubdirectoryArrowLeft
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +19,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -35,7 +37,10 @@ import java.util.Locale
 // Helper to get icon color based on theme
 @Composable
 private fun getIconTint(icon: ImageVector): Color {
-    val isGoldenIcon = icon == Icons.Default.Folder || icon == Icons.Default.Dns
+    val isGoldenIcon = icon == Icons.Default.Folder || 
+                       icon == Icons.Default.Dns || 
+                       icon == Icons.Default.SubdirectoryArrowLeft
+    
     if (!isGoldenIcon) return LocalContentColor.current
     
     // Only apply gold color in Cinema Blue theme (check if primary color is gold)
@@ -92,26 +97,38 @@ fun HostTileItem(host: String, modifier: Modifier = Modifier, onClick: () -> Uni
 
 @Composable
 fun FileTileItem(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val isParent = item.name == ".."
     TileItem(
         title = item.name,
-        subtitle = if (!item.isDirectory && item.name != "..") formatFileSize(item.size) else null,
-        icon = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description,
+        subtitle = if (!item.isDirectory && !isParent) formatFileSize(item.size) else null,
+        icon = when {
+            isParent -> Icons.Default.SubdirectoryArrowLeft
+            item.isDirectory -> Icons.Default.Folder
+            else -> Icons.Default.Description
+        },
         modifier = modifier,
         onClick = onClick,
-        thumbnailUrl = if (!item.isDirectory && item.name != "..") item.path else null
+        thumbnailUrl = if (!item.isDirectory && !isParent) item.path else null,
+        rotateIcon = if (isParent) 90f else 0f
     )
 }
 
 // Overload for new FileItem from repository
 @Composable
 fun FileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val isParent = item.name == ".." || item.path == "UP"
     TileItem(
         title = item.name,
-        subtitle = if (!item.isDirectory && item.name != "..") formatFileSize(item.size) else null,
-        icon = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description,
+        subtitle = if (!item.isDirectory && !isParent) formatFileSize(item.size) else null,
+        icon = when {
+            isParent -> Icons.Default.SubdirectoryArrowLeft
+            item.isDirectory -> Icons.Default.Folder
+            else -> Icons.Default.Description
+        },
         modifier = modifier,
         onClick = onClick,
-        thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && item.name != "..") item.path else null
+        thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && !isParent) item.path else null,
+        rotateIcon = if (isParent) 90f else 0f
     )
 }
 
@@ -123,6 +140,7 @@ fun TileItem(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     thumbnailUrl: String? = null,
+    rotateIcon: Float = 0f,
     onClick: () -> Unit
 ) {
     Column(
@@ -151,13 +169,19 @@ fun TileItem(
                 modifier = Modifier.fillMaxSize()
             ) {
                 var isImageLoaded by remember(thumbnailUrl) { mutableStateOf(false) }
-
+                
                 if (!isImageLoaded) {
-                    val iconSizeFraction = if (icon == Icons.Default.Folder) 0.7f else 0.5f
+                    val isLargeIcon = icon == Icons.Default.Folder || icon == Icons.Default.Dns || icon == Icons.Default.SubdirectoryArrowLeft
+                    val iconSizeFraction = if (isLargeIcon) 0.8f else 0.5f
+                    val iconPadding = if (isLargeIcon) 4.dp else 10.dp
+                    
                     Icon(
                         icon, 
                         contentDescription = null, 
-                        modifier = Modifier.fillMaxSize(iconSizeFraction).padding(10.dp),
+                        modifier = Modifier
+                            .fillMaxSize(iconSizeFraction)
+                            .padding(iconPadding)
+                            .graphicsLayer(rotationZ = rotateIcon),
                         tint = getIconTint(icon)
                     )
                 }
@@ -198,7 +222,12 @@ fun TileItem(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val icon = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description
+    val isParent = item.name == ".."
+    val icon = when {
+        isParent -> Icons.Default.SubdirectoryArrowLeft
+        item.isDirectory -> Icons.Default.Folder
+        else -> Icons.Default.Description
+    }
     Surface(
         onClick = onClick,
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
@@ -227,12 +256,14 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
                     Icon(
                         icon,
                         contentDescription = null,
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier
+                            .size(32.dp)
+                            .graphicsLayer(rotationZ = if (isParent) 90f else 0f),
                         tint = getIconTint(icon)
                     )
                 }
                 
-                if (!item.isDirectory && item.name != "..") {
+                if (!item.isDirectory && !isParent) {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(item.path)
@@ -248,7 +279,7 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
-                if (!item.isDirectory && item.name != "..") {
+                if (!item.isDirectory && !isParent) {
                     Text(text = formatFileSize(item.size), style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -260,7 +291,12 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val icon = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description
+    val isParent = item.name == ".." || item.path == "UP"
+    val icon = when {
+        isParent -> Icons.Default.SubdirectoryArrowLeft
+        item.isDirectory -> Icons.Default.Folder
+        else -> Icons.Default.Description
+    }
     Surface(
         onClick = onClick,
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
@@ -283,14 +319,16 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                val thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && item.name != "..") item.path else null
+                val thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && !isParent) item.path else null
                 var isImageLoaded by remember(thumbnailUrl) { mutableStateOf(false) }
                 
                 if (!isImageLoaded) {
                     Icon(
                         icon,
                         contentDescription = null,
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier
+                            .size(32.dp)
+                            .graphicsLayer(rotationZ = if (isParent) 90f else 0f),
                         tint = getIconTint(icon)
                     )
                 }
@@ -311,7 +349,7 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
-                if (!item.isDirectory && item.name != "..") {
+                if (!item.isDirectory && !isParent) {
                     Text(text = formatFileSize(item.size), style = MaterialTheme.typography.bodySmall)
                 }
             }

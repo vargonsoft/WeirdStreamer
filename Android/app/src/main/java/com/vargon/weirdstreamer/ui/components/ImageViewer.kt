@@ -167,7 +167,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                         val h = constraints.maxHeight.toFloat()
                         
                         val imageRatio = imageIntrinsicSize?.let { 
-                            if (it.width > 0 && it.height > 0) it.width / it.height else null 
+                            if (it.width > 0f && it.height > 0f) it.width / it.height else null 
                         } ?: (w / h)
                         val containerRatio = w / h
                         
@@ -364,4 +364,12 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
+}
+
+private fun formatTime(ms: Long): String {
+    val totalSeconds = ms / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return String.format(java.util.Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
 }

@@ -7,6 +7,7 @@ import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.api.models.LoginRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.InputStream
 
 class ServerRepository(
     private val serverUrl: String,
@@ -22,24 +23,13 @@ class ServerRepository(
                 val directory = response.body()
                 if (directory != null) {
                     val items = mutableListOf<FileItem>()
-                    
-                    // Get cache version for this path to invalidate cached thumbnails
                     val cacheVersion = credentialManager.getThumbnailCacheVersion(serverUrl, path)
                     
-                    // Add subdirectories
                     directory.dirs?.forEach { dir ->
-                        items.add(
-                            FileItem(
-                                name = dir.name,
-                                path = dir.id,
-                                isDirectory = true
-                            )
-                        )
+                        items.add(FileItem(name = dir.name, path = dir.id, isDirectory = true))
                     }
                     
-                    // Add media items
                     directory.items?.forEach { mediaItem ->
-                        // For server items, store the streaming URL in the path
                         val streamingPath = getStreamUrl(mediaItem.path)
                         items.add(
                             FileItem(
@@ -50,24 +40,18 @@ class ServerRepository(
                                 mimeType = mediaItem.mimeType,
                                 thumbnailUrl = mediaItem.thumbnailUrl?.let { 
                                     val baseUrl = if (it.startsWith("http")) it else "$serverUrl$it"
-                                    // Add cache version to invalidate Coil cache on regeneration
                                     if (cacheVersion > 0) "$baseUrl?v=$cacheVersion" else baseUrl
                                 },
                                 duration = mediaItem.duration,
                                 width = mediaItem.width,
                                 height = mediaItem.height,
-                                originalPath = mediaItem.path // Store original path for SSE matching
+                                originalPath = mediaItem.path
                             )
                         )
                     }
-                    
                     Result.success(items)
-                } else {
-                    Result.failure(Exception("Empty response from server"))
-                }
-            } else {
-                Result.failure(Exception("Server error: ${response.code()} ${response.message()}"))
-            }
+                } else Result.failure(Exception("Empty response"))
+            } else Result.failure(Exception("Server error: ${response.code()}"))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -75,124 +59,81 @@ class ServerRepository(
     
     override suspend fun authenticate(username: String?, password: String?): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
-            if (username.isNullOrBlank() || password.isNullOrBlank()) {
-                return@withContext Result.failure(Exception("Username and password required"))
-            }
-            
-            val loginRequest = LoginRequest(username, password)
-            val response = apiService.login(loginRequest)
-            
-            if (response.isSuccessful) {
-                val loginResponse = response.body()
-                if (loginResponse != null) {
-                    // Save token and expiration
-                    credentialManager.saveServerToken(
-                        serverUrl,
-                        loginResponse.token,
-                        loginResponse.expiresAt
-                    )
-                    // Add to saved API servers
-                    credentialManager.addApiServer(serverUrl)
-                    Result.success(true)
-                } else {
-                    Result.failure(Exception("Empty login response"))
-                }
-            } else {
-                Result.failure(Exception("Login failed: ${response.code()} ${response.message()}"))
-            }
+            if (username.isNullOrBlank() || password.isNullOrBlank()) return@withContext Result.failure(Exception("Required"))
+            val response = apiService.login(LoginRequest(username, password))
+            if (response.isSuccessful && response.body() != null) {
+                credentialManager.saveServerToken(serverUrl, response.body()!!.token, response.body()!!.expiresAt)
+                credentialManager.addApiServer(serverUrl)
+                Result.success(true)
+            } else Result.failure(Exception("Login failed"))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
     
     override fun getStreamUrl(path: String): String {
-        // Server requires base64-encoded paths
         val encodedPath = Base64.encodeToString(path.toByteArray(), Base64.NO_WRAP)
-        // Disable auto-transcoding since Android supports most formats natively
         return "$serverUrl/api/media/stream?path=$encodedPath&auto-transcode=0"
     }
     
-    override fun getThumbnailUrl(path: String): String? {
-        // Thumbnail URL is provided by the API in MediaItem.thumbnailUrl
-        // This method might not be needed for server source
-        return null
-    }
+    override fun getThumbnailUrl(path: String): String? = null
 
     override fun getDisplayName(path: String): String {
-        // Extract filename from path - handle both regular paths and stream URLs
         return if (path.contains("/api/media/stream?path=")) {
-            // Decode base64 path to get actual filename
             try {
                 val encodedPath = path.substringAfter("path=").substringBefore("&")
-                val decodedPath = String(Base64.decode(encodedPath, Base64.NO_WRAP))
-                decodedPath.substringAfterLast('/')
-            } catch (e: Exception) {
-                "stream"
-            }
-        } else {
-            path.substringAfterLast('/')
-        }
+                String(Base64.decode(encodedPath, Base64.NO_WRAP)).substringAfterLast('/')
+            } catch (e: Exception) { "stream" }
+        } else path.substringAfterLast('/')
     }
 
-    override suspend fun getInputStream(path: String): Result<java.io.InputStream> = withContext(Dispatchers.IO) {
+    override suspend fun getInputStream(path: String): Result<InputStream> = withContext(Dispatchers.IO) {
         try {
-            // Extract the original path from the stream URL if needed
             val actualPath = if (path.contains("/api/media/stream?path=")) {
                 try {
                     val encodedPath = path.substringAfter("path=").substringBefore("&")
                     String(Base64.decode(encodedPath, Base64.NO_WRAP))
-                } catch (_: Exception) {
-                    path
-                }
-            } else {
-                path
-            }
-
-            android.util.Log.d("ServerRepository", "getInputStream - actualPath: $actualPath")
-
-            // Encode the path for the API (server expects base64-encoded paths)
+                } catch (_: Exception) { path }
+            } else path
             val encodedPath = Base64.encodeToString(actualPath.toByteArray(), Base64.NO_WRAP)
-            android.util.Log.d("ServerRepository", "getInputStream - encodedPath: $encodedPath")
-
             val response = apiService.stream(encodedPath)
-            android.util.Log.d("ServerRepository", "getInputStream - response code: ${response.code()}")
-
-            if (response.isSuccessful) {
-                val inputStream = response.body()?.byteStream()
-                if (inputStream != null) {
-                    android.util.Log.d("ServerRepository", "getInputStream - success")
-                    Result.success<java.io.InputStream>(inputStream)
-                } else {
-                    android.util.Log.e("ServerRepository", "getInputStream - empty response body")
-                    Result.failure(Exception("Empty response body"))
-                }
-            } else {
-                val errorMsg = "Server error: ${response.code()} ${response.message()}"
-                android.util.Log.e("ServerRepository", "getInputStream - $errorMsg")
-                Result.failure(Exception(errorMsg))
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("ServerRepository", "getInputStream - exception", e)
-            Result.failure(e)
-        }
+            if (response.isSuccessful && response.body() != null) Result.success(response.body()!!.byteStream())
+            else Result.failure(Exception("Stream failed"))
+        } catch (e: Exception) { Result.failure(e) }
     }
-    
-    suspend fun regenerateThumbnails(path: String): Result<Boolean> = withContext(Dispatchers.IO) {
+
+    override fun supportsThumbnailRegeneration(): Boolean = true
+    override suspend fun regenerateThumbnails(path: String): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val response = apiService.regenerateThumbnails(path)
             if (response.isSuccessful) {
-                // Increment cache version to invalidate Coil cache
                 credentialManager.incrementThumbnailCacheVersion(serverUrl, path)
                 Result.success(true)
-            } else {
-                Result.failure(Exception("Failed to regenerate thumbnails: ${response.code()} ${response.message()}"))
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+            } else Result.failure(Exception("Failed"))
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    override fun isAuthRequired(exception: Throwable): Boolean = exception.message?.contains("401") == true
+    
+    override fun getInitialPath(): String = ""
+    
+    override fun getParentPath(currentPath: String): String? {
+        if (currentPath.isEmpty()) return null
+        return currentPath.substringBeforeLast("/", "")
     }
     
-    fun getToken(): String? {
-        return credentialManager.getServerToken(serverUrl)
-    }
+    fun getToken(): String? = credentialManager.getServerToken(serverUrl)
+}
+
+class ServerSourceProvider(
+    private val credentialManager: CredentialManager
+) : SourceProvider {
+    override val typeId: String = "SERVER"
+    override val displayName: String = "WeirdStreamer Server"
+    override val addressLabel: String = "Server URL"
+    override val addressPlaceholder: String = "http://192.168.1.100:8080"
+    override fun getServers(): List<String> = credentialManager.getApiServers().toList()
+    override fun addServer(address: String) { credentialManager.addApiServer(address) }
+    override fun removeServer(address: String) { credentialManager.removeApiServer(address) }
+    override fun createRepository(serverAddress: String): MediaRepository = ServerRepository(serverAddress, credentialManager)
 }

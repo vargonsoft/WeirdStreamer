@@ -13,18 +13,11 @@ import androidx.media3.common.util.UnstableApi
 import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
 import com.vargon.weirdstreamer.api.ThumbnailUpdateListener
-import com.vargon.weirdstreamer.repository.FileItem
-import com.vargon.weirdstreamer.repository.MediaRepository
-import com.vargon.weirdstreamer.repository.MediaSource
-import com.vargon.weirdstreamer.repository.ServerRepository
-import com.vargon.weirdstreamer.repository.SmbRepository
+import com.vargon.weirdstreamer.repository.*
 import jcifs.CIFSContext
 import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
 import jcifs.smb.NtlmPasswordAuthenticator
-import jcifs.smb.SmbFile
-import jcifs.smb.SmbUnsupportedOperationException
-import jcifs.smb.SmbAuthException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -38,7 +31,34 @@ enum class ContentFilter {
 
 class MediaViewModel(application: Application) : AndroidViewModel(application) {
     val credentialManager = CredentialManager(application)
-    
+
+    val baseContext: CIFSContext by lazy {
+        val props = Properties().apply {
+            setProperty("jcifs.smb.client.minVersion", "SMB202")
+            setProperty("jcifs.smb.client.maxVersion", "SMB311")
+            setProperty("jcifs.smb.client.ipcSigningEnforced", "false")
+            setProperty("jcifs.netbios.cachePolicy", "0")
+            setProperty("jcifs.smb.client.responseTimeout", "60000")
+            setProperty("jcifs.smb.client.soTimeout", "65000")
+            setProperty("jcifs.smb.client.connTimeout", "10000")
+            setProperty("jcifs.smb.client.sessionLimit", "200")
+            setProperty("jcifs.smb.client.listCount", "1000")
+            setProperty("jcifs.smb.client.maxBufSize", "1048576")
+            setProperty("jcifs.smb.client.transactionBuffer", "1048576")
+            setProperty("jcifs.smb.client.rcvBufSize", "1048576")
+            setProperty("jcifs.smb.client.sndBufSize", "1048576")
+            setProperty("jcifs.smb.client.signingEnforced", "false")
+            setProperty("jcifs.smb.client.useBatching", "true")
+        }
+        BaseContext(PropertyConfiguration(props))
+    }
+
+    // Abstract source providers - pass baseContext as a lambda to avoid NetworkOnMainThread during init
+    val sourceProviders: List<SourceProvider> = listOf(
+        SmbSourceProvider({ baseContext }, credentialManager),
+        ServerSourceProvider(credentialManager)
+    )
+
     var fileList by mutableStateOf<List<FileItem>>(emptyList())
         private set
 
@@ -56,15 +76,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
-    var authRequiredHost by mutableStateOf<String?>(null)
-        private set
-
-    var authRequiredServerUrl by mutableStateOf<String?>(null)
-
-    var smbHosts by mutableStateOf<List<String>>(emptyList())
-        private set
-
-    var apiServers by mutableStateOf<List<String>>(emptyList())
+    var authRequiredSource by mutableStateOf<MediaSource?>(null)
         private set
 
     var showHiddenFiles by mutableStateOf(credentialManager.getShowHiddenFiles())
@@ -80,9 +92,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             val source = currentSource
             return when {
                 source == null -> "__source_selection_view__"
-                source is MediaSource.Smb -> "smb_${source.host}_${currentPath}_view"
-                source is MediaSource.Server -> "server_${source.serverUrl}_${currentPath}_view"
-                else -> currentPath.ifEmpty { "__root__" }
+                else -> "${source.typeId}_${source.serverAddress}_${currentPath}_view"
             }
         }
 
@@ -105,6 +115,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     
     private var thumbnailListener: ThumbnailUpdateListener? = null
     private var thumbnailListenerJob: Job? = null
+
+    private val selectionMap = mutableStateMapOf<String, String>()
 
     fun toggleViewMode() {
         val key = currentViewModeKey
@@ -131,44 +143,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private var discoveredHosts = emptyList<String>()
-    
-    private val selectionMap = mutableStateMapOf<String, String>()
-
-    val baseContext: CIFSContext by lazy {
-        val props = Properties().apply {
-            setProperty("jcifs.smb.client.minVersion", "SMB202")
-            setProperty("jcifs.smb.client.maxVersion", "SMB311")
-            setProperty("jcifs.smb.client.ipcSigningEnforced", "false")
-            setProperty("jcifs.netbios.cachePolicy", "0")
-            setProperty("jcifs.smb.client.responseTimeout", "60000")
-            setProperty("jcifs.smb.client.soTimeout", "65000")
-            setProperty("jcifs.smb.client.connTimeout", "10000")
-            setProperty("jcifs.smb.client.sessionLimit", "200")
-            setProperty("jcifs.smb.client.listCount", "1000")
-            setProperty("jcifs.smb.client.maxBufSize", "1048576")
-            setProperty("jcifs.smb.client.transactionBuffer", "1048576")
-            setProperty("jcifs.smb.client.rcvBufSize", "1048576")
-            setProperty("jcifs.smb.client.sndBufSize", "1048576")
-            setProperty("jcifs.smb.client.signingEnforced", "false")
-            setProperty("jcifs.smb.client.useBatching", "true")
-        }
-        BaseContext(PropertyConfiguration(props))
-    }
-
-    init {
-        refreshSources()
-    }
-
     fun recordSelection(parentPath: String, childPath: String) {
-        android.util.Log.d("MediaViewModel", "recordSelection - parent: $parentPath, child: $childPath")
         selectionMap[parentPath] = childPath
     }
 
     fun getSelection(parentPath: String): String? {
-        val selection = selectionMap[parentPath]
-        android.util.Log.d("MediaViewModel", "getSelection - parent: $parentPath, selection: $selection")
-        return selection
+        return selectionMap[parentPath]
     }
 
     fun updateShowHiddenFiles(show: Boolean) {
@@ -177,83 +157,24 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         currentSource?.let { loadPath(it, currentPath) }
     }
 
-    fun deleteServer(host: String) {
-        credentialManager.removeSavedServer(host)
-        refreshSources()
-    }
-
-    fun deleteApiServer(serverUrl: String) {
-        credentialManager.removeApiServer(serverUrl)
-        refreshSources()
-    }
-
     @androidx.annotation.OptIn(UnstableApi::class)
     @OptIn(ExperimentalCoilApi::class)
     fun clearThumbnailCache(context: Context) {
         context.imageLoader.diskCache?.clear()
         context.imageLoader.memoryCache?.clear()
-
         val thumbCacheDir = File(context.cacheDir, "thumbnails")
-        if (thumbCacheDir.exists()) {
-            thumbCacheDir.deleteRecursively()
-        }
-
+        if (thumbCacheDir.exists()) thumbCacheDir.deleteRecursively()
         VideoThumbnailDecoder.clearSessionCache()
     }
 
-    fun refreshSources() {
-        val savedSmb = credentialManager.getSavedServers()
-        val savedApi = credentialManager.getApiServers()
-        android.util.Log.d("MediaViewModel", "refreshSources - SMB: $savedSmb, API: $savedApi")
-        smbHosts = (savedSmb + discoveredHosts).distinct().sorted()
-        apiServers = savedApi.toList().sorted()
-        android.util.Log.d("MediaViewModel", "refreshSources - smbHosts: $smbHosts, apiServers: $apiServers")
-        discoverHosts()
-    }
-
-    private fun discoverHosts() {
-        viewModelScope.launch {
-            try {
-                val found = withContext(Dispatchers.IO) {
-                    val context = baseContext.withCredentials(NtlmPasswordAuthenticator(null, null, null))
-                    SmbFile("smb://", context).use { workgroup ->
-                        workgroup.listFiles().flatMap { server ->
-                            server.use { s ->
-                                try {
-                                    s.listFiles().map { 
-                                        val name = it.name.removeSuffix("/")
-                                        it.close()
-                                        name
-                                    }
-                                } catch (_: Exception) {
-                                    emptyList()
-                                }
-                            }
-                        }
-                    }
-                }
-                discoveredHosts = found
-                val saved = credentialManager.getSavedServers()
-                smbHosts = (saved + discoveredHosts).distinct().sorted()
-            } catch (_: SmbUnsupportedOperationException) {
-                // Expected
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    fun selectSmbSource(host: String) {
-        // Extract just the hostname, removing any path components or smb:// prefix
-        val cleanHost = host.removePrefix("smb://").substringBefore("/").trim()
-        android.util.Log.d("MediaViewModel", "selectSmbSource - input: '$host', cleaned: '$cleanHost'")
-        val source = MediaSource.Smb(cleanHost, "", "")
-        loadPath(source, "smb://$cleanHost/")
-    }
-
-    fun selectServerSource(serverUrl: String, username: String? = null, password: String? = null) {
-        val source = MediaSource.Server(serverUrl, "")
-        loadPath(source, "", username, password, save = false)
+    fun selectSource(provider: SourceProvider, address: String) {
+        val cleanAddress = if (provider.typeId == "SMB") {
+            address.removePrefix("smb://").substringBefore("/").trim()
+        } else address
+        
+        val source = MediaSource(provider.typeId, cleanAddress)
+        val repository = provider.createRepository(cleanAddress)
+        loadPath(source, repository.getInitialPath())
     }
 
     fun loadPath(source: MediaSource, path: String, user: String? = null, pass: String? = null, save: Boolean = false) {
@@ -263,80 +184,48 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             isLoading = true
             errorMessage = null
-            authRequiredHost = null
+            authRequiredSource = null
             
             try {
-                val repository: MediaRepository = when (source) {
-                    is MediaSource.Smb -> {
-                        if (user != null && pass != null && save) {
-                            val host = source.host
-                            credentialManager.saveCredentials(host, user, pass)
-                            credentialManager.addSavedServer(host)
-                        }
-                        SmbRepository(baseContext, credentialManager, showHiddenFiles)
-                    }
-                    is MediaSource.Server -> {
-                        val repo = ServerRepository(source.serverUrl, credentialManager)
-                        if (user != null && pass != null) {
-                            val result = repo.authenticate(user, pass)
-                            if (result.isFailure) {
-                                throw result.exceptionOrNull() ?: Exception("Authentication failed")
-                            }
-                        }
-                        
-                        // Start listening for thumbnail updates
-                        val token = repo.getToken()
-                        if (token != null) {
-                            startThumbnailUpdates(source.serverUrl, token)
-                        }
-                        
-                        repo
-                    }
-                }
-
-                // Store the repository for later use
+                val provider = sourceProviders.find { it.typeId == source.typeId } ?: throw Exception("Unknown source type")
+                val repository = withContext(Dispatchers.IO) { provider.createRepository(source.serverAddress) }
                 currentRepository = repository
 
-                val browsePath = when (source) {
-                    is MediaSource.Smb -> {
-                        val normalizedPath = if (path.startsWith("smb://")) path else "smb://$path"
-                        if (normalizedPath.endsWith("/") || normalizedPath.contains("?")) normalizedPath else "$normalizedPath/"
+                if (user != null && pass != null) {
+                    val authResult = repository.authenticate(user, pass)
+                    if (authResult.isFailure) throw authResult.exceptionOrNull() ?: Exception("Authentication failed")
+                    
+                    if (save && source.typeId == "SMB") {
+                        credentialManager.saveCredentials(source.serverAddress, user, pass)
                     }
-                    is MediaSource.Server -> path
                 }
 
-                val result = repository.browse(browsePath)
+                // Handle server-specific SSE for thumbnails
+                if (repository is ServerRepository) {
+                    val token = repository.getToken()
+                    if (token != null) startThumbnailUpdates(source.serverAddress, token)
+                }
+
+                val result = repository.browse(path)
                 
                 if (result.isSuccess) {
                     val items = result.getOrNull() ?: emptyList()
                     
-                    // Save SMB host to saved servers list after successful browse
-                    if (source is MediaSource.Smb) {
-                        val host = browsePath.removePrefix("smb://").substringBefore("/")
-                        android.util.Log.d("MediaViewModel", "Saving SMB host after successful browse: $host from path: $browsePath")
-                        credentialManager.addSavedServer(host)
-                    }
+                    // Auto-save successful servers
+                    provider.addServer(source.serverAddress)
 
-                    // Add parent directory entry for non-root paths
-                    fileList = if (shouldShowParentDir(source, browsePath)) {
+                    // Unified "Share level" logic
+                    fileList = if (repository.getParentPath(path) != null || path != repository.getInitialPath()) {
                         listOf(FileItem("..", "UP", true)) + items
                     } else {
-                        items
-                    }
-                    
-                    // Refresh sources list to show newly added servers
-                    if (source is MediaSource.Server) {
-                        refreshSources()
+                        listOf(FileItem("..", "UP", true)) + items.filter { it.name != ".." }
                     }
                 } else {
-                    val exception = result.exceptionOrNull()
-                    if (exception is SmbAuthException) {
-                        authRequiredHost = (source as? MediaSource.Smb)?.host
-                    } else if (source is MediaSource.Server && exception?.message?.contains("401") == true) {
-                        // Server returned 401 - authentication required
-                        authRequiredServerUrl = source.serverUrl
+                    val exception = result.exceptionOrNull() ?: Exception("Unknown error")
+                    if (repository.isAuthRequired(exception)) {
+                        authRequiredSource = source
                     } else {
-                        throw exception ?: Exception("Unknown error")
+                        throw exception
                     }
                 }
             } catch (e: Exception) {
@@ -348,211 +237,118 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun shouldShowParentDir(source: MediaSource, path: String): Boolean {
-        return when (source) {
-            is MediaSource.Smb -> {
-                // smb://host/ has 3 slashes.
-                // Any path with at least this many should have .. to allow going back to source selection
-                path.count { it == '/' } >= 3
-            }
-            is MediaSource.Server -> true // Always show parent dir for Server source folders
-        }
-    }
-
     fun navigateUp() {
         val source = currentSource ?: return
+        val repository = currentRepository ?: return
         
-        when (source) {
-            is MediaSource.Smb -> {
-                if (currentPath == "smb://") return
-                
-                val pathWithoutTrailing = currentPath.removeSuffix("/")
-                if (pathWithoutTrailing.count { it == '/' } <= 2) {
-                    returnToSourceSelection()
-                } else {
-                    val parent = pathWithoutTrailing.substringBeforeLast("/") + "/"
-                    loadPath(source, parent)
-                }
-            }
-            is MediaSource.Server -> {
-                if (currentPath.isEmpty()) {
-                    returnToSourceSelection()
-                } else {
-                    val parent = currentPath.substringBeforeLast("/", "")
-                    loadPath(source, parent)
-                }
-            }
+        val parent = repository.getParentPath(currentPath)
+        if (parent == null) {
+            returnToSourceSelection()
+        } else {
+            loadPath(source, parent)
         }
     }
 
     fun returnToSourceSelection() {
-        android.util.Log.d("MediaViewModel", "returnToSourceSelection - clearing source, path, error, and file list")
         currentSource = null
         currentPath = ""
         errorMessage = null
         fileList = emptyList()
         currentPathDisplayName = null
-        refreshSources()
+        stopThumbnailUpdates()
     }
 
-    
-
-    fun playVideo(path: String) {
-        selectedVideoPath = path
-    }
-
+    fun playVideo(path: String) { selectedVideoPath = path }
     fun stopPlayback(lastViewedPath: String? = null) {
-        android.util.Log.d("MediaViewModel", "stopPlayback - lastViewedPath: $lastViewedPath, currentPath: $currentPath")
         lastViewedPath?.let { recordSelection(currentPath, it) }
         selectedVideoPath = null
     }
 
-    fun showImage(path: String) {
-        android.util.Log.d("MediaViewModel", "showImage called with path: $path")
-        selectedImagePath = path
-        android.util.Log.d("MediaViewModel", "selectedImagePath set to: $selectedImagePath")
-    }
-
+    fun showImage(path: String) { selectedImagePath = path }
     fun closeImage(lastViewedPath: String? = null) {
-        android.util.Log.d("MediaViewModel", "closeImage - lastViewedPath: $lastViewedPath, currentPath: $currentPath")
         lastViewedPath?.let { recordSelection(currentPath, it) }
         selectedImagePath = null
     }
 
-    fun showPdf(path: String) {
-        selectedPdfPath = path
-    }
-
+    fun showPdf(path: String) { selectedPdfPath = path }
     fun closePdf(lastViewedPath: String? = null) {
-        android.util.Log.d("MediaViewModel", "closePdf - lastViewedPath: $lastViewedPath, currentPath: $currentPath")
         lastViewedPath?.let { recordSelection(currentPath, it) }
         selectedPdfPath = null
     }
 
     private fun getActualFilename(path: String): String {
-        // If it's a server URL with base64-encoded path, decode it
         if (path.contains("/api/media/stream?path=")) {
-            // Extract just the base64 path parameter, removing any additional query params
             val base64Path = path.substringAfter("path=").substringBefore("&")
-            return try {
-                String(Base64.decode(base64Path, Base64.NO_WRAP))
-            } catch (e: Exception) {
-                path
-            }
+            return try { String(Base64.decode(base64Path, Base64.NO_WRAP)) } catch (e: Exception) { path }
         }
         return path
     }
 
     fun isImage(path: String): Boolean {
-        val actualPath = getActualFilename(path)
-        val cleanPath = actualPath.substringBefore('?').removeSuffix("/")
-        val ext = cleanPath.substringAfterLast('.', "").lowercase()
+        val ext = getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
         return ext in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
     }
 
     fun isVideo(path: String): Boolean {
-        val actualPath = getActualFilename(path)
-        val cleanPath = actualPath.substringBefore('?').removeSuffix("/")
-        val ext = cleanPath.substringAfterLast('.', "").lowercase()
-        val result = ext in setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2")
-        android.util.Log.d("MediaViewModel", "isVideo - path: $path, actualPath: $actualPath, ext: $ext, result: $result")
-        return result
+        val ext = getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
+        return ext in setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2")
     }
 
     fun isPdf(path: String): Boolean {
-        val actualPath = getActualFilename(path)
-        val cleanPath = actualPath.substringBefore('?').removeSuffix("/")
-        val ext = cleanPath.substringAfterLast('.', "").lowercase()
+        val ext = getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
         return ext == "pdf"
-    }
-
-    fun getImagesInCurrentFolder(): List<String> {
-        return fileList.filter { !it.isDirectory && isImage(it.path) }.map { it.path }
     }
 
     fun getDisplayName(path: String): String {
         return currentRepository?.getDisplayName(path) ?: path.substringAfterLast('/')
     }
 
+    fun getImagesInCurrentFolder(): List<String> {
+        return fileList.filter { !it.isDirectory && isImage(it.path) }.map { it.path }
+    }
+
     suspend fun downloadToTempFile(path: String, context: Context, suffix: String = ".pdf"): File? = withContext(Dispatchers.IO) {
         try {
             downloadProgress = 0f
-            val repository = currentRepository
-
-            if (repository == null) {
-                android.util.Log.e("MediaViewModel", "downloadToTempFile - no repository set")
-                downloadProgress = null
-                return@withContext null
-            }
-
-            android.util.Log.d("MediaViewModel", "downloadToTempFile - path: $path, repository: ${repository::class.simpleName}")
-
+            val repository = currentRepository ?: return@withContext null
             val tempFile = File(context.cacheDir, "temp_${System.currentTimeMillis()}$suffix")
             val result = repository.getInputStream(path)
 
             if (result.isSuccess) {
-                val inputStream = result.getOrNull()
-                if (inputStream == null) {
-                    android.util.Log.e("MediaViewModel", "downloadToTempFile - inputStream is null despite success")
-                    downloadProgress = null
-                    return@withContext null
-                }
-
-                android.util.Log.d("MediaViewModel", "downloadToTempFile - downloading to ${tempFile.absolutePath}")
-
-                inputStream.use { input ->
+                result.getOrNull()?.use { input ->
                     tempFile.outputStream().use { output ->
                         val buffer = ByteArray(64 * 1024)
                         var bytesRead: Int
                         var totalRead = 0L
-
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             output.write(buffer, 0, bytesRead)
                             totalRead += bytesRead
-                            downloadProgress = totalRead.toFloat() / 1000000f // Approximate progress
+                            downloadProgress = totalRead.toFloat() / 1000000f
                         }
                     }
                 }
-
-                android.util.Log.d("MediaViewModel", "downloadToTempFile - success, file size: ${tempFile.length()} bytes")
                 downloadProgress = null
                 tempFile
             } else {
-                val error = result.exceptionOrNull()
-                android.util.Log.e("MediaViewModel", "downloadToTempFile - failed: ${error?.message}", error)
                 downloadProgress = null
                 null
             }
         } catch (e: Exception) {
-            android.util.Log.e("MediaViewModel", "downloadToTempFile - exception", e)
             downloadProgress = null
             null
         }
     }
     
     fun startThumbnailUpdates(serverUrl: String, token: String) {
-        android.util.Log.d("MediaViewModel", "Starting thumbnail updates for $serverUrl")
         stopThumbnailUpdates()
-        
         thumbnailListener = ThumbnailUpdateListener(serverUrl, token)
         thumbnailListenerJob = viewModelScope.launch {
             thumbnailListener?.connect()?.collect { update ->
-                android.util.Log.d("MediaViewModel", "Thumbnail update received: ${update.path}")
-                // Update the file list if the original path matches
                 fileList = fileList.map { item ->
                     if (item.originalPath == update.path) {
-                        val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) {
-                            update.thumbnailURL
-                        } else {
-                            "$serverUrl${update.thumbnailURL}"
-                        }
-                        // Add cache-busting timestamp to force Coil to reload
-                        val cacheBustedUrl = "$fullThumbnailUrl?t=${System.currentTimeMillis()}"
-                        android.util.Log.d("MediaViewModel", "Updating thumbnail for ${item.name}: $cacheBustedUrl")
-                        item.copy(thumbnailUrl = cacheBustedUrl)
-                    } else {
-                        item
-                    }
+                        val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) update.thumbnailURL else "$serverUrl${update.thumbnailURL}"
+                        item.copy(thumbnailUrl = "$fullThumbnailUrl?t=${System.currentTimeMillis()}")
+                    } else item
                 }
             }
         }
@@ -566,25 +362,14 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     fun regenerateThumbnails() {
-        val repo = currentRepository
-        if (repo !is ServerRepository) {
-            errorMessage = "Regenerate thumbnails is only available for server sources"
-            return
-        }
-        
-        if (currentPath.isEmpty()) {
-            errorMessage = "Please navigate to a folder first"
-            return
-        }
+        val repo = currentRepository ?: return
+        if (!repo.supportsThumbnailRegeneration() || currentPath.isEmpty()) return
         
         viewModelScope.launch {
             isLoading = true
             val result = repo.regenerateThumbnails(currentPath)
             isLoading = false
-            
-            if (result.isFailure) {
-                errorMessage = "Failed to regenerate thumbnails: ${result.exceptionOrNull()?.message}"
-            }
+            if (result.isFailure) errorMessage = "Failed to regenerate thumbnails: ${result.exceptionOrNull()?.message}"
         }
     }
     

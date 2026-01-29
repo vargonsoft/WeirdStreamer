@@ -255,59 +255,43 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // SMB Shares Section
-            item {
-                Text("SMB Shares", style = MaterialTheme.typography.headlineSmall)
-                Spacer(modifier = Modifier.height(16.dp))
-            }
+            // Dynamic Provider Sections
+            viewModel.sourceProviders.forEach { provider ->
+                item {
+                    Text(provider.displayName, style = MaterialTheme.typography.headlineSmall)
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
 
-            items(viewModel.smbHosts) { host ->
-                Surface(
-                    onClick = { /* Could auto-connect here if desired */ },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Dns, contentDescription = null)
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(host, modifier = Modifier.weight(1f))
-                        Button(onClick = { viewModel.deleteServer(host) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                val servers = provider.getServers()
+                if (servers.isEmpty()) {
+                    item {
+                        Text("No ${provider.displayName}s saved.", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                    }
+                } else {
+                    items(servers) { address ->
+                        Surface(
+                            onClick = { /* Could auto-connect here */ },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Dns, contentDescription = null)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text(address, modifier = Modifier.weight(1f))
+                                Button(onClick = { provider.removeServer(address) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                                }
+                            }
                         }
                     }
                 }
-            }
 
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-            
-            // API Servers Section
-            item {
-                Text("API Servers", style = MaterialTheme.typography.headlineSmall)
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            items(viewModel.apiServers) { serverUrl ->
-                Surface(
-                    onClick = { /* Could auto-connect here if desired */ },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Dns, contentDescription = null)
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(serverUrl, modifier = Modifier.weight(1f))
-                        Button(onClick = { viewModel.deleteApiServer(serverUrl) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete")
-                        }
-                    }
+                item {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }

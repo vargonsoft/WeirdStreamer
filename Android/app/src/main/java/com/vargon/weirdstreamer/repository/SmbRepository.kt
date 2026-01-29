@@ -5,8 +5,10 @@ import jcifs.CIFSContext
 import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbAuthException
 import jcifs.smb.SmbFile
+import jcifs.smb.SmbUnsupportedOperationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.InputStream
 
 class SmbRepository(
     private val baseContext: CIFSContext,
@@ -54,25 +56,14 @@ class SmbRepository(
     }
     
     override suspend fun authenticate(username: String?, password: String?): Result<Boolean> = withContext(Dispatchers.IO) {
-        // SMB authentication is handled per-request, so we just save credentials
         Result.success(true)
     }
     
-    override fun getStreamUrl(path: String): String {
-        // SMB paths are used directly
-        return path
-    }
-    
-    override fun getThumbnailUrl(path: String): String? {
-        // SMB thumbnails are generated locally
-        return null
-    }
-    
-    override fun getDisplayName(path: String): String {
-        return path.substringAfterLast('/').substringBefore('?')
-    }
+    override fun getStreamUrl(path: String): String = path
+    override fun getThumbnailUrl(path: String): String? = null
+    override fun getDisplayName(path: String): String = path.substringAfterLast('/').substringBefore('?')
 
-    override suspend fun getInputStream(path: String): Result<java.io.InputStream> = withContext(Dispatchers.IO) {
+    override suspend fun getInputStream(path: String): Result<InputStream> = withContext(Dispatchers.IO) {
         try {
             val host = path.removePrefix("smb://").substringBefore("/")
             val creds = credentialManager.getCredentials(host)
@@ -90,6 +81,19 @@ class SmbRepository(
         }
     }
 
+    override fun isAuthRequired(exception: Throwable): Boolean = exception is SmbAuthException
+
+    override fun getInitialPath(): String = ""
+
+    override fun getParentPath(currentPath: String): String? {
+        if (currentPath == "smb://" || currentPath.isEmpty()) return null
+        
+        val pathWithoutTrailing = currentPath.removeSuffix("/")
+        if (pathWithoutTrailing.count { it == '/' } <= 2) return null
+        
+        return pathWithoutTrailing.substringBeforeLast("/") + "/"
+    }
+
     private fun guessMimeType(filename: String): String {
         val ext = filename.substringAfterLast('.', "").lowercase()
         return when (ext) {
@@ -102,4 +106,19 @@ class SmbRepository(
             else -> "application/octet-stream"
         }
     }
+}
+
+class SmbSourceProvider(
+    private val baseContextLoader: () -> CIFSContext,
+    private val credentialManager: CredentialManager
+) : SourceProvider {
+    override val typeId: String = "SMB"
+    override val displayName: String = "SMB Share"
+    override val addressLabel: String = "SMB Host"
+    override val addressPlaceholder: String = "192.168.1.100"
+
+    override fun getServers(): List<String> = credentialManager.getSavedServers().toList()
+    override fun addServer(address: String) { credentialManager.addSavedServer(address) }
+    override fun removeServer(address: String) { credentialManager.removeSavedServer(address) }
+    override fun createRepository(serverAddress: String): MediaRepository = SmbRepository(baseContextLoader(), credentialManager)
 }
