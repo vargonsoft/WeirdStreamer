@@ -52,6 +52,9 @@ interface MediaRepository {
     suspend fun getInputStream(path: String): Result<InputStream>
     suspend fun inheritState(other: MediaRepository?)
     
+    // Metadata on demand
+    suspend fun getMetadata(item: FileItem): Result<FileItem> = Result.failure(UnsupportedOperationException())
+    
     // Support for server-specific features
     fun supportsThumbnailRegeneration(): Boolean = false
     suspend fun regenerateThumbnails(path: String): Result<Boolean> = Result.failure(UnsupportedOperationException())

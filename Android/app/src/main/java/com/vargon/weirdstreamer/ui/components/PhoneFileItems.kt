@@ -66,7 +66,15 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
     ListItem(
         headlineContent = { Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = if (!item.isDirectory && !isParent) {
-            { Text(formatFileSize(item.size)) }
+            {
+                val sizeStr = formatFileSize(item.size)
+                val infoStr = if (item.duration != null && item.duration > 0) {
+                    "$sizeStr, ${formatDuration(item.duration)}"
+                } else {
+                    sizeStr
+                }
+                Text(infoStr)
+            }
         } else null,
         leadingContent = {
             Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
@@ -164,6 +172,22 @@ fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: ()
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
             )
+            if (!item.isDirectory && !isParent) {
+                val sizeStr = formatFileSize(item.size)
+                val infoStr = if (item.duration != null && item.duration > 0) {
+                    "$sizeStr, ${formatDuration(item.duration)}"
+                } else {
+                    sizeStr
+                }
+                Text(
+                    text = infoStr,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }
@@ -173,4 +197,17 @@ private fun formatFileSize(size: Long): String {
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
     val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
     return String.format(Locale.US, "%.1f %s", size / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+}
+
+private fun formatDuration(durationInSeconds: Double): String {
+    val totalSeconds = durationInSeconds.toInt()
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    
+    return if (hours > 0) {
+        String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format(Locale.US, "%d:%02d", minutes, seconds)
+    }
 }

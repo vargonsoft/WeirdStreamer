@@ -129,6 +129,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     private val selectionMap = mutableStateMapOf<String, String>()
 
+    // Metadata fetching state to avoid redundant calls
+    private val pendingMetadataPaths = mutableSetOf<String>()
+
     // --- ExoPlayer management for phone video playback ---
     private var exoPlayer: ExoPlayer? = null
     private var exoPlayerPath: String? = null
@@ -210,6 +213,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun loadPath(source: MediaSource, path: String, user: String? = null, pass: String? = null, save: Boolean = false) {
         currentSource = source
         currentPath = path
+        pendingMetadataPaths.clear()
 
         viewModelScope.launch {
             isLoading = true
@@ -266,6 +270,25 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 isLoading = false
             }
+        }
+    }
+
+    fun fetchMetadata(item: FileItem) {
+        val repo = currentRepository ?: return
+        if (item.isDirectory || item.path == "UP" || item.duration != null || pendingMetadataPaths.contains(item.path)) return
+        
+        pendingMetadataPaths.add(item.path)
+        viewModelScope.launch {
+            val result = repo.getMetadata(item)
+            if (result.isSuccess) {
+                val updatedItem = result.getOrNull()
+                if (updatedItem != null) {
+                    fileList = fileList.map {
+                        if (it.path == item.path) updatedItem else it 
+                    }
+                }
+            }
+            pendingMetadataPaths.remove(item.path)
         }
     }
 

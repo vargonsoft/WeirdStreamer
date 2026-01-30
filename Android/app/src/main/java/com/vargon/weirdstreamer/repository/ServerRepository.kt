@@ -67,6 +67,55 @@ class ServerRepository(
         }
     }
     
+    override suspend fun getMetadata(item: FileItem): Result<FileItem> = withContext(Dispatchers.IO) {
+        try {
+            val path = item.path
+            // Check if this is a streaming URL and extract original path
+            val actualPath = if (path.contains("/api/media/stream?path=")) {
+                try {
+                    val encodedPath = path.substringAfter("path=").substringBefore("&")
+                    String(Base64.decode(encodedPath, Base64.NO_WRAP))
+                } catch (e: Exception) { path }
+            } else path
+
+            // Use Base64 encoding for the path when calling metadata API, matching stream API requirements
+            val encodedPathForApi = Base64.encodeToString(actualPath.toByteArray(), Base64.NO_WRAP)
+            val response = apiService.getMetadata(encodedPathForApi)
+            if (response.isSuccessful) {
+                val mediaItem = response.body()
+                if (mediaItem != null) {
+                    val streamingPath = getStreamUrl(mediaItem.path)
+                    
+                    // Maintain thumbnail cache versioning
+                    val parentPath = actualPath.substringBeforeLast("/", "")
+                    val cacheVersion = credentialManager.getThumbnailCacheVersion(serverUrl, parentPath)
+                    
+                    Result.success(
+                        FileItem(
+                            name = mediaItem.name,
+                            path = streamingPath,
+                            isDirectory = false,
+                            size = mediaItem.size,
+                            mimeType = mediaItem.mimeType,
+                            // Preserve the cache-buster versioning for thumbnails
+                            thumbnailUrl = item.thumbnailUrl,
+//                            thumbnailUrl = mediaItem.thumbnailUrl?.let {
+//                                val baseUrl = if (it.startsWith("http")) it else "$serverUrl$it"
+//                                if (cacheVersion > 0) "$baseUrl?v=$cacheVersion" else baseUrl
+//                            },
+                            duration = mediaItem.duration,
+                            width = mediaItem.width,
+                            height = mediaItem.height,
+                            originalPath = mediaItem.path
+                        )
+                    )
+                } else Result.failure(Exception("Empty body"))
+            } else Result.failure(Exception("Metadata failed"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
     override suspend fun authenticate(username: String?, password: String?): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             if (username.isNullOrBlank() || password.isNullOrBlank()) return@withContext Result.failure(Exception("Required"))

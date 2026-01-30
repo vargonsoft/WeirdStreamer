@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.SubdirectoryArrowLeft
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,9 +24,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.SmbFileItem
 import com.vargon.weirdstreamer.repository.FileItem
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
@@ -114,9 +117,26 @@ fun FileTileItem(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -
 @Composable
 fun FileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
+    val viewModel: MediaViewModel = viewModel()
+    
+    LaunchedEffect(item.path) {
+        if (!item.isDirectory && !isParent && item.duration == null && viewModel.isVideo(item.path)) {
+            viewModel.fetchMetadata(item)
+        }
+    }
+
+    val subtitle = if (!item.isDirectory && !isParent) {
+        val sizeStr = formatFileSize(item.size)
+        if (item.duration != null && item.duration > 0) {
+            "$sizeStr, ${formatDuration(item.duration)}"
+        } else {
+            sizeStr
+        }
+    } else null
+
     TileItem(
         title = item.name,
-        subtitle = if (!item.isDirectory && !isParent) formatFileSize(item.size) else null,
+        subtitle = subtitle,
         icon = when {
             isParent -> Icons.Default.SubdirectoryArrowLeft
             item.isDirectory -> Icons.Default.Folder
@@ -289,6 +309,14 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
 @Composable
 fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
+    val viewModel: MediaViewModel = viewModel()
+    
+    LaunchedEffect(item.path) {
+        if (!item.isDirectory && !isParent && item.duration == null && viewModel.isVideo(item.path)) {
+            viewModel.fetchMetadata(item)
+        }
+    }
+
     val icon = when {
         isParent -> Icons.Default.SubdirectoryArrowLeft
         item.isDirectory -> Icons.Default.Folder
@@ -347,7 +375,13 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
             Column {
                 Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
                 if (!item.isDirectory && !isParent) {
-                    Text(text = formatFileSize(item.size), style = MaterialTheme.typography.bodySmall)
+                    val sizeStr = formatFileSize(item.size)
+                    val infoStr = if (item.duration != null && item.duration > 0) {
+                        "$sizeStr, ${formatDuration(item.duration)}"
+                    } else {
+                        sizeStr
+                    }
+                    Text(text = infoStr, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -396,4 +430,17 @@ private fun formatFileSize(size: Long): String {
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
     val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
     return String.format(Locale.US, "%.1f %s", size / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+}
+
+private fun formatDuration(durationInSeconds: Double): String {
+    val totalSeconds = durationInSeconds.toInt()
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    
+    return if (hours > 0) {
+        String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format(Locale.US, "%d:%02d", minutes, seconds)
+    }
 }

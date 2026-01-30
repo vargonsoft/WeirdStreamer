@@ -4,5 +4,6 @@ data class SmbFileItem(
     val name: String,
     val path: String,
     val isDirectory: Boolean,
-    val size: Long = 0
+    val size: Long = 0,
+    val duration: Double? = null
 )
