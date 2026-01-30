@@ -9,10 +9,12 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -22,15 +24,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vargon.weirdstreamer.MediaViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -40,53 +44,48 @@ import java.io.File
 @Composable
 fun PhonePdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var tempFile by remember { mutableStateOf<File?>(null) }
     var pdfRenderer by remember { mutableStateOf<PdfRenderer?>(null) }
     var pageCount by remember { mutableIntStateOf(0) }
-    var currentPageIndex by remember { mutableIntStateOf(0) }
-    var currentPageBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isThumbnailView by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(true) }
     
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-    
     val rendererMutex = remember { Mutex() }
+    val pagerState = rememberPagerState { pageCount }
+    var isZoomed by remember { mutableStateOf(false) }
 
     LaunchedEffect(initialPath) {
         val file = viewModel.downloadToTempFile(initialPath, context)
         if (file != null) {
             tempFile = file
-            val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-            val renderer = PdfRenderer(pfd)
-            pdfRenderer = renderer
-            pageCount = renderer.pageCount
+            try {
+                val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                pdfRenderer = PdfRenderer(pfd)
+                pageCount = pdfRenderer!!.pageCount
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
         isLoading = false
     }
 
-    LaunchedEffect(currentPageIndex, pdfRenderer, isThumbnailView) {
-        if (pdfRenderer != null && !isThumbnailView) {
-            isLoading = true
-            withContext(Dispatchers.Default) {
-                rendererMutex.withLock {
-                    pdfRenderer!!.openPage(currentPageIndex).use { page ->
-                        val bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
-                        val canvas = Canvas(bitmap)
-                        canvas.drawColor(android.graphics.Color.WHITE)
-                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        currentPageBitmap = bitmap
-                    }
-                }
-            }
-            isLoading = false
-        }
+    LaunchedEffect(pagerState.currentPage) {
+        isZoomed = false
     }
 
     DisposableEffect(Unit) {
         onDispose {
             pdfRenderer?.close()
             tempFile?.delete()
+        }
+    }
+
+    BackHandler {
+        if (isThumbnailView) {
+            isThumbnailView = false
+        } else {
+            onBack(initialPath)
         }
     }
 
@@ -114,11 +113,17 @@ fun PhonePdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (Stri
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = { if (currentPageIndex > 0) currentPageIndex-- }, enabled = currentPageIndex > 0) {
+                        TextButton(
+                            onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } }, 
+                            enabled = pagerState.currentPage > 0
+                        ) {
                             Text("Previous")
                         }
-                        Text("${currentPageIndex + 1} / $pageCount")
-                        TextButton(onClick = { if (currentPageIndex < pageCount - 1) currentPageIndex++ }, enabled = currentPageIndex < pageCount - 1) {
+                        Text("${pagerState.currentPage + 1} / $pageCount")
+                        TextButton(
+                            onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } }, 
+                            enabled = pagerState.currentPage < pageCount - 1
+                        ) {
                             Text("Next")
                         }
                     }
@@ -138,10 +143,13 @@ fun PhonePdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (Stri
                         Box(
                             modifier = Modifier
                                 .aspectRatio(0.7f)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable {
-                                    currentPageIndex = index
-                                    isThumbnailView = false
+                                    scope.launch {
+                                        pagerState.scrollToPage(index)
+                                        isThumbnailView = false
+                                    }
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -150,37 +158,116 @@ fun PhonePdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (Stri
                     }
                 }
             } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(Unit) {
-                            detectTransformGestures { _, pan, zoom, _ ->
-                                scale = (scale * zoom).coerceIn(1f, 5f)
-                                offset += pan
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    userScrollEnabled = !isZoomed,
+                    beyondViewportPageCount = 1
+                ) { pageIndex ->
+                    ZoomablePdfPage(
+                        pdfRenderer = pdfRenderer,
+                        pageIndex = pageIndex,
+                        rendererMutex = rendererMutex,
+                        onZoomChanged = { zoomed ->
+                            if (pageIndex == pagerState.currentPage) {
+                                isZoomed = zoomed
                             }
                         }
-                ) {
-                    currentPageBitmap?.let { bitmap ->
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer(
-                                    scaleX = scale,
-                                    scaleY = scale,
-                                    translationX = offset.x,
-                                    translationY = offset.y
-                                ),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
+                    )
                 }
             }
 
             if (isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
+        }
+    }
+}
+
+@Composable
+fun ZoomablePdfPage(
+    pdfRenderer: PdfRenderer?,
+    pageIndex: Int,
+    rendererMutex: Mutex,
+    onZoomChanged: (Boolean) -> Unit
+) {
+    var currentPageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    LaunchedEffect(pdfRenderer, pageIndex) {
+        if (pdfRenderer != null) {
+            isLoading = true
+            withContext(Dispatchers.Default) {
+                rendererMutex.withLock {
+                    try {
+                        pdfRenderer.openPage(pageIndex).use { page ->
+                            val bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                            val canvas = Canvas(bitmap)
+                            canvas.drawColor(android.graphics.Color.WHITE)
+                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            currentPageBitmap = bitmap
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+            isLoading = false
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(scale) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val isPinch = event.changes.size > 1
+                        if (scale > 1f || isPinch) {
+                            val zoomChange = event.calculateZoom()
+                            val panChange = event.calculatePan()
+                            val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+                            if (newScale != scale) {
+                                scale = newScale
+                                onZoomChanged(scale > 1f)
+                            }
+                            if (scale > 1f) {
+                                offset += panChange
+                            } else {
+                                offset = Offset.Zero
+                            }
+                            event.changes.forEach { change ->
+                                if (change.position != change.previousPosition) {
+                                    change.consume()
+                                }
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
+    ) {
+        currentPageBitmap?.let { bitmap ->
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
+                    ),
+                contentScale = ContentScale.Fit
+            )
+        }
+
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
     }
 }
