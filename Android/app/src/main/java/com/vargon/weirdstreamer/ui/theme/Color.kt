@@ -15,7 +15,7 @@ val Pink40 = Color(0xFF7D5260)
 // Gradient from medium blue to deep navy blue (#040273)
 val CinemaBlue = Color(0xFF1E3A8A) // Deep royal blue (lighter end)
 val CinemaBlueMid = Color(0xFF0F2161) // Mid-gradient blue
-val CinemaBlueDeep = Color(0xFF040273) // Deep navy blue (darker end)
+val CinemaBlueDeep = Color(0xFF02013D) // Even deeper navy blue
 val CinemaBlueLight = Color(0xFF3B82F6) // Lighter blue accent
 val CinemaGold = Color(0xFFFBBF24) // Rich gold
 val CinemaGoldDark = Color(0xFFD97706) // Darker amber gold

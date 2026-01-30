@@ -18,6 +18,7 @@ interface WeirdStreamerThemeSpec {
     val serverIconTint: Color
     val parentIconTint: Color
     val backgroundImage: Int?
+    val spinnerColor: Color
 }
 
 object DefaultThemeSpec : WeirdStreamerThemeSpec {
@@ -25,6 +26,7 @@ object DefaultThemeSpec : WeirdStreamerThemeSpec {
     override val serverIconTint: Color = Color.Unspecified
     override val parentIconTint: Color = Color.Unspecified
     override val backgroundImage: Int? = null
+    override val spinnerColor: Color = Color.Unspecified
 }
 
 object CinemaBlueThemeSpec : WeirdStreamerThemeSpec {
@@ -32,6 +34,8 @@ object CinemaBlueThemeSpec : WeirdStreamerThemeSpec {
     override val serverIconTint: Color = CinemaGold
     override val parentIconTint: Color = CinemaGold
     override val backgroundImage: Int? = R.drawable.film_reel
+    override val spinnerColor: Color = CinemaBlueDeep
+
 }
 
 object CinemaRedThemeSpec : WeirdStreamerThemeSpec {
@@ -39,6 +43,7 @@ object CinemaRedThemeSpec : WeirdStreamerThemeSpec {
     override val serverIconTint: Color = Color.Unspecified
     override val parentIconTint: Color = Color.Unspecified
     override val backgroundImage: Int? = null
+    override val spinnerColor: Color = CinemaBurgundy
 }
 
 val LocalThemeSpec = staticCompositionLocalOf<WeirdStreamerThemeSpec> { DefaultThemeSpec }
@@ -60,16 +65,16 @@ fun WeirdStreamerTheme(
     val colorScheme = when (appTheme) {
         AppTheme.CINEMA_BLUE -> {
             darkColorScheme(
-                primary = CinemaGold,
-                onPrimary = CinemaBlueDeep,
+                primary = CinemaBlueMid,
+                onPrimary = CinemaSilver,
                 secondary = CinemaBlueLight,
                 onSecondary = CinemaSilver,
-                tertiary = CinemaGoldDark,
+                tertiary = CinemaGold,
                 background = CinemaBlueDeep,
                 onBackground = CinemaSilver,
-                surface = CinemaBlueMid,
+                surface = CinemaBlueDeep,
                 onSurface = CinemaSilver,
-                surfaceVariant = CinemaBlue
+                surfaceVariant = CinemaBlueMid
             )
         }
         AppTheme.CINEMA_RED -> {
@@ -81,7 +86,7 @@ fun WeirdStreamerTheme(
                 tertiary = CinemaRedGoldDark,
                 background = CinemaBurgundy,
                 onBackground = CinemaRedSilver,
-                surface = CinemaRed,
+                surface = CinemaBurgundy,
                 onSurface = CinemaRedSilver
             )
         }
