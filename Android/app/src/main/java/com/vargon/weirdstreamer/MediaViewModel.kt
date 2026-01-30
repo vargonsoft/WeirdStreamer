@@ -9,25 +9,30 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
 import com.vargon.weirdstreamer.api.ThumbnailUpdateListener
-import com.vargon.weirdstreamer.repository.*
+import com.vargon.weirdstreamer.repository.FileItem
+import com.vargon.weirdstreamer.repository.MediaRepository
+import com.vargon.weirdstreamer.repository.MediaSource
+import com.vargon.weirdstreamer.repository.ServerRepository
+import com.vargon.weirdstreamer.repository.ServerSourceProvider
+import com.vargon.weirdstreamer.repository.SmbSourceProvider
+import com.vargon.weirdstreamer.repository.SourceProvider
 import jcifs.CIFSContext
 import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
-import jcifs.smb.NtlmPasswordAuthenticator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Properties
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.common.MediaItem
-import androidx.media3.datasource.okhttp.OkHttpDataSource
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 
 enum class ContentFilter {
     ALL, IMAGE, VIDEO, PDF
@@ -214,6 +219,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val provider = sourceProviders.find { it.typeId == source.typeId } ?: throw Exception("Unknown source type")
                 val repository = withContext(Dispatchers.IO) { provider.createRepository(source.serverAddress) }
+                repository.inheritState(currentRepository)
                 currentRepository = repository
 
                 if (user != null && pass != null) {
@@ -272,7 +278,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             returnToSourceSelection()
         } else {
             // Set display name to last segment of parent path, or "/" if root
-            currentPathDisplayName = parent.trimEnd('/').substringAfterLast('/').ifEmpty { "/" }
+            currentPathDisplayName = getDisplayName(parent)
             loadPath(source, parent)
         }
     }

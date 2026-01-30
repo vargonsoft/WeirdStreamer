@@ -15,7 +15,14 @@ class ServerRepository(
 ) : MediaRepository {
     
     private val apiService: ApiService = ApiClient.create(serverUrl, credentialManager)
-    
+
+    private var shareMap = mutableMapOf<String, String>()
+    override suspend fun inheritState(other: MediaRepository?) {
+        (other as? ServerRepository)?.let { previous ->
+            shareMap = previous.shareMap
+        }
+    }
+
     override suspend fun browse(path: String): Result<List<FileItem>> = withContext(Dispatchers.IO) {
         try {
             val response = apiService.browse(path)
@@ -26,6 +33,9 @@ class ServerRepository(
                     val cacheVersion = credentialManager.getThumbnailCacheVersion(serverUrl, path)
                     
                     directory.dirs?.forEach { dir ->
+                        if (!dir.id.contains("/") && !dir.name.contains("/")) {
+                            shareMap[dir.id] = dir.name
+                        }
                         items.add(FileItem(name = dir.name, path = dir.id, isDirectory = true))
                     }
                     
@@ -79,6 +89,10 @@ class ServerRepository(
     override fun getThumbnailUrl(path: String): String? = null
 
     override fun getDisplayName(path: String): String {
+        if (path.isEmpty()) return "/"
+        shareMap[path]?.let {
+            return it
+        }
         return if (path.contains("/api/media/stream?path=")) {
             try {
                 val encodedPath = path.substringAfter("path=").substringBefore("&")

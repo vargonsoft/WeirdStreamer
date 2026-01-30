@@ -16,7 +16,11 @@ class SmbRepository(
     private val serverAddress: String,
     private val showHiddenFiles: Boolean = false
 ) : MediaRepository {
-    
+
+    override suspend fun inheritState(other: MediaRepository?) {
+        // No-op
+    }
+
     override suspend fun browse(path: String): Result<List<FileItem>> = withContext(Dispatchers.IO) {
         try {
             val normalizedPath = if (path.endsWith("/") || path.contains("?")) path else "$path/"

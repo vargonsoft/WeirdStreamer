@@ -50,6 +50,7 @@ interface MediaRepository {
     fun getThumbnailUrl(path: String): String?
     fun getDisplayName(path: String): String
     suspend fun getInputStream(path: String): Result<InputStream>
+    suspend fun inheritState(other: MediaRepository?)
     
     // Support for server-specific features
     fun supportsThumbnailRegeneration(): Boolean = false
