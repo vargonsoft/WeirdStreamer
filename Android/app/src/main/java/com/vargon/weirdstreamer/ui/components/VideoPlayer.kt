@@ -164,7 +164,15 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var playbackPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) } // value to show, isForward
-    
+
+    // --- Skip sequence state ---
+    val skipIntervals = listOf(5, 15, 30, 60, 120, 300, 600, 1800) // seconds
+    var skipIndex by remember { mutableStateOf(0) }
+    var lastSkipDirection by remember { mutableStateOf<Int?>(null) } // -1 for left, 1 for right
+    var lastSkipTime by remember { mutableStateOf(0L) }
+    var lastSkipAmount by remember { mutableStateOf(0) }
+    var skipReversalStep by remember { mutableStateOf(0) } // 0: normal, 1: undo, 2: reset
+
     val focusRequester = remember { FocusRequester() }
     
     val filename = remember(path) {
@@ -245,20 +253,19 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (!showControls) showControls = true
     }
 
-    val performSkip = { amount: Int ->
+    fun performSkip(amount: Int, showControlsAfter: Boolean) {
+        if (amount == 0) {
+            skipFeedback = null
+            return
+        }
         android.util.Log.d("VideoPlayer", "performSkip - amount: $amount, enableTranscode: $enableTranscode")
-        
         val currentDuration = exoPlayer.duration
         val maxPos = if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration
         val newPos = (exoPlayer.currentPosition + amount * 1000).coerceIn(0L, maxPos)
-        
         if (!isSmbSource && enableTranscode) {
-            // For transcoded streams, use time-based seeking
             val actualPosition = exoPlayer.currentPosition + transcodeStartOffset
             val newTimePosition = (actualPosition + amount * 1000).coerceIn(0L, if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration + transcodeStartOffset)
             val startTimeSeconds = newTimePosition / 1000f
-            
-            // Extract the base URL and path parameter, then rebuild with new parameters
             val baseUrlWithPath = if (path.contains("?")) {
                 val base = path.substringBefore("?")
                 val pathParam = path.substringAfter("path=").substringBefore("&")
@@ -267,11 +274,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 path
             }
             val newUrl = "$baseUrlWithPath&auto-transcode=0&transcode=1&start=$startTimeSeconds"
-            
             android.util.Log.d("VideoPlayer", "Transcode seek to $startTimeSeconds sec, URL: $newUrl")
-            
             transcodeStartOffset = newTimePosition
-            
             val mediaItem = MediaItem.fromUri(newUrl)
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
@@ -279,9 +283,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         } else {
             exoPlayer.seekTo(newPos)
         }
-        
         skipFeedback = amount to (amount > 0)
-        updateInteraction()
+        if (showControlsAfter) updateInteraction()
     }
 
     val handleBackAction = {
@@ -373,10 +376,38 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 // Do nothing on transcode button
                                 false
                             } else if (isSeekingSlider) {
-                                performSkip(-30)
+                                val now = System.currentTimeMillis()
+                                val direction = -1
+                                val withinHalfSecond = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
+                                val opposite = lastSkipDirection == 1 && skipReversalStep == 0
+                                var skipAmount = 0
+                                if (opposite) {
+                                    // Reverse direction: first undo last skip, then reset, then start new direction
+                                    skipReversalStep++
+                                    if (skipReversalStep == 1) {
+                                        skipAmount = -lastSkipAmount
+                                    } else if (skipReversalStep == 2) {
+                                        skipAmount = 0
+                                    } else {
+                                        skipReversalStep = 0
+                                        skipIndex = 0
+                                        skipAmount = -skipIntervals[skipIndex]
+                                    }
+                                } else {
+                                    skipReversalStep = 0
+                                    skipIndex = if (withinHalfSecond) (skipIndex + 1).coerceAtMost(skipIntervals.lastIndex) else 0
+                                    skipAmount = -skipIntervals[skipIndex]
+                                }
+                                if (skipAmount != 0) {
+                                    performSkip(skipAmount, true)
+                                    lastSkipAmount = skipAmount
+                                }
+                                lastSkipDirection = direction
+                                lastSkipTime = now
                                 true
                             } else {
-                                performSkip(-5)
+                                // Only show skip feedback, do not show controls/slider
+                                if (-5 != 0) performSkip(-5, false)
                                 true
                             }
                         }
@@ -385,10 +416,38 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 // Do nothing on transcode button
                                 false
                             } else if (isSeekingSlider) {
-                                performSkip(30)
+                                val now = System.currentTimeMillis()
+                                val direction = 1
+                                val withinHalfSecond = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
+                                val opposite = lastSkipDirection == -1 && skipReversalStep == 0
+                                var skipAmount = 0
+                                if (opposite) {
+                                    // Reverse direction: first undo last skip, then reset, then start new direction
+                                    skipReversalStep++
+                                    if (skipReversalStep == 1) {
+                                        skipAmount = -lastSkipAmount
+                                    } else if (skipReversalStep == 2) {
+                                        skipAmount = 0
+                                    } else {
+                                        skipReversalStep = 0
+                                        skipIndex = 0
+                                        skipAmount = skipIntervals[skipIndex]
+                                    }
+                                } else {
+                                    skipReversalStep = 0
+                                    skipIndex = if (withinHalfSecond) (skipIndex + 1).coerceAtMost(skipIntervals.lastIndex) else 0
+                                    skipAmount = skipIntervals[skipIndex]
+                                }
+                                if (skipAmount != 0) {
+                                    performSkip(skipAmount, true)
+                                    lastSkipAmount = skipAmount
+                                }
+                                lastSkipDirection = direction
+                                lastSkipTime = now
                                 true
                             } else {
-                                performSkip(5)
+                                // Only show skip feedback, do not show controls/slider
+                                if (5 != 0) performSkip(5, false)
                                 true
                             }
                         }
@@ -453,20 +512,32 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
         // Skip Feedback Overlay
         Box(modifier = Modifier.fillMaxSize()) {
+            val feedback = skipFeedback
+            val skipIsForward = feedback?.second == true
             AnimatedVisibility(
-                visible = skipFeedback != null,
+                visible = feedback != null && feedback.first != 0,
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut(),
-                modifier = Modifier.align(if (skipFeedback?.second == true) Alignment.CenterEnd else Alignment.CenterStart)
+                modifier = Modifier.align(if (skipIsForward) Alignment.CenterEnd else Alignment.CenterStart)
             ) {
-                val value = skipFeedback?.first ?: 0
-                val text = if (value > 0) "+$value" else "$value"
-                androidx.tv.material3.Text(
-                    text = text,
-                    style = androidx.tv.material3.MaterialTheme.typography.displayLarge,
-                    color = Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(horizontal = 64.dp)
-                )
+                val value = feedback?.first ?: 0
+                if (value != 0) {
+                    val absValue = kotlin.math.abs(value)
+                    val text = if (absValue >= 60) {
+                        val min = absValue / 60
+                        val sec = absValue % 60
+                        val timeStr = String.format(Locale.US, "%d:%02d", min, sec)
+                        if (value > 0) "+$timeStr" else "-$timeStr"
+                    } else {
+                        if (value > 0) "+$absValue" else "-$absValue"
+                    }
+                    androidx.tv.material3.Text(
+                        text = text,
+                        style = androidx.tv.material3.MaterialTheme.typography.displayLarge,
+                        color = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(horizontal = 64.dp)
+                    )
+                }
             }
         }
 
