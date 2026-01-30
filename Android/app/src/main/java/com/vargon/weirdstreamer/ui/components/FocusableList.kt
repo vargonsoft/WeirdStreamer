@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -294,6 +295,12 @@ fun CharacterSelectorDialog(
     onDismiss: () -> Unit
 ) {
     android.util.Log.d("CharacterSelectorDialog", "Dialog composing - folders: ${folderCharacters.size}, files: ${fileCharacters.size}")
+
+    // Handle back button to dismiss dialog instead of exiting app
+    BackHandler {
+        android.util.Log.d("CharacterSelectorDialog", "BackHandler triggered - dismissing dialog")
+        onDismiss()
+    }
 
     // Create focus requesters for both sections
     val allCharacters = folderCharacters + fileCharacters
