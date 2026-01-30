@@ -174,9 +174,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var skipReversalStep by remember { mutableStateOf(0) } // 0: normal, 1: undo, 2: reset
 
     val focusRequester = remember { FocusRequester() }
-    
-    // Remove remember(path) so filename always updates with path
-    val filename = viewModel.getDisplayName(path)
+
+    val filename = remember(path) {
+        viewModel.getDisplayName(path)
+    }
 
     // Sync playback state
     DisposableEffect(exoPlayer) {

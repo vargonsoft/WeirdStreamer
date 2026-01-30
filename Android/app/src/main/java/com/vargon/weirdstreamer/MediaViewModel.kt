@@ -271,6 +271,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         if (parent == null) {
             returnToSourceSelection()
         } else {
+            // Set display name to last segment of parent path, or "/" if root
+            currentPathDisplayName = parent.trimEnd('/').substringAfterLast('/').ifEmpty { "/" }
             loadPath(source, parent)
         }
     }
