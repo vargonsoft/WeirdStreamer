@@ -153,9 +153,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun getFilteredFileList(): List<FileItem> {
         return when (contentFilter) {
             ContentFilter.ALL -> fileList
-            ContentFilter.IMAGE -> fileList.filter { it.isDirectory || it.name == ".." || it.path == "UP" || isImage(it.path) }
-            ContentFilter.VIDEO -> fileList.filter { it.isDirectory || it.name == ".." || it.path == "UP" || isVideo(it.path) }
-            ContentFilter.PDF -> fileList.filter { it.isDirectory || it.name == ".." || it.path == "UP" || isPdf(it.path) }
+            ContentFilter.IMAGE -> fileList.filter { (!it.isDirectory && isImage(it.path)) }
+            ContentFilter.VIDEO -> fileList.filter { (!it.isDirectory && isVideo(it.path)) }
+            ContentFilter.PDF -> fileList.filter { (!it.isDirectory && isPdf(it.path)) }
         }
     }
 
@@ -408,6 +408,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     // --- ExoPlayer management for phone video playback ---
+    @androidx.annotation.OptIn(UnstableApi::class)
     fun getOrCreateExoPlayer(context: Context, path: String): ExoPlayer {
         if (exoPlayer == null || exoPlayerPath != path || exoPlayerContext != context) {
             exoPlayer?.release()
