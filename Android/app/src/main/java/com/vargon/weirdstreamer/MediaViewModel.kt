@@ -24,6 +24,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Properties
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.MediaItem
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 
 enum class ContentFilter {
     ALL, IMAGE, VIDEO, PDF
@@ -119,6 +123,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     private var thumbnailListenerJob: Job? = null
 
     private val selectionMap = mutableStateMapOf<String, String>()
+
+    // --- ExoPlayer management for phone video playback ---
+    private var exoPlayer: ExoPlayer? = null
+    private var exoPlayerPath: String? = null
+    private var exoPlayerContext: Context? = null
 
     fun toggleViewMode() {
         val key = currentViewModeKey
@@ -390,8 +399,47 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
+    // --- ExoPlayer management for phone video playback ---
+    fun getOrCreateExoPlayer(context: Context, path: String): ExoPlayer {
+        if (exoPlayer == null || exoPlayerPath != path || exoPlayerContext != context) {
+            exoPlayer?.release()
+            val isSmbSource = path.startsWith("smb://")
+            val builder = ExoPlayer.Builder(context)
+            if (isSmbSource) {
+                builder.setMediaSourceFactory(
+                    DefaultMediaSourceFactory(context)
+                        .setDataSourceFactory(SmbDataSourceFactory(credentialManager, baseContext))
+                )
+            } else {
+                val okHttpClient = WeirdStreamerApplication.getOkHttpClient()
+                val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
+                    .setUserAgent("WeirdStreamer/1.0")
+                builder.setMediaSourceFactory(
+                    DefaultMediaSourceFactory(context)
+                        .setDataSourceFactory(okHttpDataSourceFactory)
+                )
+            }
+            exoPlayer = builder.build().apply {
+                setMediaItem(MediaItem.fromUri(path))
+                prepare()
+                playWhenReady = true
+            }
+            exoPlayerPath = path
+            exoPlayerContext = context
+        }
+        return exoPlayer!!
+    }
+
+    fun releaseExoPlayer() {
+        exoPlayer?.release()
+        exoPlayer = null
+        exoPlayerPath = null
+        exoPlayerContext = null
+    }
+
     override fun onCleared() {
         super.onCleared()
         stopThumbnailUpdates()
+        releaseExoPlayer()
     }
 }

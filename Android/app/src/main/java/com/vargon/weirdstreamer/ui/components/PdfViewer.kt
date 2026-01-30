@@ -476,7 +476,7 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
-                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                                CircularProgressIndicator(color = androidx.compose.material3.MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                             }
                             
                             Box(
@@ -564,7 +564,7 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(
                             progress = { progress },
-                            color = Color.White
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -574,7 +574,7 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
                         )
                     }
                 } else {
-                    CircularProgressIndicator(color = Color.White)
+                    CircularProgressIndicator(color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
                 }
             }
         }

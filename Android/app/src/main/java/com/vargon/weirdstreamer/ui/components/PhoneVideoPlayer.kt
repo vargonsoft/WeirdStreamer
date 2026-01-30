@@ -1,6 +1,10 @@
 package com.vargon.weirdstreamer.ui.components
 
+import android.app.Activity
+import android.os.Build
 import android.view.ViewGroup
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
@@ -17,9 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -37,6 +43,41 @@ import java.util.Locale
 @Composable
 fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
+    val view = LocalView.current
+    val activity = context as? Activity
+
+    // Hide system bars for immersive fullscreen
+    DisposableEffect(Unit) {
+        val window = activity?.window
+        if (window != null) {
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.insetsController?.let { controller ->
+                    controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                    controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = (
+                    android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                )
+            }
+        }
+        onDispose {
+            if (window != null) {
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    window.insetsController?.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                } else {
+                    @Suppress("DEPRECATION")
+                    window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
+                }
+            }
+        }
+    }
+
     val isSmbSource = remember(path) { path.startsWith("smb://") }
     
     var showControls by remember { mutableStateOf(true) }

@@ -5,7 +5,6 @@ import android.graphics.Canvas
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,13 +24,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import android.app.Activity
+import android.os.Build
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import com.vargon.weirdstreamer.MediaViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -39,11 +44,47 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PhonePdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
+    val activity = context as? Activity
+    var immersiveMode by remember { mutableStateOf(false) }
+
+    // Toggle immersive mode on tap
+    fun setImmersiveMode(enabled: Boolean) {
+        val window = activity?.window
+        if (window != null) {
+            WindowCompat.setDecorFitsSystemWindows(window, !enabled)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.insetsController?.let { controller ->
+                    if (enabled) {
+                        controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                        controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    } else {
+                        controller.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = if (enabled) {
+                    android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                } else {
+                    android.view.View.SYSTEM_UI_FLAG_VISIBLE
+                }
+            }
+        }
+    }
+
+    DisposableEffect(immersiveMode) {
+        setImmersiveMode(immersiveMode)
+        onDispose { setImmersiveMode(false) }
+    }
+
     val scope = rememberCoroutineScope()
     var tempFile by remember { mutableStateOf<File?>(null) }
     var pdfRenderer by remember { mutableStateOf<PdfRenderer?>(null) }
@@ -91,19 +132,21 @@ fun PhonePdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (Stri
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(viewModel.getDisplayName(initialPath), maxLines = 1) },
-                navigationIcon = {
-                    IconButton(onClick = { if (isThumbnailView) isThumbnailView = false else onBack(initialPath) }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            if (!immersiveMode) {
+                TopAppBar(
+                    title = { Text(viewModel.getDisplayName(initialPath), maxLines = 1) },
+                    navigationIcon = {
+                        IconButton(onClick = { if (isThumbnailView) isThumbnailView = false else onBack(initialPath) }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { isThumbnailView = !isThumbnailView }) {
+                            Icon(Icons.Default.GridView, contentDescription = "Thumbnails")
+                        }
                     }
-                },
-                actions = {
-                    IconButton(onClick = { isThumbnailView = !isThumbnailView }) {
-                        Icon(Icons.Default.GridView, contentDescription = "Thumbnails")
-                    }
-                }
-            )
+                )
+            }
         },
         bottomBar = {
             if (!isThumbnailView && pageCount > 0) {
@@ -131,7 +174,14 @@ fun PhonePdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (Stri
             }
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { immersiveMode = !immersiveMode })
+                }
+                .padding(padding)
+        ) {
             if (isThumbnailView) {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(100.dp),
@@ -178,7 +228,7 @@ fun PhonePdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (Stri
             }
 
             if (isLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -267,7 +317,7 @@ fun ZoomablePdfPage(
         }
 
         if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.primary)
         }
     }
 }

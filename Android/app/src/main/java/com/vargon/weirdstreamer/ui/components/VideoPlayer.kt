@@ -175,9 +175,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     val focusRequester = remember { FocusRequester() }
     
-    val filename = remember(path) {
-        viewModel.getDisplayName(path)
-    }
+    // Remove remember(path) so filename always updates with path
+    val filename = viewModel.getDisplayName(path)
 
     // Sync playback state
     DisposableEffect(exoPlayer) {
@@ -485,7 +484,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (isBuffering) {
             CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),
-                color = Color.Red
+                color = androidx.compose.material3.MaterialTheme.colorScheme.primary
             )
         }
 

@@ -18,6 +18,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import android.app.Activity
+import android.os.Build
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -29,6 +35,42 @@ import java.io.File
 @Composable
 fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
+    val view = LocalView.current
+    val activity = context as? Activity
+    var immersiveMode by remember { mutableStateOf(false) }
+
+    // Toggle immersive mode on tap
+    fun setImmersiveMode(enabled: Boolean) {
+        val window = activity?.window
+        if (window != null) {
+            WindowCompat.setDecorFitsSystemWindows(window, !enabled)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.insetsController?.let { controller ->
+                    if (enabled) {
+                        controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                        controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    } else {
+                        controller.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = if (enabled) {
+                    android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                } else {
+                    android.view.View.SYSTEM_UI_FLAG_VISIBLE
+                }
+            }
+        }
+    }
+
+    DisposableEffect(immersiveMode) {
+        setImmersiveMode(immersiveMode)
+        onDispose { setImmersiveMode(false) }
+    }
+
     val images = remember { viewModel.getImagesInCurrentFolder() }
     val initialIndex = remember { images.indexOf(initialPath).coerceAtLeast(0) }
     val pagerState = rememberPagerState(initialPage = initialIndex) { images.size }
@@ -46,19 +88,21 @@ fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (St
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(fileName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = {
-                    IconButton(onClick = { onBack(currentPath) }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black.copy(alpha = 0.5f),
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+            if (!immersiveMode) {
+                TopAppBar(
+                    title = { Text(fileName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = {
+                        IconButton(onClick = { onBack(currentPath) }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Black.copy(alpha = 0.5f),
+                        titleContentColor = Color.White,
+                        navigationIconContentColor = Color.White
+                    )
                 )
-            )
+            }
         },
         containerColor = Color.Black
     ) { padding ->
@@ -66,7 +110,10 @@ fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (St
             state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { immersiveMode = !immersiveMode })
+                },
             userScrollEnabled = !isZoomed,
             beyondViewportPageCount = 1
         ) { pageIndex ->
@@ -174,7 +221,7 @@ fun ZoomableImage(viewModel: MediaViewModel, path: String, onZoomChanged: (Boole
         }
 
         if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White)
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
         }
     }
 }

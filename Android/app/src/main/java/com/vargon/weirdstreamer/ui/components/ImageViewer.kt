@@ -298,7 +298,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
-                    color = Color.White
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.primary
                 )
             }
 
