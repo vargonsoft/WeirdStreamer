@@ -3,6 +3,7 @@ package com.vargon.weirdstreamer
 import android.app.Application
 import android.content.Context
 import android.util.Base64
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +30,7 @@ import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -400,14 +402,18 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         stopThumbnailUpdates()
         thumbnailListener = ThumbnailUpdateListener(serverUrl, token)
         thumbnailListenerJob = viewModelScope.launch {
-            thumbnailListener?.connect()?.collect { update ->
-                fileList = fileList.map { item ->
-                    if (item.originalPath == update.path) {
-                        val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) update.thumbnailURL else "$serverUrl${update.thumbnailURL}"
-                        item.copy(thumbnailUrl = "$fullThumbnailUrl?t=${System.currentTimeMillis()}")
-                    } else item
+            thumbnailListener?.connect()
+                ?.catch { e ->
+                    Log.e("MediaViewModel", "Thumbnail update flow error: ${e.message}")
                 }
-            }
+                ?.collect { update ->
+                    fileList = fileList.map { item ->
+                        if (item.originalPath == update.path) {
+                            val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) update.thumbnailURL else "$serverUrl${update.thumbnailURL}"
+                            item.copy(thumbnailUrl = "$fullThumbnailUrl?t=${System.currentTimeMillis()}")
+                        } else item
+                    }
+                }
         }
     }
     

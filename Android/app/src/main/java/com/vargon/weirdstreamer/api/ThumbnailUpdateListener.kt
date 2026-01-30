@@ -61,9 +61,11 @@ class ThumbnailUpdateListener(
     fun connect(): Flow<ThumbnailUpdate> = callbackFlow {
         val client = getUnsafeOkHttpClient()
         var retryCount = 0
-        var shouldRetry = true
+        var isClosing = false
         
         fun attemptConnection() {
+            if (isClosing) return
+
             val request = Request.Builder()
                 .url("$serverUrl/api/media/thumbnail-updates?token=$token")
                 .build()
@@ -91,8 +93,12 @@ class ThumbnailUpdateListener(
                 
                 override fun onClosed(eventSource: EventSource) {
                     Log.d("ThumbnailSSE", "Connection closed")
-                    shouldRetry = false
-                    channel.close()
+                    // If not closing intentionally, treat as failure to trigger retry
+                    if (!isClosing) {
+                        handleFailure(eventSource, null)
+                    } else {
+                        channel.close()
+                    }
                 }
                 
                 override fun onFailure(
@@ -100,43 +106,60 @@ class ThumbnailUpdateListener(
                     t: Throwable?,
                     response: okhttp3.Response?
                 ) {
-                    Log.e("ThumbnailSSE", "Connection failed (retry $retryCount/$maxRetries)", t)
+                    if (isClosing) {
+                        Log.d("ThumbnailSSE", "Failure during shutdown: ${t?.message}")
+                        channel.close()
+                        return
+                    }
+                    handleFailure(eventSource, t)
+                }
+
+                private fun handleFailure(eventSource: EventSource, t: Throwable?) {
+                    Log.e("ThumbnailSSE", "Connection failure (retry $retryCount/$maxRetries): ${t?.message}")
                     
-                    if (retryCount < maxRetries && shouldRetry) {
+                    // Don't retry if the channel is already closed
+                    if (channel.isClosedForSend || isClosing) return
+
+                    if (retryCount < maxRetries) {
                         retryCount++
-                        val delayMs = min(baseDelay * (1 shl (retryCount - 1)), 30000L) // Max 30s
+                        val delayMs = min(baseDelay * (1 shl (retryCount - 1)), 30000L)
                         Log.d("ThumbnailSSE", "Reconnecting in ${delayMs}ms...")
                         
-                        // Schedule reconnection
                         handler.postDelayed({
-                            if (shouldRetry && !channel.isClosedForSend) {
-                                eventSource?.cancel()
+                            if (!isClosing && !channel.isClosedForSend) {
                                 attemptConnection()
                             }
                         }, delayMs)
                     } else {
-                        Log.e("ThumbnailSSE", "Max retries reached or channel closed")
+                        Log.e("ThumbnailSSE", "Max retries reached")
                         channel.close(t)
                     }
                 }
             }
             
-            eventSource?.cancel()
-            eventSource = EventSources.createFactory(client).newEventSource(request, listener)
+            // Cancel previous event source if any
+            val oldSource = this@ThumbnailUpdateListener.eventSource
+            this@ThumbnailUpdateListener.eventSource = null
+            oldSource?.cancel()
+            
+            this@ThumbnailUpdateListener.eventSource = EventSources.createFactory(client).newEventSource(request, listener)
         }
         
         // Initial connection
         attemptConnection()
         
         awaitClose {
-            Log.d("ThumbnailSSE", "Closing connection")
-            shouldRetry = false
+            Log.d("ThumbnailSSE", "Closing connection in awaitClose")
+            isClosing = true
             handler.removeCallbacksAndMessages(null)
-            eventSource?.cancel()
+            val toCancel = eventSource
+            eventSource = null
+            toCancel?.cancel()
         }
     }
     
     fun disconnect() {
+        handler.removeCallbacksAndMessages(null)
         eventSource?.cancel()
         eventSource = null
     }
