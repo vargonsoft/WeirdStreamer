@@ -173,6 +173,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var lastSkipTime by remember { mutableStateOf(0L) }
     var lastSkipAmount by remember { mutableStateOf(0) }
     var skipReversalStep by remember { mutableStateOf(0) } // 0: normal, 1: undo, 2: reset
+    var basePlaybackPositionBeforeSkip by remember { mutableLongStateOf(0L) }
 
     val focusRequester = remember { FocusRequester() }
 
@@ -265,17 +266,17 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (!showControls) showControls = true
     }
 
-    fun performSkip(amount: Int, showControlsAfter: Boolean) {
-        if (amount == 0) {
+    fun performSkip(amount: Int, showControlsAfter: Boolean, useAbsoluteAmount: Boolean = false) {
+        if (amount == 0 && !useAbsoluteAmount) {
             skipFeedback = null
             return
         }
+        
         val currentDuration = exoPlayer.duration
         val maxPos = if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration
-        val newPos = (exoPlayer.currentPosition + amount * 1000).coerceIn(0L, maxPos)
         
         if (!isSmbSource && enableTranscode) {
-            val actualPosition = exoPlayer.currentPosition + transcodeStartOffset
+            val actualPosition = if (useAbsoluteAmount) basePlaybackPositionBeforeSkip else (exoPlayer.currentPosition + transcodeStartOffset)
             val maxTranscodePos = if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration + transcodeStartOffset
             val finalTarget = (actualPosition + amount * 1000).coerceIn(0L, maxTranscodePos)
 
@@ -294,10 +295,15 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
+            
+            skipFeedback = amount to (amount > 0)
         } else {
+            val startPos = if (useAbsoluteAmount) basePlaybackPositionBeforeSkip else exoPlayer.currentPosition
+            val newPos = (startPos + amount * 1000).coerceIn(0L, maxPos)
             exoPlayer.seekTo(newPos)
+            skipFeedback = amount to (amount > 0)
         }
-        skipFeedback = amount to (amount > 0)
+        
         if (showControlsAfter) updateInteraction()
     }
 
@@ -392,14 +398,23 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (isSeekingSlider) {
                                 val now = System.currentTimeMillis()
                                 val direction = -1
-                                val withinHalfSecond = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
+                                val withinInterval = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
                                 val opposite = lastSkipDirection == 1 && skipReversalStep == 0
+                                
+                                if (!withinInterval && !opposite) {
+                                    basePlaybackPositionBeforeSkip = if (enableTranscode && !isSmbSource) {
+                                        exoPlayer.currentPosition + transcodeStartOffset
+                                    } else {
+                                        exoPlayer.currentPosition
+                                    }
+                                }
+
                                 var skipAmount = 0
                                 if (opposite) {
                                     // Reverse direction: first undo last skip, then reset, then start new direction
                                     skipReversalStep++
                                     if (skipReversalStep == 1) {
-                                        skipAmount = -lastSkipAmount
+                                        skipAmount = 0 // Undo back to base
                                     } else if (skipReversalStep == 2) {
                                         skipAmount = 0
                                     } else {
@@ -409,13 +424,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     }
                                 } else {
                                     skipReversalStep = 0
-                                    skipIndex = if (withinHalfSecond) (skipIndex + 1).coerceAtMost(skipIntervals.lastIndex) else 0
+                                    skipIndex = if (withinInterval) (skipIndex + 1).coerceAtMost(skipIntervals.lastIndex) else 0
                                     skipAmount = -skipIntervals[skipIndex]
                                 }
-                                if (skipAmount != 0) {
-                                    performSkip(skipAmount, true)
-                                    lastSkipAmount = skipAmount
-                                }
+                                
+                                performSkip(skipAmount, true, useAbsoluteAmount = true)
+                                lastSkipAmount = skipAmount
                                 lastSkipDirection = direction
                                 lastSkipTime = now
                                 true
@@ -432,14 +446,23 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (isSeekingSlider) {
                                 val now = System.currentTimeMillis()
                                 val direction = 1
-                                val withinHalfSecond = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
+                                val withinInterval = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
                                 val opposite = lastSkipDirection == -1 && skipReversalStep == 0
+                                
+                                if (!withinInterval && !opposite) {
+                                    basePlaybackPositionBeforeSkip = if (enableTranscode && !isSmbSource) {
+                                        exoPlayer.currentPosition + transcodeStartOffset
+                                    } else {
+                                        exoPlayer.currentPosition
+                                    }
+                                }
+
                                 var skipAmount = 0
                                 if (opposite) {
                                     // Reverse direction: first undo last skip, then reset, then start new direction
                                     skipReversalStep++
                                     if (skipReversalStep == 1) {
-                                        skipAmount = -lastSkipAmount
+                                        skipAmount = 0 // Undo back to base
                                     } else if (skipReversalStep == 2) {
                                         skipAmount = 0
                                     } else {
@@ -449,13 +472,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     }
                                 } else {
                                     skipReversalStep = 0
-                                    skipIndex = if (withinHalfSecond) (skipIndex + 1).coerceAtMost(skipIntervals.lastIndex) else 0
+                                    skipIndex = if (withinInterval) (skipIndex + 1).coerceAtMost(skipIntervals.lastIndex) else 0
                                     skipAmount = skipIntervals[skipIndex]
                                 }
-                                if (skipAmount != 0) {
-                                    performSkip(skipAmount, true)
-                                    lastSkipAmount = skipAmount
-                                }
+                                
+                                performSkip(skipAmount, true, useAbsoluteAmount = true)
+                                lastSkipAmount = skipAmount
                                 lastSkipDirection = direction
                                 lastSkipTime = now
                                 true
