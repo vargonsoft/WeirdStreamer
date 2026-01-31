@@ -147,6 +147,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var currentAspectRatioIndex by remember { mutableIntStateOf(0) }
     var currentAspectRatio by remember { mutableStateOf<Float?>(null) }
     var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Zoom, 1 = AspectRatio
+    var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) } // Track actual video aspect ratio
     
     // Fetch metadata for server sources to get accurate duration
     LaunchedEffect(path) {
@@ -236,6 +237,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     }
                 }
                 isBuffering = state == Player.STATE_BUFFERING || state == Player.STATE_IDLE
+                    // Update video aspect ratio from player
+                    val videoSize = exoPlayer.videoSize
+                    if (videoSize.width > 0 && videoSize.height > 0) {
+                        videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
+                    }
             }
         }
         exoPlayer.addListener(listener)
@@ -691,16 +697,16 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         .fillMaxSize()
                         .graphicsLayer(
                             // Calculate stretch factors to fill the constrained container
-                            // Assuming video is 16:9, stretch to fit whatever aspect ratio is selected
-                            scaleX = zoomLevel * (if (currentAspectRatio != null && currentAspectRatio!! > (16f / 9f)) {
+                            // Use the actual video aspect ratio to calculate proper stretch
+                            scaleX = zoomLevel * (if (currentAspectRatio != null && currentAspectRatio!! > videoAspectRatio) {
                                 // Selected ratio is wider than video - stretch horizontally
-                                (currentAspectRatio!! * 9f) / 16f
+                                (currentAspectRatio!! / videoAspectRatio)
                             } else {
                                 1f
                             }),
-                            scaleY = zoomLevel * (if (currentAspectRatio != null && currentAspectRatio!! < (16f / 9f)) {
+                            scaleY = zoomLevel * (if (currentAspectRatio != null && currentAspectRatio!! < videoAspectRatio) {
                                 // Selected ratio is taller than video - stretch vertically
-                                (16f / 9f) / currentAspectRatio!!
+                                (videoAspectRatio / currentAspectRatio!!)
                             } else {
                                 1f
                             }),
