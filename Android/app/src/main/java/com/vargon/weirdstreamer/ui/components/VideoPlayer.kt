@@ -395,7 +395,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
                                 false
-                            } else if (isSeekingSlider) {
+                            } else {
                                 val now = System.currentTimeMillis()
                                 val direction = -1
                                 val withinInterval = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
@@ -428,14 +428,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     skipAmount = -skipIntervals[skipIndex]
                                 }
                                 
-                                performSkip(skipAmount, true, useAbsoluteAmount = true)
+                                if (showControls) isSeekingSlider = true
+                                performSkip(skipAmount, showControls, useAbsoluteAmount = true)
+                                
                                 lastSkipAmount = skipAmount
                                 lastSkipDirection = direction
                                 lastSkipTime = now
-                                true
-                            } else {
-                                // Only show skip feedback, do not show controls/slider
-                                performSkip(-5, false)
                                 true
                             }
                         }
@@ -443,7 +441,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
                                 false
-                            } else if (isSeekingSlider) {
+                            } else {
                                 val now = System.currentTimeMillis()
                                 val direction = 1
                                 val withinInterval = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
@@ -476,14 +474,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     skipAmount = skipIntervals[skipIndex]
                                 }
                                 
-                                performSkip(skipAmount, true, useAbsoluteAmount = true)
+                                if (showControls) isSeekingSlider = true
+                                performSkip(skipAmount, showControls, useAbsoluteAmount = true)
+                                
                                 lastSkipAmount = skipAmount
                                 lastSkipDirection = direction
                                 lastSkipTime = now
-                                true
-                            } else {
-                                // Only show skip feedback, do not show controls/slider
-                                performSkip(5, false)
                                 true
                             }
                         }
