@@ -276,6 +276,30 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (!showControls && !isZoomMode) showControls = true
     }
 
+    fun calculatePanLimits(screenWidth: Float, screenHeight: Float): Pair<Float, Float> {
+        // Assume 16:9 aspect ratio for video if we don't have exact dimensions
+        val videoRatio = 16f / 9f
+        val screenRatio = screenWidth / screenHeight
+        
+        val fittedWidth: Float
+        val fittedHeight: Float
+        if (videoRatio > screenRatio) {
+            fittedWidth = screenWidth
+            fittedHeight = screenWidth / videoRatio
+        } else {
+            fittedWidth = screenHeight * videoRatio
+            fittedHeight = screenHeight
+        }
+        
+        val scaledWidth = fittedWidth * zoomLevel
+        val scaledHeight = fittedHeight * zoomLevel
+        
+        val maxPX = (scaledWidth - screenWidth).coerceAtLeast(0f) / 2f
+        val maxPY = (scaledHeight - screenHeight).coerceAtLeast(0f) / 2f
+        
+        return maxPX to maxPY
+    }
+
     fun performSkip(amount: Int, showControlsAfter: Boolean, useAbsoluteAmount: Boolean = false) {
         if (amount == 0 && !useAbsoluteAmount) {
             skipFeedback = null
@@ -367,7 +391,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         Key.DirectionUp -> {
                             if (isZoomMode && zoomLevel > 1f) {
                                 // Pan up in zoom mode (only when actually zoomed)
-                                panY = (panY + 100f).coerceAtMost(Float.MAX_VALUE)
+                                val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
+                                panY = (panY + 100f).coerceIn(-maxPY, maxPY)
                                 updateInteraction()
                                 true
                             } else if (isFocusedOnTranscode) {
@@ -397,7 +422,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         Key.DirectionDown -> {
                             if (isZoomMode && zoomLevel > 1f) {
                                 // Pan down in zoom mode (only when actually zoomed)
-                                panY = (panY - 100f).coerceAtLeast(-Float.MAX_VALUE)
+                                val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
+                                panY = (panY - 100f).coerceIn(-maxPY, maxPY)
                                 updateInteraction()
                                 true
                             } else if (isZoomMode) {
@@ -467,7 +493,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         Key.DirectionLeft -> {
                             if (isZoomMode && zoomLevel > 1f) {
                                 // Pan left in zoom mode (only when actually zoomed)
-                                panX = (panX + 100f).coerceAtMost(Float.MAX_VALUE)
+                                val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
+                                panX = (panX + 100f).coerceIn(-maxPX, maxPX)
                                 updateInteraction()
                                 true
                             } else if (isFocusedOnTranscode) {
@@ -518,7 +545,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         Key.DirectionRight -> {
                             if (isZoomMode && zoomLevel > 1f) {
                                 // Pan right in zoom mode (only when actually zoomed)
-                                panX = (panX - 100f).coerceAtLeast(-Float.MAX_VALUE)
+                                val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
+                                panX = (panX - 100f).coerceIn(-maxPX, maxPX)
                                 updateInteraction()
                                 true
                             } else if (isFocusedOnTranscode) {
