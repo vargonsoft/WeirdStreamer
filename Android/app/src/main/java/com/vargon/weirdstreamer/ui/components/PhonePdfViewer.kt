@@ -246,6 +246,8 @@ fun ZoomablePdfPage(
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
+    val currentOnZoomChanged by rememberUpdatedState(onZoomChanged)
+
     LaunchedEffect(pdfRenderer, pageIndex) {
         if (pdfRenderer != null) {
             isLoading = true
@@ -271,7 +273,7 @@ fun ZoomablePdfPage(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(scale) {
+            .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     do {
@@ -283,7 +285,7 @@ fun ZoomablePdfPage(
                             val newScale = (scale * zoomChange).coerceIn(1f, 5f)
                             if (newScale != scale) {
                                 scale = newScale
-                                onZoomChanged(scale > 1f)
+                                currentOnZoomChanged(scale > 1f)
                             }
                             if (scale > 1f) {
                                 offset += panChange
