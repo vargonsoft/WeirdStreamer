@@ -34,7 +34,7 @@ object CinemaBlueThemeSpec : WeirdStreamerThemeSpec {
     override val serverIconTint: Color = CinemaGold
     override val parentIconTint: Color = CinemaGold
     override val backgroundImage: Int? = R.drawable.film_reel
-    override val spinnerColor: Color = CinemaBlueDeep
+    override val spinnerColor: Color = CinemaBlue
 
 }
 
