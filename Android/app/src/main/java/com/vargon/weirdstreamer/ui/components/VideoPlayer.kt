@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VideoSettings
+import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
@@ -26,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
@@ -129,6 +132,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var showControls by remember { mutableStateOf(false) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var lastControlsHideTime by remember { mutableLongStateOf(0L) }
+    
+    // Zoom state for video player
+    var zoomLevel by remember { mutableFloatStateOf(1f) }
+    var panX by remember { mutableFloatStateOf(0f) }
+    var panY by remember { mutableFloatStateOf(0f) }
+    var isZoomMode by remember { mutableStateOf(false) }
+    var showZoomToolbar by remember { mutableStateOf(false) }
     
     // Fetch metadata for server sources to get accurate duration
     LaunchedEffect(path) {
@@ -240,8 +250,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     }
 
     // Auto-hide controls
-    LaunchedEffect(showControls, lastInteractionTime) {
-        if (showControls) {
+    LaunchedEffect(showControls, lastInteractionTime, isZoomMode) {
+        if (showControls && !isZoomMode) {
             val timeToWait = 3000L - (System.currentTimeMillis() - lastInteractionTime)
             if (timeToWait > 0) {
                 delay(timeToWait)
@@ -263,7 +273,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     val updateInteraction = {
         lastInteractionTime = System.currentTimeMillis()
-        if (!showControls) showControls = true
+        if (!showControls && !isZoomMode) showControls = true
     }
 
     fun performSkip(amount: Int, showControlsAfter: Boolean, useAbsoluteAmount: Boolean = false) {
@@ -323,18 +333,44 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     }
 
     BackHandler {
-        handleBackAction()
+        if (showZoomToolbar && !isZoomMode) {
+            // Hide toolbar if it's showing and not in zoom mode
+            showZoomToolbar = false
+        } else if (isZoomMode) {
+            if (zoomLevel > 1f) {
+                val oldZoom = zoomLevel
+                zoomLevel = if (zoomLevel <= 2f) 1f else zoomLevel / 2f
+                panX = (panX * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
+                panY = (panY * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
+            } else {
+                // At 1x, exit zoom mode
+                isZoomMode = false
+                showZoomToolbar = false
+                panX = 0f
+                panY = 0f
+            }
+        } else {
+            handleBackAction()
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .then(
+                if (isZoomMode) Modifier.border(2.dp, Color.White) else Modifier
+            )
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.DirectionUp -> {
-                            if (isFocusedOnTranscode) {
+                            if (isZoomMode && zoomLevel > 1f) {
+                                // Pan up in zoom mode (only when actually zoomed)
+                                panY = (panY + 100f).coerceAtMost(Float.MAX_VALUE)
+                                updateInteraction()
+                                true
+                            } else if (isFocusedOnTranscode) {
                                 // Already on transcode button, do nothing or hide controls
                                 false
                             } else if (isSeekingSlider && !isSmbSource) {
@@ -359,7 +395,20 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             }
                         }
                         Key.DirectionDown -> {
-                            if (isFocusedOnTranscode) {
+                            if (isZoomMode && zoomLevel > 1f) {
+                                // Pan down in zoom mode (only when actually zoomed)
+                                panY = (panY - 100f).coerceAtLeast(-Float.MAX_VALUE)
+                                updateInteraction()
+                                true
+                            } else if (isZoomMode) {
+                                // In zoom mode at 1x, toggle toolbar
+                                showZoomToolbar = !showZoomToolbar
+                                true
+                            } else if (showZoomToolbar) {
+                                // Hide toolbar if it's showing
+                                showZoomToolbar = false
+                                true
+                            } else if (isFocusedOnTranscode) {
                                 // Move from transcode button to slider
                                 isFocusedOnTranscode = false
                                 isSeekingSlider = true
@@ -375,12 +424,36 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 lastControlsHideTime = System.currentTimeMillis()
                                 isFocusedOnTranscode = false
                                 true
+                            } else if (!showControls && !showZoomToolbar && !isZoomMode) {
+                                // Show zoom toolbar when controls are hidden and not in zoom mode
+                                showZoomToolbar = true
+                                isFocusedOnTranscode = false
+                                isSeekingSlider = false
+                                true
                             } else {
                                 false
                             }
                         }
                         Key.DirectionCenter, Key.Enter -> {
-                            if (isFocusedOnTranscode) {
+                            if (showZoomToolbar && !isZoomMode) {
+                                // Toolbar is shown but not in zoom mode, enter zoom mode at 1x
+                                isZoomMode = true
+                                zoomLevel = 1f
+                                panX = 0f
+                                panY = 0f
+                                showZoomToolbar = false  // Hide toolbar after entering zoom mode
+                                true
+                            } else if (isZoomMode) {
+                                // In zoom mode, zoom in
+                                if (zoomLevel < 64f) {
+                                    val oldZoom = zoomLevel
+                                    zoomLevel = if (zoomLevel == 1f) 2f else zoomLevel * 2f
+                                    // Adjust pan to keep it within bounds
+                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
+                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
+                                }
+                                true
+                            } else if (isFocusedOnTranscode) {
                                 // Toggle transcode
                                 enableTranscode = !enableTranscode
                                 updateInteraction()
@@ -392,7 +465,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             }
                         }
                         Key.DirectionLeft -> {
-                            if (isFocusedOnTranscode) {
+                            if (isZoomMode && zoomLevel > 1f) {
+                                // Pan left in zoom mode (only when actually zoomed)
+                                panX = (panX + 100f).coerceAtMost(Float.MAX_VALUE)
+                                updateInteraction()
+                                true
+                            } else if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
                                 false
                             } else {
@@ -438,7 +516,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             }
                         }
                         Key.DirectionRight -> {
-                            if (isFocusedOnTranscode) {
+                            if (isZoomMode && zoomLevel > 1f) {
+                                // Pan right in zoom mode (only when actually zoomed)
+                                panX = (panX - 100f).coerceAtLeast(-Float.MAX_VALUE)
+                                updateInteraction()
+                                true
+                            } else if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
                                 false
                             } else {
@@ -484,8 +567,28 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             }
                         }
                         Key.Backspace -> {
-                            handleBackAction()
-                            true
+                            if (showZoomToolbar && !isZoomMode) {
+                                // Hide toolbar if it's showing and not in zoom mode
+                                showZoomToolbar = false
+                                true
+                            } else if (isZoomMode) {
+                                if (zoomLevel > 1f) {
+                                    val oldZoom = zoomLevel
+                                    zoomLevel = if (zoomLevel <= 2f) 1f else zoomLevel / 2f
+                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
+                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
+                                } else {
+                                    // At 1x, exit zoom mode
+                                    isZoomMode = false
+                                    showZoomToolbar = false
+                                    panX = 0f
+                                    panY = 0f
+                                }
+                                true
+                            } else {
+                                handleBackAction()
+                                true
+                            }
                         }
                         else -> false
                     }
@@ -510,7 +613,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 // Update the player reference when exoPlayer changes (e.g., when transcoding is toggled)
                 view.player = exoPlayer
             },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(
+                    scaleX = zoomLevel,
+                    scaleY = zoomLevel,
+                    translationX = panX,
+                    translationY = panY
+                )
         )
 
         // Loading Spinner
@@ -722,6 +832,36 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         modifier = Modifier.size(48.dp)
                     )
                 }
+            }
+        }
+
+        // Zoom Toolbar
+        AnimatedVisibility(
+            visible = !isZoomMode && showZoomToolbar,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(32.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                androidx.tv.material3.Icon(
+                    Icons.Default.ZoomIn,
+                    contentDescription = "Zoom",
+                    tint = Color.White,
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                androidx.tv.material3.Text(
+                    text = "Zoom",
+                    style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                    color = Color.White
+                )
             }
         }
     }
