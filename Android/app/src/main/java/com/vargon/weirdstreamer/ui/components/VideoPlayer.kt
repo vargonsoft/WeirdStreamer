@@ -48,12 +48,10 @@ import com.vargon.weirdstreamer.WeirdStreamerApplication
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import kotlinx.coroutines.delay
 import java.util.Locale
-// Test comment - this is a test edit
 
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Unit) {
-    // Test edit: Another comment here
     val context = LocalContext.current
 
     // Determine if this is an SMB or Server source
@@ -206,6 +204,17 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         fullDuration = currentDuration
                         duration = currentDuration
                     }
+                } else if (state == Player.STATE_ENDED) {
+                    val videos = viewModel.getVideosInCurrentFolder()
+                    val currentIndex = videos.indexOf(path)
+                    if (currentIndex != -1 && currentIndex < videos.size - 1) {
+                        val nextPath = videos[currentIndex + 1]
+                        viewModel.playVideo(nextPath)
+                    } else {
+                        // Replay current video
+                        exoPlayer.seekTo(0)
+                        exoPlayer.play()
+                    }
                 }
                 isBuffering = state == Player.STATE_BUFFERING || state == Player.STATE_IDLE
             }
@@ -261,14 +270,16 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             skipFeedback = null
             return
         }
-        android.util.Log.d("VideoPlayer", "performSkip - amount: $amount, enableTranscode: $enableTranscode")
         val currentDuration = exoPlayer.duration
         val maxPos = if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration
         val newPos = (exoPlayer.currentPosition + amount * 1000).coerceIn(0L, maxPos)
+        
         if (!isSmbSource && enableTranscode) {
             val actualPosition = exoPlayer.currentPosition + transcodeStartOffset
-            val newTimePosition = (actualPosition + amount * 1000).coerceIn(0L, if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration + transcodeStartOffset)
-            val startTimeSeconds = newTimePosition / 1000f
+            val maxTranscodePos = if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration + transcodeStartOffset
+            val finalTarget = (actualPosition + amount * 1000).coerceIn(0L, maxTranscodePos)
+
+            val startTimeSeconds = finalTarget / 1000f
             val baseUrlWithPath = if (path.contains("?")) {
                 val base = path.substringBefore("?")
                 val pathParam = path.substringAfter("path=").substringBefore("&")
@@ -278,7 +289,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             }
             val newUrl = "$baseUrlWithPath&auto-transcode=0&transcode=1&start=$startTimeSeconds"
             android.util.Log.d("VideoPlayer", "Transcode seek to $startTimeSeconds sec, URL: $newUrl")
-            transcodeStartOffset = newTimePosition
+            transcodeStartOffset = finalTarget
             val mediaItem = MediaItem.fromUri(newUrl)
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
@@ -410,7 +421,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 true
                             } else {
                                 // Only show skip feedback, do not show controls/slider
-                                if (-5 != 0) performSkip(-5, false)
+                                performSkip(-5, false)
                                 true
                             }
                         }
@@ -450,7 +461,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 true
                             } else {
                                 // Only show skip feedback, do not show controls/slider
-                                if (5 != 0) performSkip(5, false)
+                                performSkip(5, false)
                                 true
                             }
                         }

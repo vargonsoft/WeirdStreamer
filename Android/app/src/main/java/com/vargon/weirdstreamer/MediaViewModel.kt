@@ -230,7 +230,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 val repository = withContext(Dispatchers.IO) { provider.createRepository(source.serverAddress) }
                 repository.inheritState(currentRepository)
                 currentRepository = repository
-                supportsThumbnailRegeneration = repository.supportsThumbnailRegeneration()
+
+                // If we're at the root level (no parent), don't show thumbnail regeneration button
+                val parent = repository.getParentPath(path)
+                supportsThumbnailRegeneration = parent != null && repository.supportsThumbnailRegeneration()
 
                 if (user != null && pass != null) {
                     val authResult = repository.authenticate(user, pass)
@@ -369,6 +372,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getImagesInCurrentFolder(): List<String> {
         return fileList.filter { !it.isDirectory && isImage(it.path) }.map { it.path }
+    }
+
+    fun getVideosInCurrentFolder(): List<String> {
+        return fileList.filter { !it.isDirectory && isVideo(it.path) }.map { it.path }
     }
 
     suspend fun downloadToTempFile(path: String, context: Context, suffix: String = ".pdf"): File? = withContext(Dispatchers.IO) {
