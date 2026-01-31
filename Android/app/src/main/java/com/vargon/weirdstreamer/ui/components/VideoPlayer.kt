@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VideoSettings
 import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
@@ -139,6 +140,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var panY by remember { mutableFloatStateOf(0f) }
     var isZoomMode by remember { mutableStateOf(false) }
     var showZoomToolbar by remember { mutableStateOf(false) }
+    
+    // Aspect ratio cycling
+    val aspectRatios = listOf("Original", "16:9", "21:9", "4:3", "5:4", "1:1")
+    val aspectRatioValues = listOf(null, 16f/9f, 21f/9f, 4f/3f, 5f/4f, 1f)
+    var currentAspectRatioIndex by remember { mutableIntStateOf(0) }
+    var currentAspectRatio by remember { mutableStateOf<Float?>(null) }
+    var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Zoom, 1 = AspectRatio
     
     // Fetch metadata for server sources to get accurate duration
     LaunchedEffect(path) {
@@ -389,7 +397,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.DirectionUp -> {
-                            if (isZoomMode && zoomLevel > 1f) {
+                            if (showZoomToolbar && !isZoomMode) {
+                                // Hide toolbar and show playback controls
+                                showZoomToolbar = false
+                                showControls = true
+                                updateInteraction()
+                                true
+                            } else if (isZoomMode && zoomLevel > 1f) {
                                 // Pan up in zoom mode (only when actually zoomed)
                                 val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
                                 panY = (panY + 100f).coerceIn(-maxPY, maxPY)
@@ -462,12 +476,19 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         }
                         Key.DirectionCenter, Key.Enter -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Toolbar is shown but not in zoom mode, enter zoom mode at 1x
-                                isZoomMode = true
-                                zoomLevel = 1f
-                                panX = 0f
-                                panY = 0f
-                                showZoomToolbar = false  // Hide toolbar after entering zoom mode
+                                // Toolbar is shown, handle button press
+                                if (toolbarFocusedButton == 0) {
+                                    // Zoom button pressed
+                                    isZoomMode = true
+                                    zoomLevel = 1f
+                                    panX = 0f
+                                    panY = 0f
+                                    showZoomToolbar = false  // Hide toolbar after entering zoom mode
+                                } else {
+                                    // Aspect ratio button pressed, cycle to next
+                                    currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size
+                                    currentAspectRatio = aspectRatioValues[currentAspectRatioIndex]
+                                }
                                 true
                             } else if (isZoomMode) {
                                 // In zoom mode, zoom in
@@ -491,7 +512,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             }
                         }
                         Key.DirectionLeft -> {
-                            if (isZoomMode && zoomLevel > 1f) {
+                            if (showZoomToolbar && !isZoomMode) {
+                                // Navigate left in toolbar
+                                toolbarFocusedButton = (toolbarFocusedButton - 1).coerceAtLeast(0)
+                                true
+                            } else if (isZoomMode && zoomLevel > 1f) {
                                 // Pan left in zoom mode (only when actually zoomed)
                                 val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
                                 panX = (panX + 100f).coerceIn(-maxPX, maxPX)
@@ -543,7 +568,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             }
                         }
                         Key.DirectionRight -> {
-                            if (isZoomMode && zoomLevel > 1f) {
+                            if (showZoomToolbar && !isZoomMode) {
+                                // Navigate right in toolbar
+                                toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(1)
+                                true
+                            } else if (isZoomMode && zoomLevel > 1f) {
                                 // Pan right in zoom mode (only when actually zoomed)
                                 val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
                                 panX = (panX - 100f).coerceIn(-maxPX, maxPX)
@@ -625,31 +654,62 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             .focusRequester(focusRequester)
             .focusable()
     ) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                }
-            },
-            update = { view ->
-                // Update the player reference when exoPlayer changes (e.g., when transcoding is toggled)
-                view.player = exoPlayer
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = zoomLevel,
-                    scaleY = zoomLevel,
-                    translationX = panX,
-                    translationY = panY
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .then(
+                        if (currentAspectRatio != null) {
+                            Modifier.aspectRatio(currentAspectRatio!!)
+                        } else {
+                            Modifier.fillMaxSize()
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            player = exoPlayer
+                            useController = false
+                            // Use FIT mode - it will fit video into container while maintaining video's aspect ratio
+                            // We'll then stretch it with transforms to fill the constrained box
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            layoutParams = FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                        }
+                    },
+                    update = { view ->
+                        // Update the player reference when exoPlayer changes (e.g., when transcoding is toggled)
+                        view.player = exoPlayer
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            // Calculate stretch factors to fill the constrained container
+                            // Assuming video is 16:9, stretch to fit whatever aspect ratio is selected
+                            scaleX = zoomLevel * (if (currentAspectRatio != null && currentAspectRatio!! > (16f / 9f)) {
+                                // Selected ratio is wider than video - stretch horizontally
+                                (currentAspectRatio!! * 9f) / 16f
+                            } else {
+                                1f
+                            }),
+                            scaleY = zoomLevel * (if (currentAspectRatio != null && currentAspectRatio!! < (16f / 9f)) {
+                                // Selected ratio is taller than video - stretch vertically
+                                (16f / 9f) / currentAspectRatio!!
+                            } else {
+                                1f
+                            }),
+                            translationX = panX,
+                            translationY = panY
+                        )
                 )
-        )
+            }
+        }
 
         // Loading Spinner
         if (isBuffering) {
@@ -878,18 +938,57 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                androidx.tv.material3.Icon(
-                    Icons.Default.ZoomIn,
-                    contentDescription = "Zoom",
-                    tint = Color.White,
-                    modifier = Modifier.size(48.dp)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                androidx.tv.material3.Text(
-                    text = "Zoom",
-                    style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
-                    color = Color.White
-                )
+                // Zoom Button
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (toolbarFocusedButton == 0) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.3f)
+                        )
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    androidx.tv.material3.Icon(
+                        Icons.Default.ZoomIn,
+                        contentDescription = "Zoom",
+                        tint = if (toolbarFocusedButton == 0) Color.White else Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(if (toolbarFocusedButton == 0) 56.dp else 48.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    androidx.tv.material3.Text(
+                        text = "Zoom",
+                        style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                        color = if (toolbarFocusedButton == 0) Color.White else Color.White.copy(alpha = 0.7f)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(64.dp))
+                
+                // Aspect Ratio Button
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (toolbarFocusedButton == 1) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.3f)
+                        )
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    androidx.tv.material3.Icon(
+                        Icons.Default.AspectRatio,
+                        contentDescription = "Aspect Ratio",
+                        tint = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(if (toolbarFocusedButton == 1) 56.dp else 48.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    androidx.tv.material3.Text(
+                        text = aspectRatios[currentAspectRatioIndex],
+                        style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                        color = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(alpha = 0.7f)
+                    )
+                }
             }
         }
     }
