@@ -98,6 +98,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var contentFilter by mutableStateOf(ContentFilter.ALL)
         private set
 
+    var supportsThumbnailRegeneration by mutableStateOf(false)
+        private set
+
     private var viewModeMap by mutableStateOf(mapOf<String, Boolean>())
 
     private val currentViewModeKey: String
@@ -227,6 +230,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 val repository = withContext(Dispatchers.IO) { provider.createRepository(source.serverAddress) }
                 repository.inheritState(currentRepository)
                 currentRepository = repository
+                supportsThumbnailRegeneration = repository.supportsThumbnailRegeneration()
 
                 if (user != null && pass != null) {
                     val authResult = repository.authenticate(user, pass)
@@ -314,6 +318,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         errorMessage = null
         fileList = emptyList()
         currentPathDisplayName = null
+        supportsThumbnailRegeneration = false
         stopThumbnailUpdates()
     }
 

@@ -150,6 +150,13 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 Spacer(modifier = Modifier.width(16.dp))
 
                 if (currentSource != null) {
+                    if (viewModel.supportsThumbnailRegeneration) {
+                        Button(onClick = { showRegenerateThumbnailsDialog = true }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Regenerate Thumbnails")
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                    }
+
                     Button(onClick = { viewModel.toggleContentFilter() }) {
                         Icon(
                             when (viewModel.contentFilter) {
@@ -234,6 +241,42 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 viewModel.loadPath(source, viewModel.currentPath, user, pass, save)
             }
         )
+    }
+
+    // Regenerate Thumbnails Dialog
+    if (showRegenerateThumbnailsDialog) {
+        val focusRequester = remember { FocusRequester() }
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showRegenerateThumbnailsDialog = false }) {
+            Surface(
+                modifier = Modifier.width(400.dp),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Text("Regenerate Thumbnails", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Are you sure you want to regenerate all thumbnails in this folder? This may take some time.")
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        Button(onClick = { showRegenerateThumbnailsDialog = false }) {
+                            Text("Cancel")
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Button(
+                            onClick = {
+                                showRegenerateThumbnailsDialog = false
+                                viewModel.regenerateThumbnails()
+                            },
+                            modifier = Modifier.focusRequester(focusRequester)
+                        ) {
+                            Text("Regenerate")
+                        }
+                    }
+                }
+            }
+        }
+        LaunchedEffect(Unit) {
+            focusRequester.requestFocus()
+        }
     }
 }
 
