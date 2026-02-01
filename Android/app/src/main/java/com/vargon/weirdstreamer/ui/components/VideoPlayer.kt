@@ -1000,13 +1000,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 ) {
                     androidx.tv.material3.Icon(
                         Icons.Default.ZoomIn,
-                        contentDescription = "Zoom+",
+                        contentDescription = "Fill+",
                         tint = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(alpha = 0.7f),
                         modifier = Modifier.size(if (toolbarFocusedButton == 1) 56.dp else 48.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     androidx.tv.material3.Text(
-                        text = "Zoom+",
+                        text = "Fill+",
                         style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
                         color = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(alpha = 0.7f)
                     )
@@ -1027,13 +1027,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 ) {
                     androidx.tv.material3.Icon(
                         Icons.Default.ZoomOut,
-                        contentDescription = "Zoom-",
+                        contentDescription = "Fill-",
                         tint = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(alpha = 0.7f),
                         modifier = Modifier.size(if (toolbarFocusedButton == 2) 56.dp else 48.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     androidx.tv.material3.Text(
-                        text = "Zoom-",
+                        text = "Fill-",
                         style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
                         color = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(alpha = 0.7f)
                     )
