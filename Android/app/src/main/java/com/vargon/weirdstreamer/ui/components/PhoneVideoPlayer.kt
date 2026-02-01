@@ -54,15 +54,16 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 window.insetsController?.let { controller ->
                     controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-                    controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    controller.systemBarsBehavior =
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 }
             } else {
                 @Suppress("DEPRECATION")
                 window.decorView.systemUiVisibility = (
-                    android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                    android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                )
+                        android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                                android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                                android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        )
             }
         }
         onDispose {
@@ -79,7 +80,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     }
 
     val isSmbSource = remember(path) { path.startsWith("smb://") }
-    
+
     var showControls by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
     var playbackPosition by remember { mutableLongStateOf(0L) }
@@ -92,7 +93,12 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                 if (isSmbSource) {
                     setMediaSourceFactory(
                         androidx.media3.exoplayer.source.DefaultMediaSourceFactory(context)
-                            .setDataSourceFactory(SmbDataSourceFactory(viewModel.credentialManager, viewModel.baseContext))
+                            .setDataSourceFactory(
+                                SmbDataSourceFactory(
+                                    viewModel.credentialManager,
+                                    viewModel.baseContext
+                                )
+                            )
                     )
                 } else {
                     val okHttpClient = WeirdStreamerApplication.getOkHttpClient()
@@ -116,6 +122,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             override fun onIsPlayingChanged(isPlayingChanged: Boolean) {
                 isPlaying = isPlayingChanged
             }
+
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_READY) {
@@ -171,7 +178,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         )
 
         if (isBuffering) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White)
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = Color.White
+            )
         }
 
         AnimatedVisibility(
@@ -189,7 +199,11 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = { onBack(path) }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.White
+                        )
                     }
                     Text(
                         text = viewModel.getDisplayName(path),
@@ -208,7 +222,12 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = { exoPlayer.seekTo(exoPlayer.currentPosition - 10000) }) {
-                        Icon(Icons.Default.Replay10, contentDescription = "-10s", tint = Color.White, modifier = Modifier.size(48.dp))
+                        Icon(
+                            Icons.Default.Replay10,
+                            contentDescription = "-10s",
+                            tint = Color.White,
+                            modifier = Modifier.size(48.dp)
+                        )
                     }
                     IconButton(onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() }) {
                         Icon(
@@ -219,7 +238,12 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         )
                     }
                     IconButton(onClick = { exoPlayer.seekTo(exoPlayer.currentPosition + 30000) }) {
-                        Icon(Icons.Default.Forward30, contentDescription = "+30s", tint = Color.White, modifier = Modifier.size(48.dp))
+                        Icon(
+                            Icons.Default.Forward30,
+                            contentDescription = "+30s",
+                            tint = Color.White,
+                            modifier = Modifier.size(48.dp)
+                        )
                     }
                 }
 
@@ -243,23 +267,31 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(formatTime(playbackPosition), color = Color.White, style = MaterialTheme.typography.labelSmall)
-                        Text(formatTime(duration), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            formatTime(playbackPosition),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                        Text(
+                            formatTime(duration),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
                 }
             }
         }
     }
-}
 
-private fun formatTime(ms: Long): String {
-    val totalSeconds = ms / 1000
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    return if (hours > 0) {
-        String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
-    } else {
-        String.format(Locale.US, "%02d:%02d", minutes, seconds)
+    fun formatTime(ms: Long): String {
+        val totalSeconds = ms / 1000
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+        return if (hours > 0) {
+            String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            String.format(Locale.US, "%02d:%02d", minutes, seconds)
+        }
     }
 }

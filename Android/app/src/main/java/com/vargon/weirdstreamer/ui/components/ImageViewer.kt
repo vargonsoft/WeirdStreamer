@@ -43,22 +43,22 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
     val context = LocalContext.current
     val images = remember { viewModel.getImagesInCurrentFolder() }
     var currentIndex by remember { mutableIntStateOf(images.indexOf(initialPath).coerceAtLeast(0)) }
-    
+
     var zoomLevel by remember { mutableFloatStateOf(1f) }
     var panX by remember { mutableFloatStateOf(0f) }
     var panY by remember { mutableFloatStateOf(0f) }
     var isZoomMode by remember { mutableStateOf(false) }
-    
+
     var showFilename by remember { mutableStateOf(false) }
     var filenameTimerTrigger by remember { mutableLongStateOf(0L) }
     var loopFeedback by remember { mutableStateOf<Pair<Boolean, Long>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var imageIntrinsicSize by remember { mutableStateOf<Size?>(null) }
-    
+
     val focusRequester = remember { FocusRequester() }
     val currentSmbPath = images.getOrNull(currentIndex) ?: initialPath
-    
+
     // For HEIC support
     var localImagePath by remember { mutableStateOf<String?>(null) }
     var tempFile by remember { mutableStateOf<File?>(null) }
@@ -72,12 +72,13 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
         isLoading = true
         errorMessage = null
         imageIntrinsicSize = null
-        
+
         tempFile?.delete()
         tempFile = null
-        
+
         if (viewModel.isImage(currentSmbPath)) {
-            val extension = currentSmbPath.substringBefore('?').substringAfterLast('.', "").lowercase()
+            val extension =
+                currentSmbPath.substringBefore('?').substringAfterLast('.', "").lowercase()
             if (extension == "heic" || extension == "heif") {
                 val file = viewModel.downloadToTempFile(currentSmbPath, context, ".$extension")
                 if (file != null) {
@@ -167,12 +168,12 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                     if (event.type == KeyEventType.KeyDown) {
                         val w = constraints.maxWidth.toFloat()
                         val h = constraints.maxHeight.toFloat()
-                        
-                        val imageRatio = imageIntrinsicSize?.let { 
-                            if (it.width > 0f && it.height > 0f) it.width / it.height else null 
+
+                        val imageRatio = imageIntrinsicSize?.let {
+                            if (it.width > 0f && it.height > 0f) it.width / it.height else null
                         } ?: (w / h)
                         val containerRatio = w / h
-                        
+
                         val fittedWidth: Float
                         val fittedHeight: Float
                         if (imageRatio > containerRatio) {
@@ -191,30 +192,39 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                 } else if (zoomLevel < 64f) {
                                     val oldZoom = zoomLevel
                                     zoomLevel = if (zoomLevel == 1f) 2f else zoomLevel * 2f
-                                    
+
                                     val newScaledWidth = fittedWidth * zoomLevel
                                     val newScaledHeight = fittedHeight * zoomLevel
                                     val newMaxPX = (newScaledWidth - w).coerceAtLeast(0f) / 2f
                                     val newMaxPY = (newScaledHeight - h).coerceAtLeast(0f) / 2f
-                                    
-                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(-newMaxPX, newMaxPX)
-                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(-newMaxPY, newMaxPY)
+
+                                    panX =
+                                        (panX * (zoomLevel / oldZoom)).coerceIn(-newMaxPX, newMaxPX)
+                                    panY =
+                                        (panY * (zoomLevel / oldZoom)).coerceIn(-newMaxPY, newMaxPY)
                                 }
                                 true
                             }
+
                             Key.Backspace -> {
                                 if (isZoomMode) {
                                     if (zoomLevel > 1f) {
                                         val oldZoom = zoomLevel
                                         zoomLevel = if (zoomLevel <= 2f) 1f else zoomLevel / 2f
-                                        
+
                                         val newScaledWidth = fittedWidth * zoomLevel
                                         val newScaledHeight = fittedHeight * zoomLevel
                                         val newMaxPX = (newScaledWidth - w).coerceAtLeast(0f) / 2f
                                         val newMaxPY = (newScaledHeight - h).coerceAtLeast(0f) / 2f
-                                        
-                                        panX = (panX * (zoomLevel / oldZoom)).coerceIn(-newMaxPX, newMaxPX)
-                                        panY = (panY * (zoomLevel / oldZoom)).coerceIn(-newMaxPY, newMaxPY)
+
+                                        panX = (panX * (zoomLevel / oldZoom)).coerceIn(
+                                            -newMaxPX,
+                                            newMaxPX
+                                        )
+                                        panY = (panY * (zoomLevel / oldZoom)).coerceIn(
+                                            -newMaxPY,
+                                            newMaxPY
+                                        )
                                     } else {
                                         isZoomMode = false
                                     }
@@ -224,6 +234,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                     true
                                 }
                             }
+
                             Key.DirectionLeft -> {
                                 if (isZoomMode) {
                                     val scaledWidth = fittedWidth * zoomLevel
@@ -234,6 +245,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                 }
                                 true
                             }
+
                             Key.DirectionRight -> {
                                 if (isZoomMode) {
                                     val scaledWidth = fittedWidth * zoomLevel
@@ -244,6 +256,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                 }
                                 true
                             }
+
                             Key.DirectionUp -> {
                                 if (isZoomMode) {
                                     val scaledHeight = fittedHeight * zoomLevel
@@ -252,6 +265,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                 }
                                 true
                             }
+
                             Key.DirectionDown -> {
                                 if (isZoomMode) {
                                     val scaledHeight = fittedHeight * zoomLevel
@@ -260,6 +274,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                 }
                                 true
                             }
+
                             else -> false
                         }
                     } else false
@@ -283,7 +298,11 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                         }
                         if (state is AsyncImagePainter.State.Error) {
                             errorMessage = state.result.throwable.message ?: "Failed to load image"
-                            Log.e("ImageViewer", "Error loading $path: $errorMessage", state.result.throwable)
+                            Log.e(
+                                "ImageViewer",
+                                "Error loading $path: $errorMessage",
+                                state.result.throwable
+                            )
                         }
                     },
                     modifier = Modifier
@@ -309,8 +328,17 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                     modifier = Modifier.align(Alignment.Center).padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Error", style = MaterialTheme.typography.headlineMedium, color = Color.Red)
-                    Text(errorMessage!!, style = MaterialTheme.typography.bodyMedium, color = Color.White, textAlign = TextAlign.Center)
+                    Text(
+                        "Error",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = Color.Red
+                    )
+                    Text(
+                        errorMessage!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
 
@@ -366,12 +394,13 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
-}
 
-private fun formatTime(ms: Long): String {
-    val totalSeconds = ms / 1000
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    return String.format(java.util.Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+
+    fun formatTime(ms: Long): String {
+        val totalSeconds = ms / 1000
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+        return String.format(java.util.Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
+    }
 }

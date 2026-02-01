@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.ui.components
 
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
@@ -11,6 +12,9 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.FastForward
@@ -21,9 +25,14 @@ import androidx.compose.material.icons.filled.VideoSettings
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -41,6 +50,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -48,12 +59,23 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.tv.material3.Button
+import androidx.tv.material3.ClickableSurfaceDefaults
+import androidx.tv.material3.Icon
+import androidx.tv.material3.Text
 import com.vargon.weirdstreamer.SmbDataSourceFactory
 import com.vargon.weirdstreamer.MediaViewModel
+import com.vargon.weirdstreamer.OpenSubtitlesClient
+import com.vargon.weirdstreamer.SubtitleInfo
 import com.vargon.weirdstreamer.WeirdStreamerApplication
+import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import kotlinx.coroutines.delay
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import java.io.File
 import java.util.Locale
+import kotlin.math.abs
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -65,18 +87,18 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     // Transcode state - only applicable for server sources
     var enableTranscode by remember { mutableStateOf(false) }
-    
+
     // Track the start offset for transcoded streams
-    var transcodeStartOffset by remember { mutableStateOf(0L) }
-    
+    var transcodeStartOffset by remember { mutableLongStateOf(0L) }
+
     // Store the original full duration (before any transcoding)
-    var fullDuration by remember { mutableStateOf(0L) }
+    var fullDuration by remember { mutableLongStateOf(0L) }
 
     // Build the actual video URL with transcode parameter if needed
     val videoUrl = remember(path, enableTranscode) {
         // Reset offset when transcoding is toggled
         transcodeStartOffset = 0L
-        
+
         if (!isSmbSource && enableTranscode) {
             // Add transcode=1 parameter to the URL
             if (path.contains("?")) {
@@ -106,7 +128,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     // Use SMB DataSource for SMB paths
                     setMediaSourceFactory(
                         DefaultMediaSourceFactory(context)
-                            .setDataSourceFactory(SmbDataSourceFactory(viewModel.credentialManager, viewModel.baseContext))
+                            .setDataSourceFactory(
+                                SmbDataSourceFactory(
+                                    viewModel.credentialManager,
+                                    viewModel.baseContext
+                                )
+                            )
                     )
                 } else {
                     // Use OkHttp DataSource for server URLs (handles SSL and auth)
@@ -135,23 +162,133 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var showControls by remember { mutableStateOf(false) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var lastControlsHideTime by remember { mutableLongStateOf(0L) }
-    
+
     // Zoom state for video player
     var zoomLevel by remember { mutableFloatStateOf(1f) }
     var panX by remember { mutableFloatStateOf(0f) }
     var panY by remember { mutableFloatStateOf(0f) }
     var isZoomMode by remember { mutableStateOf(false) }
     var showZoomToolbar by remember { mutableStateOf(false) }
-    
+
     // Aspect ratio cycling
     val aspectRatios = listOf("Original", "16:9", "21:9", "4:3", "5:4", "1:1")
-    val aspectRatioValues = listOf(null, 16f/9f, 21f/9f, 4f/3f, 5f/4f, 1f)
+    val aspectRatioValues = listOf(null, 16f / 9f, 21f / 9f, 4f / 3f, 5f / 4f, 1f)
     var currentAspectRatioIndex by remember { mutableIntStateOf(0) }
     var currentAspectRatio by remember { mutableStateOf<Float?>(null) }
-    var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Zoom, 1 = Zoom+, 2 = Zoom-, 3 = AspectRatio
+    var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Zoom, 1 = Zoom+, 2 = Zoom-, 3 = AspectRatio, 4 = Subtitles
     var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) } // Track actual video aspect ratio
     var videoPaddingPx by remember { mutableIntStateOf(0) } // Size adjustment in pixels (1px in each direction)
-    
+    var showSubtitleDialog by remember { mutableStateOf(false) }
+    var availableSubtitles by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedSubtitleIndex by remember { mutableIntStateOf(-1) } // -1 = no subtitles
+
+    // OpenSubtitles download state
+    var showDownloadDialog by remember { mutableStateOf(false) }
+    var downloadingSubtitles by remember {
+        mutableStateOf<List<SubtitleInfo>>(
+            emptyList()
+        )
+    }
+    var isSearchingSubtitles by remember { mutableStateOf(false) }
+    var downloadStatus by remember { mutableStateOf<String?>(null) }
+
+    val openSubtitlesClient = remember { OpenSubtitlesClient(context) }
+
+    fun selectSubtitleTrack(index: Int) {
+        selectedSubtitleIndex = index
+
+        // Find the text track at the given index
+        val tracks = exoPlayer.currentTracks
+        var subtitleCount = 0
+
+        for (group in tracks.groups) {
+            if (group.type == C.TRACK_TYPE_TEXT) {
+                if (index == -1) {
+                    // Disable subtitles
+                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                            .buildUpon()
+                            .clearOverrides()
+                            .build()
+                    return
+                }
+
+                for (i in 0 until group.length) {
+                    if (subtitleCount == index) {
+                        // Select this group
+                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                                .buildUpon()
+                                .setOverrideForType(
+                                    TrackSelectionOverride(
+                                        group.mediaTrackGroup,
+                                        i
+                                    )
+                                )
+                                .build()
+                        return
+                    }
+                    subtitleCount++
+                }
+            }
+        }
+    }
+
+    fun searchAndDownloadSubtitles() {
+        if (!openSubtitlesClient.hasApiKey()) {
+            downloadStatus =
+                "OpenSubtitles API key not configured. Please set up API key in Settings."
+            return
+        }
+
+        isSearchingSubtitles = true
+        downloadStatus = "Searching subtitles..."
+
+        // Run search in background
+        Thread {
+            try {
+                // Extract filename from path
+                val filename = path.substringAfterLast("/").substringBefore("?")
+
+                // Search by filename first
+                val results = openSubtitlesClient.searchByFilename(filename)
+
+                if (results.isNotEmpty()) {
+                    downloadingSubtitles = results.take(10) // Show top 10 results
+                    downloadStatus = null
+                    isSearchingSubtitles = false
+                } else {
+                    downloadStatus = "No subtitles found"
+                    isSearchingSubtitles = false
+                }
+            } catch (e: Exception) {
+                Log.e("VideoPlayer", "Error searching subtitles", e)
+                downloadStatus = "Error: ${e.message}"
+                isSearchingSubtitles = false
+            }
+        }.start()
+    }
+
+    fun downloadAndApplySubtitle(subtitle: SubtitleInfo) {
+        downloadStatus = "Downloading ${subtitle.filename}..."
+
+        Thread {
+            try {
+                val cacheDir = openSubtitlesClient.getSubtitleCacheDir()
+                val outputFile = File(cacheDir, subtitle.filename)
+
+                if (openSubtitlesClient.downloadSubtitle(subtitle, outputFile)) {
+                    downloadStatus = "Downloaded successfully"
+                    // TODO: Load subtitle file into ExoPlayer
+                    // This requires loading the subtitle through MediaItem.SubtitleConfiguration
+                } else {
+                    downloadStatus = "Download failed"
+                }
+            } catch (e: Exception) {
+                Log.e("VideoPlayer", "Error downloading subtitle", e)
+                downloadStatus = "Error: ${e.message}"
+            }
+        }.start()
+    }
+
     // Fetch metadata for server sources to get accurate duration
     LaunchedEffect(path) {
         if (!isSmbSource) {
@@ -159,26 +296,29 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 // Extract the base64 path parameter
                 val encodedPath = path.substringAfter("path=").substringBefore("&")
                 val okHttpClient = WeirdStreamerApplication.getOkHttpClient()
-                val retrofit = retrofit2.Retrofit.Builder()
+                val retrofit = Retrofit.Builder()
                     .baseUrl(path.substringBefore("/api"))
                     .client(okHttpClient)
-                    .addConverterFactory(retrofit2.converter.gson.GsonConverterFactory.create())
+                    .addConverterFactory(GsonConverterFactory.create())
                     .build()
-                
-                val api = retrofit.create(com.vargon.weirdstreamer.api.ApiService::class.java)
+
+                val api = retrofit.create(ApiService::class.java)
                 val response = api.getMetadata(encodedPath)
-                
+
                 if (response.isSuccessful) {
                     response.body()?.let { metadata ->
                         // Convert duration from seconds to milliseconds
                         metadata.duration?.let { durationSecs ->
                             fullDuration = (durationSecs * 1000).toLong()
-                            android.util.Log.d("VideoPlayer", "Loaded metadata: duration=${durationSecs}s ($fullDuration ms)")
+                            Log.d(
+                                "VideoPlayer",
+                                "Loaded metadata: duration=${durationSecs}s ($fullDuration ms)"
+                            )
                         }
                     }
                 }
             } catch (e: Exception) {
-                android.util.Log.e("VideoPlayer", "Failed to load metadata", e)
+                Log.e("VideoPlayer", "Failed to load metadata", e)
             }
         }
     }
@@ -189,13 +329,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) } // value to show, isForward
 
     // --- Skip sequence state ---
-    val skipIntervals = listOf(5, 15, 30, 60, 120, 300, 600, 1800) // seconds
-    var skipIndex by remember { mutableStateOf(0) }
+    var skipIndex by remember { mutableIntStateOf(0) }
     var lastSkipDirection by remember { mutableStateOf<Int?>(null) } // -1 for left, 1 for right
-    var lastSkipTime by remember { mutableStateOf(0L) }
-    var lastSkipAmount by remember { mutableStateOf(0) }
-    var skipReversalStep by remember { mutableStateOf(0) } // 0: normal, 1: undo, 2: reset
+    var lastSkipTime by remember { mutableLongStateOf(0L) }
+    var lastSkipAmount by remember { mutableIntStateOf(0) }
+    var skipReversalStep by remember { mutableIntStateOf(0) } // 0: normal, 1: undo, 2: reset
     var basePlaybackPositionBeforeSkip by remember { mutableLongStateOf(0L) }
+
+    val skipIntervals = listOf(5, 15, 30, 60, 120, 300, 600, 1800) // seconds
 
     val focusRequester = remember { FocusRequester() }
 
@@ -209,6 +350,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             override fun onIsPlayingChanged(isPlayingChanged: Boolean) {
                 isPlaying = isPlayingChanged
             }
+
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
                     val currentDuration = exoPlayer.duration
@@ -240,11 +382,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     }
                 }
                 isBuffering = state == Player.STATE_BUFFERING || state == Player.STATE_IDLE
-                    // Update video aspect ratio from player
-                    val videoSize = exoPlayer.videoSize
-                    if (videoSize.width > 0 && videoSize.height > 0) {
-                        videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
-                    }
+                // Update video aspect ratio from player
+                val videoSize = exoPlayer.videoSize
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
+                }
             }
         }
         exoPlayer.addListener(listener)
@@ -297,7 +439,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         // Assume 16:9 aspect ratio for video if we don't have exact dimensions
         val videoRatio = 16f / 9f
         val screenRatio = screenWidth / screenHeight
-        
+
         val fittedWidth: Float
         val fittedHeight: Float
         if (videoRatio > screenRatio) {
@@ -307,13 +449,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             fittedWidth = screenHeight * videoRatio
             fittedHeight = screenHeight
         }
-        
+
         val scaledWidth = fittedWidth * zoomLevel
         val scaledHeight = fittedHeight * zoomLevel
-        
+
         val maxPX = (scaledWidth - screenWidth).coerceAtLeast(0f) / 2f
         val maxPY = (scaledHeight - screenHeight).coerceAtLeast(0f) / 2f
-        
+
         return maxPX to maxPY
     }
 
@@ -322,13 +464,15 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             skipFeedback = null
             return
         }
-        
+
         val currentDuration = exoPlayer.duration
         val maxPos = if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration
-        
+
         if (!isSmbSource && enableTranscode) {
-            val actualPosition = if (useAbsoluteAmount) basePlaybackPositionBeforeSkip else (exoPlayer.currentPosition + transcodeStartOffset)
-            val maxTranscodePos = if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration + transcodeStartOffset
+            val actualPosition =
+                if (useAbsoluteAmount) basePlaybackPositionBeforeSkip else (exoPlayer.currentPosition + transcodeStartOffset)
+            val maxTranscodePos =
+                if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration + transcodeStartOffset
             val finalTarget = (actualPosition + amount * 1000).coerceIn(0L, maxTranscodePos)
 
             val startTimeSeconds = finalTarget / 1000f
@@ -340,21 +484,25 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 path
             }
             val newUrl = "$baseUrlWithPath&auto-transcode=0&transcode=1&start=$startTimeSeconds"
-            android.util.Log.d("VideoPlayer", "Transcode seek to $startTimeSeconds sec, URL: $newUrl")
+            Log.d(
+                "VideoPlayer",
+                "Transcode seek to $startTimeSeconds sec, URL: $newUrl"
+            )
             transcodeStartOffset = finalTarget
             val mediaItem = MediaItem.fromUri(newUrl)
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
-            
+
             skipFeedback = amount to (amount > 0)
         } else {
-            val startPos = if (useAbsoluteAmount) basePlaybackPositionBeforeSkip else exoPlayer.currentPosition
+            val startPos =
+                if (useAbsoluteAmount) basePlaybackPositionBeforeSkip else exoPlayer.currentPosition
             val newPos = (startPos + amount * 1000).coerceIn(0L, maxPos)
             exoPlayer.seekTo(newPos)
             skipFeedback = amount to (amount > 0)
         }
-        
+
         if (showControlsAfter) updateInteraction()
     }
 
@@ -414,7 +562,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
                                 // Pan up in zoom mode (only when actually zoomed)
-                                val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
+                                val (_, maxPY) = calculatePanLimits(
+                                    1920f,
+                                    1080f
+                                )  // Standard TV size
                                 panY = (panY + 100f).coerceIn(-maxPY, maxPY)
                                 updateInteraction()
                                 true
@@ -442,10 +593,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 false
                             }
                         }
+
                         Key.DirectionDown -> {
                             if (isZoomMode && zoomLevel > 1f) {
                                 // Pan down in zoom mode (only when actually zoomed)
-                                val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
+                                val (_, maxPY) = calculatePanLimits(
+                                    1920f,
+                                    1080f
+                                )  // Standard TV size
                                 panY = (panY - 100f).coerceIn(-maxPY, maxPY)
                                 updateInteraction()
                                 true
@@ -483,6 +638,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 false
                             }
                         }
+
                         Key.DirectionCenter, Key.Enter -> {
                             if (showZoomToolbar && !isZoomMode) {
                                 // Toolbar is shown, handle button press
@@ -493,22 +649,33 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                         zoomLevel = 1f
                                         panX = 0f
                                         panY = 0f
-                                        showZoomToolbar = false  // Hide toolbar after entering zoom mode
+                                        showZoomToolbar =
+                                            false  // Hide toolbar after entering zoom mode
                                     }
+
                                     1 -> {
                                         // Zoom+ button pressed
                                         videoPaddingPx += 1
                                     }
+
                                     2 -> {
                                         // Zoom- button pressed
                                         if (videoPaddingPx > 0) {
                                             videoPaddingPx -= 1
                                         }
                                     }
+
                                     3 -> {
                                         // Aspect ratio button pressed, cycle to next
-                                        currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size
-                                        currentAspectRatio = aspectRatioValues[currentAspectRatioIndex]
+                                        currentAspectRatioIndex =
+                                            (currentAspectRatioIndex + 1) % aspectRatios.size
+                                        currentAspectRatio =
+                                            aspectRatioValues[currentAspectRatioIndex]
+                                    }
+
+                                    4 -> {
+                                        // Subtitles button pressed, show subtitle dialog
+                                        showSubtitleDialog = true
                                     }
                                 }
                                 true
@@ -518,8 +685,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     val oldZoom = zoomLevel
                                     zoomLevel = if (zoomLevel == 1f) 2f else zoomLevel * 2f
                                     // Adjust pan to keep it within bounds
-                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
-                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
+                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(
+                                        -Float.MAX_VALUE,
+                                        Float.MAX_VALUE
+                                    )
+                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(
+                                        -Float.MAX_VALUE,
+                                        Float.MAX_VALUE
+                                    )
                                 }
                                 true
                             } else if (isFocusedOnTranscode) {
@@ -533,14 +706,18 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 true
                             }
                         }
+
                         Key.DirectionLeft -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Navigate left in toolbar (4 buttons: 0-3)
+                                // Navigate left in toolbar (5 buttons: 0-4)
                                 toolbarFocusedButton = (toolbarFocusedButton - 1).coerceAtLeast(0)
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
                                 // Pan left in zoom mode (only when actually zoomed)
-                                val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
+                                val (maxPX, _) = calculatePanLimits(
+                                    1920f,
+                                    1080f
+                                )  // Standard TV size
                                 panX = (panX + 100f).coerceIn(-maxPX, maxPX)
                                 updateInteraction()
                                 true
@@ -550,53 +727,61 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else {
                                 val now = System.currentTimeMillis()
                                 val direction = -1
-                                val withinInterval = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
+                                val withinInterval =
+                                    (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
                                 val opposite = lastSkipDirection == 1 && skipReversalStep == 0
-                                
+
                                 if (!withinInterval && !opposite) {
-                                    basePlaybackPositionBeforeSkip = if (enableTranscode && !isSmbSource) {
-                                        exoPlayer.currentPosition + transcodeStartOffset
-                                    } else {
-                                        exoPlayer.currentPosition
-                                    }
+                                    basePlaybackPositionBeforeSkip =
+                                        if (enableTranscode && !isSmbSource) {
+                                            exoPlayer.currentPosition + transcodeStartOffset
+                                        } else {
+                                            exoPlayer.currentPosition
+                                        }
                                 }
 
-                                var skipAmount = 0
+                                var skipAmount: Int
                                 if (opposite) {
                                     // Reverse direction: first undo last skip, then reset, then start new direction
                                     skipReversalStep++
-                                    if (skipReversalStep == 1) {
-                                        skipAmount = 0 // Undo back to base
-                                    } else if (skipReversalStep == 2) {
-                                        skipAmount = 0
-                                    } else {
-                                        skipReversalStep = 0
-                                        skipIndex = 0
-                                        skipAmount = -skipIntervals[skipIndex]
+                                    skipAmount = when (skipReversalStep) {
+                                        1 -> 0 // Undo back to base
+                                        2 -> 0
+                                        else -> {
+                                            skipReversalStep = 0
+                                            skipIndex = 0
+                                            -skipIntervals[skipIndex]
+                                        }
                                     }
                                 } else {
                                     skipReversalStep = 0
-                                    skipIndex = if (withinInterval) (skipIndex + 1).coerceAtMost(skipIntervals.lastIndex) else 0
+                                    skipIndex = if (withinInterval) (skipIndex + 1).coerceAtMost(
+                                        skipIntervals.lastIndex
+                                    ) else 0
                                     skipAmount = -skipIntervals[skipIndex]
                                 }
-                                
+
                                 if (showControls) isSeekingSlider = true
                                 performSkip(skipAmount, showControls, useAbsoluteAmount = true)
-                                
+
                                 lastSkipAmount = skipAmount
                                 lastSkipDirection = direction
                                 lastSkipTime = now
                                 true
                             }
                         }
+
                         Key.DirectionRight -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Navigate right in toolbar (4 buttons: 0-3)
-                                toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(3)
+                                // Navigate right in toolbar (5 buttons: 0-4)
+                                toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(4)
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
                                 // Pan right in zoom mode (only when actually zoomed)
-                                val (maxPX, maxPY) = calculatePanLimits(1920f, 1080f)  // Standard TV size
+                                val (maxPX, _) = calculatePanLimits(
+                                    1920f,
+                                    1080f
+                                )  // Standard TV size
                                 panX = (panX - 100f).coerceIn(-maxPX, maxPX)
                                 updateInteraction()
                                 true
@@ -606,45 +791,50 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else {
                                 val now = System.currentTimeMillis()
                                 val direction = 1
-                                val withinInterval = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
+                                val withinInterval =
+                                    (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
                                 val opposite = lastSkipDirection == -1 && skipReversalStep == 0
-                                
+
                                 if (!withinInterval && !opposite) {
-                                    basePlaybackPositionBeforeSkip = if (enableTranscode && !isSmbSource) {
-                                        exoPlayer.currentPosition + transcodeStartOffset
-                                    } else {
-                                        exoPlayer.currentPosition
-                                    }
+                                    basePlaybackPositionBeforeSkip =
+                                        if (enableTranscode && !isSmbSource) {
+                                            exoPlayer.currentPosition + transcodeStartOffset
+                                        } else {
+                                            exoPlayer.currentPosition
+                                        }
                                 }
 
-                                var skipAmount = 0
+                                var skipAmount: Int
                                 if (opposite) {
                                     // Reverse direction: first undo last skip, then reset, then start new direction
                                     skipReversalStep++
-                                    if (skipReversalStep == 1) {
-                                        skipAmount = 0 // Undo back to base
-                                    } else if (skipReversalStep == 2) {
-                                        skipAmount = 0
-                                    } else {
-                                        skipReversalStep = 0
-                                        skipIndex = 0
-                                        skipAmount = skipIntervals[skipIndex]
+                                    skipAmount = when (skipReversalStep) {
+                                        1 -> 0 // Undo back to base
+                                        2 -> 0
+                                        else -> {
+                                            skipReversalStep = 0
+                                            skipIndex = 0
+                                            skipIntervals[skipIndex]
+                                        }
                                     }
                                 } else {
                                     skipReversalStep = 0
-                                    skipIndex = if (withinInterval) (skipIndex + 1).coerceAtMost(skipIntervals.lastIndex) else 0
+                                    skipIndex = if (withinInterval) (skipIndex + 1).coerceAtMost(
+                                        skipIntervals.lastIndex
+                                    ) else 0
                                     skipAmount = skipIntervals[skipIndex]
                                 }
-                                
+
                                 if (showControls) isSeekingSlider = true
                                 performSkip(skipAmount, showControls, useAbsoluteAmount = true)
-                                
+
                                 lastSkipAmount = skipAmount
                                 lastSkipDirection = direction
                                 lastSkipTime = now
                                 true
                             }
                         }
+
                         Key.Backspace -> {
                             if (showZoomToolbar && !isZoomMode) {
                                 // Hide toolbar if it's showing and not in zoom mode
@@ -654,8 +844,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 if (zoomLevel > 1f) {
                                     val oldZoom = zoomLevel
                                     zoomLevel = if (zoomLevel <= 2f) 1f else zoomLevel / 2f
-                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
-                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
+                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(
+                                        -Float.MAX_VALUE,
+                                        Float.MAX_VALUE
+                                    )
+                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(
+                                        -Float.MAX_VALUE,
+                                        Float.MAX_VALUE
+                                    )
                                 } else {
                                     // At 1x, exit zoom mode
                                     isZoomMode = false
@@ -669,6 +865,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 true
                             }
                         }
+
                         else -> false
                     }
                 } else false
@@ -748,7 +945,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             exit = slideOutVertically { -it } + fadeOut(),
             modifier = Modifier.align(Alignment.TopStart)
         ) {
-            androidx.tv.material3.Text(
+            Text(
                 text = filename,
                 style = androidx.tv.material3.MaterialTheme.typography.headlineMedium,
                 color = Color.White,
@@ -774,7 +971,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             ) {
                 val value = feedback?.first ?: 0
                 if (value != 0) {
-                    val absValue = kotlin.math.abs(value)
+                    val absValue = abs(value)
                     val text = if (absValue >= 60) {
                         val min = absValue / 60
                         val sec = absValue % 60
@@ -783,7 +980,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     } else {
                         if (value > 0) "+$absValue" else "-$absValue"
                     }
-                    androidx.tv.material3.Text(
+                    Text(
                         text = text,
                         style = androidx.tv.material3.MaterialTheme.typography.displayLarge,
                         color = Color.White.copy(alpha = 0.7f),
@@ -818,10 +1015,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 enableTranscode = !enableTranscode
                                 updateInteraction()
                             },
-                            shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(
+                            shape = ClickableSurfaceDefaults.shape(
                                 shape = RoundedCornerShape(8.dp)
                             ),
-                            colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+                            colors = ClickableSurfaceDefaults.colors(
                                 containerColor = if (isFocusedOnTranscode)
                                     Color.White.copy(alpha = 0.2f)
                                 else
@@ -834,14 +1031,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                androidx.tv.material3.Icon(
+                                Icon(
                                     Icons.Default.VideoSettings,
                                     contentDescription = "Toggle Transcode",
                                     tint = if (enableTranscode) Color.Green else Color.White,
                                     modifier = Modifier.size(32.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                androidx.tv.material3.Text(
+                                Text(
                                     text = if (enableTranscode) "Transcoding ON" else "Transcoding OFF",
                                     style = androidx.tv.material3.MaterialTheme.typography.bodyMedium,
                                     color = if (enableTranscode) Color.Green else Color.White
@@ -856,14 +1053,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    androidx.tv.material3.Text(
+                    Text(
                         text = formatTime(playbackPosition),
                         style = androidx.tv.material3.MaterialTheme.typography.bodySmall,
                         color = Color.White
                     )
-                    
+
                     Spacer(modifier = Modifier.width(16.dp))
-                    
+
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -877,9 +1074,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 .height(4.dp)
                                 .background(Color.Gray.copy(alpha = 0.5f))
                         )
-                        
-                        val progress = if (duration > 0) playbackPosition.toFloat() / duration else 0f
-                        
+
+                        val progress =
+                            if (duration > 0) playbackPosition.toFloat() / duration else 0f
+
                         // Progress bar
                         Box(
                             modifier = Modifier
@@ -903,16 +1101,16 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             )
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.width(16.dp))
-                    
-                    androidx.tv.material3.Text(
+
+                    Text(
                         text = if (duration > 0) formatTime(duration) else "0:00:00",
                         style = androidx.tv.material3.MaterialTheme.typography.bodySmall,
                         color = Color.White
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Playback controls
@@ -921,21 +1119,21 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    androidx.tv.material3.Icon(
+                    Icon(
                         Icons.Default.FastRewind,
                         contentDescription = null,
                         tint = if (showControls && !isSeekingSlider && !isFocusedOnTranscode) Color.White else Color.Gray,
                         modifier = Modifier.size(48.dp)
                     )
                     Spacer(modifier = Modifier.width(32.dp))
-                    androidx.tv.material3.Icon(
+                    Icon(
                         if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = null,
                         tint = if (showControls && !isSeekingSlider && !isFocusedOnTranscode) Color.White else Color.Gray,
                         modifier = Modifier.size(64.dp)
                     )
                     Spacer(modifier = Modifier.width(32.dp))
-                    androidx.tv.material3.Icon(
+                    Icon(
                         Icons.Default.FastForward,
                         contentDescription = null,
                         tint = if (showControls && !isSeekingSlider && !isFocusedOnTranscode) Color.White else Color.Gray,
@@ -965,116 +1163,484 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(
-                            if (toolbarFocusedButton == 0) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.3f)
+                            if (toolbarFocusedButton == 0) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
+                                alpha = 0.3f
+                            )
                         )
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    androidx.tv.material3.Icon(
+                    Icon(
                         Icons.Default.Api,
                         contentDescription = "Zoom",
-                        tint = if (toolbarFocusedButton == 0) Color.White else Color.White.copy(alpha = 0.7f),
+                        tint = if (toolbarFocusedButton == 0) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        ),
                         modifier = Modifier.size(if (toolbarFocusedButton == 0) 56.dp else 48.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    androidx.tv.material3.Text(
+                    Text(
                         text = "Zoom",
                         style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
-                        color = if (toolbarFocusedButton == 0) Color.White else Color.White.copy(alpha = 0.7f)
+                        color = if (toolbarFocusedButton == 0) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        )
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.width(48.dp))
-                
+
                 // Zoom+ Button
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(
-                            if (toolbarFocusedButton == 1) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.3f)
+                            if (toolbarFocusedButton == 1) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
+                                alpha = 0.3f
+                            )
                         )
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    androidx.tv.material3.Icon(
+                    Icon(
                         Icons.Default.ZoomIn,
                         contentDescription = "Fill+",
-                        tint = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(alpha = 0.7f),
+                        tint = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        ),
                         modifier = Modifier.size(if (toolbarFocusedButton == 1) 56.dp else 48.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    androidx.tv.material3.Text(
+                    Text(
                         text = "Fill+",
                         style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
-                        color = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(alpha = 0.7f)
+                        color = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        )
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.width(48.dp))
-                
+
                 // Zoom- Button
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(
-                            if (toolbarFocusedButton == 2) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.3f)
+                            if (toolbarFocusedButton == 2) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
+                                alpha = 0.3f
+                            )
                         )
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    androidx.tv.material3.Icon(
+                    Icon(
                         Icons.Default.ZoomOut,
                         contentDescription = "Fill-",
-                        tint = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(alpha = 0.7f),
+                        tint = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        ),
                         modifier = Modifier.size(if (toolbarFocusedButton == 2) 56.dp else 48.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    androidx.tv.material3.Text(
+                    Text(
                         text = "Fill-",
                         style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
-                        color = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(alpha = 0.7f)
+                        color = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        )
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.width(48.dp))
-                
+
                 // Aspect Ratio Button
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(
-                            if (toolbarFocusedButton == 3) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.3f)
+                            if (toolbarFocusedButton == 3) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
+                                alpha = 0.3f
+                            )
                         )
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    androidx.tv.material3.Icon(
+                    Icon(
                         Icons.Default.AspectRatio,
                         contentDescription = "Aspect Ratio",
-                        tint = if (toolbarFocusedButton == 3) Color.White else Color.White.copy(alpha = 0.7f),
+                        tint = if (toolbarFocusedButton == 3) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        ),
                         modifier = Modifier.size(if (toolbarFocusedButton == 3) 56.dp else 48.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    androidx.tv.material3.Text(
+                    Text(
                         text = aspectRatios[currentAspectRatioIndex],
                         style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
-                        color = if (toolbarFocusedButton == 3) Color.White else Color.White.copy(alpha = 0.7f)
+                        color = if (toolbarFocusedButton == 3) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        )
                     )
+                }
+
+                Spacer(modifier = Modifier.width(48.dp))
+
+                // Subtitles Button
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (toolbarFocusedButton == 4) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
+                                alpha = 0.3f
+                            )
+                        )
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Default.Subtitles,
+                        contentDescription = "Subtitles",
+                        tint = if (toolbarFocusedButton == 4) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        ),
+                        modifier = Modifier.size(if (toolbarFocusedButton == 4) 56.dp else 48.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Subtitles",
+                        style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                        color = if (toolbarFocusedButton == 4) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        )
+                    )
+                }
+            }
+        }
+
+        // Subtitle Dialog
+        if (showSubtitleDialog) {
+            Dialog(
+                onDismissRequest = { showSubtitleDialog = false },
+                properties = DialogProperties(
+                    dismissOnBackPress = true,
+                    dismissOnClickOutside = false
+                )
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .width(500.dp)
+                        .background(Color.Black.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
+                        .border(2.dp, Color.White, RoundedCornerShape(16.dp)),
+                    color = Color.Black.copy(alpha = 0.9f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text = "Subtitles",
+                            style = androidx.tv.material3.MaterialTheme.typography.headlineSmall,
+                            color = Color.White
+                        )
+
+                        // Available Subtitles Section
+                        if (availableSubtitles.isNotEmpty()) {
+                            Text(
+                                text = "Available Subtitles",
+                                style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                                color = Color.White.copy(alpha = 0.8f)
+                            )
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Option to disable subtitles
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (selectedSubtitleIndex == -1) Color.White.copy(alpha = 0.2f)
+                                            else Color.Gray.copy(alpha = 0.2f)
+                                        )
+                                        .clickable {
+                                            selectSubtitleTrack(-1)
+                                        }
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (selectedSubtitleIndex == -1) {
+                                        Icon(
+                                            Icons.Default.PlayArrow,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    Text(
+                                        text = "None",
+                                        color = Color.White,
+                                        style = androidx.tv.material3.MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+
+                                availableSubtitles.forEachIndexed { index, subtitle ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (selectedSubtitleIndex == index) Color.White.copy(
+                                                    alpha = 0.2f
+                                                )
+                                                else Color.Gray.copy(alpha = 0.2f)
+                                            )
+                                            .clickable { selectSubtitleTrack(index) }
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (selectedSubtitleIndex == index) {
+                                            Icon(
+                                                Icons.Default.PlayArrow,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                        }
+                                        Text(
+                                            text = subtitle,
+                                            color = Color.White,
+                                            style = androidx.tv.material3.MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.3f), thickness = 1.dp)
+                        }
+
+                        // Download from OpenSubtitles Option
+                        Text(
+                            text = "Download Subtitles",
+                            style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.Blue.copy(alpha = 0.3f))
+                                .clickable {
+                                    showDownloadDialog = true
+                                    searchAndDownloadSubtitles()
+                                }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "OpenSubtitles.org / .com",
+                                color = Color.White,
+                                style = androidx.tv.material3.MaterialTheme.typography.bodyMedium
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Button(
+                                onClick = { showSubtitleDialog = false }
+                            ) {
+                                Text("Close")
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+    // Download Subtitles Dialog
+    if (showDownloadDialog) {
+        Dialog(
+            onDismissRequest = {
+                showDownloadDialog = false
+                downloadingSubtitles = emptyList()
+                downloadStatus = null
+            },
+            properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .width(600.dp)
+                    .background(Color.Black.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
+                    .border(2.dp, Color.White, RoundedCornerShape(16.dp)),
+                color = Color.Black.copy(alpha = 0.9f)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Download Subtitles",
+                        style = androidx.tv.material3.MaterialTheme.typography.headlineSmall,
+                        color = Color.White
+                    )
+
+                    // Show status/loading
+                    if (isSearchingSubtitles) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = Color.Blue,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "Searching...",
+                                color = Color.White,
+                                style = androidx.tv.material3.MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    } else if (!downloadStatus.isNullOrEmpty()) {
+                        Text(
+                            text = downloadStatus!!,
+                            color = if (downloadStatus!!.startsWith("Error")) Color.Red else Color.Yellow,
+                            style = androidx.tv.material3.MaterialTheme.typography.bodyMedium
+                        )
+                    } else if (downloadingSubtitles.isNotEmpty()) {
+                        Text(
+                            text = "Found ${downloadingSubtitles.size} subtitle(s)",
+                            style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 300.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            downloadingSubtitles.forEach { subtitle ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color.Gray.copy(alpha = 0.2f))
+                                        .clickable { downloadAndApplySubtitle(subtitle) }
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = subtitle.filename,
+                                            color = Color.White,
+                                            style = androidx.tv.material3.MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${subtitle.language} | Rating: ${
+                                                String.format(
+                                                    Locale.US,
+                                                    "%.1f",
+                                                    subtitle.rating.toDouble()
+                                                )
+                                            } | Downloads: ${subtitle.downloads}",
+                                            color = Color.White.copy(alpha = 0.7f),
+                                            style = androidx.tv.material3.MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(
+                            onClick = {
+                                showDownloadDialog = false
+                                downloadingSubtitles = emptyList()
+                                downloadStatus = null
+                            }
+                        ) {
+                            Text("Close")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Detect subtitle tracks from video
+    DisposableEffect(path) {
+        // Listen for tracks available
+        val listener = object : Player.Listener {
+            override fun onTracksChanged(tracks: Tracks) {
+                val subtitleTracks = mutableListOf<String>()
+
+                // Find all subtitle/text tracks
+                for (group in tracks.groups) {
+                    if (group.type == C.TRACK_TYPE_TEXT) {
+                        for (i in 0 until group.length) {
+                            val format = group.getTrackFormat(i)
+                            val language = format.language ?: "Subtitle ${i + 1}"
+                            subtitleTracks.add(language)
+                        }
+                    }
+                }
+
+                availableSubtitles = subtitleTracks
+                if (subtitleTracks.isEmpty()) {
+                    selectedSubtitleIndex = -1
+                }
+            }
+        }
+
+        exoPlayer.addListener(listener)
+
+        // Clean up listener when composable disposes
+        onDispose {
+            exoPlayer.removeListener(listener)
+        }
     }
 }
 
-private fun formatTime(ms: Long): String {
+fun formatTime(ms: Long): String {
     val totalSeconds = ms / 1000
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
