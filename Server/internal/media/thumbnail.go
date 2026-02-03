@@ -204,7 +204,25 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 
 		log.Printf("[THUMBNAIL] Generating image thumbnail for %s -> %s", filePath, thumbnailPath)
 
-		file, err := os.Open(filePath)
+		// Handle HEIC/HEIF files (Go's image decoder doesn't support them)
+		// Convert to JPEG first using heif-convert (properly handles tiled/grid HEIC)
+		var imageFile string
+		if strings.ToLower(ext) == ".heic" || strings.ToLower(ext) == ".heif" {
+			// Create a temporary JPEG from HEIC using libheif
+			tempFile := filepath.Join(os.TempDir(), hash+"_converted.jpg")
+			cmd := exec.Command("heif-convert", filePath, tempFile)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("[THUMBNAIL] ERROR: heif-convert failed for %s: %v\nOutput: %s", filePath, err, string(output))
+				return "", fmt.Errorf("heif-convert failed: %w", err)
+			}
+			defer os.Remove(tempFile) // Clean up temp file
+			imageFile = tempFile
+		} else {
+			imageFile = filePath
+		}
+
+		file, err := os.Open(imageFile)
 		if err != nil {
 			return "", fmt.Errorf("failed to open image: %w", err)
 		}

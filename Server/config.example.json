@@ -32,6 +32,7 @@
   },
   "streaming": {
     "chunkSize": 1048576,
-    "enableHTTP2": true
+    "enableHTTP2": true,
+    "autoConvertImages": true
   }
 }

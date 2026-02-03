@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Streamer struct{}
@@ -18,7 +19,13 @@ func NewStreamer() *Streamer {
 }
 
 // ServeContent handles HTTP range requests for efficient streaming
-func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool, startTime string) error {
+func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool, startTime string, autoConvertImages bool) error {
+	// Check if file is HEIC/HEIF and auto-conversion is enabled
+	ext := strings.ToLower(filepath.Ext(filePath))
+	if autoConvertImages && (ext == ".heic" || ext == ".heif") {
+		return s.convertAndServeImage(w, r, filePath)
+	}
+
 	// Check if transcoding is needed
 	// 1. Explicitly requested via ?transcode=1
 	// 2. Auto-transcoding enabled (default) and file needs transcoding
@@ -154,6 +161,92 @@ func parseRange(s string, size int64) ([]httpRange, error) {
 	}
 
 	return ranges, nil
+}
+
+// convertAndServeImage converts HEIC/HEIF images to JPEG on-the-fly and streams them
+func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, filePath string) error {
+	fmt.Printf("Converting HEIC/HEIF image to JPEG on-the-fly: %s\n", filePath)
+
+	// Use heif-convert to properly handle tiled/grid HEIC images
+	// Create a temporary file since heif-convert doesn't support stdout
+	tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("heic_stream_%d.jpg", time.Now().UnixNano()))
+	defer os.Remove(tempFile)
+
+	cmd := exec.CommandContext(r.Context(), "heif-convert", filePath, tempFile)
+	
+	// Capture stderr for error messages
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	// Start conversion
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start heif-convert: %w", err)
+	}
+
+	// Monitor for client disconnect and kill process
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-r.Context().Done():
+			fmt.Printf("Client disconnected, killing conversion for: %s\n", filePath)
+			cmd.Process.Kill()
+		case <-done:
+			// Normal completion
+		}
+	}()
+
+	// Log stderr in background
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := stderr.Read(buf)
+			if n > 0 {
+				fmt.Printf("heif-convert: %s", string(buf[:n]))
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	// Wait for conversion to complete
+	cmdErr := cmd.Wait()
+	close(done)
+
+	if cmdErr != nil {
+		// If context was cancelled, this is expected
+		if r.Context().Err() != nil {
+			return nil
+		}
+		return fmt.Errorf("heif-convert failed: %w", cmdErr)
+	}
+
+	// Now stream the converted JPEG file
+	file, err := os.Open(tempFile)
+	if err != nil {
+		return fmt.Errorf("failed to open converted file: %w", err)
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat converted file: %w", err)
+	}
+
+	// Set headers for JPEG content
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+
+	// Stream the file
+	_, copyErr := io.Copy(w, file)
+
+	fmt.Printf("Image conversion finished for: %s\n", filePath)
+
+	return copyErr
 }
 
 // needsTranscoding checks if a file format needs transcoding for browser compatibility

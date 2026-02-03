@@ -142,7 +142,7 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, autoTranscode, startTime); err != nil {
+	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to stream media")
 		return
 	}

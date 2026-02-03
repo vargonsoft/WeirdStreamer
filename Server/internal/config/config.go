@@ -46,8 +46,9 @@ type AuthConfig struct {
 }
 
 type StreamingConfig struct {
-	ChunkSize   int  `json:"chunkSize"`
-	EnableHTTP2 bool `json:"enableHTTP2"`
+	ChunkSize         int  `json:"chunkSize"`
+	EnableHTTP2       bool `json:"enableHTTP2"`
+	AutoConvertImages bool `json:"autoConvertImages"`
 }
 
 var GlobalConfig *Config

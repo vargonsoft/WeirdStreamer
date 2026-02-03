@@ -195,6 +195,8 @@ func (s *Scanner) getMimeType(path string) string {
 		".gif":  "image/gif",
 		".bmp":  "image/bmp",
 		".webp": "image/webp",
+		".heif": "image/heif",
+		".heic": "image/heic",
 		".pdf":  "application/pdf",
 	}
 
