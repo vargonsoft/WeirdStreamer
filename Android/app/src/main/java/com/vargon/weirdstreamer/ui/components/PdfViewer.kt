@@ -234,9 +234,13 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
         }
     }
 
-    val handleBack = {
+    val zoomOut = {
         if (isZoomMode) {
-            resetZoom()
+            if (zoomLevel > 2f) {
+                zoomLevel /= 2f
+            } else {
+                resetZoom()
+            }
         } else if (isThumbnailView) {
             isThumbnailView = false
         } else if (isTwoPageView) {
@@ -246,7 +250,7 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
         }
     }
 
-    BackHandler { handleBack() }
+    BackHandler { zoomOut() }
 
     Box(
         modifier = Modifier
@@ -272,23 +276,8 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
                             }
                         }
                         Key.Backspace -> {
-                            if (isZoomMode) {
-                                if (zoomLevel > 2f) {
-                                    zoomLevel /= 2f
-                                } else {
-                                    resetZoom()
-                                }
-                                true
-                            } else if (isThumbnailView) {
-                                isThumbnailView = false
-                                true
-                            } else if (isTwoPageView) {
-                                isTwoPageView = false
-                                true
-                            } else {
-                                onBack(initialPath)
-                                true
-                            }
+                            zoomOut()
+                            true
                         }
                         Key.DirectionLeft -> {
                             if (isZoomMode) {
@@ -642,7 +631,7 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(32.dp)
-        ) {
+            ) {
             val isForward = loopFeedback?.first == true
             Box(
                 modifier = Modifier

@@ -142,16 +142,6 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
         }
     }
 
-    val handleBack = {
-        if (isZoomMode) {
-            resetZoom()
-        } else {
-            onBack(currentSmbPath)
-        }
-    }
-
-    BackHandler { handleBack() }
-
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -161,29 +151,58 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                 if (isZoomMode) Modifier.border(2.dp, Color.White) else Modifier
             )
     ) {
+        val w = constraints.maxWidth.toFloat()
+        val h = constraints.maxHeight.toFloat()
+
+        val imageRatio = imageIntrinsicSize?.let {
+            if (it.width > 0f && it.height > 0f) it.width / it.height else null
+        } ?: (w / h)
+        val containerRatio = w / h
+
+        val fittedWidth: Float
+        val fittedHeight: Float
+        if (imageRatio > containerRatio) {
+            fittedWidth = w
+            fittedHeight = w / imageRatio
+        } else {
+            fittedWidth = h * imageRatio
+            fittedHeight = h
+        }
+
+        val zoomOut = {
+            if (isZoomMode) {
+                if (zoomLevel > 1f) {
+                    val oldZoom = zoomLevel
+                    zoomLevel = if (zoomLevel <= 2f) 1f else zoomLevel / 2f
+
+                    val newScaledWidth = fittedWidth * zoomLevel
+                    val newScaledHeight = fittedHeight * zoomLevel
+                    val newMaxPX = (newScaledWidth - w).coerceAtLeast(0f) / 2f
+                    val newMaxPY = (newScaledHeight - h).coerceAtLeast(0f) / 2f
+
+                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(
+                        -newMaxPX,
+                        newMaxPX
+                    )
+                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(
+                        -newMaxPY,
+                        newMaxPY
+                    )
+                } else {
+                    isZoomMode = false
+                }
+            } else {
+                onBack(currentSmbPath)
+            }
+        }
+
+        BackHandler { zoomOut() }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown) {
-                        val w = constraints.maxWidth.toFloat()
-                        val h = constraints.maxHeight.toFloat()
-
-                        val imageRatio = imageIntrinsicSize?.let {
-                            if (it.width > 0f && it.height > 0f) it.width / it.height else null
-                        } ?: (w / h)
-                        val containerRatio = w / h
-
-                        val fittedWidth: Float
-                        val fittedHeight: Float
-                        if (imageRatio > containerRatio) {
-                            fittedWidth = w
-                            fittedHeight = w / imageRatio
-                        } else {
-                            fittedWidth = h * imageRatio
-                            fittedHeight = h
-                        }
-
                         when (event.key) {
                             Key.DirectionCenter, Key.Enter -> {
                                 if (!isZoomMode) {
@@ -199,40 +218,22 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                     val newMaxPY = (newScaledHeight - h).coerceAtLeast(0f) / 2f
 
                                     panX =
-                                        (panX * (zoomLevel / oldZoom)).coerceIn(-newMaxPX, newMaxPX)
+                                        (panX * (zoomLevel / oldZoom)).coerceIn(
+                                            -newMaxPX,
+                                            newMaxPX
+                                        )
                                     panY =
-                                        (panY * (zoomLevel / oldZoom)).coerceIn(-newMaxPY, newMaxPY)
+                                        (panY * (zoomLevel / oldZoom)).coerceIn(
+                                            -newMaxPY,
+                                            newMaxPY
+                                        )
                                 }
                                 true
                             }
 
                             Key.Backspace -> {
-                                if (isZoomMode) {
-                                    if (zoomLevel > 1f) {
-                                        val oldZoom = zoomLevel
-                                        zoomLevel = if (zoomLevel <= 2f) 1f else zoomLevel / 2f
-
-                                        val newScaledWidth = fittedWidth * zoomLevel
-                                        val newScaledHeight = fittedHeight * zoomLevel
-                                        val newMaxPX = (newScaledWidth - w).coerceAtLeast(0f) / 2f
-                                        val newMaxPY = (newScaledHeight - h).coerceAtLeast(0f) / 2f
-
-                                        panX = (panX * (zoomLevel / oldZoom)).coerceIn(
-                                            -newMaxPX,
-                                            newMaxPX
-                                        )
-                                        panY = (panY * (zoomLevel / oldZoom)).coerceIn(
-                                            -newMaxPY,
-                                            newMaxPY
-                                        )
-                                    } else {
-                                        isZoomMode = false
-                                    }
-                                    true
-                                } else {
-                                    onBack(currentSmbPath)
-                                    true
-                                }
+                                zoomOut()
+                                true
                             }
 
                             Key.DirectionLeft -> {

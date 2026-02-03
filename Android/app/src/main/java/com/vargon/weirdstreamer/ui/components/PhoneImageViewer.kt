@@ -79,12 +79,23 @@ fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (St
     val fileName = remember(currentPath) { viewModel.getDisplayName(currentPath) }
 
     var isZoomed by remember { mutableStateOf(false) }
+    var zoomLevel by remember { mutableFloatStateOf(1f) }
+    var resetZoomTrigger by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(pagerState.currentPage) {
         isZoomed = false
+        zoomLevel = 1f
     }
 
-    BackHandler { onBack(currentPath) }
+    val handleBack = {
+        if (zoomLevel > 1f) {
+            resetZoomTrigger++
+        } else {
+            onBack(currentPath)
+        }
+    }
+
+    BackHandler { handleBack() }
 
     Scaffold(
         topBar = {
@@ -92,7 +103,7 @@ fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (St
                 TopAppBar(
                     title = { Text(fileName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = {
-                        IconButton(onClick = { onBack(currentPath) }) {
+                        IconButton(onClick = { handleBack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     },
@@ -120,9 +131,11 @@ fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (St
             ZoomableImage(
                 viewModel = viewModel,
                 path = images[pageIndex],
-                onZoomChanged = { zoomed ->
+                resetTrigger = if (pageIndex == pagerState.currentPage) resetZoomTrigger else 0,
+                onZoomChanged = { zoomed, level ->
                     if (pageIndex == pagerState.currentPage) {
                         isZoomed = zoomed
+                        zoomLevel = level
                     }
                 }
             )
@@ -131,7 +144,12 @@ fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (St
 }
 
 @Composable
-fun ZoomableImage(viewModel: MediaViewModel, path: String, onZoomChanged: (Boolean) -> Unit) {
+fun ZoomableImage(
+    viewModel: MediaViewModel,
+    path: String,
+    resetTrigger: Int,
+    onZoomChanged: (Boolean, Float) -> Unit
+) {
     val context = LocalContext.current
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -160,6 +178,14 @@ fun ZoomableImage(viewModel: MediaViewModel, path: String, onZoomChanged: (Boole
         isLoading = false
     }
 
+    LaunchedEffect(resetTrigger) {
+        if (resetTrigger > 0) {
+            scale = 1f
+            offset = Offset.Zero
+            onZoomChanged(false, 1f)
+        }
+    }
+
     DisposableEffect(path) {
         onDispose { tempFile?.delete() }
     }
@@ -182,7 +208,7 @@ fun ZoomableImage(viewModel: MediaViewModel, path: String, onZoomChanged: (Boole
                             val newScale = (scale * zoomChange).coerceIn(1f, 5f)
                             if (newScale != scale) {
                                 scale = newScale
-                                onZoomChanged(scale > 1f)
+                                onZoomChanged(scale > 1f, scale)
                             }
                             
                             if (scale > 1f) {
