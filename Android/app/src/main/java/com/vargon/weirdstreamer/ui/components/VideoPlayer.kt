@@ -553,6 +553,45 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
+                        Key.MediaPlayPause -> {
+                            updateInteraction()
+                            if (isPlaying) exoPlayer.pause() else exoPlayer.play()
+                            true
+                        }
+                        Key.MediaPlay -> {
+                            updateInteraction()
+                            if (!isPlaying) exoPlayer.play()
+                            true
+                        }
+                        Key.MediaPause -> {
+                            updateInteraction()
+                            if (isPlaying) exoPlayer.pause()
+                            true
+                        }
+                        Key.MediaFastForward -> {
+                            performSkip(30, true)
+                            true
+                        }
+                        Key.MediaRewind -> {
+                            performSkip(-30, true)
+                            true
+                        }
+                        Key.MediaNext -> {
+                            val videos = viewModel.getVideosInCurrentFolder()
+                            val currentIndex = videos.indexOf(path)
+                            if (currentIndex != -1 && currentIndex < videos.size - 1) {
+                                viewModel.playVideo(videos[currentIndex + 1])
+                            }
+                            true
+                        }
+                        Key.MediaPrevious -> {
+                            val videos = viewModel.getVideosInCurrentFolder()
+                            val currentIndex = videos.indexOf(path)
+                            if (currentIndex > 0) {
+                                viewModel.playVideo(videos[currentIndex - 1])
+                            }
+                            true
+                        }
                         Key.DirectionUp -> {
                             if (showZoomToolbar && !isZoomMode) {
                                 // Hide toolbar and show playback controls
