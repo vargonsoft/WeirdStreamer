@@ -770,6 +770,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
                                 false
+                            } else if (!isPlaying) {
+                                // Frame backward
+                                exoPlayer.seekTo((exoPlayer.currentPosition - 40L).coerceAtLeast(0L))
+                                updateInteraction()
+                                true
                             } else if (showControls) {
                                 // Fast forward/rewind speed control
                                 updateInteraction()
@@ -848,6 +853,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
                                 false
+                            } else if (!isPlaying) {
+                                // Frame forward
+                                exoPlayer.seekTo(exoPlayer.currentPosition + 40L)
+                                updateInteraction()
+                                true
                             } else if (showControls) {
                                 // Fast forward speed control
                                 updateInteraction()
