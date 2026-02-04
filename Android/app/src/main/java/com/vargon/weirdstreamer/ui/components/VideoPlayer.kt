@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -66,6 +67,7 @@ import com.vargon.weirdstreamer.SubtitleInfo
 import com.vargon.weirdstreamer.WeirdStreamerApplication
 import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
+import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.delay
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -324,6 +326,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var duration by remember { mutableLongStateOf(0L) }
     var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) } // value to show, isForward
     var speedFeedback by remember { mutableStateOf<Float?>(null) }
+    var frameFeedback by remember { mutableStateOf<Pair<Boolean, Long>?>(null) } // isForward to time
 
     // --- Skip sequence state ---
     var skipIndex by remember { mutableIntStateOf(0) }
@@ -434,6 +437,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (speedFeedback != null) {
             delay(2000)
             speedFeedback = null
+        }
+    }
+
+    // Hide frame feedback
+    LaunchedEffect(frameFeedback) {
+        if (frameFeedback != null) {
+            delay(500)
+            frameFeedback = null
         }
     }
 
@@ -773,6 +784,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (!isPlaying) {
                                 // Frame backward
                                 exoPlayer.seekTo((exoPlayer.currentPosition - 40L).coerceAtLeast(0L))
+                                frameFeedback = false to System.currentTimeMillis()
                                 updateInteraction()
                                 true
                             } else if (showControls) {
@@ -856,6 +868,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (!isPlaying) {
                                 // Frame forward
                                 exoPlayer.seekTo(exoPlayer.currentPosition + 40L)
+                                frameFeedback = true to System.currentTimeMillis()
                                 updateInteraction()
                                 true
                             } else if (showControls) {
@@ -1085,6 +1098,26 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         style = androidx.tv.material3.MaterialTheme.typography.displayLarge,
                         color = Color.White.copy(alpha = 0.7f),
                         modifier = Modifier.padding(64.dp)
+                    )
+                }
+            }
+        }
+
+        // Frame Feedback Overlay
+        Box(modifier = Modifier.fillMaxSize()) {
+            val feedback = frameFeedback
+            AnimatedVisibility(
+                visible = feedback != null,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+                modifier = Modifier.align(Alignment.Center)
+            ) {
+                if (feedback != null) {
+                    Icon(
+                        painter = painterResource(id = if (feedback.first) R.drawable.ic_frame_forward else R.drawable.ic_frame_backward),
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(128.dp)
                     )
                 }
             }
@@ -1555,7 +1588,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 contentDescription = null,
                                 tint = Color.White,
                                 modifier = Modifier.size(20.dp)
-                            )
+                                )
                             Text(
                                 text = "OpenSubtitles.org / .com",
                                 color = Color.White,
