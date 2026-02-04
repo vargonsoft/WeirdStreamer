@@ -47,11 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.common.Tracks
-import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.*
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -327,6 +323,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var playbackPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) } // value to show, isForward
+    var speedFeedback by remember { mutableStateOf<Float?>(null) }
 
     // --- Skip sequence state ---
     var skipIndex by remember { mutableIntStateOf(0) }
@@ -337,6 +334,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var basePlaybackPositionBeforeSkip by remember { mutableLongStateOf(0L) }
 
     val skipIntervals = listOf(5, 15, 30, 60, 120, 300, 600, 1800) // seconds
+    val speedIntervals = listOf(1f, 2f, 4f, 6f, 16f, 32f, 64f)
+    var currentSpeedIndex by remember { mutableIntStateOf(0) } // 0 is 1f
 
     val focusRequester = remember { FocusRequester() }
 
@@ -427,6 +426,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (skipFeedback != null) {
             delay(2000)
             skipFeedback = null
+        }
+    }
+
+    // Hide speed feedback
+    LaunchedEffect(speedFeedback) {
+        if (speedFeedback != null) {
+            delay(2000)
+            speedFeedback = null
         }
     }
 
@@ -763,6 +770,20 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
                                 false
+                            } else if (showControls) {
+                                // Fast forward/rewind speed control
+                                updateInteraction()
+                                isSeekingSlider = true
+                                if (currentSpeedIndex > 0) {
+                                    currentSpeedIndex = (currentSpeedIndex - 1).coerceAtLeast(0)
+                                } else {
+                                    // At 1x, perform a normal skip backward
+                                    performSkip(-skipIntervals[0], true)
+                                }
+                                val speed = speedIntervals[currentSpeedIndex]
+                                exoPlayer.playbackParameters = PlaybackParameters(speed)
+                                speedFeedback = if (speed > 1f) speed else null
+                                true
                             } else {
                                 val now = System.currentTimeMillis()
                                 val direction = -1
@@ -827,6 +848,15 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
                                 false
+                            } else if (showControls) {
+                                // Fast forward speed control
+                                updateInteraction()
+                                isSeekingSlider = true
+                                currentSpeedIndex = (currentSpeedIndex + 1).coerceAtMost(speedIntervals.lastIndex)
+                                val speed = speedIntervals[currentSpeedIndex]
+                                exoPlayer.playbackParameters = PlaybackParameters(speed)
+                                speedFeedback = if (speed > 1f) speed else null
+                                true
                             } else {
                                 val now = System.currentTimeMillis()
                                 val direction = 1
@@ -907,7 +937,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         else -> false
                     }
-                } else false
+                }
+                false
             }
             .focusRequester(focusRequester)
             .focusable()
@@ -1024,6 +1055,26 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         style = androidx.tv.material3.MaterialTheme.typography.displayLarge,
                         color = Color.White.copy(alpha = 0.7f),
                         modifier = Modifier.padding(horizontal = 64.dp)
+                    )
+                }
+            }
+        }
+
+        // Speed Feedback Overlay
+        Box(modifier = Modifier.fillMaxSize()) {
+            val speed = speedFeedback
+            AnimatedVisibility(
+                visible = speed != null,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+                modifier = Modifier.align(Alignment.Center)
+            ) {
+                if (speed != null) {
+                    Text(
+                        text = "${speed}x",
+                        style = androidx.tv.material3.MaterialTheme.typography.displayLarge,
+                        color = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(64.dp)
                     )
                 }
             }
