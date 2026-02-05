@@ -156,6 +156,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     }
 
     var isPlaying by remember { mutableStateOf(true) }
+    var isPaused by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(true) }
     var showControls by remember { mutableStateOf(false) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -351,6 +352,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlayingChanged: Boolean) {
                 isPlaying = isPlayingChanged
+                if (isPlaying) {
+                    isPaused = false
+                }
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -573,7 +577,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     when (event.key) {
                         Key.MediaPlayPause -> {
                             updateInteraction()
-                            if (isPlaying) exoPlayer.pause() else exoPlayer.play()
+                            if (isPlaying) {
+                                exoPlayer.pause()
+                                isPaused = true
+                            } else {
+                                exoPlayer.play()
+                                isPaused = false
+                            }
                             true
                         }
                         Key.MediaPlay -> {
@@ -583,7 +593,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         }
                         Key.MediaPause -> {
                             updateInteraction()
-                            if (isPlaying) exoPlayer.pause()
+                            if (isPlaying) {
+                                exoPlayer.pause()
+                                isPaused = true
+                            }
                             true
                         }
                         Key.MediaFastForward -> {
@@ -758,8 +771,16 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 updateInteraction()
                                 true
                             } else {
-                                updateInteraction()
-                                if (isPlaying) exoPlayer.pause() else exoPlayer.play()
+                                if (showControls) {
+                                    updateInteraction()
+                                }
+                                if (isPlaying) {
+                                    exoPlayer.pause()
+                                    isPaused = true
+                                } else {
+                                    exoPlayer.play()
+                                    isPaused = false
+                                }
                                 true
                             }
                         }
@@ -781,7 +802,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
                                 false
-                            } else if (!isPlaying) {
+                            } else if (!isPlaying && isPaused) {
                                 // Frame backward
                                 exoPlayer.seekTo((exoPlayer.currentPosition - 40L).coerceAtLeast(0L))
                                 frameFeedback = false to System.currentTimeMillis()
@@ -865,7 +886,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
                                 false
-                            } else if (!isPlaying) {
+                            } else if (!isPlaying && isPaused) {
                                 // Frame forward
                                 exoPlayer.seekTo(exoPlayer.currentPosition + 40L)
                                 frameFeedback = true to System.currentTimeMillis()
