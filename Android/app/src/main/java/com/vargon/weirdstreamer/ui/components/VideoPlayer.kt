@@ -1165,22 +1165,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Start
                     ) {
-                        androidx.tv.material3.Surface(
-                            onClick = {
-                                enableTranscode = !enableTranscode
-                                updateInteraction()
-                            },
-                            shape = ClickableSurfaceDefaults.shape(
-                                shape = RoundedCornerShape(8.dp)
-                            ),
-                            colors = ClickableSurfaceDefaults.colors(
-                                containerColor = if (isFocusedOnTranscode)
-                                    Color.White.copy(alpha = 0.2f)
-                                else
-                                    Color.Transparent,
-                                focusedContainerColor = Color.White.copy(alpha = 0.3f)
-                            ),
-                            modifier = Modifier.padding(bottom = 8.dp)
+                        Surface(
+                            modifier = Modifier.padding(bottom = 8.dp),
+                            color = if (isFocusedOnTranscode) {
+                                Color.White.copy(alpha = 0.2f)
+                            } else {
+                                Color.Transparent
+                            }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
