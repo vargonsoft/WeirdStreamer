@@ -40,11 +40,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -760,11 +757,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 enableTranscode = !enableTranscode
                                 updateInteraction()
                                 true
-                            } else if (isSeekingSlider) {
-                                // If seeking slider is focused, toggle play/pause, NOT transcode
-                                updateInteraction()
-                                if (isPlaying) exoPlayer.pause() else exoPlayer.play()
-                                true
                             } else {
                                 updateInteraction()
                                 if (isPlaying) exoPlayer.pause() else exoPlayer.play()
@@ -1121,26 +1113,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 modifier = Modifier.align(Alignment.Center)
             ) {
                 if (feedback != null) {
-                    val isForward = feedback.first
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isForward) {
-                            Box(modifier = Modifier.width(12.dp).height(96.dp).background(Color.White.copy(alpha = 0.7f), RoundedCornerShape(2.dp)))
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.7f),
-                                modifier = Modifier.size(128.dp)
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.7f),
-                                modifier = Modifier.size(128.dp).graphicsLayer(rotationZ = 180f)
-                            )
-                            Box(modifier = Modifier.width(12.dp).height(96.dp).background(Color.White.copy(alpha = 0.7f), RoundedCornerShape(2.dp)))
-                        }
-                    }
+                    Icon(
+                        painter = painterResource(id = if (feedback.first) R.drawable.ic_frame_forward else R.drawable.ic_frame_backward),
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(128.dp)
+                    )
                 }
             }
         }
