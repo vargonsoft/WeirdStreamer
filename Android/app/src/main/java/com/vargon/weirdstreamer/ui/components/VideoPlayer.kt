@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.HorizontalDivider
@@ -44,6 +45,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -174,10 +176,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     val aspectRatioValues = listOf(null, 16f / 9f, 21f / 9f, 4f / 3f, 5f / 4f, 1f)
     var currentAspectRatioIndex by remember { mutableIntStateOf(0) }
     var currentAspectRatio by remember { mutableStateOf<Float?>(null) }
-    var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Zoom, 1 = Zoom+, 2 = Zoom-, 3 = AspectRatio, 4 = Subtitles
+    var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Zoom, 1 = Speed, 2 = Zoom+, 3 = Zoom-, 4 = AspectRatio, 5 = Subtitles
     var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) } // Track actual video aspect ratio
     var videoPaddingPx by remember { mutableIntStateOf(0) } // Size adjustment in pixels (1px in each direction)
     var showSubtitleDialog by remember { mutableStateOf(false) }
+    var showSpeedDialog by remember { mutableStateOf(false) }
     var availableSubtitles by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedSubtitleIndex by remember { mutableIntStateOf(-1) } // -1 = no subtitles
 
@@ -338,8 +341,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var basePlaybackPositionBeforeSkip by remember { mutableLongStateOf(0L) }
 
     val skipIntervals = listOf(5, 15, 30, 60, 120, 300, 600, 1800) // seconds
-    val speedIntervals = listOf(1f, 2f, 4f, 6f, 16f, 32f, 64f)
-    var currentSpeedIndex by remember { mutableIntStateOf(0) } // 0 is 1f
+    val speedIntervals = listOf(0.1f, 0.25f, 0.5f, 1f, 2f, 4f, 6f, 8f, 10f, 12f, 16f, 32f, 64f)
+    var currentSpeedIndex by remember { mutableIntStateOf(speedIntervals.indexOf(1f)) } // Start at 1x
 
     val focusRequester = remember { FocusRequester() }
 
@@ -724,18 +727,23 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     }
 
                                     1 -> {
+                                        // Speed button pressed
+                                        showSpeedDialog = true
+                                    }
+
+                                    2 -> {
                                         // Zoom+ button pressed
                                         videoPaddingPx += 1
                                     }
 
-                                    2 -> {
+                                    3 -> {
                                         // Zoom- button pressed
                                         if (videoPaddingPx > 0) {
                                             videoPaddingPx -= 1
                                         }
                                     }
 
-                                    3 -> {
+                                    4 -> {
                                         // Aspect ratio button pressed, cycle to next
                                         currentAspectRatioIndex =
                                             (currentAspectRatioIndex + 1) % aspectRatios.size
@@ -743,7 +751,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                             aspectRatioValues[currentAspectRatioIndex]
                                     }
 
-                                    4 -> {
+                                    5 -> {
                                         // Subtitles button pressed, show subtitle dialog
                                         showSubtitleDialog = true
                                     }
@@ -787,7 +795,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.DirectionLeft -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Navigate left in toolbar (5 buttons: 0-4)
+                                // Navigate left in toolbar (6 buttons: 0-5)
                                 toolbarFocusedButton = (toolbarFocusedButton - 1).coerceAtLeast(0)
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
@@ -809,18 +817,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 updateInteraction()
                                 true
                             } else if (showControls) {
-                                // Fast forward/rewind speed control
+                                // Skipping -30s
                                 updateInteraction()
-                                isSeekingSlider = true
-                                if (currentSpeedIndex > 0) {
-                                    currentSpeedIndex = (currentSpeedIndex - 1).coerceAtLeast(0)
-                                } else {
-                                    // At 1x, perform a normal skip backward
-                                    performSkip(-skipIntervals[0], true)
-                                }
-                                val speed = speedIntervals[currentSpeedIndex]
-                                exoPlayer.playbackParameters = PlaybackParameters(speed)
-                                speedFeedback = if (speed > 1f) speed else null
+                                performSkip(-30, true)
                                 true
                             } else {
                                 val now = System.currentTimeMillis()
@@ -871,8 +870,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.DirectionRight -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Navigate right in toolbar (5 buttons: 0-4)
-                                toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(4)
+                                // Navigate right in toolbar (6 buttons: 0-5)
+                                toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(5)
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
                                 // Pan right in zoom mode (only when actually zoomed)
@@ -893,13 +892,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 updateInteraction()
                                 true
                             } else if (showControls) {
-                                // Fast forward speed control
+                                // Skipping +30s
                                 updateInteraction()
-                                isSeekingSlider = true
-                                currentSpeedIndex = (currentSpeedIndex + 1).coerceAtMost(speedIntervals.lastIndex)
-                                val speed = speedIntervals[currentSpeedIndex]
-                                exoPlayer.playbackParameters = PlaybackParameters(speed)
-                                speedFeedback = if (speed > 1f) speed else null
+                                performSkip(30, true)
                                 true
                             } else {
                                 val now = System.currentTimeMillis()
@@ -1334,9 +1329,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                 }
 
-                Spacer(modifier = Modifier.width(48.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-                // Zoom+ Button
+                // Speed Button
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -1350,8 +1345,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        Icons.Default.ZoomIn,
-                        contentDescription = "Fill+",
+                        Icons.Default.Speed,
+                        contentDescription = "Speed",
                         tint = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
@@ -1359,7 +1354,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "Fill+",
+                        text = "Speed",
                         style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
                         color = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(
                             alpha = 0.7f
@@ -1367,9 +1362,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                 }
 
-                Spacer(modifier = Modifier.width(48.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-                // Zoom- Button
+                // Zoom+ Button
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -1383,8 +1378,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        Icons.Default.ZoomOut,
-                        contentDescription = "Fill-",
+                        Icons.Default.ZoomIn,
+                        contentDescription = "Fill+",
                         tint = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
@@ -1392,7 +1387,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "Fill-",
+                        text = "Fill+",
                         style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
                         color = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(
                             alpha = 0.7f
@@ -1400,9 +1395,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                 }
 
-                Spacer(modifier = Modifier.width(48.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-                // Aspect Ratio Button
+                // Zoom- Button
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -1416,8 +1411,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        Icons.Default.AspectRatio,
-                        contentDescription = "Aspect Ratio",
+                        Icons.Default.ZoomOut,
+                        contentDescription = "Fill-",
                         tint = if (toolbarFocusedButton == 3) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
@@ -1425,7 +1420,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = aspectRatios[currentAspectRatioIndex],
+                        text = "Fill-",
                         style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
                         color = if (toolbarFocusedButton == 3) Color.White else Color.White.copy(
                             alpha = 0.7f
@@ -1433,9 +1428,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                 }
 
-                Spacer(modifier = Modifier.width(48.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-                // Subtitles Button
+                // Aspect Ratio Button
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -1449,8 +1444,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        Icons.Default.Subtitles,
-                        contentDescription = "Subtitles",
+                        Icons.Default.AspectRatio,
+                        contentDescription = "Aspect Ratio",
                         tint = if (toolbarFocusedButton == 4) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
@@ -1458,12 +1453,193 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "Subtitles",
+                        text = aspectRatios[currentAspectRatioIndex],
                         style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
                         color = if (toolbarFocusedButton == 4) Color.White else Color.White.copy(
                             alpha = 0.7f
                         )
                     )
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                // Subtitles Button
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (toolbarFocusedButton == 5) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
+                                alpha = 0.3f
+                            )
+                        )
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Default.Subtitles,
+                        contentDescription = "Subtitles",
+                        tint = if (toolbarFocusedButton == 5) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        ),
+                        modifier = Modifier.size(if (toolbarFocusedButton == 5) 56.dp else 48.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Subtitles",
+                        style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                        color = if (toolbarFocusedButton == 5) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        )
+                    )
+                }
+            }
+        }
+
+        // Speed Dialog
+        if (showSpeedDialog) {
+            var pendingSpeedIndex by remember { mutableIntStateOf(currentSpeedIndex) }
+            Dialog(
+                onDismissRequest = {
+                    showSpeedDialog = false
+                    pendingSpeedIndex = currentSpeedIndex // restore
+                },
+                properties = DialogProperties(
+                    dismissOnBackPress = true,
+                    dismissOnClickOutside = false
+                )
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .width(300.dp)
+                        .background(Color.Black.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
+                        .border(2.dp, Color.White, RoundedCornerShape(16.dp))
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown) {
+                                when (event.key) {
+                                    Key.DirectionUp -> {
+                                        if (pendingSpeedIndex > 0) {
+                                            pendingSpeedIndex--
+                                        }
+                                        true
+                                    }
+                                    Key.DirectionDown -> {
+                                        if (pendingSpeedIndex < speedIntervals.size - 1) {
+                                            pendingSpeedIndex++
+                                        }
+                                        true
+                                    }
+                                    Key.DirectionCenter, Key.Enter -> {
+                                        val playbackSpeed = speedIntervals[pendingSpeedIndex]
+                                        exoPlayer.playbackParameters = PlaybackParameters(playbackSpeed)
+                                        speedFeedback = if (playbackSpeed != 1f) playbackSpeed else null
+                                        currentSpeedIndex = pendingSpeedIndex
+                                        showSpeedDialog = false
+                                        true
+                                    }
+                                    Key.Escape, Key.Back, Key.Backspace -> {
+                                        showSpeedDialog = false
+                                        pendingSpeedIndex = currentSpeedIndex // restore
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            } else {
+                                false
+                            }
+                        },
+                    color = Color.Black.copy(alpha = 0.9f)
+                ) {
+                    val density = LocalDensity.current
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text = "Playback Speed",
+                            style = androidx.tv.material3.MaterialTheme.typography.headlineSmall,
+                            color = Color.White
+                        )
+
+                        val scrollState = rememberScrollState()
+                        val visibleItems = 6
+                        val itemHeightPx = density.run { 48.dp.toPx() }
+                        val itemSpacingPx = density.run { 8.dp.toPx() }
+                        val totalItemHeight = itemHeightPx + itemSpacingPx
+                        val centerIndex = visibleItems / 2
+                        val maxScroll = ((speedIntervals.size - 1) * totalItemHeight) - ((visibleItems - 1) * totalItemHeight)
+                        LaunchedEffect(pendingSpeedIndex, itemHeightPx, itemSpacingPx) {
+                            val scrollOffset = ((pendingSpeedIndex - centerIndex) * totalItemHeight).coerceIn(0f, maxScroll)
+                            scrollState.animateScrollTo(scrollOffset.toInt())
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = (visibleItems * 48 + (visibleItems - 1) * 8).dp)
+                                .verticalScroll(scrollState),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            speedIntervals.forEachIndexed { index, speed ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (pendingSpeedIndex == index) Color.White.copy(alpha = 0.2f)
+                                            else Color.Gray.copy(alpha = 0.2f)
+                                        )
+                                        .clickable {
+                                            pendingSpeedIndex = index
+                                        }
+                                        .height(48.dp)
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (pendingSpeedIndex == index) {
+                                        Icon(
+                                            Icons.Default.PlayArrow,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    Text(
+                                        text = "${speed}x",
+                                        color = Color.White,
+                                        style = androidx.tv.material3.MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Button(
+                                onClick = {
+                                    val playbackSpeed = speedIntervals[pendingSpeedIndex]
+                                    exoPlayer.playbackParameters = PlaybackParameters(playbackSpeed)
+                                    speedFeedback = if (playbackSpeed != 1f) playbackSpeed else null
+                                    currentSpeedIndex = pendingSpeedIndex
+                                    showSpeedDialog = false
+                                }
+                            ) {
+                                Text("OK")
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    showSpeedDialog = false
+                                    pendingSpeedIndex = currentSpeedIndex // restore
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    }
                 }
             }
         }
