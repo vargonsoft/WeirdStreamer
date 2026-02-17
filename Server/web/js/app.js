@@ -495,6 +495,7 @@ function handleMediaClick(item) {
 
 // Check if video needs transcoding (will be converted to MP4 by server)
 function needsTranscoding(filename) {
+    return false; // Disable transcoding for now to let browser handle it natively if possible
     const ext = filename.toLowerCase().split('.').pop();
     const incompatibleFormats = ['3gp', 'avi', 'wmv', 'asf', 'flv', 'mkv'];
     return incompatibleFormats.includes(ext);
