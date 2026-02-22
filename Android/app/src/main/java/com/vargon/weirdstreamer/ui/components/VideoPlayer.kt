@@ -1532,7 +1532,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     Key.DirectionCenter, Key.Enter -> {
                                         val playbackSpeed = speedIntervals[pendingSpeedIndex]
                                         exoPlayer.playbackParameters = PlaybackParameters(playbackSpeed)
-                                        speedFeedback = if (playbackSpeed != 1f) playbackSpeed else null
+                                        speedFeedback = playbackSpeed
                                         currentSpeedIndex = pendingSpeedIndex
                                         showSpeedDialog = false
                                         true
