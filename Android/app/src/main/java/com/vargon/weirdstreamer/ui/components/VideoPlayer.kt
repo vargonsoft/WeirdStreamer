@@ -1,6 +1,7 @@
 package com.vargon.weirdstreamer.ui.components
 
 import android.util.Log
+import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
@@ -16,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
@@ -170,13 +172,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var panY by remember { mutableFloatStateOf(0f) }
     var isZoomMode by remember { mutableStateOf(false) }
     var showZoomToolbar by remember { mutableStateOf(false) }
+    var rotation by remember { mutableFloatStateOf(0f) }
 
     // Aspect ratio cycling
     val aspectRatios = listOf("Original", "16:9", "21:9", "4:3", "5:4", "1:1")
     val aspectRatioValues = listOf(null, 16f / 9f, 21f / 9f, 4f / 3f, 5f / 4f, 1f)
     var currentAspectRatioIndex by remember { mutableIntStateOf(0) }
     var currentAspectRatio by remember { mutableStateOf<Float?>(null) }
-    var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Zoom, 1 = Speed, 2 = Zoom+, 3 = Zoom-, 4 = AspectRatio, 5 = Subtitles
+    var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Zoom, 1 = Speed, 2 = Zoom+, 3 = Zoom-, 4 = AspectRatio, 5 = Subtitles, 6 = Rotate
     var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) } // Track actual video aspect ratio
     var videoPaddingPx by remember { mutableIntStateOf(0) } // Size adjustment in pixels (1px in each direction)
     var showSubtitleDialog by remember { mutableStateOf(false) }
@@ -599,6 +602,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             if (isPlaying) {
                                 exoPlayer.pause()
                                 isPaused = true
+                            } else {
+                                exoPlayer.play()
+                                isPaused = false
                             }
                             true
                         }
@@ -755,6 +761,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                         // Subtitles button pressed, show subtitle dialog
                                         showSubtitleDialog = true
                                     }
+
+                                    6 -> {
+                                        // Rotate button pressed
+                                        rotation = (rotation + 90f) % 360f
+                                    }
                                 }
                                 true
                             } else if (isZoomMode) {
@@ -795,7 +806,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.DirectionLeft -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Navigate left in toolbar (6 buttons: 0-5)
+                                // Navigate left in toolbar (7 buttons: 0-6)
                                 toolbarFocusedButton = (toolbarFocusedButton - 1).coerceAtLeast(0)
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
@@ -870,8 +881,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.DirectionRight -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Navigate right in toolbar (6 buttons: 0-5)
-                                toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(5)
+                                // Navigate right in toolbar (7 buttons: 0-6)
+                                toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(6)
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
                                 // Pan right in zoom mode (only when actually zoomed)
@@ -999,11 +1010,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             ) {
                 AndroidView(
                     factory = { ctx ->
-                        PlayerView(ctx).apply {
+                        // Inflate layout with PlayerView configured to use TextureView
+                        val view = LayoutInflater.from(ctx).inflate(R.layout.texture_video_view, null) as PlayerView
+                        view.apply {
                             player = exoPlayer
                             useController = false
-                            // Use FIT mode - it will fit video into container while maintaining video's aspect ratio
-                            // We'll then stretch it with transforms to fill the constrained box
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             layoutParams = FrameLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1017,24 +1028,43 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     },
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer(
-                            // Size adjustment: videoPaddingPx increases scale (makes video larger)
-                            // Each increment adds 0.5% size (can adjust this multiplier as needed)
-                            scaleX = (1f + (videoPaddingPx * 0.005f)) * zoomLevel * (if (currentAspectRatio != null && currentAspectRatio!! > videoAspectRatio) {
-                                // Selected ratio is wider than video - stretch horizontally
-                                (currentAspectRatio!! / videoAspectRatio)
+                        .graphicsLayer {
+                            this.rotationZ = rotation
+                            
+                            val isRotated = (rotation / 90f).toInt() % 2 != 0
+                            
+                            // 1. Handle base scaling for rotation to prevent squishing and overflow
+                            val rotationScale = if (isRotated && size.width != 0f && size.height != 0f) {
+                                minOf(size.width / size.height, size.height / size.width)
                             } else {
                                 1f
-                            }),
-                            scaleY = (1f + (videoPaddingPx * 0.005f)) * zoomLevel * (if (currentAspectRatio != null && currentAspectRatio!! < videoAspectRatio) {
-                                // Selected ratio is taller than video - stretch vertically
-                                (videoAspectRatio / currentAspectRatio!!)
+                            }
+                            
+                            // 2. Handle aspect ratio stretching
+                            val stretchScaleX: Float
+                            val stretchScaleY: Float
+                            if (currentAspectRatio != null) {
+                                if (currentAspectRatio!! > videoAspectRatio) {
+                                    stretchScaleX = currentAspectRatio!! / videoAspectRatio
+                                    stretchScaleY = 1f
+                                } else {
+                                    stretchScaleX = 1f
+                                    stretchScaleY = videoAspectRatio / currentAspectRatio!!
+                                }
                             } else {
-                                1f
-                            }),
-                            translationX = panX,
-                            translationY = panY
-                        )
+                                stretchScaleX = 1f
+                                stretchScaleY = 1f
+                            }
+                            
+                            // 3. Combine all scales
+                            // Base zoom + manual padding + rotation scale + stretch
+                            val commonScale = (1f + (videoPaddingPx * 0.005f)) * zoomLevel * rotationScale
+                            this.scaleX = commonScale * stretchScaleX
+                            this.scaleY = commonScale * stretchScaleY
+
+                            this.translationX = panX
+                            this.translationY = panY
+                        }
                 )
             }
         }
@@ -1294,22 +1324,23 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(32.dp),
+                    .padding(16.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Zoom Button
-                Row(
+                Column(
                     modifier = Modifier
+                        .width(100.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(
                             if (toolbarFocusedButton == 0) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
                                 alpha = 0.3f
                             )
                         )
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         Icons.Default.Api,
@@ -1317,32 +1348,33 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         tint = if (toolbarFocusedButton == 0) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
-                        modifier = Modifier.size(if (toolbarFocusedButton == 0) 56.dp else 48.dp)
+                        modifier = Modifier.size(if (toolbarFocusedButton == 0) 48.dp else 40.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Zoom",
-                        style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                        style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 0) Color.White else Color.White.copy(
                             alpha = 0.7f
                         )
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
                 // Speed Button
-                Row(
+                Column(
                     modifier = Modifier
+                        .width(100.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(
                             if (toolbarFocusedButton == 1) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
                                 alpha = 0.3f
                             )
                         )
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         Icons.Default.Speed,
@@ -1350,32 +1382,33 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         tint = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
-                        modifier = Modifier.size(if (toolbarFocusedButton == 1) 56.dp else 48.dp)
+                        modifier = Modifier.size(if (toolbarFocusedButton == 1) 48.dp else 40.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Speed",
-                        style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                        style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(
                             alpha = 0.7f
                         )
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
                 // Zoom+ Button
-                Row(
+                Column(
                     modifier = Modifier
+                        .width(100.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(
                             if (toolbarFocusedButton == 2) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
                                 alpha = 0.3f
                             )
                         )
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         Icons.Default.ZoomIn,
@@ -1383,32 +1416,33 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         tint = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
-                        modifier = Modifier.size(if (toolbarFocusedButton == 2) 56.dp else 48.dp)
+                        modifier = Modifier.size(if (toolbarFocusedButton == 2) 48.dp else 40.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Fill+",
-                        style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                        style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(
                             alpha = 0.7f
                         )
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
                 // Zoom- Button
-                Row(
+                Column(
                     modifier = Modifier
+                        .width(100.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(
                             if (toolbarFocusedButton == 3) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
                                 alpha = 0.3f
                             )
                         )
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         Icons.Default.ZoomOut,
@@ -1416,32 +1450,33 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         tint = if (toolbarFocusedButton == 3) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
-                        modifier = Modifier.size(if (toolbarFocusedButton == 3) 56.dp else 48.dp)
+                        modifier = Modifier.size(if (toolbarFocusedButton == 3) 48.dp else 40.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Fill-",
-                        style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                        style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 3) Color.White else Color.White.copy(
                             alpha = 0.7f
                         )
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
                 // Aspect Ratio Button
-                Row(
+                Column(
                     modifier = Modifier
+                        .width(100.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(
                             if (toolbarFocusedButton == 4) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
                                 alpha = 0.3f
                             )
                         )
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         Icons.Default.AspectRatio,
@@ -1449,32 +1484,33 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         tint = if (toolbarFocusedButton == 4) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
-                        modifier = Modifier.size(if (toolbarFocusedButton == 4) 56.dp else 48.dp)
+                        modifier = Modifier.size(if (toolbarFocusedButton == 4) 48.dp else 40.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = aspectRatios[currentAspectRatioIndex],
-                        style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                        style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 4) Color.White else Color.White.copy(
                             alpha = 0.7f
                         )
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
                 // Subtitles Button
-                Row(
+                Column(
                     modifier = Modifier
+                        .width(100.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(
                             if (toolbarFocusedButton == 5) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
                                 alpha = 0.3f
                             )
                         )
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         Icons.Default.Subtitles,
@@ -1482,13 +1518,47 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         tint = if (toolbarFocusedButton == 5) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
-                        modifier = Modifier.size(if (toolbarFocusedButton == 5) 56.dp else 48.dp)
+                        modifier = Modifier.size(if (toolbarFocusedButton == 5) 48.dp else 40.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Subtitles",
-                        style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
+                        style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 5) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        )
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Rotate Button
+                Column(
+                    modifier = Modifier
+                        .width(100.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (toolbarFocusedButton == 6) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
+                                alpha = 0.3f
+                            )
+                        )
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.RotateRight,
+                        contentDescription = "Rotate",
+                        tint = if (toolbarFocusedButton == 6) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        ),
+                        modifier = Modifier.size(if (toolbarFocusedButton == 6) 48.dp else 40.dp)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Rotate",
+                        style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
+                        color = if (toolbarFocusedButton == 6) Color.White else Color.White.copy(
                             alpha = 0.7f
                         )
                     )
