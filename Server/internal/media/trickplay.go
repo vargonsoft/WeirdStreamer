@@ -24,8 +24,7 @@ func NewTrickplayGenerator(db *database.DB) *TrickplayGenerator {
 }
 
 func (tg *TrickplayGenerator) Generate(videoPath string) error {
-	fmt.Printf("Generating trickplay frames for %s
-", videoPath)
+	fmt.Printf("Generating trickplay frames for %s\n", videoPath)
 
 	duration, err := tg.getVideoDuration(videoPath)
 	if err != nil {
@@ -46,27 +45,23 @@ func (tg *TrickplayGenerator) Generate(videoPath string) error {
 
 	// Generate first frame
 	if err := tg.generateFrame(videoPath, trickplayVideoDir, 0); err != nil {
-		fmt.Printf("Warning: failed to generate first frame: %v
-", err)
+		fmt.Printf("Warning: failed to generate first frame: %v\n", err)
 	}
 
 	// Generate frames every 10 seconds
 	for i := 10; i < int(duration); i += 10 {
 		if err := tg.generateFrame(videoPath, trickplayVideoDir, i); err != nil {
 			// Log error and continue
-			fmt.Printf("Warning: failed to generate frame at %ds: %v
-", i, err)
+			fmt.Printf("Warning: failed to generate frame at %ds: %v\n", i, err)
 		}
 	}
 
 	// Generate last frame
 	if err := tg.generateFrame(videoPath, trickplayVideoDir, int(duration)); err != nil {
-		fmt.Printf("Warning: failed to generate last frame: %v
-", err)
+		fmt.Printf("Warning: failed to generate last frame: %v\n", err)
 	}
 
-	fmt.Printf("Finished generating trickplay frames for %s
-", videoPath)
+	fmt.Printf("Finished generating trickplay frames for %s\n", videoPath)
 
 	return nil
 }
@@ -143,3 +138,4 @@ func (tg *TrickplayGenerator) generateFrame(videoPath, outputDir string, timeInS
 
 	return nil
 }
+// Force rewrite to fix newline issues
