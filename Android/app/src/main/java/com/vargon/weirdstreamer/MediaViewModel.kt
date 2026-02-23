@@ -18,6 +18,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
 import com.vargon.weirdstreamer.api.ThumbnailUpdateListener
+import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.vargon.weirdstreamer.repository.FileItem
 import com.vargon.weirdstreamer.repository.MediaRepository
 import com.vargon.weirdstreamer.repository.MediaSource
@@ -376,6 +377,17 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getVideosInCurrentFolder(): List<String> {
         return fileList.filter { !it.isDirectory && isVideo(it.path) }.map { it.path }
+    }
+
+    fun getFileItemForPath(path: String): FileItem? {
+        return fileList.find { it.path == path }
+    }
+
+    suspend fun fetchTrickplayInfo(item: FileItem): TrickplayInfo? {
+        val repo = currentRepository ?: return null
+        if (!repo.supportsTrickplay() || item.id == null) return null
+        
+        return repo.getTrickplayInfo(item.id).getOrNull()
     }
 
     suspend fun downloadToTempFile(path: String, context: Context, suffix: String = ".pdf"): File? = withContext(Dispatchers.IO) {

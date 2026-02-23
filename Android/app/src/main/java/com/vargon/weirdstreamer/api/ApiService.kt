@@ -4,11 +4,13 @@ import com.vargon.weirdstreamer.api.models.Directory
 import com.vargon.weirdstreamer.api.models.LoginRequest
 import com.vargon.weirdstreamer.api.models.LoginResponse
 import com.vargon.weirdstreamer.api.models.MediaItem
+import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Streaming
 
@@ -35,4 +37,7 @@ interface ApiService {
     
     @POST("/api/media/regenerate-thumbnails")
     suspend fun regenerateThumbnails(@Query("path") path: String): Response<Map<String, String>>
+
+    @GET("/api/media/trickplay/{id}")
+    suspend fun getTrickplayInfo(@Path("id") id: Long): Response<TrickplayInfo>
 }

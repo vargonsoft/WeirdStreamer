@@ -5,6 +5,7 @@ import com.vargon.weirdstreamer.CredentialManager
 import com.vargon.weirdstreamer.api.ApiClient
 import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.api.models.LoginRequest
+import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.InputStream
@@ -55,7 +56,8 @@ class ServerRepository(
                                 duration = mediaItem.duration,
                                 width = mediaItem.width,
                                 height = mediaItem.height,
-                                originalPath = mediaItem.path
+                                originalPath = mediaItem.path,
+                                id = mediaItem.id
                             )
                         )
                     }
@@ -86,10 +88,6 @@ class ServerRepository(
                 if (mediaItem != null) {
                     val streamingPath = getStreamUrl(mediaItem.path)
                     
-                    // Maintain thumbnail cache versioning
-                    val parentPath = actualPath.substringBeforeLast("/", "")
-                    val cacheVersion = credentialManager.getThumbnailCacheVersion(serverUrl, parentPath)
-                    
                     Result.success(
                         FileItem(
                             name = mediaItem.name,
@@ -97,16 +95,12 @@ class ServerRepository(
                             isDirectory = false,
                             size = mediaItem.size,
                             mimeType = mediaItem.mimeType,
-                            // Preserve the cache-buster versioning for thumbnails
                             thumbnailUrl = item.thumbnailUrl,
-//                            thumbnailUrl = mediaItem.thumbnailUrl?.let {
-//                                val baseUrl = if (it.startsWith("http")) it else "$serverUrl$it"
-//                                if (cacheVersion > 0) "$baseUrl?v=$cacheVersion" else baseUrl
-//                            },
                             duration = mediaItem.duration,
                             width = mediaItem.width,
                             height = mediaItem.height,
-                            originalPath = mediaItem.path
+                            originalPath = mediaItem.path,
+                            id = mediaItem.id
                         )
                     )
                 } else Result.failure(Exception("Empty body"))
@@ -174,6 +168,26 @@ class ServerRepository(
                 Result.success(true)
             } else Result.failure(Exception("Failed"))
         } catch (e: Exception) { Result.failure(e) }
+    }
+
+    override fun supportsTrickplay(): Boolean = true
+    override suspend fun getTrickplayInfo(id: Long): Result<TrickplayInfo> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.getTrickplayInfo(id)
+            if (response.isSuccessful && response.body() != null) {
+                val info = response.body()!!
+                // Prepend server URL to frame URLs if they are relative
+                val absoluteFrames = info.frames.map { frame ->
+                    if (frame.url.startsWith("http")) frame
+                    else frame.copy(url = "$serverUrl${if (frame.url.startsWith("/")) "" else "/"}${frame.url}")
+                }
+                Result.success(TrickplayInfo(absoluteFrames))
+            } else {
+                Result.failure(Exception("Trickplay not found"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     override fun isAuthRequired(exception: Throwable): Boolean = exception.message?.contains("401") == true

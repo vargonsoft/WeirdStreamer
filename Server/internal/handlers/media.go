@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -89,6 +91,78 @@ func (h *MediaHandler) GetMediaInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, item)
+}
+
+// GetTrickplayInfo godoc
+// @Summary Get trickplay frames
+// @Description Get URLs for trickplay frames for a given media ID
+// @Tags media
+// @Produce json
+// @Param id path int true "Media ID"
+// @Success 200 {object} models.TrickplayInfo
+// @Failure 404 {object} models.ErrorResponse
+// @Security BearerAuth
+// @Router /api/media/trickplay/{id} [get]
+func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid media ID")
+		return
+	}
+
+	// Get media item from database
+	item, err := h.db.GetMediaItemByID(id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Media not found")
+		return
+	}
+
+	trickplayDir := config.GlobalConfig.Media.TrickplayPath
+	if trickplayDir == "" {
+		respondError(w, http.StatusInternalServerError, "Trickplay path not configured")
+		return
+	}
+
+	hash := media.GenerateThumbnailHash(item.Path)
+	trickplayVideoDir := filepath.Join(trickplayDir, hash)
+
+	files, err := os.ReadDir(trickplayVideoDir)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Trickplay frames not found")
+		return
+	}
+
+	var frames []models.TrickplayFrame
+	for _, file := range files {
+		if !file.IsDir() {
+			name := file.Name()
+			if strings.HasPrefix(name, "frame-") && strings.HasSuffix(name, ".jpg") {
+				timeStr := strings.TrimPrefix(strings.TrimSuffix(name, ".jpg"), "frame-")
+				timeSec, err := strconv.Atoi(timeStr)
+				if err == nil {
+					url := filepath.ToSlash(filepath.Join("/trickplay", hash, name))
+					frames = append(frames, models.TrickplayFrame{
+						Time: timeSec,
+						URL:  url,
+					})
+				}
+			}
+		}
+	}
+
+	// Sort frames by time
+	sort.Slice(frames, func(i, j int) bool {
+		return frames[i].Time < frames[j].Time
+	})
+
+	info := models.TrickplayInfo{
+		Frames: frames,
+	}
+
+	respondJSON(w, http.StatusOK, info)
 }
 
 // StreamMedia godoc

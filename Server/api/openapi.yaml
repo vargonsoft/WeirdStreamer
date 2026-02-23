@@ -200,6 +200,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/media/trickplay/{id}:
+    get:
+      tags:
+        - media
+      summary: Get trickplay frames
+      description: Get URLs for trickplay frames for a given media ID
+      operationId: getTrickplayInfo
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Media item ID
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Trickplay information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrickplayInfo'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Media not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /thumbnails/{filename}:
     get:
       tags:
@@ -339,6 +372,15 @@ components:
           type: string
           format: date-time
           example: 2026-01-26T10:00:00Z
+
+    TrickplayInfo:
+      type: object
+      properties:
+        urls:
+          type: array
+          items:
+            type: string
+            example: /trickplay/hash/frame-10.jpg
 
     Directory:
       type: object

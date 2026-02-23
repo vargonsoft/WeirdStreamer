@@ -48,6 +48,9 @@ func main() {
 	os.MkdirAll(filepath.Dir(config.GlobalConfig.Database.UserPath), 0755)
 	os.MkdirAll(filepath.Dir(config.GlobalConfig.Database.MediaPath), 0755)
 	os.MkdirAll(config.GlobalConfig.Media.ThumbnailPath, 0755)
+	if config.GlobalConfig.Media.TrickplayPath != "" {
+		os.MkdirAll(config.GlobalConfig.Media.TrickplayPath, 0755)
+	}
 
 	// Initialize database
 	db, err := database.New(config.GlobalConfig.Database.UserPath, config.GlobalConfig.Database.MediaPath)
@@ -86,6 +89,7 @@ func main() {
 	api.HandleFunc("/media/scan", mediaHandler.ScanMedia).Methods("POST")
 	api.HandleFunc("/media/regenerate-thumbnails", mediaHandler.RegenerateThumbnails).Methods("POST")
 	api.HandleFunc("/media/thumbnail-updates", mediaHandler.ThumbnailUpdates).Methods("GET")
+	api.HandleFunc("/media/trickplay/{id}", mediaHandler.GetTrickplayInfo).Methods("GET")
 	api.HandleFunc("/media/{path}", mediaHandler.GetMediaInfo).Methods("GET")
 
 	// Config endpoints (admin only)
@@ -100,6 +104,12 @@ func main() {
 
 	// Thumbnail serving (no auth required for thumbnails)
 	r.HandleFunc("/thumbnails/{filename:.*}", mediaHandler.ServeThumbnail).Methods("GET")
+
+	// Trickplay serving (no auth required)
+	if config.GlobalConfig.Media.TrickplayPath != "" {
+		trickplayDir := http.Dir(config.GlobalConfig.Media.TrickplayPath)
+		r.PathPrefix("/trickplay/").Handler(http.StripPrefix("/trickplay/", http.FileServer(trickplayDir)))
+	}
 
 	// Serve web client
 	webDir := "./web"

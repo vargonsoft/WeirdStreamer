@@ -35,6 +35,7 @@ type MediaPath struct {
 type MediaConfig struct {
 	Paths                 []MediaPath `json:"paths"`
 	ThumbnailPath         string      `json:"thumbnailPath"`
+	TrickplayPath         string      `json:"trickplayPath,omitempty"`
 	SupportedVideoFormats []string    `json:"supportedVideoFormats"`
 	SupportedImageFormats []string    `json:"supportedImageFormats"`
 	SupportedDocFormats   []string    `json:"supportedDocFormats"`

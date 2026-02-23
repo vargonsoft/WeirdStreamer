@@ -24,6 +24,15 @@ data class MediaItem(
     @SerializedName("updated_at") val updatedAt: String
 )
 
+data class TrickplayFrame(
+    @SerializedName("time") val time: Int,
+    @SerializedName("url") val url: String
+)
+
+data class TrickplayInfo(
+    @SerializedName("frames") val frames: List<TrickplayFrame>
+)
+
 data class Directory(
     // `path` JSON key now carries the root ID or the relative id-based path
     @SerializedName("path") val id: String,

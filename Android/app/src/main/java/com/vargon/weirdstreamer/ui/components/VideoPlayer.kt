@@ -11,6 +11,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -42,10 +45,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -64,15 +69,19 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.vargon.weirdstreamer.SmbDataSourceFactory
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.OpenSubtitlesClient
 import com.vargon.weirdstreamer.SubtitleInfo
 import com.vargon.weirdstreamer.WeirdStreamerApplication
 import com.vargon.weirdstreamer.api.ApiService
+import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.File
@@ -83,6 +92,7 @@ import kotlin.math.abs
 @Composable
 fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     // Determine if this is an SMB or Server source
     val isSmbSource = remember(path) { path.startsWith("smb://") }
@@ -165,6 +175,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var showControls by remember { mutableStateOf(false) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var lastControlsHideTime by remember { mutableLongStateOf(0L) }
+
+    // Trickplay state
+    var trickplayInfo by remember { mutableStateOf<TrickplayInfo?>(null) }
+    var isTrickplayVisible by remember { mutableStateOf(false) }
+    var selectedTrickplayIndex by remember { mutableIntStateOf(-1) }
+    val trickplayListState = rememberLazyListState()
 
     // Zoom state for video player
     var zoomLevel by remember { mutableFloatStateOf(1f) }
@@ -294,7 +310,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         }.start()
     }
 
-    // Fetch metadata for server sources to get accurate duration
+    // Fetch metadata and trickplay for server sources
     LaunchedEffect(path) {
         if (!isSmbSource) {
             try {
@@ -315,10 +331,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         // Convert duration from seconds to milliseconds
                         metadata.duration?.let { durationSecs ->
                             fullDuration = (durationSecs * 1000).toLong()
-                            Log.d(
-                                "VideoPlayer",
-                                "Loaded metadata: duration=${durationSecs}s ($fullDuration ms)"
-                            )
+                        }
+                        
+                        // Fetch trickplay info
+                        val info = viewModel.fetchTrickplayInfo(viewModel.getFileItemForPath(path)!!)
+                        if (info != null) {
+                            trickplayInfo = info
                         }
                     }
                 }
@@ -327,6 +345,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             }
         }
     }
+
     var isSeekingSlider by remember { mutableStateOf(false) }
     var isFocusedOnTranscode by remember { mutableStateOf(false) }
     var playbackPosition by remember { mutableLongStateOf(0L) }
@@ -427,10 +446,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             if (timeToWait > 0) {
                 delay(timeToWait)
             }
-            showControls = false
-            lastControlsHideTime = System.currentTimeMillis()
-            isSeekingSlider = false
-            isFocusedOnTranscode = false
+            if (!isTrickplayVisible) {
+                showControls = false
+                lastControlsHideTime = System.currentTimeMillis()
+                isSeekingSlider = false
+                isFocusedOnTranscode = false
+            }
         }
     }
 
@@ -536,7 +557,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     val handleBackAction = {
         val now = System.currentTimeMillis()
-        if (showControls) {
+        if (isTrickplayVisible) {
+            isTrickplayVisible = false
+            updateInteraction()
+        } else if (showControls) {
             showControls = false
             lastControlsHideTime = now
             isSeekingSlider = false
@@ -648,6 +672,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 panY = (panY + 100f).coerceIn(-maxPY, maxPY)
                                 updateInteraction()
                                 true
+                            } else if (isTrickplayVisible) {
+                                // Already in trickplay, handle up to exit trickplay
+                                isTrickplayVisible = false
+                                updateInteraction()
+                                true
                             } else if (isFocusedOnTranscode) {
                                 // Already on transcode button, do nothing or hide controls
                                 false
@@ -665,6 +694,15 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (showControls && !isSeekingSlider && isSmbSource) {
                                 // For SMB, just go to slider (no transcode button)
                                 isSeekingSlider = true
+                                updateInteraction()
+                                true
+                            } else if (isPaused && trickplayInfo != null) {
+                                // Enter trickplay if paused and info exists
+                                isTrickplayVisible = true
+                                if (selectedTrickplayIndex == -1) {
+                                    // Find closest frame to current position
+                                    selectedTrickplayIndex = trickplayInfo!!.frames.indexOfFirst { it.time * 1000 >= playbackPosition }.coerceAtLeast(0)
+                                }
                                 updateInteraction()
                                 true
                             } else {
@@ -690,6 +728,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (showZoomToolbar) {
                                 // Hide toolbar if it's showing
                                 showZoomToolbar = false
+                                true
+                            } else if (isTrickplayVisible) {
+                                // Move from trickplay to slider
+                                isTrickplayVisible = false
+                                isSeekingSlider = true
+                                updateInteraction()
                                 true
                             } else if (isFocusedOnTranscode) {
                                 // Move from transcode button to slider
@@ -784,6 +828,15 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     )
                                 }
                                 true
+                            } else if (isTrickplayVisible) {
+                                // Seek to selected trickplay frame
+                                if (selectedTrickplayIndex != -1) {
+                                    val targetTime = trickplayInfo!!.frames[selectedTrickplayIndex].time.toLong() * 1000
+                                    performSkip((targetTime - playbackPosition).toInt() / 1000, true)
+                                    isTrickplayVisible = false
+                                    exoPlayer.play()
+                                }
+                                true
                             } else if (isFocusedOnTranscode) {
                                 // Toggle transcode
                                 enableTranscode = !enableTranscode
@@ -817,6 +870,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 )  // Standard TV size
                                 panX = (panX + 100f).coerceIn(-maxPX, maxPX)
                                 updateInteraction()
+                                true
+                            } else if (isTrickplayVisible) {
+                                // Navigate left in trickplay frames
+                                if (selectedTrickplayIndex > 0) {
+                                    selectedTrickplayIndex--
+                                }
                                 true
                             } else if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
@@ -892,6 +951,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 )  // Standard TV size
                                 panX = (panX - 100f).coerceIn(-maxPX, maxPX)
                                 updateInteraction()
+                                true
+                            } else if (isTrickplayVisible) {
+                                // Navigate right in trickplay frames
+                                if (selectedTrickplayIndex < trickplayInfo!!.frames.size - 1) {
+                                    selectedTrickplayIndex++
+                                }
                                 true
                             } else if (isFocusedOnTranscode) {
                                 // Do nothing on transcode button
@@ -1165,6 +1230,89 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         tint = Color.White.copy(alpha = 0.7f),
                         modifier = Modifier.size(128.dp)
                     )
+                }
+            }
+        }
+
+        // Trickplay Overlay
+        AnimatedVisibility(
+            visible = isTrickplayVisible && trickplayInfo != null,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.8f))
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = if (selectedTrickplayIndex != -1) formatTime(trickplayInfo!!.frames[selectedTrickplayIndex].time.toLong() * 1000) else "",
+                    style = androidx.tv.material3.MaterialTheme.typography.headlineSmall,
+                    color = Color.White,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                LazyRow(
+                    state = trickplayListState,
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp)
+                ) {
+                    itemsIndexed(trickplayInfo!!.frames) { index, frame ->
+                        Box(
+                            modifier = Modifier
+                                .width(160.dp)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(
+                                    width = if (selectedTrickplayIndex == index) 4.dp else 0.dp,
+                                    color = if (selectedTrickplayIndex == index) Color.White else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .onFocusChanged { 
+                                    if (it.isFocused) {
+                                        selectedTrickplayIndex = index
+                                        updateInteraction()
+                                    }
+                                }
+                                .focusable()
+                                .clickable {
+                                    val targetTime = frame.time.toLong() * 1000
+                                    performSkip((targetTime - playbackPosition).toInt() / 1000, true)
+                                    isTrickplayVisible = false
+                                    exoPlayer.play()
+                                }
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(frame.url)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            
+                            Text(
+                                text = formatTime(frame.time.toLong() * 1000),
+                                style = androidx.tv.material3.MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+                
+                LaunchedEffect(selectedTrickplayIndex) {
+                    if (selectedTrickplayIndex != -1) {
+                        trickplayListState.animateScrollToItem(selectedTrickplayIndex)
+                    }
                 }
             }
         }

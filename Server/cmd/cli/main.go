@@ -58,6 +58,8 @@ func main() {
 		handleScanCommand(db)
 	case "config":
 		handleConfigCommand(os.Args[2:])
+	case "trickplay":
+		handleTrickplayCommand(db, os.Args[2:])
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printUsage()
@@ -73,6 +75,7 @@ func printUsage() {
 	fmt.Println("  cli user delete <username>            - Delete a user")
 	fmt.Println("  cli user change-password <username>   - Change user password")
 	fmt.Println("  cli scan                              - Scan media directories")
+	fmt.Println("  cli trickplay [options]               - Generate trickplay frames")
 	fmt.Println("  cli config add-path <path>            - Add media directory")
 	fmt.Println("  cli config list-paths                 - List media directories")
 }
@@ -191,6 +194,77 @@ func handleScanCommand(db *database.DB) {
 	}
 
 	fmt.Println("Scan completed successfully")
+}
+
+func handleTrickplayCommand(db *database.DB, args []string) {
+	trickplayGenerator := media.NewTrickplayGenerator(db)
+
+	// Parse flags
+	var videoPath, dirPath, libraryName string
+	if len(args) > 0 {
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--video":
+				if i+1 < len(args) {
+					videoPath = args[i+1]
+					i++
+				}
+			case "--dir":
+				if i+1 < len(args) {
+					dirPath = args[i+1]
+					i++
+				}
+			case "--library":
+				if i+1 < len(args) {
+					libraryName = args[i+1]
+					i++
+				}
+			}
+		}
+	}
+
+	if videoPath != "" {
+		if err := trickplayGenerator.Generate(videoPath); err != nil {
+			log.Fatalf("Failed to generate trickplay frames for %s: %v", videoPath, err)
+		}
+	} else if dirPath != "" {
+		fmt.Printf("Generating trickplay frames for directory: %s\n", dirPath)
+		if err := trickplayGenerator.GenerateForDirectory(dirPath); err != nil {
+			log.Fatalf("Failed to generate trickplay frames for directory %s: %v", dirPath, err)
+		}
+	} else if libraryName != "" {
+		fmt.Printf("Generating trickplay frames for library: %s\n", libraryName)
+		var libraryPath string
+		for _, p := range config.GlobalConfig.Media.Paths {
+			if p.Name == libraryName {
+				libraryPath = p.Path
+				break
+			}
+		}
+
+		if libraryPath == "" {
+			log.Fatalf("Library '%s' not found in config", libraryName)
+		}
+
+		if err := trickplayGenerator.GenerateForDirectory(libraryPath); err != nil {
+			log.Fatalf("Failed to generate trickplay frames for library %s: %v", libraryName, err)
+		}
+	} else if len(args) == 0 {
+		fmt.Println("Generating trickplay frames for all videos in the database...")
+		items, err := db.ListMediaItems("video")
+		if err != nil {
+			log.Fatalf("Failed to list video items from database: %v", err)
+		}
+
+		for _, item := range items {
+			if err := trickplayGenerator.Generate(item.Path); err != nil {
+				fmt.Printf("Error generating trickplay frames for %s: %v\n", item.Path, err)
+			}
+		}
+	} else {
+		fmt.Println("Invalid arguments for trickplay command.")
+		printUsage()
+	}
 }
 
 func handleConfigCommand(args []string) {

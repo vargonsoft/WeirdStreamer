@@ -1,13 +1,15 @@
 package models
 
-import "time"
+import (
+	"time"
+)
 
 type User struct {
-	ID           int64     `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"-"`
-	CreatedAt    time.Time `json:"created_at"`
-	IsAdmin      bool      `json:"is_admin"`
+	ID        int64     `json:"id"`
+	Username  string    `json:"username"`
+	Password  string    `json:"-"`
+	IsAdmin   bool      `json:"is_admin"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type MediaItem struct {
@@ -17,24 +19,33 @@ type MediaItem struct {
 	Type         string    `json:"type"` // video, image, document
 	Size         int64     `json:"size"`
 	MimeType     string    `json:"mime_type"`
-	ThumbnailURL string    `json:"thumbnail_url,omitempty"`
-	Duration     float64   `json:"duration,omitempty"` // For videos
-	Width        int       `json:"width,omitempty"`
-	Height       int       `json:"height,omitempty"`
+	ThumbnailURL string    `json:"thumbnail_url"`
+	Duration     float64   `json:"duration"`
+	Width        int       `json:"width"`
+	Height       int       `json:"height"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type TrickplayFrame struct {
+	Time int    `json:"time"`
+	URL  string `json:"url"`
+}
+
+type TrickplayInfo struct {
+	Frames []TrickplayFrame `json:"frames"`
 }
 
 type Directory struct {
 	Path  string      `json:"path"`
 	Name  string      `json:"name"`
-	Items []MediaItem `json:"items,omitempty"`
-	Dirs  []Directory `json:"dirs,omitempty"`
+	Items []MediaItem `json:"items"`
+	Dirs  []Directory `json:"dirs"`
 }
 
 type LoginRequest struct {
-	Username string `json:"username" example:"admin"`
-	Password string `json:"password" example:"password123"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type LoginResponse struct {

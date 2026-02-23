@@ -201,6 +201,20 @@ func (db *DB) GetMediaItem(path string) (*models.MediaItem, error) {
 	return item, nil
 }
 
+func (db *DB) GetMediaItemByID(id int64) (*models.MediaItem, error) {
+	item := &models.MediaItem{}
+	err := db.mediaConn.QueryRow(`
+		SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, created_at, updated_at
+		FROM media_items WHERE id = ?
+	`, id).Scan(&item.ID, &item.Path, &item.Name, &item.Type, &item.Size, &item.MimeType,
+		&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.CreatedAt, &item.UpdatedAt)
+
+	if err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
 func (db *DB) ListMediaItems(mediaType string) ([]models.MediaItem, error) {
 	var rows *sql.Rows
 	var err error

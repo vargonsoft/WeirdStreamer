@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.repository
 
+import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import java.io.InputStream
 
 /**
@@ -37,7 +38,8 @@ data class FileItem(
     val duration: Double? = null,
     val width: Int? = null,
     val height: Int? = null,
-    val originalPath: String? = null // For SSE matching or original reference
+    val originalPath: String? = null, // For SSE matching or original reference
+    val id: Long? = null // Database ID for WS Server
 )
 
 /**
@@ -59,6 +61,10 @@ interface MediaRepository {
     fun supportsThumbnailRegeneration(): Boolean = false
     suspend fun regenerateThumbnails(path: String): Result<Boolean> = Result.failure(UnsupportedOperationException())
     
+    // Trickplay support
+    fun supportsTrickplay(): Boolean = false
+    suspend fun getTrickplayInfo(id: Long): Result<TrickplayInfo> = Result.failure(UnsupportedOperationException())
+
     // Auth requirements
     fun isAuthRequired(exception: Throwable): Boolean
 

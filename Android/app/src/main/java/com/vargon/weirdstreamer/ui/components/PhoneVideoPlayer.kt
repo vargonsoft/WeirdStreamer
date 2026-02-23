@@ -11,12 +11,15 @@ import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -26,9 +29,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,10 +49,13 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.SmbDataSourceFactory
 import com.vargon.weirdstreamer.WeirdStreamerApplication
 import com.vargon.weirdstreamer.api.ApiService
+import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.delay
 import retrofit2.Retrofit
@@ -101,6 +109,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     var duration by remember(path) { mutableLongStateOf(0L) }
     var isBuffering by remember { mutableStateOf(true) }
 
+    // Trickplay state
+    var trickplayInfo by remember { mutableStateOf<TrickplayInfo?>(null) }
+    val trickplayListState = rememberLazyListState()
+
     // New states
     var enableTranscode by remember { mutableStateOf(false) }
     var transcodeStartOffset by remember { mutableLongStateOf(0L) }
@@ -122,7 +134,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     var currentAspectRatio by remember { mutableStateOf<Float?>(null) }
     var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) }
 
-    // Fetch metadata for duration
+    // Fetch metadata for duration and trickplay
     LaunchedEffect(path) {
         if (!isSmbSource) {
             try {
@@ -139,6 +151,12 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     response.body()?.let { metadata ->
                         metadata.duration?.let { durationSecs ->
                             fullDuration = (durationSecs * 1000).toLong()
+                        }
+                        
+                        // Fetch trickplay info
+                        val item = viewModel.getFileItemForPath(path)
+                        if (item != null) {
+                            trickplayInfo = viewModel.fetchTrickplayInfo(item)
                         }
                     }
                 }
@@ -533,6 +551,58 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         .padding(16.dp)
                         .align(Alignment.BottomCenter)
                 ) {
+                    // Trickplay Frames
+                    if (trickplayInfo != null) {
+                        LazyRow(
+                            state = trickplayListState,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(80.dp)
+                                .padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp)
+                        ) {
+                            itemsIndexed(trickplayInfo!!.frames) { _, frame ->
+                                Box(
+                                    modifier = Modifier
+                                        .width(100.dp)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .clickable {
+                                            seekPlayer(frame.time.toLong() * 1000)
+                                        }
+                                ) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(frame.url)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    Text(
+                                        text = formatTime(frame.time.toLong() * 1000),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .background(Color.Black.copy(alpha = 0.6f))
+                                            .padding(horizontal = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                        
+                        // Auto-scroll trickplay list to current position
+                        LaunchedEffect(playbackPosition) {
+                            val index = trickplayInfo!!.frames.indexOfFirst { it.time * 1000 >= playbackPosition }
+                            if (index != -1) {
+                                trickplayListState.animateScrollToItem(index)
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                         horizontalArrangement = Arrangement.End,
