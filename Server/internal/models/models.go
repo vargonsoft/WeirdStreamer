@@ -5,11 +5,11 @@ import (
 )
 
 type User struct {
-	ID        int64     `json:"id"`
-	Username  string    `json:"username"`
-	Password  string    `json:"-"`
-	IsAdmin   bool      `json:"is_admin"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           int64     `json:"id"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"-"`
+	IsAdmin      bool      `json:"is_admin"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type MediaItem struct {
