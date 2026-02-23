@@ -119,10 +119,11 @@ func (tg *TrickplayGenerator) generateFrame(videoPath, outputDir string, timeInS
 		return nil
 	}
 	
-	timestamp := time.Duration(timeInSeconds) * time.Second
+	// Use simple seconds format for -ss, as ffmpeg doesn't support Go's duration.String() format (e.g. 1h30m)
+	ssValue := strconv.Itoa(timeInSeconds)
 	
 	cmd := exec.Command("ffmpeg",
-		"-ss", timestamp.String(),
+		"-ss", ssValue,
 		"-i", videoPath,
 		"-vframes", "1",
 		"-q:v", "5", // Image quality (1-31, lower is better)
@@ -138,4 +139,3 @@ func (tg *TrickplayGenerator) generateFrame(videoPath, outputDir string, timeInS
 
 	return nil
 }
-// Force rewrite to fix newline issues
