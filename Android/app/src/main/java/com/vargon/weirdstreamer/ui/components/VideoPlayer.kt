@@ -195,7 +195,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     val aspectRatioValues = listOf(null, 16f / 9f, 21f / 9f, 4f / 3f, 5f / 4f, 1f)
     var currentAspectRatioIndex by remember { mutableIntStateOf(0) }
     var currentAspectRatio by remember { mutableStateOf<Float?>(null) }
-    var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Zoom, 1 = Speed, 2 = Zoom+, 3 = Zoom-, 4 = AspectRatio, 5 = Subtitles, 6 = Rotate
+    var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Transcode, 1 = Zoom, 2 = Speed, 3 = Zoom+, 4 = Zoom-, 5 = AspectRatio, 6 = Subtitles, 7 = Rotate
     var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) } // Track actual video aspect ratio
     var videoPaddingPx by remember { mutableIntStateOf(0) } // Size adjustment in pixels (1px in each direction)
     var showSubtitleDialog by remember { mutableStateOf(false) }
@@ -347,7 +347,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     }
 
     var isSeekingSlider by remember { mutableStateOf(false) }
-    var isFocusedOnTranscode by remember { mutableStateOf(false) }
     var playbackPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) } // value to show, isForward
@@ -450,7 +449,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 showControls = false
                 lastControlsHideTime = System.currentTimeMillis()
                 isSeekingSlider = false
-                isFocusedOnTranscode = false
             }
         }
     }
@@ -564,7 +562,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             showControls = false
             lastControlsHideTime = now
             isSeekingSlider = false
-            isFocusedOnTranscode = false
         } else {
             // If back is pressed within 1 second of controls disappearing, ignore it.
             if (now - lastControlsHideTime > 1000) {
@@ -626,9 +623,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             if (isPlaying) {
                                 exoPlayer.pause()
                                 isPaused = true
-                            } else {
-                                exoPlayer.play()
-                                isPaused = false
                             }
                             true
                         }
@@ -677,26 +671,23 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 isTrickplayVisible = false
                                 updateInteraction()
                                 true
-                            } else if (isFocusedOnTranscode) {
-                                // Already on transcode button, do nothing or hide controls
-                                false
-                            } else if (isSeekingSlider && !isSmbSource) {
-                                // Move from slider to transcode button
-                                isFocusedOnTranscode = true
-                                isSeekingSlider = false
+                            } else if (isSeekingSlider) {
+                                // Move from slider to trickplay
+                                if (trickplayInfo != null) {
+                                    isTrickplayVisible = true
+                                    if (selectedTrickplayIndex == -1) {
+                                        selectedTrickplayIndex = trickplayInfo!!.frames.indexOfFirst { it.time * 1000 >= playbackPosition }.coerceAtLeast(0)
+                                    }
+                                    isSeekingSlider = false
+                                }
                                 updateInteraction()
                                 true
-                            } else if (showControls && !isSeekingSlider && !isSmbSource) {
+                            } else if (showControls && !isSeekingSlider) {
                                 // Move from playback controls to slider
                                 isSeekingSlider = true
                                 updateInteraction()
                                 true
-                            } else if (showControls && !isSeekingSlider && isSmbSource) {
-                                // For SMB, just go to slider (no transcode button)
-                                isSeekingSlider = true
-                                updateInteraction()
-                                true
-                            } else if (isPaused && trickplayInfo != null) {
+                            } else if (trickplayInfo != null) {
                                 // Enter trickplay if paused and info exists
                                 isTrickplayVisible = true
                                 if (selectedTrickplayIndex == -1) {
@@ -732,12 +723,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (isTrickplayVisible) {
                                 // Move from trickplay to slider
                                 isTrickplayVisible = false
-                                isSeekingSlider = true
-                                updateInteraction()
-                                true
-                            } else if (isFocusedOnTranscode) {
-                                // Move from transcode button to slider
-                                isFocusedOnTranscode = false
+                                selectedTrickplayIndex = -1
                                 isSeekingSlider = true
                                 updateInteraction()
                                 true
@@ -749,12 +735,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (showControls) {
                                 showControls = false
                                 lastControlsHideTime = System.currentTimeMillis()
-                                isFocusedOnTranscode = false
                                 true
                             } else if (!showControls && !showZoomToolbar && !isZoomMode) {
                                 // Show zoom toolbar when controls are hidden and not in zoom mode
                                 showZoomToolbar = true
-                                isFocusedOnTranscode = false
                                 isSeekingSlider = false
                                 true
                             } else {
@@ -767,6 +751,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 // Toolbar is shown, handle button press
                                 when (toolbarFocusedButton) {
                                     0 -> {
+                                        // Transcode button pressed
+                                        enableTranscode = !enableTranscode
+                                    }
+                                    1 -> {
                                         // Zoom button pressed
                                         isZoomMode = true
                                         zoomLevel = 1f
@@ -776,24 +764,24 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                             false  // Hide toolbar after entering zoom mode
                                     }
 
-                                    1 -> {
+                                    2 -> {
                                         // Speed button pressed
                                         showSpeedDialog = true
                                     }
 
-                                    2 -> {
+                                    3 -> {
                                         // Zoom+ button pressed
                                         videoPaddingPx += 1
                                     }
 
-                                    3 -> {
+                                    4 -> {
                                         // Zoom- button pressed
                                         if (videoPaddingPx > 0) {
                                             videoPaddingPx -= 1
                                         }
                                     }
 
-                                    4 -> {
+                                    5 -> {
                                         // Aspect ratio button pressed, cycle to next
                                         currentAspectRatioIndex =
                                             (currentAspectRatioIndex + 1) % aspectRatios.size
@@ -801,12 +789,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                             aspectRatioValues[currentAspectRatioIndex]
                                     }
 
-                                    5 -> {
+                                    6 -> {
                                         // Subtitles button pressed, show subtitle dialog
                                         showSubtitleDialog = true
                                     }
 
-                                    6 -> {
+                                    7 -> {
                                         // Rotate button pressed
                                         rotation = (rotation + 90f) % 360f
                                     }
@@ -837,11 +825,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     exoPlayer.play()
                                 }
                                 true
-                            } else if (isFocusedOnTranscode) {
-                                // Toggle transcode
-                                enableTranscode = !enableTranscode
-                                updateInteraction()
-                                true
                             } else {
                                 if (showControls) {
                                     updateInteraction()
@@ -859,7 +842,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.DirectionLeft -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Navigate left in toolbar (7 buttons: 0-6)
+                                // Navigate left in toolbar (8 buttons: 0-7)
                                 toolbarFocusedButton = (toolbarFocusedButton - 1).coerceAtLeast(0)
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
@@ -877,9 +860,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     selectedTrickplayIndex--
                                 }
                                 true
-                            } else if (isFocusedOnTranscode) {
-                                // Do nothing on transcode button
-                                false
                             } else if (!isPlaying && isPaused) {
                                 // Frame backward
                                 exoPlayer.seekTo((exoPlayer.currentPosition - 40L).coerceAtLeast(0L))
@@ -940,8 +920,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.DirectionRight -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Navigate right in toolbar (7 buttons: 0-6)
-                                toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(6)
+                                // Navigate right in toolbar (8 buttons: 0-7)
+                                toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(7)
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
                                 // Pan right in zoom mode (only when actually zoomed)
@@ -958,9 +938,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     selectedTrickplayIndex++
                                 }
                                 true
-                            } else if (isFocusedOnTranscode) {
-                                // Do nothing on transcode button
-                                false
                             } else if (!isPlaying && isPaused) {
                                 // Frame forward
                                 exoPlayer.seekTo(exoPlayer.currentPosition + 40L)
@@ -1080,6 +1057,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         view.apply {
                             player = exoPlayer
                             useController = false
+                            // Use FIT mode - it will fit video into container while maintaining video's aspect ratio
+                            // We'll then stretch it with transforms to fill the constrained box
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             layoutParams = FrameLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1234,9 +1213,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             }
         }
 
-        // Trickplay Overlay
+        // Trickplay Overlay (Above Slider)
         AnimatedVisibility(
-            visible = isTrickplayVisible && trickplayInfo != null,
+            visible = showControls && trickplayInfo != null,
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp)
@@ -1255,63 +1234,71 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
-                LazyRow(
-                    state = trickplayListState,
-                    modifier = Modifier.fillMaxWidth().height(120.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp)
-                ) {
-                    itemsIndexed(trickplayInfo!!.frames) { index, frame ->
-                        Box(
-                            modifier = Modifier
-                                .width(160.dp)
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(8.dp))
-                                .border(
-                                    width = if (selectedTrickplayIndex == index) 4.dp else 0.dp,
-                                    color = if (selectedTrickplayIndex == index) Color.White else Color.Transparent,
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                                .onFocusChanged { 
-                                    if (it.isFocused) {
-                                        selectedTrickplayIndex = index
-                                        updateInteraction()
-                                    }
-                                }
-                                .focusable()
-                                .clickable {
-                                    val targetTime = frame.time.toLong() * 1000
-                                    performSkip((targetTime - playbackPosition).toInt() / 1000, true)
-                                    isTrickplayVisible = false
-                                    exoPlayer.play()
-                                }
-                        ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(frame.url)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            
-                            Text(
-                                text = formatTime(frame.time.toLong() * 1000),
-                                style = androidx.tv.material3.MaterialTheme.typography.labelSmall,
-                                color = Color.White,
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val density = LocalDensity.current
+                    val itemWidth = 160.dp
+                    val itemWidthPx = density.run { itemWidth.toPx() }
+                    val centerOffsetPx = density.run { (maxWidth / 2 - itemWidth / 2).toPx() }
+
+                    LazyRow(
+                        state = trickplayListState,
+                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        contentPadding = PaddingValues(horizontal = maxWidth / 2 - itemWidth / 2)
+                    ) {
+                        itemsIndexed(trickplayInfo!!.frames) { index, frame ->
+                            Box(
                                 modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .background(Color.Black.copy(alpha = 0.6f))
-                                    .padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
+                                    .width(itemWidth)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(
+                                        width = if (selectedTrickplayIndex == index) 4.dp else 0.dp,
+                                        color = if (selectedTrickplayIndex == index) Color.White else Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .onFocusChanged { 
+                                        if (it.isFocused) {
+                                            updateInteraction()
+                                        }
+                                    }
+                                    .focusable()
+                                    .clickable {
+                                        val targetTime = frame.time.toLong() * 1000
+                                        performSkip((targetTime - playbackPosition).toInt() / 1000, true)
+                                        isTrickplayVisible = false
+                                        exoPlayer.play()
+                                    }
+                            ) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(frame.url)
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                
+                                Text(
+                                    text = formatTime(frame.time.toLong() * 1000),
+                                    style = androidx.tv.material3.MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .background(Color.Black.copy(alpha = 0.6f))
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
-                }
-                
-                LaunchedEffect(selectedTrickplayIndex) {
-                    if (selectedTrickplayIndex != -1) {
-                        trickplayListState.animateScrollToItem(selectedTrickplayIndex)
+                    
+                    LaunchedEffect(selectedTrickplayIndex) {
+                        if (selectedTrickplayIndex != -1) {
+                            // Scroll so that the selected item is centered
+                            trickplayListState.animateScrollToItem(selectedTrickplayIndex)
+                        }
                     }
                 }
             }
@@ -1331,41 +1318,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     .padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Transcode button - only show for server sources, above the slider
-                if (!isSmbSource) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Start
-                    ) {
-                        Surface(
-                            modifier = Modifier.padding(bottom = 8.dp),
-                            color = if (isFocusedOnTranscode) {
-                                Color.White.copy(alpha = 0.2f)
-                            } else {
-                                Color.Transparent
-                            }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.VideoSettings,
-                                    contentDescription = "Toggle Transcode",
-                                    tint = if (enableTranscode) Color.Green else Color.White,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (enableTranscode) "Transcoding ON" else "Transcoding OFF",
-                                    style = androidx.tv.material3.MaterialTheme.typography.bodyMedium,
-                                    color = if (enableTranscode) Color.Green else Color.White
-                                )
-                            }
-                        }
-                    }
-                }
-
                 // Progress Slider and Timestamps
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1440,21 +1392,21 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     Icon(
                         Icons.Default.FastRewind,
                         contentDescription = null,
-                        tint = if (showControls && !isSeekingSlider && !isFocusedOnTranscode) Color.White else Color.Gray,
+                        tint = if (showControls && !isSeekingSlider && !isTrickplayVisible) Color.White else Color.Gray,
                         modifier = Modifier.size(48.dp)
                     )
                     Spacer(modifier = Modifier.width(32.dp))
                     Icon(
                         if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = null,
-                        tint = if (showControls && !isSeekingSlider && !isFocusedOnTranscode) Color.White else Color.Gray,
+                        tint = if (showControls && !isSeekingSlider && !isTrickplayVisible) Color.White else Color.Gray,
                         modifier = Modifier.size(64.dp)
                     )
                     Spacer(modifier = Modifier.width(32.dp))
                     Icon(
                         Icons.Default.FastForward,
                         contentDescription = null,
-                        tint = if (showControls && !isSeekingSlider && !isFocusedOnTranscode) Color.White else Color.Gray,
+                        tint = if (showControls && !isSeekingSlider && !isTrickplayVisible) Color.White else Color.Gray,
                         modifier = Modifier.size(48.dp)
                     )
                 }
@@ -1476,41 +1428,38 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Zoom Button
-                Column(
-                    modifier = Modifier
-                        .width(100.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            if (toolbarFocusedButton == 0) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
-                                alpha = 0.3f
+                // Transcode Button
+                if (!isSmbSource) {
+                    Column(
+                        modifier = Modifier
+                            .width(100.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (toolbarFocusedButton == 0) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
+                                    alpha = 0.3f
+                                )
                             )
+                            .padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.VideoSettings,
+                            contentDescription = "Transcode",
+                            tint = if (enableTranscode) Color.Green else (if (toolbarFocusedButton == 0) Color.White else Color.White.copy(alpha = 0.7f)),
+                            modifier = Modifier.size(if (toolbarFocusedButton == 0) 48.dp else 40.dp)
                         )
-                        .padding(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        Icons.Default.Api,
-                        contentDescription = "Zoom",
-                        tint = if (toolbarFocusedButton == 0) Color.White else Color.White.copy(
-                            alpha = 0.7f
-                        ),
-                        modifier = Modifier.size(if (toolbarFocusedButton == 0) 48.dp else 40.dp)
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Zoom",
-                        style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
-                        color = if (toolbarFocusedButton == 0) Color.White else Color.White.copy(
-                            alpha = 0.7f
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (enableTranscode) "On" else "Off",
+                            style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
+                            color = if (enableTranscode) Color.Green else (if (toolbarFocusedButton == 0) Color.White else Color.White.copy(alpha = 0.7f))
                         )
-                    )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // Speed Button
+                // Zoom Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1525,8 +1474,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        Icons.Default.Speed,
-                        contentDescription = "Speed",
+                        Icons.Default.Api,
+                        contentDescription = "Zoom",
                         tint = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
@@ -1534,7 +1483,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Speed",
+                        text = "Zoom",
                         style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 1) Color.White else Color.White.copy(
                             alpha = 0.7f
@@ -1544,7 +1493,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Zoom+ Button
+                // Speed Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1559,8 +1508,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        Icons.Default.ZoomIn,
-                        contentDescription = "Fill+",
+                        Icons.Default.Speed,
+                        contentDescription = "Speed",
                         tint = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
@@ -1568,7 +1517,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Fill+",
+                        text = "Speed",
                         style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 2) Color.White else Color.White.copy(
                             alpha = 0.7f
@@ -1578,7 +1527,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Zoom- Button
+                // Zoom+ Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1593,8 +1542,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        Icons.Default.ZoomOut,
-                        contentDescription = "Fill-",
+                        Icons.Default.ZoomIn,
+                        contentDescription = "Fill+",
                         tint = if (toolbarFocusedButton == 3) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
@@ -1602,7 +1551,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Fill-",
+                        text = "Fill+",
                         style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 3) Color.White else Color.White.copy(
                             alpha = 0.7f
@@ -1612,7 +1561,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Aspect Ratio Button
+                // Zoom- Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1627,8 +1576,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        Icons.Default.AspectRatio,
-                        contentDescription = "Aspect Ratio",
+                        Icons.Default.ZoomOut,
+                        contentDescription = "Fill-",
                         tint = if (toolbarFocusedButton == 4) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
@@ -1636,7 +1585,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = aspectRatios[currentAspectRatioIndex],
+                        text = "Fill-",
                         style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 4) Color.White else Color.White.copy(
                             alpha = 0.7f
@@ -1646,7 +1595,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Subtitles Button
+                // Aspect Ratio Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1661,8 +1610,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        Icons.Default.Subtitles,
-                        contentDescription = "Subtitles",
+                        Icons.Default.AspectRatio,
+                        contentDescription = "Aspect Ratio",
                         tint = if (toolbarFocusedButton == 5) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
@@ -1670,17 +1619,17 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Subtitles",
+                        text = aspectRatios[currentAspectRatioIndex],
                         style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 5) Color.White else Color.White.copy(
                             alpha = 0.7f
                         )
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Rotate Button
+                // Subtitles Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1695,8 +1644,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.RotateRight,
-                        contentDescription = "Rotate",
+                        Icons.Default.Subtitles,
+                        contentDescription = "Subtitles",
                         tint = if (toolbarFocusedButton == 6) Color.White else Color.White.copy(
                             alpha = 0.7f
                         ),
@@ -1704,9 +1653,43 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Rotate",
+                        text = "Subtitles",
                         style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                         color = if (toolbarFocusedButton == 6) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        )
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Rotate Button
+                Column(
+                    modifier = Modifier
+                        .width(100.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (toolbarFocusedButton == 7) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(
+                                alpha = 0.3f
+                            )
+                        )
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.RotateRight,
+                        contentDescription = "Rotate",
+                        tint = if (toolbarFocusedButton == 7) Color.White else Color.White.copy(
+                            alpha = 0.7f
+                        ),
+                        modifier = Modifier.size(if (toolbarFocusedButton == 7) 48.dp else 40.dp)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Rotate",
+                        style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
+                        color = if (toolbarFocusedButton == 7) Color.White else Color.White.copy(
                             alpha = 0.7f
                         )
                     )
