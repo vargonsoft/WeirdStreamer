@@ -76,6 +76,10 @@ func printUsage() {
 	fmt.Println("  cli user change-password <username>   - Change user password")
 	fmt.Println("  cli scan                              - Scan media directories")
 	fmt.Println("  cli trickplay [options]               - Generate trickplay frames")
+	fmt.Println("      --video <path>                    - Generate for a specific video")
+	fmt.Println("      --dir <path>                      - Generate for all videos in a directory")
+	fmt.Println("      --library <name>                  - Generate for a specific media library")
+	fmt.Println("      (no options)                      - Generate for all videos in database")
 	fmt.Println("  cli config add-path <path>            - Add media directory")
 	fmt.Println("  cli config list-paths                 - List media directories")
 }
