@@ -123,20 +123,26 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		var success bool
 
 		for _, seekTime := range seekTimes {
+			// format=yuvj420p is the critical fix for MJPEG compliance in FFmpeg 7.1.1.
 			var args []string
-			if codec == "h264" {
-				args = append(args, "-bsf:v", "h264_metadata=matrix_coefficients=1")
-			} else if codec == "hevc" {
-				args = append(args, "-bsf:v", "hevc_metadata=matrix_coefficients=1")
+			if codec == "h264" || codec == "hevc" {
+				args = append(args, "-bsf:v", codec+"_metadata=matrix_coefficients=1")
 			}
-
-			args = append(args, "-ss", seekTime, "-noaccurate_seek", "-i", filePath)
-			args = append(args, "-vf", "scale=320:-1", "-frames:v", "1", "-q:v", "5", "-y", thumbnailPath)
+			args = append(args, "-ss", seekTime, "-noaccurate_seek", "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", thumbnailPath)
 
 			cmd := exec.Command("ffmpeg", args...)
-			err := cmd.Run()
+			if err := cmd.Run(); err == nil {
+				if info, statErr := os.Stat(thumbnailPath); statErr == nil && info.Size() > 1024 {
+					success = true
+					break
+				} else if statErr == nil {
+					os.Remove(thumbnailPath)
+				}
+			}
 
-			if err == nil {
+			// Fallback without BSF if needed
+			cmdFallback := exec.Command("ffmpeg", "-ss", seekTime, "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", thumbnailPath)
+			if errFallback := cmdFallback.Run(); errFallback == nil {
 				if info, statErr := os.Stat(thumbnailPath); statErr == nil && info.Size() > 1024 {
 					success = true
 					break
@@ -146,32 +152,12 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			}
 		}
 
-		// If all seek attempts failed, try without seeking
+		// If all attempts failed, return error
 		if !success {
-			var args []string
-			if codec == "h264" {
-				args = append(args, "-bsf:v", "h264_metadata=matrix_coefficients=1")
-			} else if codec == "hevc" {
-				args = append(args, "-bsf:v", "hevc_metadata=matrix_coefficients=1")
-			}
-
-			args = append(args, "-i", filePath)
-			args = append(args, "-vf", "scale=320:-1", "-frames:v", "1", "-q:v", "5", "-y", thumbnailPath)
-
-			cmd := exec.Command("ffmpeg", args...)
-			err := cmd.Run()
-			if err != nil {
-				return "", fmt.Errorf("ffmpeg failed: %w", err)
-			}
+			return "", fmt.Errorf("thumbnail generation failed for %s", filePath)
 		}
 
-		// Verify result
-		info, err := os.Stat(thumbnailPath)
-		if err != nil || info.Size() < 1024 {
-			return "", fmt.Errorf("thumbnail generation failed or produced invalid file")
-		}
-
-		log.Printf("[THUMBNAIL] Successfully generated video thumbnail: %s (%d bytes)", thumbnailPath, info.Size())
+		log.Printf("[THUMBNAIL] Successfully generated video thumbnail: %s", thumbnailPath)
 
 	case "image":
 		// Preserve original format for PNG, use JPEG for others
