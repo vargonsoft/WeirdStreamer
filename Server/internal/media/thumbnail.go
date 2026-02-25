@@ -115,70 +115,60 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 
 		log.Printf("[THUMBNAIL] Generating video thumbnail for %s -> %s", filePath, thumbnailPath)
 
-		// Use ffmpeg to extract thumbnail with progressive fallback
-		// ...existing code for thumbnail generation...
+		// Get codec info for conditional BSF
+		codec := tg.getVideoCodec(filePath)
 
 		// Try different seek positions: 1 minute, 30 seconds, 1 second
 		seekTimes := []string{"00:01:00.000", "00:00:30.000", "00:00:01.000"}
-		var output []byte
-		var err error
-		var successSeek string
+		var success bool
 
 		for _, seekTime := range seekTimes {
-			cmd := exec.Command("ffmpeg",
-				"-i", filePath,
-				"-ss", seekTime,
-				"-vframes", "1",
-				"-update", "1", // Silence image2 muxer warning about hash filenames
-				"-vf", "scale=320:-1",
-				"-y",
-				thumbnailPath,
-			)
+			var args []string
+			if codec == "h264" {
+				args = append(args, "-bsf:v", "h264_metadata=matrix_coefficients=1")
+			} else if codec == "hevc" {
+				args = append(args, "-bsf:v", "hevc_metadata=matrix_coefficients=1")
+			}
 
-			output, err = cmd.CombinedOutput()
+			args = append(args, "-ss", seekTime, "-noaccurate_seek", "-i", filePath)
+			args = append(args, "-vf", "scale=320:-1", "-frames:v", "1", "-q:v", "5", "-y", thumbnailPath)
 
-			// Check if file was created with valid size
+			cmd := exec.Command("ffmpeg", args...)
+			err := cmd.Run()
+
 			if err == nil {
 				if info, statErr := os.Stat(thumbnailPath); statErr == nil && info.Size() > 1024 {
-					successSeek = seekTime
+					success = true
 					break
 				} else if statErr == nil {
-					os.Remove(thumbnailPath) // Clean up small file before trying next position
+					os.Remove(thumbnailPath)
 				}
 			}
 		}
 
 		// If all seek attempts failed, try without seeking
-		if successSeek == "" {
-			cmd := exec.Command("ffmpeg",
-				"-i", filePath,
-				"-vframes", "1",
-				"-update", "1", // Silence image2 muxer warning
-				"-vf", "scale=320:-1",
-				"-y",
-				thumbnailPath,
-			)
-			output, err = cmd.CombinedOutput()
+		if !success {
+			var args []string
+			if codec == "h264" {
+				args = append(args, "-bsf:v", "h264_metadata=matrix_coefficients=1")
+			} else if codec == "hevc" {
+				args = append(args, "-bsf:v", "hevc_metadata=matrix_coefficients=1")
+			}
+
+			args = append(args, "-i", filePath)
+			args = append(args, "-vf", "scale=320:-1", "-frames:v", "1", "-q:v", "5", "-y", thumbnailPath)
+
+			cmd := exec.Command("ffmpeg", args...)
+			err := cmd.Run()
 			if err != nil {
-				log.Printf("[THUMBNAIL] ERROR: FFmpeg failed for %s: %v\nOutput: %s", filePath, err, string(output))
 				return "", fmt.Errorf("ffmpeg failed: %w", err)
 			}
-			successSeek = "first frame"
 		}
 
-		// Verify the file was actually created and has content
+		// Verify result
 		info, err := os.Stat(thumbnailPath)
-		if err != nil {
-			log.Printf("[THUMBNAIL] ERROR: Thumbnail not created: %s", thumbnailPath)
-			return "", fmt.Errorf("thumbnail not created")
-		}
-
-		if info.Size() < 1024 {
-			log.Printf("[THUMBNAIL] ERROR: Thumbnail too small (%d bytes): %s", info.Size(), thumbnailPath)
-			if len(output) > 0 {
-				log.Printf("[THUMBNAIL] FFmpeg output: %s", string(output))
-			}
-			return "", fmt.Errorf("thumbnail too small: %d bytes", info.Size())
+		if err != nil || info.Size() < 1024 {
+			return "", fmt.Errorf("thumbnail generation failed or produced invalid file")
 		}
 
 		log.Printf("[THUMBNAIL] Successfully generated video thumbnail: %s (%d bytes)", thumbnailPath, info.Size())
@@ -295,6 +285,21 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 
 	_ = thumbnailURL // URL not needed for this function
 	return thumbnailPath, nil
+}
+
+func (tg *ThumbnailGenerator) getVideoCodec(videoPath string) string {
+	cmd := exec.Command("ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=codec_name",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		videoPath,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // applyOrientation rotates/flips an image according to EXIF orientation tag
