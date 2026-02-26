@@ -68,6 +68,62 @@ func (tg *TrickplayGenerator) GenerateForDirectory(dirPath string) error {
 	})
 }
 
+func (tg *TrickplayGenerator) Clean() error {
+	trickplayDir := config.GlobalConfig.Media.TrickplayPath
+	if trickplayDir == "" {
+		return fmt.Errorf("trickplay path is not configured")
+	}
+
+	items, err := tg.db.ListMediaItems("video")
+	if err != nil {
+		return fmt.Errorf("failed to list media items: %w", err)
+	}
+
+	validHashes := make(map[string]bool)
+	for _, item := range items {
+		hash := GenerateThumbnailHash(item.Path)
+		trickplayVideoDir := filepath.Join(trickplayDir, hash)
+
+		// Check if source file exists
+		if _, err := os.Stat(item.Path); os.IsNotExist(err) {
+			if _, err := os.Stat(trickplayVideoDir); err == nil {
+				fmt.Printf("Removing trickplay images for non-existent path: %s\n", item.Path)
+				fmt.Printf("  -> Mapping to: %s\n", trickplayVideoDir)
+				if err := os.RemoveAll(trickplayVideoDir); err != nil {
+					fmt.Printf("Error removing %s: %v\n", trickplayVideoDir, err)
+				}
+			}
+		} else {
+			validHashes[hash] = true
+		}
+	}
+
+	// Also remove folders that aren't in the database at all
+	entries, err := os.ReadDir(trickplayDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		hash := entry.Name()
+		if !validHashes[hash] {
+			trickplayVideoDir := filepath.Join(trickplayDir, hash)
+			fmt.Printf("Removing orphaned trickplay folder: %s (no active record in database)\n", hash)
+			if err := os.RemoveAll(trickplayVideoDir); err != nil {
+				fmt.Printf("Error removing %s: %v\n", trickplayVideoDir, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 func isSupportedVideo(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	for _, videoExt := range config.GlobalConfig.Media.SupportedVideoFormats {

@@ -80,6 +80,7 @@ func printUsage() {
 	fmt.Println("      --dir <path>                      - Generate for all videos in a directory")
 	fmt.Println("      --library <name>                  - Generate for a specific media library")
 	fmt.Println("      (no options)                      - Generate for all videos in database")
+	fmt.Println("  cli trickplay clean                   - Remove trickplay images for non-existent paths")
 	fmt.Println("  cli config add-path <path>            - Add media directory")
 	fmt.Println("  cli config list-paths                 - List media directories")
 }
@@ -202,6 +203,15 @@ func handleScanCommand(db *database.DB) {
 
 func handleTrickplayCommand(db *database.DB, args []string) {
 	trickplayGenerator := media.NewTrickplayGenerator(db)
+
+	if len(args) > 0 && args[0] == "clean" {
+		fmt.Println("Cleaning up orphaned trickplay images...")
+		if err := trickplayGenerator.Clean(); err != nil {
+			log.Fatalf("Failed to clean trickplay images: %v", err)
+		}
+		fmt.Println("Trickplay cleanup completed.")
+		return
+	}
 
 	// Parse flags
 	var videoPath, dirPath, libraryName string
