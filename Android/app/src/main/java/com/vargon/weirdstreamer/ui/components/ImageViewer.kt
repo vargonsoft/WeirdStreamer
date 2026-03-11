@@ -47,6 +47,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
     var zoomLevel by remember { mutableFloatStateOf(1f) }
     var panX by remember { mutableFloatStateOf(0f) }
     var panY by remember { mutableFloatStateOf(0f) }
+    var rotation by remember { mutableFloatStateOf(0f) }
     var isZoomMode by remember { mutableStateOf(false) }
 
     var showFilename by remember { mutableStateOf(false) }
@@ -72,6 +73,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
         isLoading = true
         errorMessage = null
         imageIntrinsicSize = null
+        rotation = 0f
 
         tempFile?.delete()
         tempFile = null
@@ -120,6 +122,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
         zoomLevel = 1f
         panX = 0f
         panY = 0f
+        rotation = 0f
         isZoomMode = false
     }
 
@@ -262,6 +265,8 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                     val scaledHeight = fittedHeight * zoomLevel
                                     val maxPY = (scaledHeight - h).coerceAtLeast(0f) / 2f
                                     panY = (panY + 100f).coerceAtMost(maxPY)
+                                } else {
+                                    rotation += 90f
                                 }
                                 true
                             }
@@ -271,6 +276,8 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                     val scaledHeight = fittedHeight * zoomLevel
                                     val maxPY = (scaledHeight - h).coerceAtLeast(0f) / 2f
                                     panY = (panY - 100f).coerceAtLeast(-maxPY)
+                                } else {
+                                    rotation -= 90f
                                 }
                                 true
                             }
@@ -311,7 +318,8 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                             scaleX = zoomLevel,
                             scaleY = zoomLevel,
                             translationX = panX,
-                            translationY = panY
+                            translationY = panY,
+                            rotationZ = rotation
                         )
                 )
             }
