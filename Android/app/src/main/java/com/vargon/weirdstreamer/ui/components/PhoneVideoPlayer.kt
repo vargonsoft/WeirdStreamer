@@ -15,6 +15,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -112,6 +114,15 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     // Trickplay state
     var trickplayInfo by remember { mutableStateOf<TrickplayInfo?>(null) }
     val trickplayListState = rememberLazyListState()
+    val isTrickplayDragged by trickplayListState.interactionSource.collectIsDraggedAsState()
+    val isTrickplayPressed by trickplayListState.interactionSource.collectIsPressedAsState()
+    var lastTrickplayInteractionTime by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(isTrickplayDragged, isTrickplayPressed, trickplayListState.isScrollInProgress) {
+        if (isTrickplayDragged || isTrickplayPressed || trickplayListState.isScrollInProgress) {
+            lastTrickplayInteractionTime = System.currentTimeMillis()
+        }
+    }
 
     // New states
     var enableTranscode by remember { mutableStateOf(false) }
@@ -569,6 +580,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                         .fillMaxHeight()
                                         .clip(RoundedCornerShape(4.dp))
                                         .clickable {
+                                            lastTrickplayInteractionTime = System.currentTimeMillis()
                                             seekPlayer(frame.time.toLong() * 1000)
                                         }
                                 ) {
@@ -595,10 +607,19 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         }
                         
                         // Auto-scroll trickplay list to current position
+                        // Only if the user hasn't interacted with it recently
                         LaunchedEffect(playbackPosition) {
-                            val index = trickplayInfo!!.frames.indexOfFirst { it.time * 1000 >= playbackPosition }
-                            if (index != -1) {
-                                trickplayListState.animateScrollToItem(index)
+                            val frames = trickplayInfo?.frames ?: return@LaunchedEffect
+                            val currentTime = System.currentTimeMillis()
+                            val interactionTimeout = 8000L
+                            
+                            if (!isTrickplayDragged && !isTrickplayPressed && !trickplayListState.isScrollInProgress && 
+                                (currentTime - lastTrickplayInteractionTime) > interactionTimeout) {
+                                
+                                val index = frames.indexOfFirst { it.time * 1000 >= playbackPosition }
+                                if (index != -1) {
+                                    trickplayListState.animateScrollToItem(index)
+                                }
                             }
                         }
                     }
