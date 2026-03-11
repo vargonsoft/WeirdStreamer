@@ -21,8 +21,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.repository.FileItem
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import java.util.Locale
@@ -57,6 +59,14 @@ fun PhoneHostRowItem(host: String, modifier: Modifier = Modifier, onClick: () ->
 @Composable
 fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
+    val viewModel: MediaViewModel = viewModel()
+
+    LaunchedEffect(item.path) {
+        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
+            viewModel.fetchMetadata(item)
+        }
+    }
+
     val icon = when {
         isParent -> Icons.Default.SubdirectoryArrowLeft
         item.isDirectory -> Icons.Default.Folder
@@ -115,6 +125,14 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
 @Composable
 fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
+    val viewModel: MediaViewModel = viewModel()
+
+    LaunchedEffect(item.path) {
+        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
+            viewModel.fetchMetadata(item)
+        }
+    }
+
     val icon = when {
         isParent -> Icons.Default.SubdirectoryArrowLeft
         item.isDirectory -> Icons.Default.Folder

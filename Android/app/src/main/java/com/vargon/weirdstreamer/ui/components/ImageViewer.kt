@@ -77,8 +77,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
         tempFile = null
 
         if (viewModel.isImage(currentSmbPath)) {
-            val extension =
-                currentSmbPath.substringBefore('?').substringAfterLast('.', "").lowercase()
+            val extension = currentSmbPath.substringBefore('?').substringAfterLast('.', "").lowercase()
             if (extension == "heic" || extension == "heif") {
                 val file = viewModel.downloadToTempFile(currentSmbPath, context, ".$extension")
                 if (file != null) {
@@ -373,35 +372,19 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                     .padding(32.dp)
             ) {
                 val isForward = loopFeedback?.first == true
-                Box(
+                Icon(
+                    if (isForward) Icons.Default.Refresh else Icons.Default.Refresh, // Should be Flip or similar
+                    contentDescription = null,
                     modifier = Modifier
-                        .size(64.dp)
-                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(32.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .graphicsLayer(scaleX = if (isForward) -1f else 1f)
-                    )
-                }
+                        .size(48.dp)
+                        .graphicsLayer(rotationY = if (isForward) 0f else 180f),
+                    tint = Color.White.copy(alpha = 0.5f)
+                )
             }
         }
     }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
-    }
-
-
-    fun formatTime(ms: Long): String {
-        val totalSeconds = ms / 1000
-        val hours = totalSeconds / 3600
-        val minutes = (totalSeconds % 3600) / 60
-        val seconds = totalSeconds % 60
-        return String.format(java.util.Locale.US, "%d:%02d:%02d", hours, minutes, seconds)
     }
 }

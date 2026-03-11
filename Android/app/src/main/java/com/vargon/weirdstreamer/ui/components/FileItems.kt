@@ -98,9 +98,18 @@ fun HostTileItem(host: String, modifier: Modifier = Modifier, onClick: () -> Uni
 @Composable
 fun FileTileItem(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val isParent = item.name == ".."
+    val subtitle = if (!item.isDirectory && !isParent) {
+        val sizeStr = formatFileSize(item.size)
+        if (item.duration != null && item.duration > 0) {
+            "$sizeStr, ${formatDuration(item.duration)}"
+        } else {
+            sizeStr
+        }
+    } else null
+
     TileItem(
         title = item.name,
-        subtitle = if (!item.isDirectory && !isParent) formatFileSize(item.size) else null,
+        subtitle = subtitle,
         icon = when {
             isParent -> Icons.Default.SubdirectoryArrowLeft
             item.isDirectory -> Icons.Default.Folder
@@ -120,7 +129,7 @@ fun FileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> U
     val viewModel: MediaViewModel = viewModel()
     
     LaunchedEffect(item.path) {
-        if (!item.isDirectory && !isParent && item.duration == null && viewModel.isVideo(item.path)) {
+        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item)) {
             viewModel.fetchMetadata(item)
         }
     }
@@ -297,7 +306,13 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
             Column {
                 Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
                 if (!item.isDirectory && !isParent) {
-                    Text(text = formatFileSize(item.size), style = MaterialTheme.typography.bodySmall)
+                    val sizeStr = formatFileSize(item.size)
+                    val infoStr = if (item.duration != null && item.duration > 0) {
+                        "$sizeStr, ${formatDuration(item.duration)}"
+                    } else {
+                        sizeStr
+                    }
+                    Text(text = infoStr, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -312,7 +327,7 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
     val viewModel: MediaViewModel = viewModel()
     
     LaunchedEffect(item.path) {
-        if (!item.isDirectory && !isParent && item.duration == null && viewModel.isVideo(item.path)) {
+        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item)) {
             viewModel.fetchMetadata(item)
         }
     }

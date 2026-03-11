@@ -472,9 +472,9 @@ private fun handleFileClick(viewModel: MediaViewModel, item: com.vargon.weirdstr
         }
     } else {
         when {
-            viewModel.isVideo(item.path) -> viewModel.playVideo(item.path)
-            viewModel.isImage(item.path) -> viewModel.showImage(item.path)
-            viewModel.isPdf(item.path) -> viewModel.showPdf(item.path)
+            viewModel.isVideo(item) -> viewModel.playVideo(item.path)
+            viewModel.isImage(item) -> viewModel.showImage(item.path)
+            viewModel.isPdf(item) -> viewModel.showPdf(item.path)
         }
     }
 }
