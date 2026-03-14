@@ -53,7 +53,7 @@ class MediaAPI {
             return;
         }
 
-        // EventSource doesn't support custom headers, so pass token as query param
+        // EventSource doesn't support custom headers, so we accept token via query param
         const url = `${API_BASE}/api/media/thumbnail-updates?token=${encodeURIComponent(this.token)}`;
         console.log('[SSE] Connecting to thumbnail updates...', url);
         this.eventSource = new EventSource(url);
@@ -195,10 +195,15 @@ class MediaAPI {
         return this.request('/api/users');
     }
 
-    async createUser(username, password, isAdmin) {
+    async createUser(username, password, isAdmin, group = '') {
         return this.request('/api/users', {
             method: 'POST',
-            body: JSON.stringify({ username, password, is_admin: isAdmin }),
+            body: JSON.stringify({
+                username,
+                password,
+                is_admin: isAdmin,
+                group: group
+            }),
         });
     }
 

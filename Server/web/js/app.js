@@ -659,6 +659,16 @@ function renderMediaPaths(paths) {
             state.currentConfig.media.paths[index].name = e.target.value;
         };
         
+        const groupsInput = document.createElement('input');
+        groupsInput.type = 'text';
+        groupsInput.value = (mediaPath.groups || []).join(', ');
+        groupsInput.className = 'settings-input';
+        groupsInput.style.cssText = 'margin-bottom: 5px; width: calc(100% - 20px); font-size: 12px;';
+        groupsInput.placeholder = 'Allowed Groups (comma separated)';
+        groupsInput.onchange = (e) => {
+            state.currentConfig.media.paths[index].groups = e.target.value.split(',').map(s => s.trim()).filter(s => s);
+        };
+
         const pathDiv = document.createElement('div');
         pathDiv.style.cssText = 'display: flex; align-items: center; gap: 10px;';
         
@@ -676,6 +686,7 @@ function renderMediaPaths(paths) {
         pathDiv.appendChild(removeBtn);
         
         div.appendChild(nameInput);
+        div.appendChild(groupsInput);
         div.appendChild(pathDiv);
         pathsList.appendChild(div);
     });
@@ -695,7 +706,7 @@ function handleAddPath() {
     if (!exists) {
         const pathParts = newPath.split('/');
         const name = pathParts[pathParts.length - 1] || pathParts[pathParts.length - 2] || newPath;
-        state.currentConfig.media.paths.push({ name: name, path: newPath });
+        state.currentConfig.media.paths.push({ name: name, path: newPath, groups: [] });
         renderMediaPaths(state.currentConfig.media.paths);
         input.value = '';
     } else {
@@ -748,6 +759,7 @@ async function loadUsers() {
             <div class="user-item">
                 <div class="user-info">
                     <strong>${user.username}</strong>
+                    <span style="font-size: 12px; color: #666; margin-left: 10px;">Group: ${user.group || 'none'}</span>
                     ${user.is_admin ? '<span class="user-badge">ADMIN</span>' : ''}
                     ${user.username === currentUser.username ? '<span class="user-badge" style="background: #27ae60;">YOU</span>' : ''}
                 </div>
@@ -765,6 +777,7 @@ async function handleCreateUser() {
     const messageEl = document.getElementById('users-message');
     const username = document.getElementById('new-username').value.trim();
     const password = document.getElementById('new-password').value;
+    const group = document.getElementById('new-user-group').value.trim();
     const isAdmin = document.getElementById('new-user-admin').checked;
     
     if (!username || !password) {
@@ -774,12 +787,13 @@ async function handleCreateUser() {
     }
     
     try {
-        await api.createUser(username, password, isAdmin);
+        await api.createUser(username, password, isAdmin, group);
         messageEl.textContent = 'User created successfully';
         messageEl.style.color = '#27ae60';
         
         document.getElementById('new-username').value = '';
         document.getElementById('new-password').value = '';
+        document.getElementById('new-user-group').value = '';
         document.getElementById('new-user-admin').checked = false;
         
         loadUsers();
@@ -881,4 +895,3 @@ function handleSaveTheme() {
 // Initialize app when DOM is ready
 console.log('Calling init()');
 init();
-
