@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
@@ -40,6 +42,9 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     val themeFocus = remember { FocusRequester() }
     val hiddenFilesFocus = remember { FocusRequester() }
     val clearCacheFocus = remember { FocusRequester() }
+
+    // Observe auth state changes
+    val authStateRefresh = viewModel.authStateRefreshTrigger
 
     LaunchedEffect(Unit) {
         delay(100)
@@ -269,19 +274,76 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     }
                 } else {
                     items(servers) { address ->
-                        Surface(
-                            onClick = { /* Could auto-connect here */ },
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                         ) {
                             Row(
-                                modifier = Modifier.padding(12.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Dns, contentDescription = null)
+                                Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(24.dp))
                                 Spacer(modifier = Modifier.width(16.dp))
-                                Text(address, modifier = Modifier.weight(1f))
-                                Button(onClick = { provider.removeServer(address) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                                Text(address, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+
+                                val isServer = provider.typeId == "SERVER"
+                                // Access authStateRefresh here to ensure recomposition when it changes
+                                val hasToken = if (isServer) {
+                                    authStateRefresh.let { viewModel.credentialManager.getServerToken(address) != null }
+                                } else false
+
+                                // Connect Button - Show for SMB or logged in Server
+                                if (!isServer || hasToken) {
+                                    Button(
+                                        onClick = { 
+                                            viewModel.selectSource(provider, address)
+                                            onBack() 
+                                        },
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    ) {
+                                        Text("Connect")
+                                    }
+                                }
+
+                                if (isServer) {
+                                    Button(
+                                        onClick = { 
+                                            if (hasToken) {
+                                                viewModel.logout(address)
+                                            } else {
+                                                viewModel.selectSource(provider, address)
+                                                onBack()
+                                            }
+                                        },
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    ) {
+                                        if (hasToken) {
+                                            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Logout")
+                                        } else {
+                                            Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Login")
+                                        }
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        val isCurrent = (address == viewModel.currentSource?.serverAddress)
+                                        viewModel.removeServer(provider, address)
+                                        if (isCurrent) {
+                                            onBack()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.colors(
+                                        containerColor = Color.Red.copy(alpha = 0.2f),
+                                        contentColor = Color.Red
+                                    )
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Remove")
                                 }
                             }
                         }

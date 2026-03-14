@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
@@ -25,6 +27,9 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val currentTheme = viewModel.credentialManager.getAppTheme()
+
+    // Observe auth state changes
+    val authStateRefresh = viewModel.authStateRefreshTrigger
 
     Scaffold(
         topBar = {
@@ -150,12 +155,41 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                     }
                 } else {
                     items(servers) { address ->
+                        val isServer = provider.typeId == "SERVER"
+                        val hasToken = if (isServer) {
+                            authStateRefresh.let { viewModel.credentialManager.getServerToken(address) != null }
+                        } else false
+
                         ListItem(
                             headlineContent = { Text(address) },
                             leadingContent = { Icon(Icons.Default.Dns, contentDescription = null) },
                             trailingContent = {
-                                IconButton(onClick = { provider.removeServer(address) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                                Row {
+                                    if (isServer) {
+                                        IconButton(onClick = {
+                                            if (hasToken) {
+                                                viewModel.logout(address)
+                                            } else {
+                                                viewModel.selectSource(provider, address)
+                                                onBack()
+                                            }
+                                        }) {
+                                            if (hasToken) {
+                                                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout")
+                                            } else {
+                                                Icon(Icons.AutoMirrored.Filled.Login, contentDescription = "Login")
+                                            }
+                                        }
+                                    }
+                                    IconButton(onClick = {
+                                        val isCurrent = (address == viewModel.currentSource?.serverAddress)
+                                        viewModel.removeServer(provider, address)
+                                        if (isCurrent) {
+                                            onBack()
+                                        }
+                                    }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete")
+                                    }
                                 }
                             }
                         )

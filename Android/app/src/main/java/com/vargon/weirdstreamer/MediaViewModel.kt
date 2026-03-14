@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Base64
 import android.util.Log
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -100,6 +101,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var supportsThumbnailRegeneration by mutableStateOf(false)
+        private set
+
+    // Used to trigger UI updates when auth status changes (login/logout)
+    var authStateRefreshTrigger by mutableIntStateOf(0)
         private set
 
     private var viewModeMap by mutableStateOf(mapOf<String, Boolean>())
@@ -208,6 +213,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     provider.createRepository(cleanAddress).getInitialPath()
                 }
                 loadPath(source, initialPath)
+                // If we successfully loaded, trigger a refresh of auth state in UI
+                authStateRefreshTrigger++
             } catch (e: Exception) {
                 e.printStackTrace()
                 errorMessage = e.localizedMessage ?: "Failed to initialize source"
@@ -243,6 +250,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     if (save && source.typeId == "SMB") {
                         credentialManager.saveCredentials(source.serverAddress, user, pass)
                     }
+                    // Trigger UI update for auth status
+                    authStateRefreshTrigger++
                 }
 
                 // Handle server-specific SSE for thumbnails
@@ -324,6 +333,22 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         currentPathDisplayName = null
         supportsThumbnailRegeneration = false
         stopThumbnailUpdates()
+    }
+
+    fun logout(serverUrl: String) {
+        credentialManager.clearServerToken(serverUrl)
+        authStateRefreshTrigger++
+        if (currentSource?.serverAddress == serverUrl && currentSource?.typeId == "SERVER") {
+            returnToSourceSelection()
+        }
+    }
+
+    fun removeServer(provider: SourceProvider, address: String) {
+        provider.removeServer(address)
+        authStateRefreshTrigger++
+        if (currentSource?.serverAddress == address && currentSource?.typeId == provider.typeId) {
+            returnToSourceSelection()
+        }
     }
 
     fun playVideo(path: String) { selectedVideoPath = path }
