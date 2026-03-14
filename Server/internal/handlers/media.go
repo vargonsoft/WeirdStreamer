@@ -120,8 +120,11 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	log.Printf("Trickplay request for media ID %d: %s", id, item.Name)
+
 	trickplayDir := config.GlobalConfig.Media.TrickplayPath
 	if trickplayDir == "" {
+		log.Printf("Error: Trickplay path not configured")
 		respondError(w, http.StatusInternalServerError, "Trickplay path not configured")
 		return
 	}
@@ -131,6 +134,7 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 
 	files, err := os.ReadDir(trickplayVideoDir)
 	if err != nil {
+		log.Printf("Trickplay frames not found for hash %s in %s", hash, trickplayVideoDir)
 		respondError(w, http.StatusNotFound, "Trickplay frames not found")
 		return
 	}
@@ -157,6 +161,8 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 	sort.Slice(frames, func(i, j int) bool {
 		return frames[i].Time < frames[j].Time
 	})
+
+	log.Printf("Found %d trickplay frames for %s", len(frames), item.Name)
 
 	info := models.TrickplayInfo{
 		Frames: frames,
