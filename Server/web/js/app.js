@@ -6,6 +6,7 @@ const state = {
     mediaItems: [],
     directories: [],
     currentConfig: null,
+    availableGroups: []
 };
 
 // DOM Elements
@@ -182,6 +183,7 @@ function showMainScreen() {
     if (!state.currentConfig) {
         api.getConfig().then(config => {
             state.currentConfig = config;
+            updateAvailableGroups();
         }).catch(err => {
             console.log('Could not load config:', err);
         });
@@ -609,7 +611,8 @@ async function showSettings() {
     try {
         const config = await api.getConfig();
         state.currentConfig = config;
-        
+        updateAvailableGroups();
+
         // Populate form fields
         document.getElementById('server-port').value = config.server.port;
         document.getElementById('server-host').value = config.server.host;
@@ -641,6 +644,18 @@ async function showSettings() {
     }
 }
 
+function updateAvailableGroups() {
+    if (!state.currentConfig || !state.currentConfig.media.paths) return;
+
+    const groupsSet = new Set();
+    state.currentConfig.media.paths.forEach(path => {
+        if (path.groups) {
+            path.groups.forEach(group => groupsSet.add(group));
+        }
+    });
+    state.availableGroups = Array.from(groupsSet).sort();
+}
+
 function renderMediaPaths(paths) {
     const pathsList = document.getElementById('media-paths-list');
     pathsList.innerHTML = '';
@@ -667,6 +682,7 @@ function renderMediaPaths(paths) {
         groupsInput.placeholder = 'Allowed Groups (comma separated)';
         groupsInput.onchange = (e) => {
             state.currentConfig.media.paths[index].groups = e.target.value.split(',').map(s => s.trim()).filter(s => s);
+            updateAvailableGroups();
         };
 
         const pathDiv = document.createElement('div');
@@ -718,6 +734,7 @@ function handleRemovePath(index) {
     if (confirm('Remove this path?')) {
         state.currentConfig.media.paths.splice(index, 1);
         renderMediaPaths(state.currentConfig.media.paths);
+        updateAvailableGroups();
     }
 }
 
@@ -735,6 +752,7 @@ async function handleSaveSettings() {
         // If server returned updated config (with IDs), adopt it locally
         if (result && result.config) {
             state.currentConfig = result.config;
+            updateAvailableGroups();
         }
         messageEl.textContent = (result && result.message) ? result.message : 'Configuration updated.';
         messageEl.style.color = '#27ae60';
@@ -755,21 +773,63 @@ async function loadUsers() {
         const usersList = document.getElementById('users-list');
         const currentUser = JSON.parse(localStorage.getItem('user'));
         
-        usersList.innerHTML = users.map(user => `
-            <div class="user-item">
-                <div class="user-info">
-                    <strong>${user.username}</strong>
-                    <span style="font-size: 12px; color: #666; margin-left: 10px;">Group: ${user.group || 'none'}</span>
-                    ${user.is_admin ? '<span class="user-badge">ADMIN</span>' : ''}
-                    ${user.username === currentUser.username ? '<span class="user-badge" style="background: #27ae60;">YOU</span>' : ''}
+        // Fetch fresh available groups list
+        const groups = await api.getAvailableGroups();
+        state.availableGroups = groups;
+
+        usersList.innerHTML = users.map(user => {
+            const isMe = user.username === currentUser.username;
+            return `
+                <div class="user-item">
+                    <div class="user-info">
+                        <strong>${user.username}</strong>
+                        ${user.is_admin ? '<span class="user-badge">ADMIN</span>' : ''}
+                        ${isMe ? '<span class="user-badge" style="background: #27ae60;">YOU</span>' : ''}
+                        <div style="margin-top: 5px;">
+                            <label style="font-size: 12px; color: #666;">Group: </label>
+                            <select onchange="updateUserGroup('${user.username}', this.value)" class="settings-input" style="width: auto; padding: 2px 5px; font-size: 12px;">
+                                <option value="">None</option>
+                                ${state.availableGroups.map(g => `<option value="${g}" ${user.group === g ? 'selected' : ''}>${g}</option>`).join('')}
+                            </select>
+                            <label style="font-size: 12px; color: #666; margin-left: 10px;">Admin: </label>
+                            <input type="checkbox" ${user.is_admin ? 'checked' : ''} ${isMe ? 'disabled' : ''} onchange="updateUserAdmin('${user.username}', this.checked)">
+                        </div>
+                    </div>
+                    ${!isMe ?
+                        `<button class="btn" onclick="deleteUser('${user.username}')">🗑️ Delete</button>` :
+                        '<span style="color: #999; font-style: italic; font-size: 12px;">Cannot delete yourself</span>'}
                 </div>
-                ${user.username !== currentUser.username ? 
-                    `<button class="btn" onclick="deleteUser('${user.username}')">🗑️ Delete</button>` : 
-                    '<span style="color: #999; font-style: italic;">Cannot delete yourself</span>'}
-            </div>
-        `).join('');
+            `;
+        }).join('');
     } catch (error) {
         console.error('Failed to load users:', error);
+    }
+}
+
+async function updateUserGroup(username, group) {
+    try {
+        await api.updateUser(username, { group: group });
+        const messageEl = document.getElementById('users-message');
+        messageEl.textContent = `Updated group for ${username}`;
+        messageEl.style.color = '#27ae60';
+        setTimeout(() => messageEl.textContent = '', 3000);
+    } catch (error) {
+        alert('Failed to update group: ' + error.message);
+        loadUsers();
+    }
+}
+
+async function updateUserAdmin(username, isAdmin) {
+    try {
+        await api.updateUser(username, { is_admin: isAdmin });
+        const messageEl = document.getElementById('users-message');
+        messageEl.textContent = `Updated admin status for ${username}`;
+        messageEl.style.color = '#27ae60';
+        setTimeout(() => messageEl.textContent = '', 3000);
+        loadUsers();
+    } catch (error) {
+        alert('Failed to update admin status: ' + error.message);
+        loadUsers();
     }
 }
 

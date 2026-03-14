@@ -95,10 +95,12 @@ func main() {
 	// Config endpoints (admin only)
 	api.HandleFunc("/config", configHandler.GetConfig).Methods("GET")
 	api.HandleFunc("/config", configHandler.UpdateConfig).Methods("PUT")
+	api.HandleFunc("/groups", configHandler.GetAvailableGroups).Methods("GET")
 
 	// User management endpoints
 	api.HandleFunc("/users", userHandler.ListUsers).Methods("GET")
 	api.HandleFunc("/users", userHandler.CreateUser).Methods("POST")
+	api.HandleFunc("/users", userHandler.UpdateUser).Methods("PUT")
 	api.HandleFunc("/users", userHandler.DeleteUser).Methods("DELETE")
 	api.HandleFunc("/users/change-password", userHandler.ChangePassword).Methods("POST")
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/models"
 )
 
 type UserHandler struct {
@@ -95,6 +96,34 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, response)
+}
+
+// UpdateUser updates an existing user (admin only)
+func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil || !claims.IsAdmin {
+		respondError(w, http.StatusForbidden, "Admin access required")
+		return
+	}
+
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		respondError(w, http.StatusBadRequest, "Username is required")
+		return
+	}
+
+	var req models.UserUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := h.db.UpdateUser(username, req); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to update user")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"message": "User updated successfully"})
 }
 
 // DeleteUser deletes a user (admin only)

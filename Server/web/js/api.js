@@ -191,6 +191,10 @@ class MediaAPI {
         });
     }
 
+    async getAvailableGroups() {
+        return this.request('/api/groups');
+    }
+
     async getUsers() {
         return this.request('/api/users');
     }
@@ -204,6 +208,13 @@ class MediaAPI {
                 is_admin: isAdmin,
                 group: group
             }),
+        });
+    }
+
+    async updateUser(username, data) {
+        return this.request(`/api/users?username=${encodeURIComponent(username)}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
         });
     }
 

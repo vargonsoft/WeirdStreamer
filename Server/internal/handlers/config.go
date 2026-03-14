@@ -58,3 +58,20 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		"config":  config.GlobalConfig,
 	})
 }
+
+// GetAvailableGroups returns a list of all groups defined in the configuration
+func (h *ConfigHandler) GetAvailableGroups(w http.ResponseWriter, r *http.Request) {
+	groupsMap := make(map[string]bool)
+	for _, path := range config.GlobalConfig.Media.Paths {
+		for _, group := range path.Groups {
+			groupsMap[group] = true
+		}
+	}
+
+	groups := make([]string, 0, len(groupsMap))
+	for group := range groupsMap {
+		groups = append(groups, group)
+	}
+
+	respondJSON(w, http.StatusOK, groups)
+}
