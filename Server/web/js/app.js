@@ -785,14 +785,18 @@ async function loadUsers() {
                         <strong>${user.username}</strong>
                         ${user.is_admin ? '<span class="user-badge">ADMIN</span>' : ''}
                         ${isMe ? '<span class="user-badge" style="background: #27ae60;">YOU</span>' : ''}
-                        <div style="margin-top: 5px;">
-                            <label style="font-size: 12px; color: #666;">Group: </label>
-                            <select onchange="updateUserGroup('${user.username}', this.value)" class="settings-input" style="width: auto; padding: 2px 5px; font-size: 12px;">
-                                <option value="">None</option>
-                                ${state.availableGroups.map(g => `<option value="${g}" ${user.group === g ? 'selected' : ''}>${g}</option>`).join('')}
-                            </select>
-                            <label style="font-size: 12px; color: #666; margin-left: 10px;">Admin: </label>
-                            <input type="checkbox" ${user.is_admin ? 'checked' : ''} ${isMe ? 'disabled' : ''} onchange="updateUserAdmin('${user.username}', this.checked)">
+                        <div style="margin-top: 10px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <label style="font-size: 12px; color: #666;">Group: </label>
+                                <select onchange="updateUserGroup('${user.username}', this.value)" class="settings-input" style="width: auto; padding: 2px 5px; font-size: 12px;">
+                                    <option value="">None</option>
+                                    ${state.availableGroups.map(g => `<option value="${g}" ${user.group === g ? 'selected' : ''}>${g}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <label style="font-size: 12px; color: #666;">Admin: </label>
+                                <input type="checkbox" ${user.is_admin ? 'checked' : ''} ${isMe ? 'disabled' : ''} onchange="updateUserAdmin('${user.username}', this.checked)">
+                            </div>
                         </div>
                     </div>
                     ${!isMe ?
