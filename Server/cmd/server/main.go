@@ -65,7 +65,7 @@ func main() {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
 	mediaHandler := handlers.NewMediaHandler(db, authService)
-	configHandler := handlers.NewConfigHandler()
+	configHandler := handlers.NewConfigHandler(db)
 	userHandler := handlers.NewUserHandler(db)
 
 	// Setup router

@@ -169,17 +169,23 @@ function showLoginScreen() {
 function showMainScreen() {
     loginScreen.classList.remove('active');
     mainScreen.classList.add('active');
-    
+
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+
     // Show settings button for all users
     if (settingsBtn) {
         settingsBtn.style.display = 'inline-block';
+    }
+
+    // Show scan button only for admins
+    if (scanBtn) {
+        scanBtn.style.display = user.is_admin ? 'inline-block' : 'none';
     }
     
     // Update regenerate thumbnails button visibility
     updateRegenerateThumbnailsButton();
 
     // Only load config for friendly path names if admin
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
     if (user.is_admin && !state.currentConfig) {
         api.getConfig().then(config => {
             state.currentConfig = config;

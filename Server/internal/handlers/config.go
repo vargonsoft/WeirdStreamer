@@ -6,24 +6,63 @@ import (
 
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/database"
 )
 
-type ConfigHandler struct{}
-
-func NewConfigHandler() *ConfigHandler {
-	return &ConfigHandler{}
+type ConfigHandler struct {
+	db *database.DB
 }
 
-// GetConfig returns the current configuration (admin only)
+func NewConfigHandler(db *database.DB) *ConfigHandler {
+	return &ConfigHandler{db: db}
+}
+
+// GetConfig returns the configuration. Admins get the full config,
+// regular users get only authorized library names/IDs.
 func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
-	// Check if user is admin
 	claims := auth.GetClaims(r.Context())
-	if claims == nil || !claims.IsAdmin {
-		respondError(w, http.StatusForbidden, "Admin access required")
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, config.GlobalConfig)
+	if claims.IsAdmin {
+		respondJSON(w, http.StatusOK, config.GlobalConfig)
+		return
+	}
+
+	// For non-admins, return a filtered config containing only authorized libraries
+	user, err := h.db.GetUserByUsername(claims.Username)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to get user info")
+		return
+	}
+
+	filteredPaths := []config.MediaPath{}
+	for _, path := range config.GlobalConfig.Media.Paths {
+		authorized := false
+		for _, g := range path.Groups {
+			if g == user.Group {
+				authorized = true
+				break
+			}
+		}
+		if authorized {
+			// Don't leak actual system paths or group lists to non-admins
+			filteredPaths = append(filteredPaths, config.MediaPath{
+				ID:   path.ID,
+				Name: path.Name,
+			})
+		}
+	}
+
+	publicConfig := map[string]interface{}{
+		"media": map[string]interface{}{
+			"paths": filteredPaths,
+		},
+	}
+
+	respondJSON(w, http.StatusOK, publicConfig)
 }
 
 // UpdateConfig updates the configuration (admin only)
