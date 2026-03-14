@@ -185,8 +185,8 @@ function showMainScreen() {
     // Update regenerate thumbnails button visibility
     updateRegenerateThumbnailsButton();
 
-    // Only load config for friendly path names if admin
-    if (user.is_admin && !state.currentConfig) {
+    // Load config for friendly path names for all users
+    if (!state.currentConfig) {
         api.getConfig().then(config => {
             state.currentConfig = config;
             updateAvailableGroups();
@@ -377,7 +377,7 @@ function updateBreadcrumb() {
             
             // For the first part (root directory), use friendly name if available
             let displayName = part;
-            if (index === 0 && state.currentConfig && state.currentConfig.media.paths) {
+            if (index === 0 && state.currentConfig && state.currentConfig.media && state.currentConfig.media.paths) {
                 const mediaPath = state.currentConfig.media.paths.find(mp => mp.id === part);
                 if (mediaPath) {
                     displayName = mediaPath.name;
@@ -430,7 +430,7 @@ function createDirectoryElement(dir) {
     
     // Use friendly name for root paths if configured
     let displayName = dir.name;
-    if (!state.currentPath && state.currentConfig && state.currentConfig.media.paths) {
+    if (!state.currentPath && state.currentConfig && state.currentConfig.media && state.currentConfig.media.paths) {
         // Match only by configured ID (server enforces ID-only API)
         const mediaPath = state.currentConfig.media.paths.find(mp => mp.id === dir.path);
         if (mediaPath) {
@@ -672,7 +672,7 @@ async function showSettings() {
 }
 
 function updateAvailableGroups() {
-    if (!state.currentConfig || !state.currentConfig.media.paths) return;
+    if (!state.currentConfig || !state.currentConfig.media || !state.currentConfig.media.paths) return;
 
     const groupsSet = new Set();
     state.currentConfig.media.paths.forEach(path => {
