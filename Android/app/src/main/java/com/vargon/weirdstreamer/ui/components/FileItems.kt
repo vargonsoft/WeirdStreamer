@@ -129,7 +129,7 @@ fun FileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> U
     val viewModel: MediaViewModel = viewModel()
     
     LaunchedEffect(item.path) {
-        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item)) {
+        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
             viewModel.fetchMetadata(item)
         }
     }
@@ -327,7 +327,7 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
     val viewModel: MediaViewModel = viewModel()
     
     LaunchedEffect(item.path) {
-        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item)) {
+        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
             viewModel.fetchMetadata(item)
         }
     }

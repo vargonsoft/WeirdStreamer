@@ -109,6 +109,7 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
+		log.Printf("[TRICKPLAY] Invalid ID: %s", idStr)
 		respondError(w, http.StatusBadRequest, "Invalid media ID")
 		return
 	}
@@ -116,15 +117,16 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 	// Get media item from database
 	item, err := h.db.GetMediaItemByID(id)
 	if err != nil {
+		log.Printf("[TRICKPLAY] Media ID %d not found in DB", id)
 		respondError(w, http.StatusNotFound, "Media not found")
 		return
 	}
 
-	log.Printf("Trickplay request for media ID %d: %s", id, item.Name)
+	log.Printf("[TRICKPLAY] Request for media ID %d: %s", id, item.Name)
 
 	trickplayDir := config.GlobalConfig.Media.TrickplayPath
 	if trickplayDir == "" {
-		log.Printf("Error: Trickplay path not configured")
+		log.Printf("[TRICKPLAY] Error: Trickplay path not configured in config.json")
 		respondError(w, http.StatusInternalServerError, "Trickplay path not configured")
 		return
 	}
@@ -134,7 +136,7 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 
 	files, err := os.ReadDir(trickplayVideoDir)
 	if err != nil {
-		log.Printf("Trickplay frames not found for hash %s in %s", hash, trickplayVideoDir)
+		log.Printf("[TRICKPLAY] No frames found for %s (hash: %s) in directory: %s", item.Name, hash, trickplayVideoDir)
 		respondError(w, http.StatusNotFound, "Trickplay frames not found")
 		return
 	}
@@ -162,7 +164,7 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 		return frames[i].Time < frames[j].Time
 	})
 
-	log.Printf("Found %d trickplay frames for %s", len(frames), item.Name)
+	log.Printf("[TRICKPLAY] Returning %d frames for %s", len(frames), item.Name)
 
 	info := models.TrickplayInfo{
 		Frames: frames,
@@ -249,13 +251,17 @@ func (h *MediaHandler) GetMediaMetadata(w http.ResponseWriter, r *http.Request) 
 	// Base64 decode the path
 	pathBytes, err := base64.StdEncoding.DecodeString(encodedPath)
 	if err != nil {
+		log.Printf("[METADATA] Invalid path encoding: %s", encodedPath)
 		respondError(w, http.StatusBadRequest, "Invalid path encoding")
 		return
 	}
 	path := string(pathBytes)
 
+	log.Printf("[METADATA] Request for path: %s", path)
+
 	// Validate path is within allowed media paths
 	if !h.isValidMediaPath(path) {
+		log.Printf("[METADATA] Access denied for path: %s", path)
 		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
@@ -264,9 +270,10 @@ func (h *MediaHandler) GetMediaMetadata(w http.ResponseWriter, r *http.Request) 
 	item, err := h.db.GetMediaItem(path)
 	if err != nil || item.Duration == 0 {
 		// Not in database or no duration - get metadata in real-time
-		log.Printf("Getting metadata in real-time for: %s", path)
+		log.Printf("[METADATA] Fetching in real-time for: %s", path)
 		metadata, err := h.scanner.GetFileMetadata(path)
 		if err != nil {
+			log.Printf("[METADATA] Failed to get real-time metadata for %s: %v", path, err)
 			respondError(w, http.StatusInternalServerError, "Failed to get metadata")
 			return
 		}
@@ -274,6 +281,7 @@ func (h *MediaHandler) GetMediaMetadata(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	log.Printf("[METADATA] Returning cached metadata for: %s (Duration: %.2fs)", item.Name, item.Duration)
 	respondJSON(w, http.StatusOK, item)
 }
 

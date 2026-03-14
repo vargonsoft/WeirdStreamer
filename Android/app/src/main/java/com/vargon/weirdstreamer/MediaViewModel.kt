@@ -162,9 +162,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun getFilteredFileList(): List<FileItem> {
         return when (contentFilter) {
             ContentFilter.ALL -> fileList
-            ContentFilter.IMAGE -> fileList.filter { (!it.isDirectory && isImage(it)) }
-            ContentFilter.VIDEO -> fileList.filter { (!it.isDirectory && isVideo(it)) }
-            ContentFilter.PDF -> fileList.filter { (!it.isDirectory && isPdf(it)) }
+            ContentFilter.IMAGE -> fileList.filter { (!it.isDirectory && isImage(it.path)) }
+            ContentFilter.VIDEO -> fileList.filter { (!it.isDirectory && isVideo(it.path)) }
+            ContentFilter.PDF -> fileList.filter { (!it.isDirectory && isPdf(it.path)) }
         }
     }
 
@@ -285,7 +285,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun fetchMetadata(item: FileItem) {
         val repo = currentRepository ?: return
-        if (item.isDirectory || item.path == "UP" || (item.duration != null && item.duration > 0) || pendingMetadataPaths.contains(item.path)) return
+        if (item.isDirectory || item.path == "UP" || item.duration != null || pendingMetadataPaths.contains(item.path)) return
         
         pendingMetadataPaths.add(item.path)
         viewModelScope.launch {
@@ -352,50 +352,51 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         return path
     }
 
-    fun isImage(item: FileItem): Boolean {
-        if (item.mimeType?.startsWith("image/") == true) return true
-        val ext = getActualFilename(item.path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
+    fun isImage(path: String): Boolean {
+        val ext = getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
         return ext in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
     }
 
-    fun isVideo(item: FileItem): Boolean {
-        if (item.mimeType?.startsWith("video/") == true) return true
-        val ext = getActualFilename(item.path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
+    fun isVideo(path: String): Boolean {
+        val ext = getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
         return ext in setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2")
     }
 
-    fun isPdf(item: FileItem): Boolean {
-        if (item.mimeType == "application/pdf") return true
-        val ext = getActualFilename(item.path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
+    fun isPdf(path: String): Boolean {
+        val ext = getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
         return ext == "pdf"
     }
-    
-    // Convenience for backward compat
-    fun isImage(path: String): Boolean = isImage(FileItem("", path, false))
-    fun isVideo(path: String): Boolean = isVideo(FileItem("", path, false))
-    fun isPdf(path: String): Boolean = isPdf(FileItem("", path, false))
 
     fun getDisplayName(path: String): String {
         return currentRepository?.getDisplayName(path) ?: path.substringAfterLast('/')
     }
 
     fun getImagesInCurrentFolder(): List<String> {
-        return fileList.filter { !it.isDirectory && isImage(it) }.map { it.path }
+        return fileList.filter { !it.isDirectory && isImage(it.path) }.map { it.path }
     }
 
     fun getVideosInCurrentFolder(): List<String> {
-        return fileList.filter { !it.isDirectory && isVideo(it) }.map { it.path }
+        return fileList.filter { !it.isDirectory && isVideo(it.path) }.map { it.path }
     }
 
     fun getFileItemForPath(path: String): FileItem? {
         return fileList.find { it.path == path }
     }
 
-    suspend fun fetchTrickplayInfo(item: FileItem): TrickplayInfo? {
+    suspend fun fetchTrickplayInfo(id: Long): TrickplayInfo? {
         val repo = currentRepository ?: return null
-        if (!repo.supportsTrickplay() || item.id == null) return null
+        if (!repo.supportsTrickplay()) return null
         
-        return repo.getTrickplayInfo(item.id).getOrNull()
+        Log.d("MediaViewModel", "Fetching trickplay info for ID: $id")
+        val result = repo.getTrickplayInfo(id)
+        if (result.isFailure) {
+            Log.e("MediaViewModel", "Failed to fetch trickplay info: ${result.exceptionOrNull()?.message}")
+        }
+        return result.getOrNull()
+    }
+
+    suspend fun fetchTrickplayInfo(item: FileItem): TrickplayInfo? {
+        return item.id?.let { fetchTrickplayInfo(it) }
     }
 
     suspend fun downloadToTempFile(path: String, context: Context, suffix: String = ".pdf"): File? = withContext(Dispatchers.IO) {
