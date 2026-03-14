@@ -779,6 +779,7 @@ async function loadUsers() {
 
         usersList.innerHTML = users.map(user => {
             const isMe = user.username === currentUser.username;
+            console.log('Rendering user:', user.username, 'isAdmin:', user.is_admin, 'isMe:', isMe);
             return `
                 <div class="user-item">
                     <div class="user-info">
@@ -787,14 +788,14 @@ async function loadUsers() {
                         ${isMe ? '<span class="user-badge" style="background: #27ae60;">YOU</span>' : ''}
                         <div style="margin-top: 10px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                             <div style="display: flex; align-items: center; gap: 5px;">
-                                <label style="font-size: 12px; color: #666;">Group: </label>
+                                <span style="font-size: 12px; color: #666;">Group: </span>
                                 <select onchange="updateUserGroup('${user.username}', this.value)" class="settings-input" style="width: auto; padding: 2px 5px; font-size: 12px;">
                                     <option value="">None</option>
                                     ${state.availableGroups.map(g => `<option value="${g}" ${user.group === g ? 'selected' : ''}>${g}</option>`).join('')}
                                 </select>
                             </div>
                             <div style="display: flex; align-items: center; gap: 5px;">
-                                <label style="font-size: 12px; color: #666;">Admin: </label>
+                                <span style="font-size: 12px; color: #666;">Admin: </span>
                                 <input type="checkbox" ${user.is_admin ? 'checked' : ''} ${isMe ? 'disabled' : ''} onchange="updateUserAdmin('${user.username}', this.checked)">
                             </div>
                         </div>
