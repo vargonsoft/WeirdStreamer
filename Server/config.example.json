@@ -4,21 +4,25 @@
     "host": "0.0.0.0"
   },
   "database": {
-    "path": "./data/media.db"
+    "userPath": "./data/users.db",
+    "mediaPath": "./data/media.db"
   },
   "media": {
     "paths": [
       {
         "name": "Movies",
-        "path": "/path/to/media/movies"
+        "path": "/path/to/media/movies",
+        "groups": ["adults", "admins"]
       },
       {
         "name": "TV Shows",
-        "path": "/path/to/media/tv"
+        "path": "/path/to/media/tv",
+        "groups": ["kids", "adults", "admins"]
       },
       {
         "name": "Photos",
-        "path": "/path/to/media/photos"
+        "path": "/path/to/media/photos",
+        "groups": ["adults", "admins"]
       }
     ],
     "thumbnailPath": "./thumbnails",

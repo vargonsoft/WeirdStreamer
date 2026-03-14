@@ -9,6 +9,7 @@ type User struct {
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
 	IsAdmin      bool      `json:"is_admin"`
+	Group        string    `json:"group"` // The single group the user belongs to
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -52,6 +53,11 @@ type LoginResponse struct {
 	Token     string `json:"token"`
 	ExpiresAt int64  `json:"expires_at"`
 	User      User   `json:"user"`
+}
+
+type UserUpdateRequest struct {
+	IsAdmin *bool   `json:"is_admin,omitempty"`
+	Group   *string `json:"group,omitempty"`
 }
 
 type ErrorResponse struct {

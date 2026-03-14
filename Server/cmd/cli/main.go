@@ -12,6 +12,7 @@ import (
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/media"
+	"github.com/weirdstreamer/server/internal/models"
 	"golang.org/x/term"
 )
 
@@ -70,19 +71,20 @@ func main() {
 func printUsage() {
 	fmt.Println("Media Server CLI")
 	fmt.Println("\nUsage:")
-	fmt.Println("  cli user create <username> [--admin]  - Create a new user")
-	fmt.Println("  cli user list                         - List all users")
-	fmt.Println("  cli user delete <username>            - Delete a user")
-	fmt.Println("  cli user change-password <username>   - Change user password")
-	fmt.Println("  cli scan                              - Scan media directories")
-	fmt.Println("  cli trickplay [options]               - Generate trickplay frames")
-	fmt.Println("      --video <path>                    - Generate for a specific video")
-	fmt.Println("      --dir <path>                      - Generate for all videos in a directory")
-	fmt.Println("      --library <name>                  - Generate for a specific media library")
-	fmt.Println("      (no options)                      - Generate for all videos in database")
-	fmt.Println("  cli trickplay clean                   - Remove trickplay images for non-existent paths")
-	fmt.Println("  cli config add-path <path>            - Add media directory")
-	fmt.Println("  cli config list-paths                 - List media directories")
+	fmt.Println("  cli user create <username> [--admin] [--group <group>]  - Create a new user")
+	fmt.Println("  cli user list                                          - List all users")
+	fmt.Println("  cli user delete <username>                             - Delete a user")
+	fmt.Println("  cli user change-password <username>                    - Change user password")
+	fmt.Println("  cli user set-group <username> <group>                  - Set user group")
+	fmt.Println("  cli scan                                               - Scan media directories")
+	fmt.Println("  cli trickplay [options]                                - Generate trickplay frames")
+	fmt.Println("      --video <path>                                     - Generate for a specific video")
+	fmt.Println("      --dir <path>                                       - Generate for all videos in a directory")
+	fmt.Println("      --library <name>                                   - Generate for a specific media library")
+	fmt.Println("      (no options)                                       - Generate for all videos in database")
+	fmt.Println("  cli trickplay clean                                    - Remove trickplay images for non-existent paths")
+	fmt.Println("  cli config add-path <path>                             - Add media directory")
+	fmt.Println("  cli config list-paths                                  - List media directories")
 }
 
 func handleUserCommand(db *database.DB, args []string) {
@@ -101,7 +103,17 @@ func handleUserCommand(db *database.DB, args []string) {
 			os.Exit(1)
 		}
 		username := args[1]
-		isAdmin := len(args) > 2 && args[2] == "--admin"
+		isAdmin := false
+		group := ""
+
+		for i := 2; i < len(args); i++ {
+			if args[i] == "--admin" {
+				isAdmin = true
+			} else if args[i] == "--group" && i+1 < len(args) {
+				group = args[i+1]
+				i++
+			}
+		}
 
 		fmt.Print("Enter password: ")
 		password, _ := term.ReadPassword(int(syscall.Stdin))
@@ -116,12 +128,12 @@ func handleUserCommand(db *database.DB, args []string) {
 			os.Exit(1)
 		}
 
-		user, err := db.CreateUser(username, string(password), isAdmin)
+		user, err := db.CreateUser(username, string(password), isAdmin, group)
 		if err != nil {
 			log.Fatalf("Failed to create user: %v", err)
 		}
 
-		fmt.Printf("User created: %s (ID: %d, Admin: %t)\n", user.Username, user.ID, user.IsAdmin)
+		fmt.Printf("User created: %s (ID: %d, Admin: %t, Group: %s)\n", user.Username, user.ID, user.IsAdmin, user.Group)
 
 	case "list":
 		users, err := db.ListUsers()
@@ -135,7 +147,7 @@ func handleUserCommand(db *database.DB, args []string) {
 			if user.IsAdmin {
 				adminStr = " (admin)"
 			}
-			fmt.Printf("  - %s%s (ID: %d)\n", user.Username, adminStr, user.ID)
+			fmt.Printf("  - %s%s (ID: %d, Group: %s)\n", user.Username, adminStr, user.ID, user.Group)
 		}
 
 	case "delete":
@@ -182,6 +194,20 @@ func handleUserCommand(db *database.DB, args []string) {
 		}
 
 		fmt.Printf("Password updated for user: %s\n", username)
+
+	case "set-group":
+		if len(args) < 3 {
+			fmt.Println("Usage: cli user set-group <username> <group>")
+			os.Exit(1)
+		}
+		username := args[1]
+		group := args[2]
+
+		if err := db.UpdateUser(username, models.UserUpdateRequest{Group: &group}); err != nil {
+			log.Fatalf("Failed to set user group: %v", err)
+		}
+
+		fmt.Printf("Group updated for user: %s -> %s\n", username, group)
 
 	default:
 		fmt.Printf("Unknown user subcommand: %s\n", subcommand)
@@ -332,7 +358,7 @@ func handleConfigCommand(args []string) {
 	case "list-paths":
 		fmt.Println("Media directories:")
 		for i, mediaPath := range config.GlobalConfig.Media.Paths {
-			fmt.Printf("  %d. %s (%s)\n", i+1, mediaPath.Name, mediaPath.Path)
+			fmt.Printf("  %d. %s (%s) [Groups: %v]\n", i+1, mediaPath.Name, mediaPath.Path, mediaPath.Groups)
 		}
 
 	default:

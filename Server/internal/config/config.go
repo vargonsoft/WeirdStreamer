@@ -27,9 +27,10 @@ type DatabaseConfig struct {
 }
 
 type MediaPath struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-	ID   string `json:"id,omitempty"`
+	Name   string   `json:"name"`
+	Path   string   `json:"path"`
+	ID     string   `json:"id,omitempty"`
+	Groups []string `json:"groups"` // Groups that have access to this library
 }
 
 type MediaConfig struct {

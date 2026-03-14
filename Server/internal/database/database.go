@@ -44,6 +44,7 @@ func (db *DB) initSchema() error {
 		username TEXT UNIQUE NOT NULL,
 		password_hash TEXT NOT NULL,
 		is_admin INTEGER DEFAULT 0,
+		user_group TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	`
@@ -72,6 +73,9 @@ func (db *DB) initSchema() error {
 		return err
 	}
 
+	// Migration: add user_group column if it doesn't exist
+	_, _ = db.userConn.Exec("ALTER TABLE users ADD COLUMN user_group TEXT")
+
 	if _, err := db.mediaConn.Exec(mediaSchema); err != nil {
 		return err
 	}
@@ -87,15 +91,15 @@ func (db *DB) Close() error {
 }
 
 // User operations
-func (db *DB) CreateUser(username, password string, isAdmin bool) (*models.User, error) {
+func (db *DB) CreateUser(username, password string, isAdmin bool, group string) (*models.User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
 
 	result, err := db.userConn.Exec(
-		"INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
-		username, string(hash), isAdmin,
+		"INSERT INTO users (username, password_hash, is_admin, user_group) VALUES (?, ?, ?, ?)",
+		username, string(hash), isAdmin, group,
 	)
 	if err != nil {
 		return nil, err
@@ -107,6 +111,7 @@ func (db *DB) CreateUser(username, password string, isAdmin bool) (*models.User,
 		Username:     username,
 		PasswordHash: string(hash),
 		IsAdmin:      isAdmin,
+		Group:        group,
 		CreatedAt:    time.Now(),
 	}, nil
 }
@@ -114,9 +119,9 @@ func (db *DB) CreateUser(username, password string, isAdmin bool) (*models.User,
 func (db *DB) GetUserByUsername(username string) (*models.User, error) {
 	user := &models.User{}
 	err := db.userConn.QueryRow(
-		"SELECT id, username, password_hash, is_admin, created_at FROM users WHERE username = ?",
+		"SELECT id, username, password_hash, is_admin, user_group, created_at FROM users WHERE username = ?",
 		username,
-	).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin, &user.Group, &user.CreatedAt)
 
 	if err != nil {
 		return nil, err
@@ -127,9 +132,9 @@ func (db *DB) GetUserByUsername(username string) (*models.User, error) {
 func (db *DB) GetUserByID(id int64) (*models.User, error) {
 	user := &models.User{}
 	err := db.userConn.QueryRow(
-		"SELECT id, username, password_hash, is_admin, created_at FROM users WHERE id = ?",
+		"SELECT id, username, password_hash, is_admin, user_group, created_at FROM users WHERE id = ?",
 		id,
-	).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin, &user.Group, &user.CreatedAt)
 
 	if err != nil {
 		return nil, err
@@ -138,7 +143,7 @@ func (db *DB) GetUserByID(id int64) (*models.User, error) {
 }
 
 func (db *DB) ListUsers() ([]models.User, error) {
-	rows, err := db.userConn.Query("SELECT id, username, is_admin, created_at FROM users")
+	rows, err := db.userConn.Query("SELECT id, username, is_admin, user_group, created_at FROM users")
 	if err != nil {
 		return nil, err
 	}
@@ -147,12 +152,26 @@ func (db *DB) ListUsers() ([]models.User, error) {
 	var users []models.User
 	for rows.Next() {
 		var user models.User
-		if err := rows.Scan(&user.ID, &user.Username, &user.IsAdmin, &user.CreatedAt); err != nil {
+		if err := rows.Scan(&user.ID, &user.Username, &user.IsAdmin, &user.Group, &user.CreatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, user)
 	}
 	return users, nil
+}
+
+func (db *DB) UpdateUser(username string, req models.UserUpdateRequest) error {
+	if req.IsAdmin != nil && req.Group != nil {
+		_, err := db.userConn.Exec("UPDATE users SET is_admin = ?, user_group = ? WHERE username = ?", *req.IsAdmin, *req.Group, username)
+		return err
+	} else if req.IsAdmin != nil {
+		_, err := db.userConn.Exec("UPDATE users SET is_admin = ? WHERE username = ?", *req.IsAdmin, username)
+		return err
+	} else if req.Group != nil {
+		_, err := db.userConn.Exec("UPDATE users SET user_group = ? WHERE username = ?", *req.Group, username)
+		return err
+	}
+	return nil
 }
 
 func (db *DB) DeleteUser(username string) error {

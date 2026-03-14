@@ -48,6 +48,31 @@ func NewMediaHandler(db *database.DB, authService *auth.Service) *MediaHandler {
 	}
 }
 
+func (h *MediaHandler) getUserGroup(r *http.Request) string {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		return ""
+	}
+	user, err := h.db.GetUserByUsername(claims.Username)
+	if err != nil {
+		return ""
+	}
+	return user.Group
+}
+
+func (h *MediaHandler) canAccessLibrary(r *http.Request, lib config.MediaPath) bool {
+	userGroup := h.getUserGroup(r)
+	if userGroup == "" {
+		return false
+	}
+	for _, group := range lib.Groups {
+		if group == userGroup {
+			return true
+		}
+	}
+	return false
+}
+
 // ListMedia godoc
 // @Summary List media items
 // @Description Get list of all media items, optionally filtered by type
@@ -59,6 +84,12 @@ func NewMediaHandler(db *database.DB, authService *auth.Service) *MediaHandler {
 // @Security BearerAuth
 // @Router /api/media [get]
 func (h *MediaHandler) ListMedia(w http.ResponseWriter, r *http.Request) {
+	userGroup := h.getUserGroup(r)
+	if userGroup == "" {
+		respondJSON(w, http.StatusOK, []models.MediaItem{})
+		return
+	}
+
 	mediaType := r.URL.Query().Get("type")
 
 	items, err := h.db.ListMediaItems(mediaType)
@@ -67,7 +98,18 @@ func (h *MediaHandler) ListMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, items)
+	// Filter items based on library access
+	filteredItems := []models.MediaItem{}
+	for _, item := range items {
+		for _, lib := range config.GlobalConfig.Media.Paths {
+			if strings.HasPrefix(item.Path, lib.Path) && h.canAccessLibrary(r, lib) {
+				filteredItems = append(filteredItems, item)
+				break
+			}
+		}
+	}
+
+	respondJSON(w, http.StatusOK, filteredItems)
 }
 
 // GetMediaInfo godoc
@@ -87,6 +129,20 @@ func (h *MediaHandler) GetMediaInfo(w http.ResponseWriter, r *http.Request) {
 	item, err := h.db.GetMediaItem(path)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "Media not found")
+		return
+	}
+
+	// Check access
+	authorized := false
+	for _, lib := range config.GlobalConfig.Media.Paths {
+		if strings.HasPrefix(item.Path, lib.Path) && h.canAccessLibrary(r, lib) {
+			authorized = true
+			break
+		}
+	}
+
+	if !authorized {
+		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
 
@@ -119,6 +175,20 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		log.Printf("[TRICKPLAY] Media ID %d not found in DB", id)
 		respondError(w, http.StatusNotFound, "Media not found")
+		return
+	}
+
+	// Check access
+	authorized := false
+	for _, lib := range config.GlobalConfig.Media.Paths {
+		if strings.HasPrefix(item.Path, lib.Path) && h.canAccessLibrary(r, lib) {
+			authorized = true
+			break
+		}
+	}
+
+	if !authorized {
+		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
 
@@ -218,6 +288,20 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check access
+	authorized := false
+	for _, lib := range config.GlobalConfig.Media.Paths {
+		if strings.HasPrefix(path, lib.Path) && h.canAccessLibrary(r, lib) {
+			authorized = true
+			break
+		}
+	}
+
+	if !authorized {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
 	item, err := h.db.GetMediaItem(path)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "Media not found")
@@ -266,6 +350,20 @@ func (h *MediaHandler) GetMediaMetadata(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Check access
+	authorized := false
+	for _, lib := range config.GlobalConfig.Media.Paths {
+		if strings.HasPrefix(path, lib.Path) && h.canAccessLibrary(r, lib) {
+			authorized = true
+			break
+		}
+	}
+
+	if !authorized {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
 	// Try to get from database first
 	item, err := h.db.GetMediaItem(path)
 	if err != nil || item.Duration == 0 {
@@ -305,6 +403,11 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	if relativePath == "" {
 		for _, mediaPath := range config.GlobalConfig.Media.Paths {
 			if stat, err := os.Stat(mediaPath.Path); err == nil && stat.IsDir() {
+				// Check access
+				if !h.canAccessLibrary(r, mediaPath) {
+					continue
+				}
+
 				// Use configured name if available, otherwise fall back to base path
 				displayName := mediaPath.Name
 				if displayName == "" {
@@ -334,9 +437,11 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 
 	// Browse within a specific media path
 	var targetPath string
+	var targetLib config.MediaPath
 	pathParts := strings.Split(strings.Trim(relativePath, "/"), "/")
 
 	// Find which root this belongs to. Match only by the stable ID.
+	found := false
 	for _, mediaPath := range config.GlobalConfig.Media.Paths {
 		if mediaPath.ID != "" && mediaPath.ID == pathParts[0] {
 			if len(pathParts) > 1 {
@@ -344,12 +449,20 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			} else {
 				targetPath = mediaPath.Path
 			}
+			targetLib = mediaPath
+			found = true
 			break
 		}
 	}
 
-	if targetPath == "" {
+	if !found {
 		respondError(w, http.StatusNotFound, "Path not found")
+		return
+	}
+
+	// Check access
+	if !h.canAccessLibrary(r, targetLib) {
+		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
 

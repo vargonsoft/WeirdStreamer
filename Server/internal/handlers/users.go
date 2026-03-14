@@ -20,6 +20,7 @@ type CreateUserRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	IsAdmin  bool   `json:"is_admin"`
+	Group    string `json:"group"`
 }
 
 type ChangePasswordRequest struct {
@@ -31,6 +32,7 @@ type UserResponse struct {
 	ID       int64  `json:"id"`
 	Username string `json:"username"`
 	IsAdmin  bool   `json:"is_admin"`
+	Group    string `json:"group"`
 }
 
 // ListUsers returns all users (admin only)
@@ -53,6 +55,7 @@ func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			ID:       user.ID,
 			Username: user.Username,
 			IsAdmin:  user.IsAdmin,
+			Group:    user.Group,
 		}
 	}
 
@@ -78,7 +81,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.db.CreateUser(req.Username, req.Password, req.IsAdmin)
+	user, err := h.db.CreateUser(req.Username, req.Password, req.IsAdmin, req.Group)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to create user")
 		return
@@ -88,6 +91,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		ID:       user.ID,
 		Username: user.Username,
 		IsAdmin:  user.IsAdmin,
+		Group:    user.Group,
 	}
 
 	respondJSON(w, http.StatusCreated, response)
