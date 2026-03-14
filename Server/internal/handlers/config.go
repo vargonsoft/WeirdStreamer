@@ -59,8 +59,15 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetAvailableGroups returns a list of all groups defined in the configuration
+// GetAvailableGroups returns a list of all groups defined in the configuration (admin only)
 func (h *ConfigHandler) GetAvailableGroups(w http.ResponseWriter, r *http.Request) {
+	// Check if user is admin
+	claims := auth.GetClaims(r.Context())
+	if claims == nil || !claims.IsAdmin {
+		respondError(w, http.StatusForbidden, "Admin access required")
+		return
+	}
+
 	groupsMap := make(map[string]bool)
 	for _, path := range config.GlobalConfig.Media.Paths {
 		for _, group := range path.Groups {

@@ -572,7 +572,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 
 // ScanMedia godoc
 // @Summary Scan media directories
-// @Description Trigger a scan of configured media directories
+// @Description Trigger a scan of configured media directories (admin only)
 // @Tags media
 // @Produce json
 // @Success 200 {object} map[string]string
@@ -580,6 +580,13 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /api/media/scan [post]
 func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
+	// Check if user is admin
+	claims := auth.GetClaims(r.Context())
+	if claims == nil || !claims.IsAdmin {
+		respondError(w, http.StatusForbidden, "Admin access required")
+		return
+	}
+
 	go h.scanner.ScanMediaPaths()
 	respondJSON(w, http.StatusOK, map[string]string{"status": "scan started"})
 }
@@ -598,12 +605,7 @@ func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
 func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Request) {
 	// Check if user is admin
 	claims := auth.GetClaims(r.Context())
-	if claims == nil {
-		respondError(w, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	if !claims.IsAdmin {
+	if claims == nil || !claims.IsAdmin {
 		respondError(w, http.StatusForbidden, "Admin access required")
 		return
 	}
