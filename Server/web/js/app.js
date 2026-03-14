@@ -170,17 +170,17 @@ function showMainScreen() {
     loginScreen.classList.remove('active');
     mainScreen.classList.add('active');
     
-    // Check if user is admin and show settings button
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    if (user.is_admin && settingsBtn) {
+    // Show settings button for all users
+    if (settingsBtn) {
         settingsBtn.style.display = 'inline-block';
     }
     
     // Update regenerate thumbnails button visibility
     updateRegenerateThumbnailsButton();
 
-    // Load config for friendly path names
-    if (!state.currentConfig) {
+    // Only load config for friendly path names if admin
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    if (user.is_admin && !state.currentConfig) {
         api.getConfig().then(config => {
             state.currentConfig = config;
             updateAvailableGroups();
@@ -608,40 +608,61 @@ function formatDuration(seconds) {
 
 // Settings Functions
 async function showSettings() {
-    try {
-        const config = await api.getConfig();
-        state.currentConfig = config;
-        updateAvailableGroups();
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-        // Populate form fields
-        document.getElementById('server-port').value = config.server.port;
-        document.getElementById('server-host').value = config.server.host;
-        document.getElementById('enable-http2').checked = config.streaming.enableHTTP2;
-        document.getElementById('chunk-size').value = config.streaming.chunkSize;
-        
-        // Apply theme selection
-        applyTheme();
-        
-        // Setup theme radio button listeners for immediate preview
-        document.querySelectorAll('input[name="theme"]').forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                document.documentElement.setAttribute('data-theme', e.target.value);
-            });
-        });
-        
-        // Render media paths
-        renderMediaPaths(config.media.paths);
-        
-        // Setup event listeners for settings
-        document.getElementById('add-path-btn').onclick = handleAddPath;
-        document.getElementById('save-settings-btn').onclick = handleSaveSettings;
-        
-        // Show settings screen
-        mainScreen.classList.remove('active');
-        settingsScreen.classList.add('active');
-    } catch (error) {
-        alert('Failed to load settings: ' + error.message);
+    // Hide admin tabs for non-admin users
+    const serverTabBtn = document.querySelector('.settings-tab[data-tab="server"]');
+    const usersTabBtn = document.querySelector('.settings-tab[data-tab="users"]');
+
+    if (serverTabBtn) serverTabBtn.style.display = user.is_admin ? 'block' : 'none';
+    if (usersTabBtn) usersTabBtn.style.display = user.is_admin ? 'block' : 'none';
+
+    // Set active tab to 'account' if not admin
+    if (!user.is_admin) {
+        document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
+        const accountTabBtn = document.querySelector('.settings-tab[data-tab="account"]');
+        if (accountTabBtn) accountTabBtn.classList.add('active');
+        document.getElementById('account-tab').classList.add('active');
     }
+
+    if (user.is_admin) {
+        try {
+            const config = await api.getConfig();
+            state.currentConfig = config;
+            updateAvailableGroups();
+
+            // Populate form fields
+            document.getElementById('server-port').value = config.server.port;
+            document.getElementById('server-host').value = config.server.host;
+            document.getElementById('enable-http2').checked = config.streaming.enableHTTP2;
+            document.getElementById('chunk-size').value = config.streaming.chunkSize;
+
+            // Render media paths
+            renderMediaPaths(config.media.paths);
+
+            // Setup event listeners for settings
+            document.getElementById('add-path-btn').onclick = handleAddPath;
+            document.getElementById('save-settings-btn').onclick = handleSaveSettings;
+        } catch (error) {
+            console.error('Failed to load admin settings:', error);
+            alert('Failed to load system settings: ' + error.message);
+        }
+    }
+
+    // Apply theme selection (accessible to all)
+    applyTheme();
+
+    // Setup theme radio button listeners for immediate preview
+    document.querySelectorAll('input[name="theme"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            document.documentElement.setAttribute('data-theme', e.target.value);
+        });
+    });
+
+    // Show settings screen
+    mainScreen.classList.remove('active');
+    settingsScreen.classList.add('active');
 }
 
 function updateAvailableGroups() {
@@ -779,7 +800,9 @@ async function loadUsers() {
 
         usersList.innerHTML = users.map(user => {
             const isMe = user.username === currentUser.username;
-            console.log('Rendering user:', user.username, 'isAdmin:', user.is_admin, 'isMe:', isMe);
+            // Use the data from the server directly
+            const isAdminChecked = user.is_admin ? 'checked' : '';
+
             return `
                 <div class="user-item">
                     <div class="user-info">
@@ -796,7 +819,7 @@ async function loadUsers() {
                             </div>
                             <div style="display: flex; align-items: center; gap: 5px;">
                                 <span style="font-size: 12px; color: #666;">Admin: </span>
-                                <input type="checkbox" ${user.is_admin ? 'checked' : ''} ${isMe ? 'disabled' : ''} onchange="updateUserAdmin('${user.username}', this.checked)">
+                                <input type="checkbox" ${isAdminChecked} ${isMe ? 'disabled' : ''} onchange="updateUserAdmin('${user.username}', this.checked)">
                             </div>
                         </div>
                     </div>
