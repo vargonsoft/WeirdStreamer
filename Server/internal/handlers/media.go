@@ -375,6 +375,10 @@ func (h *MediaHandler) GetMediaMetadata(w http.ResponseWriter, r *http.Request) 
 			respondError(w, http.StatusInternalServerError, "Failed to get metadata")
 			return
 		}
+		// If we got real-time metadata but the file is in the database, preserve the ID
+		if err == nil && item != nil {
+			metadata.ID = item.ID
+		}
 		respondJSON(w, http.StatusOK, metadata)
 		return
 	}
