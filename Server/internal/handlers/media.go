@@ -527,6 +527,10 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 							thumbnailURL = h.scanner.GenerateVideoThumbnail(itemCopy.Path)
 						}
 						itemCopy.ThumbnailURL = thumbnailURL
+
+						// Re-fetch metadata to get duration if missing
+						h.scanner.GetFileMetadata(itemCopy.Path)
+
 						h.db.SaveMediaItem(itemCopy)
 
 						// Notify thumbnail ready via SSE
