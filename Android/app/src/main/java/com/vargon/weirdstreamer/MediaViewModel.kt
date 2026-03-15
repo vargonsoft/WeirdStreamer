@@ -11,11 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.okhttp.OkHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
 import com.vargon.weirdstreamer.api.ThumbnailUpdateListener
@@ -142,11 +138,6 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     // Metadata fetching state to avoid redundant calls
     private val pendingMetadataPaths = mutableSetOf<String>()
-
-    // --- ExoPlayer management for phone video playback ---
-    private var exoPlayer: ExoPlayer? = null
-    private var exoPlayerPath: String? = null
-    private var exoPlayerContext: Context? = null
 
     // Natural sort helper function
     private fun naturalCompare(s1: String, s2: String): Int {
@@ -527,49 +518,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             if (result.isFailure) errorMessage = "Failed to regenerate thumbnails: ${result.exceptionOrNull()?.message}"
         }
     }
-    
-    // --- ExoPlayer management for phone video playback ---
-    @androidx.annotation.OptIn(UnstableApi::class)
-    fun getOrCreateExoPlayer(context: Context, path: String): ExoPlayer {
-        if (exoPlayer == null || exoPlayerPath != path || exoPlayerContext != context) {
-            exoPlayer?.release()
-            val isSmbSource = path.startsWith("smb://")
-            val builder = ExoPlayer.Builder(context)
-            if (isSmbSource) {
-                builder.setMediaSourceFactory(
-                    DefaultMediaSourceFactory(context)
-                        .setDataSourceFactory(SmbDataSourceFactory(credentialManager, baseContext))
-                )
-            } else {
-                val okHttpClient = WeirdStreamerApplication.getOkHttpClient()
-                val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
-                    .setUserAgent("WeirdStreamer/1.0")
-                builder.setMediaSourceFactory(
-                    DefaultMediaSourceFactory(context)
-                        .setDataSourceFactory(okHttpDataSourceFactory)
-                )
-            }
-            exoPlayer = builder.build().apply {
-                setMediaItem(MediaItem.fromUri(path))
-                prepare()
-                playWhenReady = true
-            }
-            exoPlayerPath = path
-            exoPlayerContext = context
-        }
-        return exoPlayer!!
-    }
-
-    fun releaseExoPlayer() {
-        exoPlayer?.release()
-        exoPlayer = null
-        exoPlayerPath = null
-        exoPlayerContext = null
-    }
 
     override fun onCleared() {
         super.onCleared()
         stopThumbnailUpdates()
-        releaseExoPlayer()
     }
 }
