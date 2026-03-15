@@ -69,6 +69,7 @@ import java.util.Locale
 fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val view = LocalView.current
 
     // Hide system bars for immersive fullscreen
     DisposableEffect(Unit) {
@@ -110,6 +111,17 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     var playbackPosition by remember(path) { mutableLongStateOf(0L) }
     var duration by remember(path) { mutableLongStateOf(0L) }
     var isBuffering by remember { mutableStateOf(true) }
+
+    // Keep screen on while playing or buffering
+    DisposableEffect(isPlaying, isBuffering) {
+        val shouldKeepScreenOn = isPlaying || isBuffering
+        if (shouldKeepScreenOn) {
+            view.keepScreenOn = true
+        }
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
 
     // Trickplay state
     var trickplayInfo by remember { mutableStateOf<TrickplayInfo?>(null) }
