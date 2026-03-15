@@ -148,6 +148,29 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     private var exoPlayerPath: String? = null
     private var exoPlayerContext: Context? = null
 
+    // Natural sort helper function
+    private fun naturalCompare(s1: String, s2: String): Int {
+        val regex = Regex("(\\d+)|(\\D+)")
+        val s1Parts = regex.findAll(s1).map { it.value }.toList()
+        val s2Parts = regex.findAll(s2).map { it.value }.toList()
+
+        var i = 0
+        while (i < s1Parts.size && i < s2Parts.size) {
+            val p1 = s1Parts[i]
+            val p2 = s2Parts[i]
+
+            val result = if (p1[0].isDigit() && p2[0].isDigit()) {
+                p1.toBigInteger().compareTo(p2.toBigInteger())
+            } else {
+                p1.compareTo(p2, ignoreCase = true)
+            }
+
+            if (result != 0) return result
+            i++
+        }
+        return s1Parts.size - s2Parts.size
+    }
+
     fun toggleViewMode() {
         val key = currentViewModeKey
         val newState = !isGridView
@@ -165,11 +188,22 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getFilteredFileList(): List<FileItem> {
-        return when (contentFilter) {
+        val filtered = when (contentFilter) {
             ContentFilter.ALL -> fileList
-            ContentFilter.IMAGE -> fileList.filter { (!it.isDirectory && isImage(it.path)) }
-            ContentFilter.VIDEO -> fileList.filter { (!it.isDirectory && isVideo(it.path)) }
-            ContentFilter.PDF -> fileList.filter { (!it.isDirectory && isPdf(it.path)) }
+            ContentFilter.IMAGE -> fileList.filter { it.isDirectory || isImage(it.path) }
+            ContentFilter.VIDEO -> fileList.filter { it.isDirectory || isVideo(it.path) }
+            ContentFilter.PDF -> fileList.filter { it.isDirectory || isPdf(it.path) }
+        }
+
+        // Apply natural sort: Directories first (except UP), then files
+        return filtered.sortedWith { item1, item2 ->
+            when {
+                item1.path == "UP" -> -1
+                item2.path == "UP" -> 1
+                item1.isDirectory && !item2.isDirectory -> -1
+                !item1.isDirectory && item2.isDirectory -> 1
+                else -> naturalCompare(item1.name, item2.name)
+            }
         }
     }
 
@@ -294,7 +328,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun fetchMetadata(item: FileItem) {
         val repo = currentRepository ?: return
-        if (item.isDirectory || item.path == "UP" || item.duration != null || pendingMetadataPaths.contains(item.path)) return
+        if (item.isDirectory || item.path == "UP" || (item.duration != null && item.duration > 0) || pendingMetadataPaths.contains(item.path)) return
         
         pendingMetadataPaths.add(item.path)
         viewModelScope.launch {

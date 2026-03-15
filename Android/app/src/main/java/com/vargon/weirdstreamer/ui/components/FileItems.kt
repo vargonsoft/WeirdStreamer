@@ -326,7 +326,7 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
     val isParent = item.name == ".." || item.path == "UP"
     val viewModel: MediaViewModel = viewModel()
     
-    LaunchedEffect(item.path) {
+    LaunchedEffect(item.id, item.path, item.duration) {
         if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
             viewModel.fetchMetadata(item)
         }
