@@ -48,10 +48,11 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if authorized {
-			// Don't leak actual system paths or group lists to non-admins
+			// Include Path as well so Android metadata fetching works
 			filteredPaths = append(filteredPaths, config.MediaPath{
 				ID:   path.ID,
 				Name: path.Name,
+				Path: path.Path,
 			})
 		}
 	}
