@@ -189,11 +189,13 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			cmd := exec.Command("heif-convert", filePath, tempFile)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
-				log.Printf("[THUMBNAIL] ERROR: heif-convert failed for %s: %v\nOutput: %s", filePath, err, string(output))
-				return "", fmt.Errorf("heif-convert failed: %w", err)
+				log.Printf("[THUMBNAIL] heif-convert failed for %s (possibly a mislabeled JPEG): %v\nOutput: %s", filePath, err, string(output))
+				// Fallback: try using the original file directly, maybe it's actually a JPEG
+				imageFile = filePath
+			} else {
+				imageFile = tempFile
+				defer os.Remove(tempFile) // Clean up temp file
 			}
-			defer os.Remove(tempFile) // Clean up temp file
-			imageFile = tempFile
 		} else {
 			imageFile = filePath
 		}

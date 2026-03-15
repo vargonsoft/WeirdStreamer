@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	_ "image/gif"
+	_ "image/jpeg"
 	_ "image/png"
 	"log"
 	"os"
@@ -103,9 +104,9 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 				item.ThumbnailURL = s.GenerateVideoThumbnail(path)
 			}
 		case "image":
-			if err := s.getImageMetadata(item); err == nil {
-				item.ThumbnailURL = s.GenerateImageThumbnail(path)
-			}
+			// Try to get metadata, but don't skip thumbnail if it fails (common for HEIC)
+			s.getImageMetadata(item)
+			item.ThumbnailURL = s.GenerateImageThumbnail(path)
 		case "document":
 			item.ThumbnailURL = s.generateDocThumbnail(path)
 		}

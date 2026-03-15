@@ -220,7 +220,10 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 		if r.Context().Err() != nil {
 			return nil
 		}
-		return fmt.Errorf("heif-convert failed: %w", cmdErr)
+
+		// Fallback: if heif-convert fails, it might actually be a JPEG file mislabeled
+		fmt.Printf("heif-convert failed for %s, trying to serve as original JPEG: %v\n", filePath, cmdErr)
+		return s.serveOriginalFile(w, r, filePath, "image/jpeg")
 	}
 
 	// Now stream the converted JPEG file
@@ -247,6 +250,23 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 	fmt.Printf("Image conversion finished for: %s\n", filePath)
 
 	return copyErr
+}
+
+// serveOriginalFile serves the original file with range request support
+func (s *Streamer) serveOriginalFile(w http.ResponseWriter, r *http.Request, filePath string, contentType string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return err
+	}
+
+	http.ServeContent(w, r, filePath, stat.ModTime(), file)
+	return nil
 }
 
 // needsTranscoding checks if a file format needs transcoding for browser compatibility
