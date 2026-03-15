@@ -116,11 +116,17 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     val trickplayListState = rememberLazyListState()
     val isTrickplayDragged by trickplayListState.interactionSource.collectIsDraggedAsState()
     val isTrickplayPressed by trickplayListState.interactionSource.collectIsPressedAsState()
-    var lastTrickplayInteractionTime by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(isTrickplayDragged, isTrickplayPressed, trickplayListState.isScrollInProgress) {
-        if (isTrickplayDragged || isTrickplayPressed || trickplayListState.isScrollInProgress) {
-            lastTrickplayInteractionTime = System.currentTimeMillis()
+    // Seeker state
+    val sliderInteractionSource = remember { MutableInteractionSource() }
+    val isSliderDragged by sliderInteractionSource.collectIsDraggedAsState()
+    val isSliderPressed by sliderInteractionSource.collectIsPressedAsState()
+
+    var lastInteractionTime by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(isTrickplayDragged, isTrickplayPressed, trickplayListState.isScrollInProgress, isSliderDragged, isSliderPressed) {
+        if (isTrickplayDragged || isTrickplayPressed || trickplayListState.isScrollInProgress || isSliderDragged || isSliderPressed) {
+            lastInteractionTime = System.currentTimeMillis()
         }
     }
 
@@ -309,8 +315,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }
     }
 
-    LaunchedEffect(showControls, showSpeedDialog) {
-        if (showControls && !showSpeedDialog) {
+    LaunchedEffect(showControls, showSpeedDialog, isTrickplayDragged, isTrickplayPressed, trickplayListState.isScrollInProgress, isSliderDragged, isSliderPressed, lastInteractionTime) {
+        if (showControls && !showSpeedDialog && !isTrickplayDragged && !isTrickplayPressed && !trickplayListState.isScrollInProgress && !isSliderDragged && !isSliderPressed) {
             delay(5000)
             if (!showSpeedDialog) showControls = false
         }
@@ -465,7 +471,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     
                     // Transcode toggle
                     if (!isSmbSource) {
-                        IconButton(onClick = { enableTranscode = !enableTranscode }) {
+                        IconButton(onClick = { 
+                            lastInteractionTime = System.currentTimeMillis()
+                            enableTranscode = !enableTranscode 
+                        }) {
                             Icon(
                                 Icons.Default.VideoSettings,
                                 contentDescription = "Transcode",
@@ -475,7 +484,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     }
                     
                     // Rotation
-                    IconButton(onClick = { rotation = (rotation + 90f) % 360f }) {
+                    IconButton(onClick = { 
+                        lastInteractionTime = System.currentTimeMillis()
+                        rotation = (rotation + 90f) % 360f 
+                    }) {
                         Icon(
                             Icons.AutoMirrored.Filled.RotateRight,
                             contentDescription = "Rotate",
@@ -493,7 +505,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(48.dp)
                     ) {
-                        IconButton(onClick = { seekPlayer((playbackPosition - 10000).coerceAtLeast(0)) }) {
+                        IconButton(onClick = { 
+                            lastInteractionTime = System.currentTimeMillis()
+                            seekPlayer((playbackPosition - 10000).coerceAtLeast(0)) 
+                        }) {
                             Icon(
                                 Icons.Default.Replay10,
                                 contentDescription = "-10s",
@@ -501,7 +516,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                 modifier = Modifier.size(48.dp)
                             )
                         }
-                        IconButton(onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() }) {
+                        IconButton(onClick = { 
+                            lastInteractionTime = System.currentTimeMillis()
+                            if (isPlaying) exoPlayer.pause() else exoPlayer.play() 
+                        }) {
                             Icon(
                                 if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = "Play/Pause",
@@ -509,7 +527,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                 modifier = Modifier.size(64.dp)
                             )
                         }
-                        IconButton(onClick = { seekPlayer((playbackPosition + 30000).coerceAtMost(duration)) }) {
+                        IconButton(onClick = { 
+                            lastInteractionTime = System.currentTimeMillis()
+                            seekPlayer((playbackPosition + 30000).coerceAtMost(duration)) 
+                        }) {
                             Icon(
                                 Icons.Default.Forward30,
                                 contentDescription = "+30s",
@@ -530,6 +551,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                             horizontalArrangement = Arrangement.spacedBy(64.dp)
                         ) {
                             IconButton(onClick = { 
+                                lastInteractionTime = System.currentTimeMillis()
                                 // Approx 1 frame back at 24fps
                                 exoPlayer.seekTo((exoPlayer.currentPosition - 40L).coerceAtLeast(0L))
                             }) {
@@ -541,6 +563,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                 )
                             }
                             IconButton(onClick = { 
+                                lastInteractionTime = System.currentTimeMillis()
                                 // Approx 1 frame forward at 24fps
                                 exoPlayer.seekTo(exoPlayer.currentPosition + 40L)
                             }) {
@@ -580,7 +603,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                         .fillMaxHeight()
                                         .clip(RoundedCornerShape(4.dp))
                                         .clickable {
-                                            lastTrickplayInteractionTime = System.currentTimeMillis()
+                                            lastInteractionTime = System.currentTimeMillis()
                                             seekPlayer(frame.time.toLong() * 1000)
                                         }
                                 ) {
@@ -614,7 +637,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                             val interactionTimeout = 8000L
                             
                             if (!isTrickplayDragged && !isTrickplayPressed && !trickplayListState.isScrollInProgress && 
-                                (currentTime - lastTrickplayInteractionTime) > interactionTimeout) {
+                                (currentTime - lastInteractionTime) > interactionTimeout) {
                                 
                                 val index = frames.indexOfFirst { it.time * 1000 >= playbackPosition }
                                 if (index != -1) {
@@ -631,6 +654,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     ) {
                         // Aspect Ratio button
                         TextButton(onClick = {
+                            lastInteractionTime = System.currentTimeMillis()
                             currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size
                             currentAspectRatio = aspectRatioValues[currentAspectRatioIndex]
                         }) {
@@ -643,6 +667,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         
                         // Speed button
                         TextButton(onClick = {
+                            lastInteractionTime = System.currentTimeMillis()
                             showSpeedDialog = true
                         }) {
                             Icon(Icons.Default.Speed, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
@@ -657,6 +682,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                             val targetPos = (it * duration).toLong()
                             seekPlayer(targetPos)
                         },
+                        interactionSource = sliderInteractionSource,
                         colors = SliderDefaults.colors(
                             thumbColor = Color.Red,
                             activeTrackColor = Color.Red,
