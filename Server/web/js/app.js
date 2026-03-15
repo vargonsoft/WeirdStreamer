@@ -32,6 +32,11 @@ const imageViewer = document.getElementById('image-viewer');
 const playerTitle = document.getElementById('player-title');
 const imageTitle = document.getElementById('image-title');
 
+// Natural sort helper function
+function naturalCompare(s1, s2) {
+    return s1.localeCompare(s2, undefined, { numeric: true, sensitivity: 'base' });
+}
+
 // Initialize
 function init() {
     // Apply saved theme
@@ -329,6 +334,10 @@ async function loadMedia(pushHistory = true) {
         state.directories = data.dirs || [];
         state.mediaItems = data.items || [];
         
+        // Apply natural sort to directories and media items
+        state.directories.sort((a, b) => naturalCompare(a.name, b.name));
+        state.mediaItems.sort((a, b) => naturalCompare(a.name, b.name));
+
         // Filter by type if needed
         if (state.currentType !== 'all') {
             state.mediaItems = state.mediaItems.filter(item => item.type === state.currentType);
