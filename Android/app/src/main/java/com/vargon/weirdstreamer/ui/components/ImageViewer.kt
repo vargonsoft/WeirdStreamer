@@ -9,6 +9,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
@@ -78,6 +79,8 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
     var livePhotoInfo by remember { mutableStateOf<LivePhotoInfo?>(null) }
     var showVideo by remember { mutableStateOf(false) }
     var isVideoPlaying by remember { mutableStateOf(false) }
+    var isPaused by remember { mutableStateOf(false) }
+    var showPauseIcon by remember { mutableStateOf(false) }
 
     val fileName = remember(currentSmbPath) {
         viewModel.getDisplayName(currentSmbPath)
@@ -116,6 +119,8 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
         livePhotoInfo = null
         showVideo = false
         isVideoPlaying = false
+        isPaused = false
+        showPauseIcon = false
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
 
@@ -157,7 +162,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                     while (totalRead < info.videoLength && input.read(buffer).also { bytesRead = it } != -1) {
                                         val toWrite = minOf(bytesRead.toLong(), info.videoLength - totalRead).toInt()
                                         output.write(buffer, 0, toWrite)
-                                        totalRead += toWrite
+                                        totalRead += bytesRead
                                     }
                                 }
                             }
@@ -195,8 +200,8 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
     }
 
     // Live Photo Loop Logic
-    LaunchedEffect(livePhotoInfo) {
-        if (livePhotoInfo != null) {
+    LaunchedEffect(livePhotoInfo, isPaused) {
+        if (livePhotoInfo != null && !isPaused) {
             Log.i("ImageViewer", "Starting Live Photo loop")
             while (true) {
                 // Play video
@@ -204,21 +209,39 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                 exoPlayer.seekTo(0)
                 // Ensure the video is fully prepared and ready to play
                 while (exoPlayer.playbackState == Player.STATE_BUFFERING) {
+                    if (isPaused) break
                     delay(10)
                 }
+                if (isPaused) break
+                
                 showVideo = true
                 exoPlayer.play()
                 
                 // Wait for video to finish
                 while (isVideoPlaying) {
+                    if (isPaused) break
                     delay(100)
                 }
+                if (isPaused) break
                 
                 // Show still image for 3 seconds
                 showVideo = false
                 Log.d("ImageViewer", "Video ended, showing still for 3s")
                 delay(3000)
+                if (isPaused) break
             }
+        } else if (isPaused) {
+            exoPlayer.pause()
+        }
+    }
+
+    LaunchedEffect(isPaused) {
+        if (isPaused) {
+            showPauseIcon = true
+            delay(2000)
+            showPauseIcon = false
+        } else {
+            showPauseIcon = false
         }
     }
 
@@ -350,6 +373,13 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                                         )
                                 }
                                 true
+                            }
+
+                            Key.MediaPlayPause, Key.Spacebar -> {
+                                if (livePhotoInfo != null) {
+                                    isPaused = !isPaused
+                                    true
+                                } else false
                             }
 
                             Key.Backspace -> {
@@ -523,6 +553,17 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                         .size(48.dp)
                         .graphicsLayer(rotationY = if (isForward) 0f else 180f),
                     tint = Color.White.copy(alpha = 0.5f)
+                )
+            }
+
+            if (showPauseIcon && livePhotoInfo != null) {
+                Icon(
+                    imageVector = Icons.Default.Pause,
+                    contentDescription = "Paused",
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .size(64.dp)
+                        .align(Alignment.Center)
                 )
             }
         }

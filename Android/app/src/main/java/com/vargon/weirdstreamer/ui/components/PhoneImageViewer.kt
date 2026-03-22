@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -176,6 +177,7 @@ fun ZoomableImage(
     var showVideo by remember { mutableStateOf(false) }
     var isVideoPlaying by remember { mutableStateOf(false) }
     var isPaused by remember { mutableStateOf(false) }
+    var showPauseIcon by remember { mutableStateOf(false) }
 
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -196,6 +198,7 @@ fun ZoomableImage(
         showVideo = false
         isVideoPlaying = false
         isPaused = false
+        showPauseIcon = false
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
         
@@ -274,9 +277,13 @@ fun ZoomableImage(
         if (livePhotoInfo != null && !isPaused) {
             Log.i("ZoomableImage", "Starting Live Photo loop")
             while (true) {
-                showVideo = true
                 isVideoPlaying = true
                 exoPlayer.seekTo(0)
+                // Ensure the video is fully prepared and ready to play
+                while (exoPlayer.playbackState == Player.STATE_BUFFERING) {
+                    delay(10)
+                }
+                showVideo = true
                 exoPlayer.play()
                 
                 while (isVideoPlaying) {
@@ -292,6 +299,16 @@ fun ZoomableImage(
             }
         } else if (isPaused) {
             exoPlayer.pause()
+        }
+    }
+
+    LaunchedEffect(isPaused) {
+        if (isPaused) {
+            showPauseIcon = true
+            delay(2000)
+            showPauseIcon = false
+        } else {
+            showPauseIcon = false
         }
     }
 
@@ -383,7 +400,7 @@ fun ZoomableImage(
                 )
             }
 
-            if (showVideo && livePhotoInfo != null) {
+            if (livePhotoInfo != null) {
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
@@ -392,7 +409,7 @@ fun ZoomableImage(
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                         }
                     },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize().alpha(if (showVideo) 1f else 0f)
                 )
             }
         }
@@ -401,7 +418,7 @@ fun ZoomableImage(
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.primary)
         }
         
-        if (isPaused && livePhotoInfo != null) {
+        if (showPauseIcon && livePhotoInfo != null) {
             Icon(
                 imageVector = Icons.Default.Pause,
                 contentDescription = "Paused",
