@@ -1,6 +1,7 @@
 package com.vargon.weirdstreamer.ui.components
 
 import android.util.Log
+import android.view.LayoutInflater
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -45,6 +46,7 @@ import com.vargon.weirdstreamer.LivePhotoInfo
 import com.vargon.weirdstreamer.LivePhotoType
 import com.vargon.weirdstreamer.LivePhotoUtil
 import com.vargon.weirdstreamer.MediaViewModel
+import com.vargon.weirdstreamer.R
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import kotlinx.coroutines.delay
 import java.io.File
@@ -479,7 +481,8 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                 if (livePhotoInfo != null) {
                     AndroidView(
                         factory = { ctx ->
-                            PlayerView(ctx).apply {
+                            val view = LayoutInflater.from(ctx).inflate(R.layout.texture_video_view, null) as PlayerView
+                            view.apply {
                                 player = exoPlayer
                                 useController = false
                                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT

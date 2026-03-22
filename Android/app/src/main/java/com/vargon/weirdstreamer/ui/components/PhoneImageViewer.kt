@@ -23,6 +23,7 @@ import androidx.core.view.WindowCompat
 import android.app.Activity
 import android.os.Build
 import android.util.Log
+import android.view.LayoutInflater
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,6 +41,7 @@ import com.vargon.weirdstreamer.LivePhotoInfo
 import com.vargon.weirdstreamer.LivePhotoType
 import com.vargon.weirdstreamer.LivePhotoUtil
 import com.vargon.weirdstreamer.MediaViewModel
+import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.delay
 import java.io.File
 import kotlin.OptIn
@@ -238,7 +240,7 @@ fun ZoomableImage(
                                     while (totalRead < info.videoLength && input.read(buffer).also { bytesRead = it } != -1) {
                                         val toWrite = minOf(bytesRead.toLong(), info.videoLength - totalRead).toInt()
                                         output.write(buffer, 0, toWrite)
-                                        totalRead += toWrite
+                                        totalRead += bytesRead
                                     }
                                 }
                             }
@@ -281,8 +283,11 @@ fun ZoomableImage(
                 exoPlayer.seekTo(0)
                 // Ensure the video is fully prepared and ready to play
                 while (exoPlayer.playbackState == Player.STATE_BUFFERING) {
+                    if (isPaused) break
                     delay(10)
                 }
+                if (isPaused) break
+
                 showVideo = true
                 exoPlayer.play()
                 
@@ -403,7 +408,8 @@ fun ZoomableImage(
             if (livePhotoInfo != null) {
                 AndroidView(
                     factory = { ctx ->
-                        PlayerView(ctx).apply {
+                        val view = LayoutInflater.from(ctx).inflate(R.layout.texture_video_view, null) as PlayerView
+                        view.apply {
                             player = exoPlayer
                             useController = false
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
