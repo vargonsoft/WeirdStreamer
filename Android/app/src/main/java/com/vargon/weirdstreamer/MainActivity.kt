@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -22,7 +23,7 @@ class MainActivity : ComponentActivity() {
         packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
     }
 
-    @OptIn(ExperimentalTvMaterial3Api::class)
+    @OptIn(ExperimentalTvMaterial3Api::class, ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -58,6 +59,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(ExperimentalTvMaterial3Api::class, ExperimentalMaterial3Api::class)
     @Composable
     private fun MainContent(currentTheme: AppTheme, onThemeChanged: (AppTheme) -> Unit) {
         var showSettings by remember { mutableStateOf(false) }

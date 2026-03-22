@@ -1,13 +1,13 @@
 package com.vargon.weirdstreamer.ui.components
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.*
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,24 +18,35 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import android.app.Activity
 import android.os.Build
+import android.util.Log
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.vargon.weirdstreamer.LivePhotoInfo
+import com.vargon.weirdstreamer.LivePhotoType
+import com.vargon.weirdstreamer.LivePhotoUtil
 import com.vargon.weirdstreamer.MediaViewModel
+import kotlinx.coroutines.delay
 import java.io.File
+import kotlin.OptIn
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
-    val view = LocalView.current
     val activity = context as? Activity
     var immersiveMode by remember { mutableStateOf(false) }
 
@@ -121,10 +132,7 @@ fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (St
             state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { immersiveMode = !immersiveMode })
-                },
+                .padding(padding),
             userScrollEnabled = !isZoomed,
             beyondViewportPageCount = 1
         ) { pageIndex ->
@@ -137,18 +145,23 @@ fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (St
                         isZoomed = zoomed
                         zoomLevel = level
                     }
+                },
+                onTap = {
+                    immersiveMode = !immersiveMode
                 }
             )
         }
     }
 }
 
+@OptIn(UnstableApi::class)
 @Composable
 fun ZoomableImage(
     viewModel: MediaViewModel,
     path: String,
     resetTrigger: Int,
-    onZoomChanged: (Boolean, Float) -> Unit
+    onZoomChanged: (Boolean, Float) -> Unit,
+    onTap: () -> Unit
 ) {
     val context = LocalContext.current
     var scale by remember { mutableFloatStateOf(1f) }
@@ -158,24 +171,128 @@ fun ZoomableImage(
     var tempFile by remember { mutableStateOf<File?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
+    // Live Photo state
+    var livePhotoInfo by remember { mutableStateOf<LivePhotoInfo?>(null) }
+    var showVideo by remember { mutableStateOf(false) }
+    var isVideoPlaying by remember { mutableStateOf(false) }
+    var isPaused by remember { mutableStateOf(false) }
+
+    val exoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            repeatMode = Player.REPEAT_MODE_OFF
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_ENDED) {
+                        isVideoPlaying = false
+                    }
+                }
+            })
+        }
+    }
+
     LaunchedEffect(path) {
         isLoading = true
+        livePhotoInfo = null
+        showVideo = false
+        isVideoPlaying = false
+        isPaused = false
+        exoPlayer.stop()
+        exoPlayer.clearMediaItems()
+        
         tempFile?.delete()
         tempFile = null
         
-        val extension = path.substringBefore('?').substringAfterLast('.', "").lowercase()
-        if (extension == "heic" || extension == "heif") {
+        if (viewModel.isImage(path)) {
+            val extension = viewModel.getFileExtension(path)
+            Log.i("ZoomableImage", "Loading image: $path (ext: $extension)")
+            
+            // Always download to check for Live Photo metadata/appended video
             val file = viewModel.downloadToTempFile(path, context, ".$extension")
             if (file != null) {
                 tempFile = file
                 localImagePath = file.absolutePath
+                
+                val info = LivePhotoUtil.findLivePhotoInfo(file)
+                if (info != null) {
+                    Log.i("ZoomableImage", "Found Live Photo info: $info")
+                    livePhotoInfo = info
+                    if (info.type == LivePhotoType.SAMSUNG) {
+                        try {
+                            val videoFile = File(context.cacheDir, "temp_video_${System.currentTimeMillis()}.mp4")
+                            file.inputStream().use { input ->
+                                // Reliable skip
+                                var toSkip = info.videoOffset
+                                while (toSkip > 0) {
+                                    val skipped = input.skip(toSkip)
+                                    if (skipped <= 0) break
+                                    toSkip -= skipped
+                                }
+                                
+                                videoFile.outputStream().use { output ->
+                                    val buffer = ByteArray(64 * 1024)
+                                    var bytesRead = 0
+                                    var totalRead = 0L
+                                    while (totalRead < info.videoLength && input.read(buffer).also { bytesRead = it } != -1) {
+                                        val toWrite = minOf(bytesRead.toLong(), info.videoLength - totalRead).toInt()
+                                        output.write(buffer, 0, toWrite)
+                                        totalRead += toWrite
+                                    }
+                                }
+                            }
+                            if (videoFile.exists() && videoFile.length() > 0) {
+                                Log.i("ZoomableImage", "Extracted video to ${videoFile.absolutePath} (${videoFile.length()} bytes)")
+                                exoPlayer.setMediaItem(MediaItem.fromUri(videoFile.absolutePath))
+                            } else {
+                                Log.e("ZoomableImage", "Extracted video file is empty or missing")
+                                livePhotoInfo = null
+                            }
+                        } catch (e: Exception) {
+                            Log.e("ZoomableImage", "Error extracting Samsung video", e)
+                        }
+                    } else {
+                        Log.i("ZoomableImage", "Using whole file as video for Apple/Generic")
+                        exoPlayer.setMediaItem(MediaItem.fromUri(file.absolutePath))
+                    }
+                    if (livePhotoInfo != null) {
+                        exoPlayer.prepare()
+                    }
+                } else {
+                    Log.i("ZoomableImage", "No Live Photo info found for file")
+                }
             } else {
+                Log.w("ZoomableImage", "Failed to download image to temp file")
                 localImagePath = path
             }
         } else {
             localImagePath = path
         }
         isLoading = false
+    }
+
+    // Live Photo Loop Logic
+    LaunchedEffect(livePhotoInfo, isPaused) {
+        if (livePhotoInfo != null && !isPaused) {
+            Log.i("ZoomableImage", "Starting Live Photo loop")
+            while (true) {
+                showVideo = true
+                isVideoPlaying = true
+                exoPlayer.seekTo(0)
+                exoPlayer.play()
+                
+                while (isVideoPlaying) {
+                    if (isPaused) break
+                    delay(100)
+                }
+                if (isPaused) break
+                
+                showVideo = false
+                Log.d("ZoomableImage", "Video ended, showing still for 3s")
+                delay(3000)
+                if (isPaused) break
+            }
+        } else if (isPaused) {
+            exoPlayer.pause()
+        }
     }
 
     LaunchedEffect(resetTrigger) {
@@ -187,12 +304,30 @@ fun ZoomableImage(
     }
 
     DisposableEffect(path) {
-        onDispose { tempFile?.delete() }
+        onDispose {
+            exoPlayer.release()
+            tempFile?.delete()
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(path) {
+                detectTapGestures(
+                    onTap = {
+                        if (livePhotoInfo != null) {
+                            isPaused = !isPaused
+                            if (!isPaused) {
+                                // Resume will be handled by LaunchedEffect
+                            } else {
+                                exoPlayer.pause()
+                            }
+                        }
+                        onTap()
+                    }
+                )
+            }
             .pointerInput(path) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
@@ -200,7 +335,6 @@ fun ZoomableImage(
                         val event = awaitPointerEvent()
                         val isPinch = event.changes.size > 1
                         
-                        // If we are zoomed in or currently pinching, consume the event to handle zoom/pan
                         if (scale > 1f || isPinch) {
                             val zoomChange = event.calculateZoom()
                             val panChange = event.calculatePan()
@@ -227,27 +361,55 @@ fun ZoomableImage(
                 }
             }
     ) {
-        localImagePath?.let { p ->
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(p)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = scale,
-                        scaleY = scale,
-                        translationX = offset.x,
-                        translationY = offset.y
-                    )
-            )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y
+                )
+        ) {
+            localImagePath?.let { p ->
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(p)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            if (showVideo && livePhotoInfo != null) {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            player = exoPlayer
+                            useController = false
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.primary)
+        }
+        
+        if (isPaused && livePhotoInfo != null) {
+            Icon(
+                imageVector = Icons.Default.Pause,
+                contentDescription = "Paused",
+                tint = Color.White.copy(alpha = 0.5f),
+                modifier = Modifier
+                    .size(64.dp)
+                    .align(Alignment.Center)
+            )
         }
     }
 }

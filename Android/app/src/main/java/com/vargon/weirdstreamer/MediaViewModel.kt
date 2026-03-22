@@ -402,18 +402,22 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         return path
     }
 
+    fun getFileExtension(path: String): String {
+        return getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
+    }
+
     fun isImage(path: String): Boolean {
-        val ext = getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
+        val ext = getFileExtension(path)
         return ext in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
     }
 
     fun isVideo(path: String): Boolean {
-        val ext = getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
+        val ext = getFileExtension(path)
         return ext in setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2")
     }
 
     fun isPdf(path: String): Boolean {
-        val ext = getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
+        val ext = getFileExtension(path)
         return ext == "pdf"
     }
 

@@ -14,6 +14,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -27,17 +28,28 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import coil.size.Size as CoilSize
+import com.vargon.weirdstreamer.LivePhotoInfo
+import com.vargon.weirdstreamer.LivePhotoType
+import com.vargon.weirdstreamer.LivePhotoUtil
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import kotlinx.coroutines.delay
 import java.io.File
+import kotlin.OptIn
 
-@OptIn(ExperimentalTvMaterial3Api::class)
+@OptIn(UnstableApi::class, ExperimentalTvMaterial3Api::class)
 @Composable
 fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -> Unit) {
     val context = LocalContext.current
@@ -60,12 +72,39 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
     val focusRequester = remember { FocusRequester() }
     val currentSmbPath = images.getOrNull(currentIndex) ?: initialPath
 
-    // For HEIC support
+    // For HEIC and Live Photo support
     var localImagePath by remember { mutableStateOf<String?>(null) }
     var tempFile by remember { mutableStateOf<File?>(null) }
+    var livePhotoInfo by remember { mutableStateOf<LivePhotoInfo?>(null) }
+    var showVideo by remember { mutableStateOf(false) }
+    var isVideoPlaying by remember { mutableStateOf(false) }
 
     val fileName = remember(currentSmbPath) {
         viewModel.getDisplayName(currentSmbPath)
+    }
+
+    val exoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            repeatMode = Player.REPEAT_MODE_OFF
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_ENDED) {
+                        isVideoPlaying = false
+                    }
+                }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    Log.e("ImageViewer", "ExoPlayer error: ${error.message}", error)
+                    isVideoPlaying = false
+                }
+            })
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            exoPlayer.release()
+            tempFile?.delete()
+        }
     }
 
     LaunchedEffect(currentSmbPath) {
@@ -74,32 +113,112 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
         errorMessage = null
         imageIntrinsicSize = null
         rotation = 0f
+        livePhotoInfo = null
+        showVideo = false
+        isVideoPlaying = false
+        exoPlayer.stop()
+        exoPlayer.clearMediaItems()
 
         tempFile?.delete()
         tempFile = null
 
         if (viewModel.isImage(currentSmbPath)) {
-            val extension = currentSmbPath.substringBefore('?').substringAfterLast('.', "").lowercase()
-            if (extension == "heic" || extension == "heif") {
-                val file = viewModel.downloadToTempFile(currentSmbPath, context, ".$extension")
-                if (file != null) {
-                    tempFile = file
-                    localImagePath = file.absolutePath
+            val extension = viewModel.getFileExtension(currentSmbPath)
+            Log.i("ImageViewer", "Loading image: $currentSmbPath (ext: $extension)")
+            
+            // Download to check for Live Photo metadata/appended video
+            val file = viewModel.downloadToTempFile(currentSmbPath, context, ".$extension")
+            if (file != null) {
+                tempFile = file
+                localImagePath = file.absolutePath
+                
+                // Check if it's a live photo
+                val info = LivePhotoUtil.findLivePhotoInfo(file)
+                if (info != null) {
+                    Log.i("ImageViewer", "Found Live Photo info: $info")
+                    livePhotoInfo = info
+                    if (info.type == LivePhotoType.SAMSUNG) {
+                        // Create a separate temp file for the video part of Samsung Motion Photo
+                        try {
+                            val videoFile = File(context.cacheDir, "temp_video_${System.currentTimeMillis()}.mp4")
+                            file.inputStream().use { input ->
+                                // Reliable skip
+                                var toSkip = info.videoOffset
+                                while (toSkip > 0) {
+                                    val skipped = input.skip(toSkip)
+                                    if (skipped <= 0) break
+                                    toSkip -= skipped
+                                }
+                                
+                                videoFile.outputStream().use { output ->
+                                    val buffer = ByteArray(64 * 1024)
+                                    var bytesRead = 0
+                                    var totalRead = 0L
+                                    while (totalRead < info.videoLength && input.read(buffer).also { bytesRead = it } != -1) {
+                                        val toWrite = minOf(bytesRead.toLong(), info.videoLength - totalRead).toInt()
+                                        output.write(buffer, 0, toWrite)
+                                        totalRead += toWrite
+                                    }
+                                }
+                            }
+                            if (videoFile.exists() && videoFile.length() > 0) {
+                                Log.i("ImageViewer", "Extracted video to ${videoFile.absolutePath} (${videoFile.length()} bytes)")
+                                exoPlayer.setMediaItem(MediaItem.fromUri(videoFile.absolutePath))
+                            } else {
+                                Log.e("ImageViewer", "Extracted video file is empty or missing")
+                                livePhotoInfo = null
+                            }
+                        } catch (e: Exception) {
+                            Log.e("ImageViewer", "Error extracting Samsung video", e)
+                        }
+                    } else {
+                        Log.i("ImageViewer", "Using whole file as video for Apple/Generic")
+                        exoPlayer.setMediaItem(MediaItem.fromUri(file.absolutePath))
+                    }
+                    if (livePhotoInfo != null) {
+                        exoPlayer.prepare()
+                    }
                 } else {
-                    errorMessage = "Failed to download HEIC for decoding"
-                    localImagePath = currentSmbPath
+                    Log.i("ImageViewer", "No Live Photo info found for file")
                 }
             } else {
+                Log.w("ImageViewer", "Failed to download image to temp file")
+                if (extension == "heic" || extension == "heif") {
+                    errorMessage = "Failed to download HEIC for decoding"
+                }
                 localImagePath = currentSmbPath
             }
         } else {
             localImagePath = currentSmbPath
         }
+        isLoading = false
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            tempFile?.delete()
+    // Live Photo Loop Logic
+    LaunchedEffect(livePhotoInfo) {
+        if (livePhotoInfo != null) {
+            Log.i("ImageViewer", "Starting Live Photo loop")
+            while (true) {
+                // Play video
+                isVideoPlaying = true
+                exoPlayer.seekTo(0)
+                // Ensure the video is fully prepared and ready to play
+                while (exoPlayer.playbackState == Player.STATE_BUFFERING) {
+                    delay(10)
+                }
+                showVideo = true
+                exoPlayer.play()
+                
+                // Wait for video to finish
+                while (isVideoPlaying) {
+                    delay(100)
+                }
+                
+                // Show still image for 3 seconds
+                showVideo = false
+                Log.d("ImageViewer", "Video ended, showing still for 3s")
+                delay(3000)
+            }
         }
     }
 
@@ -289,39 +408,56 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                 .focusRequester(focusRequester)
                 .focusable()
         ) {
-            localImagePath?.let { path ->
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(path)
-                        .crossfade(true)
-                        .size(CoilSize.ORIGINAL)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    onState = { state ->
-                        isLoading = state is AsyncImagePainter.State.Loading
-                        if (state is AsyncImagePainter.State.Success) {
-                            imageIntrinsicSize = state.painter.intrinsicSize
-                        }
-                        if (state is AsyncImagePainter.State.Error) {
-                            errorMessage = state.result.throwable.message ?: "Failed to load image"
-                            Log.e(
-                                "ImageViewer",
-                                "Error loading $path: $errorMessage",
-                                state.result.throwable
-                            )
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer(
-                            scaleX = zoomLevel,
-                            scaleY = zoomLevel,
-                            translationX = panX,
-                            translationY = panY,
-                            rotationZ = rotation
-                        )
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = zoomLevel,
+                        scaleY = zoomLevel,
+                        translationX = panX,
+                        translationY = panY,
+                        rotationZ = rotation
+                    )
+            ) {
+                localImagePath?.let { path ->
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(path)
+                            .crossfade(true)
+                            .size(CoilSize.ORIGINAL)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        onState = { state ->
+                            isLoading = state is AsyncImagePainter.State.Loading
+                            if (state is AsyncImagePainter.State.Success) {
+                                imageIntrinsicSize = state.painter.intrinsicSize
+                            }
+                            if (state is AsyncImagePainter.State.Error) {
+                                errorMessage = state.result.throwable.message ?: "Failed to load image"
+                                Log.e(
+                                    "ImageViewer",
+                                    "Error loading $path: $errorMessage",
+                                    state.result.throwable
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                if (livePhotoInfo != null) {
+                    AndroidView(
+                        factory = { ctx ->
+                            PlayerView(ctx).apply {
+                                player = exoPlayer
+                                useController = false
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize().alpha(if (showVideo) 1f else 0f)
+                    )
+                }
             }
 
             if (isLoading) {
