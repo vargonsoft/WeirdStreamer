@@ -68,7 +68,15 @@ func (s *Scanner) ScanMediaPaths() error {
 func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			if path == root {
+				return err
+			}
+			if os.IsNotExist(err) {
+				log.Printf("[SCAN] Skipping missing file or directory: %s", path)
+				return nil
+			}
+			log.Printf("[SCAN] Warning: unable to access %s: %v", path, err)
+			return nil
 		}
 
 		if info.IsDir() {
