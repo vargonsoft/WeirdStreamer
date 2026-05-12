@@ -40,6 +40,7 @@ type MediaConfig struct {
 	SupportedVideoFormats []string    `json:"supportedVideoFormats"`
 	SupportedImageFormats []string    `json:"supportedImageFormats"`
 	SupportedDocFormats   []string    `json:"supportedDocFormats"`
+	IgnoreMacFiles        bool        `json:"ignoreMacFiles"`
 }
 
 type AuthConfig struct {

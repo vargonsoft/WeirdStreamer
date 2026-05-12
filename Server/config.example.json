@@ -29,7 +29,8 @@
     "trickplayPath": "./trickplay",
     "supportedVideoFormats": [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".3gp", ".3gpp", ".m4v", ".mpg", ".mpeg", ".ts", ".mp2"],
     "supportedImageFormats": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
-    "supportedDocFormats": [".pdf"]
+    "supportedDocFormats": [".pdf"],
+    "ignoreMacFiles": false
   },
   "auth": {
     "jwtSecret": "change-this-to-a-random-secret-key",

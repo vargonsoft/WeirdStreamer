@@ -59,6 +59,12 @@ func (tg *TrickplayGenerator) GenerateForDirectory(dirPath string) error {
 		if err != nil {
 			return err
 		}
+
+		// Skip Mac-specific files if configured to ignore them
+		if config.GlobalConfig.Media.IgnoreMacFiles && isMacFile(path) {
+			return nil
+		}
+
 		if !info.IsDir() && isSupportedVideo(path) {
 			if err := tg.Generate(path); err != nil {
 				fmt.Printf("Error generating trickplay frames for %s: %v\n", path, err)
@@ -196,4 +202,9 @@ func (tg *TrickplayGenerator) generateFrame(videoPath, outputDir string, seekTim
 	}
 
 	return fmt.Errorf("failed to extract frame %d", frameIndex)
+}
+// isMacFile checks if a filename is a Mac-specific file that should be ignored
+func isMacFile(path string) bool {
+	baseName := filepath.Base(path)
+	return baseName == ".DS_Store" || strings.HasPrefix(baseName, "._")
 }
