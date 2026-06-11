@@ -157,7 +157,7 @@ fun PhoneImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (St
     }
 }
 
-@OptIn(UnstableApi::class)
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun ZoomableImage(
     viewModel: MediaViewModel,
