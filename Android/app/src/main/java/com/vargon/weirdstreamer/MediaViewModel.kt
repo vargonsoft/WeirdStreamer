@@ -166,6 +166,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     // Metadata fetching state to avoid redundant calls
     private val pendingMetadataPaths = mutableSetOf<String>()
+    private val metadataJobs = mutableMapOf<String, Job>()
 
     // Natural sort helper function
     private fun naturalCompare(s1: String, s2: String): Int {
@@ -271,6 +272,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun loadPath(source: MediaSource, path: String, user: String? = null, pass: String? = null, save: Boolean = false) {
         currentSource = source
         currentPath = path
+        metadataJobs.values.forEach { it.cancel() }
+        metadataJobs.clear()
         pendingMetadataPaths.clear()
 
         viewModelScope.launch {
@@ -343,21 +346,31 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         if (item.isDirectory || item.path == "UP" || (item.duration != null && item.duration > 0) || pendingMetadataPaths.contains(item.path)) return
         
         pendingMetadataPaths.add(item.path)
-        viewModelScope.launch {
-            val result = repo.getMetadata(item)
-            if (result.isSuccess) {
-                val updatedItem = result.getOrNull()
-                if (updatedItem != null) {
-                    fileList = fileList.map {
-                        if (it.path == item.path) updatedItem else it 
-                    }
-                    viewModelScope.launch {
-                        updateSortedList()
+        val job = viewModelScope.launch {
+            try {
+                val result = repo.getMetadata(item)
+                if (result.isSuccess) {
+                    val updatedItem = result.getOrNull()
+                    if (updatedItem != null) {
+                        fileList = fileList.map {
+                            if (it.path == item.path) updatedItem else it
+                        }
+                        viewModelScope.launch {
+                            updateSortedList()
+                        }
                     }
                 }
+            } finally {
+                pendingMetadataPaths.remove(item.path)
+                metadataJobs.remove(item.path)
             }
-            pendingMetadataPaths.remove(item.path)
         }
+        metadataJobs[item.path] = job
+    }
+
+    fun cancelMetadata(path: String) {
+        metadataJobs.remove(path)?.cancel()
+        pendingMetadataPaths.remove(path)
     }
 
     fun navigateUp() {

@@ -1,15 +1,10 @@
 package com.vargon.weirdstreamer.ui.components
 
-import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.style.TextAlign
@@ -40,8 +36,7 @@ fun <T> FocusableList(
 ) {
     val scope = rememberCoroutineScope()
     val columns = 4
-    val focusRequesters = remember(items.size) { List(items.size) { FocusRequester() } }
-    val gridState = rememberLazyGridState()
+    val focusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val listState = rememberLazyListState()
     val dialogFocusRequester = remember { FocusRequester() }
 
@@ -62,6 +57,8 @@ fun <T> FocusableList(
     var showJumpChar by remember { mutableStateOf(false) }
     var jumpLabel by remember { mutableStateOf("") }
     var showCharacterSelector by remember { mutableStateOf(false) }
+    var focusedIndex by remember(initialSelection) { mutableIntStateOf(initialIndex) }
+    var navigationJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     LaunchedEffect(showCharacterSelector) {
         onRequestDialogFocus(if (showCharacterSelector) dialogFocusRequester else null)
@@ -108,9 +105,9 @@ fun <T> FocusableList(
     LaunchedEffect(initialSelection, isGridView) {
         if (items.isNotEmpty()) {
             val safeIndex = initialIndex.coerceIn(items.indices)
-            if (isGridView) gridState.scrollToItem(safeIndex) else listState.scrollToItem(safeIndex)
+            if (isGridView) listState.scrollToItem(safeIndex / columns) else listState.scrollToItem(safeIndex)
             delay(100); awaitFrame()
-            runCatching { if (safeIndex in focusRequesters.indices) focusRequesters[safeIndex].requestFocus() }
+            focusRequesters.getOrPut(getName(items[safeIndex])) { FocusRequester() }.requestFocus()
         }
     }
 
@@ -121,65 +118,63 @@ fun <T> FocusableList(
         if (targetIndex != -1) {
             jumpLabel = char.toString().uppercase(); showJumpChar = true
             scope.launch {
-                if (isGridView) gridState.scrollToItem(targetIndex) else listState.scrollToItem(targetIndex)
+                if (isGridView) listState.scrollToItem(targetIndex / columns) else listState.scrollToItem(targetIndex)
                 delay(50); awaitFrame()
-                focusRequesters[targetIndex].requestFocus()
+                focusRequesters.getOrPut(getName(items[targetIndex])) { FocusRequester() }.requestFocus()
             }
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (isGridView) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(columns),
-                state = gridState,
+            LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                gridItemsIndexed(
-                    items = items,
-                    key = { _, item ->
-                        when (item) {
-                            is SmbFileItem -> item.path
-                            is com.vargon.weirdstreamer.repository.FileItem -> item.path
-                            else -> item.hashCode()
+                items((items.size + columns - 1) / columns) { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        repeat(columns) { column ->
+                            val index = row * columns + column
+                            if (index < items.size) {
+                                val item = items[index]
+                                val key = getName(item)
+                                val requester = focusRequesters.getOrPut(key) { FocusRequester() }
+                                Box(Modifier.width(200.dp).height(200.dp)) {
+                                    itemContent(item, Modifier
+                                        .focusRequester(requester)
+                                        .onPreviewKeyEvent { event ->
+                                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                            val target = when (event.key) {
+                                                Key.DirectionLeft -> if (column > 0) index - 1 else -1
+                                                Key.DirectionRight -> if (column < columns - 1) index + 1 else -1
+                                                Key.DirectionUp -> index - columns
+                                                Key.DirectionDown -> index + columns
+                                                else -> return@onPreviewKeyEvent false
+                                            }
+                                            if (target < 0) {
+                                                if (event.key == Key.DirectionLeft) onRequestToolbarFocus()
+                                                true
+                                            } else if (target < items.size) {
+                                                focusedIndex = target
+                                                navigationJob?.cancel()
+                                                navigationJob = scope.launch {
+                                                    val targetKey = getName(items[target])
+                                                    if (target / columns != index / columns) listState.scrollToItem(target / columns)
+                                                    focusRequesters.getOrPut(targetKey) { FocusRequester() }.requestFocus()
+                                                }
+                                                true
+                                            } else true
+                                        }
+                                        .onFocusChanged { if (it.isFocused) focusedIndex = index }
+                                    )
+                                }
+                            } else {
+                                Spacer(Modifier.width(200.dp).height(200.dp))
+                            }
                         }
                     }
-                ) { index, item ->
-                    itemContent(item, Modifier
-                        .focusRequester(focusRequesters[index])
-                        .onPreviewKeyEvent { event ->
-                            if (event.type == KeyEventType.KeyDown) {
-                                val targetIndex = when (event.key) {
-                                    Key.DirectionUp -> index - columns
-                                    Key.DirectionDown -> index + columns
-                                    Key.DirectionLeft -> index - 1
-                                    Key.DirectionRight -> index + 1
-                                    else -> null
-                                }
-
-                                if (targetIndex != null) {
-                                    if (targetIndex in items.indices) {
-                                        Log.d("FocusNav", "Moving index $index -> $targetIndex (Key: ${event.key})")
-                                        scope.launch {
-                                            gridState.scrollToItem(targetIndex)
-                                            awaitFrame()
-                                            focusRequesters[targetIndex].requestFocus()
-                                        }
-                                        true
-                                    } else {
-                                        if (event.key == Key.DirectionUp && index < columns) {
-                                            Log.d("FocusNav", "Top reached - toolbar focus")
-                                            onRequestToolbarFocus()
-                                            true
-                                        } else false
-                                    }
-                                } else false
-                            } else false
-                        }
-                    )
                 }
             }
         } else {
@@ -209,7 +204,8 @@ fun <T> FocusableList(
                         }
                     }
                 ) { index, item ->
-                    itemContent(item, Modifier.focusRequester(focusRequesters[index]))
+                    val key = getName(item)
+                    itemContent(item, Modifier.focusRequester(focusRequesters.getOrPut(key) { FocusRequester() }))
                 }
             }
         }
