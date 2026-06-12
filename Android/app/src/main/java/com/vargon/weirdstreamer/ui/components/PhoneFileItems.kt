@@ -107,6 +107,7 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(thumbnailUrl)
                             .crossfade(true)
+                            .size(48)
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
@@ -172,6 +173,7 @@ fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: ()
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(thumbnailUrl)
                             .crossfade(true)
+                            .size(80)
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,

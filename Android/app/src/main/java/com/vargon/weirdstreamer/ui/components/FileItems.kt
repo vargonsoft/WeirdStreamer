@@ -217,6 +217,7 @@ fun TileItem(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(thumbnailUrl)
                             .crossfade(true)
+                            .size(300)
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
@@ -298,6 +299,7 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(item.path)
                             .crossfade(true)
+                            .size(48)
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
@@ -381,7 +383,8 @@ fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Un
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(thumbnailUrl)
-                            .crossfade(true)
+                            .crossfade(false)
+                            .size(48)
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,

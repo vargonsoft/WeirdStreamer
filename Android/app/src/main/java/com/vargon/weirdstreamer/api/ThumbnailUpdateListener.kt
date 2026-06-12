@@ -1,12 +1,16 @@
 package com.vargon.weirdstreamer.api
 
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import com.google.gson.Gson
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.sse.EventSource
@@ -28,10 +32,10 @@ class ThumbnailUpdateListener(
     private val token: String
 ) {
     private var eventSource: EventSource? = null
+    private var reconnectScope: CoroutineScope? = null
     private val gson = Gson()
     private val maxRetries = 5
     private val baseDelay = 1000L // 1 second
-    private val handler = Handler(Looper.getMainLooper())
     
     // WARNING: This trust manager accepts ALL certificates - use only for development/testing!
     private val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
@@ -124,12 +128,13 @@ class ThumbnailUpdateListener(
                         retryCount++
                         val delayMs = min(baseDelay * (1 shl (retryCount - 1)), 30000L)
                         Log.d("ThumbnailSSE", "Reconnecting in ${delayMs}ms...")
-                        
-                        handler.postDelayed({
+
+                        reconnectScope?.launch {
+                            delay(delayMs)
                             if (!isClosing && !channel.isClosedForSend) {
                                 attemptConnection()
                             }
-                        }, delayMs)
+                        }
                     } else {
                         Log.e("ThumbnailSSE", "Max retries reached")
                         channel.close(t)
@@ -145,13 +150,16 @@ class ThumbnailUpdateListener(
             this@ThumbnailUpdateListener.eventSource = EventSources.createFactory(client).newEventSource(request, listener)
         }
         
+        reconnectScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
         // Initial connection
         attemptConnection()
         
         awaitClose {
             Log.d("ThumbnailSSE", "Closing connection in awaitClose")
             isClosing = true
-            handler.removeCallbacksAndMessages(null)
+            reconnectScope?.cancel()
+            reconnectScope = null
             val toCancel = eventSource
             eventSource = null
             toCancel?.cancel()
@@ -159,7 +167,8 @@ class ThumbnailUpdateListener(
     }
     
     fun disconnect() {
-        handler.removeCallbacksAndMessages(null)
+        reconnectScope?.cancel()
+        reconnectScope = null
         eventSource?.cancel()
         eventSource = null
     }

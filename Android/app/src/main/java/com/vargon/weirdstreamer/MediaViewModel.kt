@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.ArrayDeque
 import java.util.Properties
 
 enum class ContentFilter {
@@ -492,7 +493,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun downloadToTempFile(path: String, context: Context, suffix: String = ".pdf"): File? = withContext(Dispatchers.IO) {
         try {
-            downloadProgress = 0f
+            withContext(Dispatchers.Main) { downloadProgress = 0f }
             val repository = currentRepository ?: return@withContext null
             val tempFile = File(context.cacheDir, "temp_${System.currentTimeMillis()}$suffix")
             val result = repository.getInputStream(path)
@@ -506,18 +507,22 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             output.write(buffer, 0, bytesRead)
                             totalRead += bytesRead
-                            downloadProgress = totalRead.toFloat() / 1000000f
+                            if (totalRead % (256 * 1024) == 0L) {
+                                withContext(Dispatchers.Main) {
+                                    downloadProgress = totalRead.toFloat() / 1000000f
+                                }
+                            }
                         }
                     }
                 }
-                downloadProgress = null
+                withContext(Dispatchers.Main) { downloadProgress = null }
                 tempFile
             } else {
-                downloadProgress = null
+                withContext(Dispatchers.Main) { downloadProgress = null }
                 null
             }
         } catch (e: Exception) {
-            downloadProgress = null
+            withContext(Dispatchers.Main) { downloadProgress = null }
             null
         }
     }
