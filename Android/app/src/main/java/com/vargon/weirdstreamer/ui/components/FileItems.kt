@@ -170,7 +170,7 @@ fun TileItem(
     onClick: () -> Unit
 ) {
     Column(
-        modifier = modifier.width(200.dp),
+        modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
@@ -188,7 +188,7 @@ fun TileItem(
                     shape = MaterialTheme.shapes.medium
                 )
             ),
-            modifier = Modifier.aspectRatio(16f / 9f)
+            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
         ) {
             Box(
                 contentAlignment = Alignment.Center, 
@@ -227,20 +227,24 @@ fun TileItem(
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center
-        )
-        if (subtitle != null) {
+        Box(modifier = Modifier.height(60.dp), contentAlignment = Alignment.TopCenter) {
             Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
             )
+        }
+        Box(modifier = Modifier.height(20.dp), contentAlignment = Alignment.TopCenter) {
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }

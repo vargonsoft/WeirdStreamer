@@ -6,23 +6,17 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -34,11 +28,8 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
@@ -83,36 +74,23 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
     
     val rendererMutex = remember { Mutex() }
     val thumbCache = remember { mutableStateMapOf<Int, Bitmap>() }
-    
-    // Used to trigger a retry if rendering fails due to concurrency
     var retryTrigger by remember { mutableIntStateOf(0) }
     
     val mainFocusRequester = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
-    
-    val fileName = remember(initialPath) {
-        viewModel.getDisplayName(initialPath)
-    }
+    val fileName = remember(initialPath) { viewModel.getDisplayName(initialPath) }
 
     LaunchedEffect(initialPath) {
-        isLoading = true
-        errorMessage = null
+        isLoading = true; errorMessage = null
         val file = viewModel.downloadToTempFile(initialPath, context)
         if (file != null) {
             tempFile = file
             try {
                 val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-                pfd = fd
-                val renderer = PdfRenderer(fd)
-                pdfRenderer = renderer
-                pageCount = renderer.pageCount
-                currentPageIndex = 0
-            } catch (e: Exception) {
-                errorMessage = "Failed to open PDF: ${e.localizedMessage}"
-            }
-        } else {
-            errorMessage = "Failed to download PDF"
-        }
+                pfd = fd; val renderer = PdfRenderer(fd)
+                pdfRenderer = renderer; pageCount = renderer.pageCount; currentPageIndex = 0
+            } catch (e: Exception) { errorMessage = "Failed to open PDF: ${e.localizedMessage}" }
+        } else { errorMessage = "Failed to download PDF" }
         isLoading = false
     }
 
@@ -121,224 +99,98 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
         val targetIndex = currentPageIndex
         val targetTwoPage = isTwoPageView
         if (pageCount > 0 && !isThumbnailView) {
-            delay(150)
-            isLoading = true
-            overlayTimerTrigger = System.currentTimeMillis()
+            delay(150); isLoading = true; overlayTimerTrigger = System.currentTimeMillis()
             withContext(Dispatchers.Default) {
                 try {
                     if (targetIndex != currentPageIndex) return@withContext
-
                     val firstBitmap = rendererMutex.withLock {
                         renderer.openPage(targetIndex).use { page ->
-                            val width = (page.width * 1.5f).toInt()
-                            val height = (page.height * 1.5f).toInt()
-                            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                            val canvas = Canvas(bitmap)
-                            canvas.drawColor(android.graphics.Color.WHITE)
-                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            val bitmap = Bitmap.createBitmap((page.width * 1.5f).toInt(), (page.height * 1.5f).toInt(), Bitmap.Config.ARGB_8888)
+                            Canvas(bitmap).apply { drawColor(android.graphics.Color.WHITE); page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
                             bitmap
                         }
                     }
-                    
                     val secondBitmap = if (targetTwoPage && targetIndex + 1 < pageCount) {
                         rendererMutex.withLock {
                             renderer.openPage(targetIndex + 1).use { page ->
-                                val width = (page.width * 1.5f).toInt()
-                                val height = (page.height * 1.5f).toInt()
-                                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                                val canvas = Canvas(bitmap)
-                                canvas.drawColor(android.graphics.Color.WHITE)
-                                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                val bitmap = Bitmap.createBitmap((page.width * 1.5f).toInt(), (page.height * 1.5f).toInt(), Bitmap.Config.ARGB_8888)
+                                Canvas(bitmap).apply { drawColor(android.graphics.Color.WHITE); page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
                                 bitmap
                             }
                         }
                     } else null
-                    
-                    if (targetIndex == currentPageIndex && targetTwoPage == isTwoPageView) {
-                        currentPageBitmap = firstBitmap
-                        nextPageBitmap = secondBitmap
-                        errorMessage = null
-                    }
+                    if (targetIndex == currentPageIndex && targetTwoPage == isTwoPageView) { currentPageBitmap = firstBitmap; nextPageBitmap = secondBitmap; errorMessage = null }
                 } catch (e: Exception) {
                     if (targetIndex == currentPageIndex) {
                         val msg = e.localizedMessage ?: "Unknown error"
-                        if (msg.contains("Current page not closed")) {
-                            delay(200)
-                            retryTrigger++
-                        } else {
-                            errorMessage = "Failed to render page: $msg"
-                        }
+                        if (msg.contains("Current page not closed")) { delay(200); retryTrigger++ }
+                        else { errorMessage = "Failed to render page: $msg" }
                     }
                 }
             }
-            if (targetIndex == currentPageIndex) {
-                isLoading = false
-            }
+            if (targetIndex == currentPageIndex) isLoading = false
         }
     }
 
-    LaunchedEffect(errorMessage) {
-        if (errorMessage != null && errorMessage!!.contains("Current page not closed")) {
-            delay(3000)
-            errorMessage = null
-        }
-    }
+    LaunchedEffect(errorMessage) { if (errorMessage != null && errorMessage!!.contains("Current page not closed")) { delay(3000); errorMessage = null } }
+    LaunchedEffect(overlayTimerTrigger) { if (overlayTimerTrigger > 0) { showOverlays = true; delay(1500); showOverlays = false } }
+    DisposableEffect(Unit) { onDispose { pdfRenderer?.close(); pfd?.close(); tempFile?.delete(); thumbCache.values.forEach { it.recycle() }; thumbCache.clear() } }
+    LaunchedEffect(loopFeedback) { if (loopFeedback != null) { delay(1500); loopFeedback = null } }
 
-    LaunchedEffect(overlayTimerTrigger) {
-        if (overlayTimerTrigger > 0) {
-            showOverlays = true
-            delay(1500)
-            showOverlays = false
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            pdfRenderer?.close()
-            pfd?.close()
-            tempFile?.delete()
-            thumbCache.values.forEach { it.recycle() }
-            thumbCache.clear()
-        }
-    }
-
-    LaunchedEffect(loopFeedback) {
-        if (loopFeedback != null) {
-            delay(1500)
-            loopFeedback = null
-        }
-    }
-
-    val resetZoom = {
-        zoomLevel = 1f
-        panX = 0f
-        panY = 0f
-        isZoomMode = false
-    }
-
+    val resetZoom = { zoomLevel = 1f; panX = 0f; panY = 0f; isZoomMode = false }
     val navigate = { forward: Boolean ->
         if (pageCount > 0) {
             overlayTimerTrigger = System.currentTimeMillis()
             if (pageCount > 1) {
-                val oldIndex = currentPageIndex
-                val step = 1
-                if (forward) {
-                    currentPageIndex = (currentPageIndex + step) % pageCount
-                    if (currentPageIndex < oldIndex) loopFeedback = true to System.currentTimeMillis()
-                } else {
-                    currentPageIndex = (currentPageIndex - step + pageCount) % pageCount
-                    if (currentPageIndex > oldIndex) loopFeedback = false to System.currentTimeMillis()
-                }
+                val old = currentPageIndex
+                if (forward) { currentPageIndex = (currentPageIndex + 1) % pageCount; if (currentPageIndex < old) loopFeedback = true to System.currentTimeMillis() }
+                else { currentPageIndex = (currentPageIndex - 1 + pageCount) % pageCount; if (currentPageIndex > old) loopFeedback = false to System.currentTimeMillis() }
                 resetZoom()
             }
         }
     }
 
     val zoomOut = {
-        if (isZoomMode) {
-            if (zoomLevel > 2f) {
-                zoomLevel /= 2f
-            } else {
-                resetZoom()
-            }
-        } else if (isThumbnailView) {
-            isThumbnailView = false
-        } else if (isTwoPageView) {
-            isTwoPageView = false
-        } else {
-            onBack(initialPath)
-        }
+        if (isZoomMode) { if (zoomLevel > 2f) zoomLevel /= 2f else resetZoom() }
+        else if (isThumbnailView) isThumbnailView = false
+        else if (isTwoPageView) isTwoPageView = false
+        else onBack(initialPath)
     }
 
     BackHandler { zoomOut() }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .then(
-                if (isZoomMode) Modifier.border(2.dp, Color.White) else Modifier
-            )
+        modifier = Modifier.fillMaxSize().background(Color.Black)
+            .then(if (isZoomMode) Modifier.border(2.dp, Color.White) else Modifier)
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.DirectionCenter, Key.Enter -> {
-                            if (isThumbnailView) {
-                                false
-                            } else {
-                                if (!isZoomMode) {
-                                    isZoomMode = true
-                                    if (zoomLevel == 1f) zoomLevel = 2f
-                                } else if (zoomLevel < 256f) {
-                                    zoomLevel *= 2f
-                                }
+                            if (!isThumbnailView) {
+                                if (!isZoomMode) { isZoomMode = true; if (zoomLevel == 1f) zoomLevel = 2f }
+                                else if (zoomLevel < 256f) zoomLevel *= 2f
                                 true
-                            }
+                            } else false
                         }
-                        Key.Backspace -> {
-                            zoomOut()
-                            true
-                        }
-                        Key.DirectionLeft -> {
-                            if (isZoomMode) {
-                                panX += 0.1f / zoomLevel
-                                true
-                            } else if (isThumbnailView) {
-                                false
-                            } else {
-                                navigate(false)
-                                true
-                            }
-                        }
-                        Key.DirectionRight -> {
-                            if (isZoomMode) {
-                                panX -= 0.1f / zoomLevel
-                                true
-                            } else if (isThumbnailView) {
-                                false
-                            } else {
-                                navigate(true)
-                                true
-                            }
-                        }
+                        Key.Backspace -> { zoomOut(); true }
+                        Key.DirectionLeft -> { if (isZoomMode) { panX += 0.1f / zoomLevel; true } else if (!isThumbnailView) { navigate(false); true } else false }
+                        Key.DirectionRight -> { if (isZoomMode) { panX -= 0.1f / zoomLevel; true } else if (!isThumbnailView) { navigate(true); true } else false }
                         Key.DirectionUp -> {
-                            if (isZoomMode) {
-                                panY += 0.1f / zoomLevel
-                                true
-                            } else if (isThumbnailView) {
-                                false
-                            } else {
-                                if (isTwoPageView) {
-                                    isThumbnailView = true
-                                } else {
-                                    isTwoPageView = true
-                                }
-                                overlayTimerTrigger = System.currentTimeMillis()
-                                true
-                            }
+                            if (isZoomMode) { panY += 0.1f / zoomLevel; true } else if (!isThumbnailView) {
+                                if (isTwoPageView) isThumbnailView = true else isTwoPageView = true
+                                overlayTimerTrigger = System.currentTimeMillis(); true
+                            } else false
                         }
                         Key.DirectionDown -> {
-                            if (isZoomMode) {
-                                panY -= 0.1f / zoomLevel
-                                true
-                            } else if (isThumbnailView) {
-                                false
-                            } else {
-                                if (isTwoPageView) {
-                                    isTwoPageView = false
-                                } else {
-                                    rotation = (rotation + 90f) % 360f
-                                }
-                                overlayTimerTrigger = System.currentTimeMillis()
-                                true
-                            }
+                            if (isZoomMode) { panY -= 0.1f / zoomLevel; true } else if (!isThumbnailView) {
+                                if (isTwoPageView) isTwoPageView = false else rotation = (rotation + 90f) % 360f
+                                overlayTimerTrigger = System.currentTimeMillis(); true
+                            } else false
                         }
                         else -> false
                     }
                 } else false
-            }
-            .focusRequester(mainFocusRequester)
-            .focusable()
+            }.focusRequester(mainFocusRequester).focusable()
     ) {
         if (isThumbnailView) {
             val thumbHeight = screenHeight * 0.4f
@@ -346,312 +198,83 @@ fun PdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String) -
             val spacing = 16.dp
             val gridPadding = 16.dp * 2
             val columnCount = ((configuration.screenWidthDp.dp - gridPadding + spacing) / (itemMinWidth + spacing)).toInt().coerceAtLeast(1)
-            
-            // To ensure the current page is focused when opening the grid
-            val focusRequesters = remember(pageCount) { List(pageCount) { FocusRequester() } }
-            
-            LaunchedEffect(Unit) {
-                gridState.scrollToItem(currentPageIndex)
-                delay(100)
-                focusRequesters[currentPageIndex].requestFocus()
-            }
 
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(columnCount),
-                state = gridState,
-                modifier = Modifier.fillMaxSize().padding(16.dp),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(pageCount) { index ->
-                    var thumbBitmap by remember { mutableStateOf<Bitmap?>(thumbCache[index]) }
-                    
-                    LaunchedEffect(index, pdfRenderer) {
-                        if (thumbBitmap == null && pdfRenderer != null) {
+            PdfThumbnailGrid(
+                pageCount = pageCount,
+                currentPageIndex = currentPageIndex,
+                thumbHeight = thumbHeight,
+                gridState = gridState,
+                columnCount = columnCount,
+                thumbCache = thumbCache,
+                onPageSelected = { idx -> currentPageIndex = idx; isThumbnailView = false; isTwoPageView = false },
+                onRenderThumbnail = { index ->
+                    if (pdfRenderer != null) {
+                        scope.launch {
                             withContext(Dispatchers.Default) {
                                 try {
                                     val bitmap = rendererMutex.withLock {
                                         pdfRenderer!!.openPage(index).use { page ->
                                             val scale = 0.3f
-                                            val bitmap = Bitmap.createBitmap(
-                                                (page.width * scale).toInt(),
-                                                (page.height * scale).toInt(),
-                                                Bitmap.Config.ARGB_8888
-                                            )
-                                            val canvas = Canvas(bitmap)
-                                            canvas.drawColor(android.graphics.Color.WHITE)
-                                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                                            bitmap
+                                            val b = Bitmap.createBitmap((page.width * scale).toInt(), (page.height * scale).toInt(), Bitmap.Config.ARGB_8888)
+                                            Canvas(b).apply { drawColor(android.graphics.Color.WHITE); page.render(b, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
+                                            b
                                         }
                                     }
                                     thumbCache[index] = bitmap
-                                    thumbBitmap = bitmap
                                 } catch (_: Exception) {}
                             }
                         }
                     }
-
-                    Surface(
-                        onClick = {
-                            currentPageIndex = index
-                            isThumbnailView = false
-                            isTwoPageView = false
-                        },
-                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
-                        border = ClickableSurfaceDefaults.border(
-                            focusedBorder = Border(
-                                border = BorderStroke(4.dp, Color.White),
-                                inset = 0.dp,
-                                shape = MaterialTheme.shapes.medium
-                            )
-                        ),
-                        modifier = Modifier
-                            .height(thumbHeight)
-                            .aspectRatio(0.75f)
-                            .focusRequester(focusRequesters[index])
-                            .onPreviewKeyEvent { event ->
-                                if (event.type == KeyEventType.KeyDown) {
-                                    val rowCount = (pageCount + columnCount - 1) / columnCount
-                                    if (rowCount > 1) {
-                                        when (event.key) {
-                                            Key.DirectionUp -> {
-                                                if (index < columnCount) {
-                                                    val c = index % columnCount
-                                                    var target = ((pageCount - 1) / columnCount) * columnCount + c
-                                                    if (target >= pageCount) target = pageCount - 1
-                                                    
-                                                    scope.launch {
-                                                        gridState.scrollToItem(target)
-                                                        focusRequesters[target].requestFocus()
-                                                    }
-                                                    return@onPreviewKeyEvent true
-                                                }
-                                            }
-                                            Key.DirectionDown -> {
-                                                val currentRow = index / columnCount
-                                                if (currentRow == rowCount - 1) {
-                                                    val target = index % columnCount
-                                                    scope.launch {
-                                                        gridState.scrollToItem(target)
-                                                        focusRequesters[target].requestFocus()
-                                                    }
-                                                    return@onPreviewKeyEvent true
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                false
-                            },
-                        shape = ClickableSurfaceDefaults.shape(shape = MaterialTheme.shapes.medium),
-                        colors = ClickableSurfaceDefaults.colors(
-                            containerColor = Color.Transparent,
-                            focusedContainerColor = Color.Transparent,
-                            pressedContainerColor = Color.Transparent
-                        )
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center, 
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(10.dp)
-                                .background(Color.DarkGray, MaterialTheme.shapes.small)
-                                .clip(MaterialTheme.shapes.small)
-                        ) {
-                            if (thumbBitmap != null) {
-                                Image(
-                                    bitmap = thumbBitmap!!.asImageBitmap(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                CircularProgressIndicator(color = WeirdStreamerTheme.spec.spinnerColor.takeOrElse { MaterialTheme.colorScheme.primary }, modifier = Modifier.size(24.dp))
-                            }
-                            
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(8.dp)
-                                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = (index + 1).toString(),
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
                 }
-            }
+            )
         } else {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clipToBounds()
-                    .graphicsLayer(
-                        scaleX = zoomLevel,
-                        scaleY = zoomLevel,
-                        translationX = panX * 1000f * zoomLevel,
-                        translationY = panY * 1000f * zoomLevel,
-                        rotationZ = if (!isTwoPageView) rotation else 0f
-                    ),
+                modifier = Modifier.fillMaxSize().clipToBounds()
+                    .graphicsLayer(scaleX = zoomLevel, scaleY = zoomLevel, translationX = panX * 1000f * zoomLevel, translationY = panY * 1000f * zoomLevel, rotationZ = if (!isTwoPageView) rotation else 0f),
                 contentAlignment = Alignment.Center
             ) {
                 if (isTwoPageView) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(0.dp, Alignment.CenterHorizontally),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
-                            currentPageBitmap?.let { bitmap ->
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier.fillMaxHeight()
-                                )
-                            }
-                        }
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
-                            nextPageBitmap?.let { bitmap ->
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier.fillMaxHeight()
-                                )
-                            }
-                        }
+                    Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(0.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) { currentPageBitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxHeight()) } }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) { nextPageBitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxHeight()) } }
                     }
                 } else {
-                    currentPageBitmap?.let { bitmap ->
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = if (isZoomMode) ContentScale.None else ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                    currentPageBitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = if (isZoomMode) ContentScale.None else ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
                 }
             }
         }
 
         if (isLoading && !isThumbnailView) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(24.dp), contentAlignment = Alignment.Center) {
                 val progress = viewModel.downloadProgress
                 if (progress != null) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(
-                            progress = { progress },
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.primary
-                        )
+                        CircularProgressIndicator(progress = { progress }, color = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "${(progress * 100).toInt()}%",
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelLarge
-                        )
+                        Text(text = "${(progress * 100).toInt()}%", color = Color.White, style = MaterialTheme.typography.labelLarge)
                     }
-                } else {
-                    CircularProgressIndicator(color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
-                }
+                } else CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         }
 
         if (errorMessage != null && !isThumbnailView) {
-            Column(
-                modifier = Modifier.align(Alignment.Center).padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(modifier = Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Error", style = MaterialTheme.typography.headlineMedium, color = Color.Red)
                 Text(errorMessage!!, style = MaterialTheme.typography.bodyMedium, color = Color.White, textAlign = TextAlign.Center)
             }
         }
 
-        // Filename Overlay
-        AnimatedVisibility(
-            visible = showOverlays && !isZoomMode && !isThumbnailView,
-            enter = fadeIn() + slideInVertically(),
-            exit = fadeOut() + slideOutVertically(),
-            modifier = Modifier.align(Alignment.TopCenter)
-        ) {
-            Text(
-                text = fileName + if (rotation != 0f && !isTwoPageView) " (${rotation.toInt()}°)" else "",
-                modifier = Modifier
-                    .padding(top = 32.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        // Page Number Indicator
-        AnimatedVisibility(
-            visible = showOverlays && pageCount > 0 && !isZoomMode && !isThumbnailView,
-            enter = fadeIn() + slideInVertically { it },
-            exit = fadeOut() + slideOutVertically { it },
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            val pageText = if (isTwoPageView && currentPageIndex + 1 < pageCount) {
-                "${currentPageIndex + 1}-${currentPageIndex + 2} / $pageCount"
-            } else {
-                "${currentPageIndex + 1} / $pageCount"
-            }
-            Text(
-                text = (if (isTwoPageView) "Two-Page View: " else "") + pageText,
-                modifier = Modifier
-                    .padding(bottom = 32.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.labelLarge,
-                color = Color.White
-            )
-        }
-
-        // Loop Feedback
-        AnimatedVisibility(
-            visible = loopFeedback != null && !isThumbnailView,
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut(),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(32.dp)
-            ) {
-            val isForward = loopFeedback?.first == true
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(32.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .graphicsLayer(scaleX = if (isForward) -1f else 1f)
-                )
-            }
-        }
+        PdfOverlays(
+            show = showOverlays,
+            fileName = fileName,
+            rotation = rotation,
+            isTwoPageView = isTwoPageView,
+            pageCount = pageCount,
+            currentPageIndex = currentPageIndex,
+            isZoomMode = isZoomMode,
+            loopFeedback = loopFeedback
+        )
     }
 
-    LaunchedEffect(Unit) {
-        mainFocusRequester.requestFocus()
-    }
+    LaunchedEffect(Unit) { mainFocusRequester.requestFocus() }
 }

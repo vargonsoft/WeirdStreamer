@@ -73,6 +73,34 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var fileList by mutableStateOf<List<FileItem>>(emptyList())
         private set
 
+    private var _sortedFileList by mutableStateOf<List<FileItem>>(emptyList())
+    val sortedFileList: List<FileItem>
+        get() = _sortedFileList
+
+    private suspend fun updateSortedList() {
+        val currentFiles = fileList
+        val currentFilter = contentFilter
+        val sorted = withContext(Dispatchers.Default) {
+            val filtered = when (currentFilter) {
+                ContentFilter.ALL -> currentFiles
+                ContentFilter.IMAGE -> currentFiles.filter { it.isDirectory || isImage(it.path) }
+                ContentFilter.VIDEO -> currentFiles.filter { it.isDirectory || isVideo(it.path) }
+                ContentFilter.PDF -> currentFiles.filter { it.isDirectory || isPdf(it.path) }
+            }
+
+            filtered.sortedWith { item1, item2 ->
+                when {
+                    item1.path == "UP" -> -1
+                    item2.path == "UP" -> 1
+                    item1.isDirectory && !item2.isDirectory -> -1
+                    !item1.isDirectory && item2.isDirectory -> 1
+                    else -> naturalCompare(item1.name, item2.name)
+                }
+            }
+        }
+        _sortedFileList = sorted
+    }
+
     var currentSource by mutableStateOf<MediaSource?>(null)
         private set
 
@@ -141,25 +169,32 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     // Natural sort helper function
     private fun naturalCompare(s1: String, s2: String): Int {
-        val regex = Regex("(\\d+)|(\\D+)")
-        val s1Parts = regex.findAll(s1).map { it.value }.toList()
-        val s2Parts = regex.findAll(s2).map { it.value }.toList()
-
         var i = 0
-        while (i < s1Parts.size && i < s2Parts.size) {
-            val p1 = s1Parts[i]
-            val p2 = s2Parts[i]
+        var j = 0
+        while (i < s1.length && j < s2.length) {
+            val c1 = s1[i]
+            val c2 = s2[j]
 
-            val result = if (p1[0].isDigit() && p2[0].isDigit()) {
-                p1.toBigInteger().compareTo(p2.toBigInteger())
+            if (c1.isDigit() && c2.isDigit()) {
+                var v1 = 0L
+                while (i < s1.length && s1[i].isDigit()) {
+                    v1 = v1 * 10 + (s1[i] - '0')
+                    i++
+                }
+                var v2 = 0L
+                while (j < s2.length && s2[j].isDigit()) {
+                    v2 = v2 * 10 + (s2[j] - '0')
+                    j++
+                }
+                if (v1 != v2) return v1.compareTo(v2)
             } else {
-                p1.compareTo(p2, ignoreCase = true)
+                val res = c1.lowercaseChar().compareTo(c2.lowercaseChar())
+                if (res != 0) return res
+                i++
+                j++
             }
-
-            if (result != 0) return result
-            i++
         }
-        return s1Parts.size - s2Parts.size
+        return s1.length - s2.length
     }
 
     fun toggleViewMode() {
@@ -176,27 +211,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             ContentFilter.VIDEO -> ContentFilter.PDF
             ContentFilter.PDF -> ContentFilter.ALL
         }
-    }
-
-    fun getFilteredFileList(): List<FileItem> {
-        val filtered = when (contentFilter) {
-            ContentFilter.ALL -> fileList
-            ContentFilter.IMAGE -> fileList.filter { it.isDirectory || isImage(it.path) }
-            ContentFilter.VIDEO -> fileList.filter { it.isDirectory || isVideo(it.path) }
-            ContentFilter.PDF -> fileList.filter { it.isDirectory || isPdf(it.path) }
-        }
-
-        // Apply natural sort: Directories first (except UP), then files
-        return filtered.sortedWith { item1, item2 ->
-            when {
-                item1.path == "UP" -> -1
-                item2.path == "UP" -> 1
-                item1.isDirectory && !item2.isDirectory -> -1
-                !item1.isDirectory && item2.isDirectory -> 1
-                else -> naturalCompare(item1.name, item2.name)
-            }
+        viewModelScope.launch {
+            updateSortedList()
         }
     }
+
+    fun getFilteredFileList(): List<FileItem> = sortedFileList
 
     fun recordSelection(parentPath: String, childPath: String) {
         selectionMap[parentPath] = childPath
@@ -300,6 +320,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                         // At the Share level root, always show .. to go back to Server Selection
                         listOf(FileItem("..", "UP", true)) + items.filter { it.name != ".." }
                     }
+                    updateSortedList()
                 } else {
                     val exception = result.exceptionOrNull() ?: Exception("Unknown error")
                     if (repository.isAuthRequired(exception)) {
@@ -329,6 +350,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 if (updatedItem != null) {
                     fileList = fileList.map {
                         if (it.path == item.path) updatedItem else it 
+                    }
+                    viewModelScope.launch {
+                        updateSortedList()
                     }
                 }
             }
