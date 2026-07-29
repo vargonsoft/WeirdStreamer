@@ -282,6 +282,10 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 	// Get start time for seeking in transcoded streams
 	startTime := r.URL.Query().Get("start")
 
+	// Get bitrate and resolution for custom transcoding
+	bitrate := r.URL.Query().Get("bitrate")
+	resolution := r.URL.Query().Get("resolution")
+
 	// Validate path is within allowed media paths
 	if !h.isValidMediaPath(path) {
 		respondError(w, http.StatusForbidden, "Access denied")
@@ -308,7 +312,7 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages); err != nil {
+	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages, bitrate, resolution); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to stream media")
 		return
 	}

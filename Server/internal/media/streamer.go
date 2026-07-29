@@ -19,7 +19,7 @@ func NewStreamer() *Streamer {
 }
 
 // ServeContent handles HTTP range requests for efficient streaming
-func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool, startTime string, autoConvertImages bool) error {
+func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool, startTime string, autoConvertImages bool, bitrate string, resolution string) error {
 	// Check if file is HEIC/HEIF and auto-conversion is enabled
 	ext := strings.ToLower(filepath.Ext(filePath))
 	if autoConvertImages && (ext == ".heic" || ext == ".heif") {
@@ -27,19 +27,19 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 	}
 
 	// Check if transcoding is needed
-	// 1. Explicitly requested via ?transcode=1
+	// 1. Explicitly requested via ?transcode=1 or bitrate/resolution provided
 	// 2. Auto-transcoding enabled (default) and file needs transcoding
-	shouldTranscode := forceTranscode
+	shouldTranscode := forceTranscode || bitrate != "" || resolution != ""
 	if !shouldTranscode && autoTranscode && s.needsTranscoding(filePath) {
 		shouldTranscode = true
 		fmt.Printf("Auto-transcoding %s for browser compatibility\n", filePath)
 	}
 
 	if shouldTranscode {
-		if forceTranscode {
-			fmt.Printf("Transcoding %s (explicitly requested)\n", filePath)
+		if forceTranscode || bitrate != "" || resolution != "" {
+			fmt.Printf("Transcoding %s (requested: bitrate=%s, res=%s)\n", filePath, bitrate, resolution)
 		}
-		return s.transcodeAndServe(w, r, filePath, startTime)
+		return s.transcodeAndServe(w, r, filePath, startTime, bitrate, resolution)
 	}
 
 	// Serve original file
@@ -283,7 +283,7 @@ func (s *Streamer) needsTranscoding(filePath string) bool {
 }
 
 // transcodeAndServe transcodes video on-the-fly and streams to client
-func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, filePath string, startTime string) error {
+func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, filePath string, startTime string, bitrate string, resolution string) error {
 	if startTime != "" {
 		fmt.Printf("Starting transcoding from %s seconds for: %s\n", startTime, filePath)
 	} else {
@@ -291,25 +291,46 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	}
 
 	// FFmpeg command for fast transcoding
-	// -ss: seek to start position (before -i for faster seeking)
-	// -i: input file
-	// -c:v libx264: encode video with h264
-	// -preset ultrafast: fastest encoding (lower quality but real-time)
-	// -crf 23: constant quality (lower is better, 23 is good default)
-	// -c:a aac: encode audio with aac
-	// -b:a 128k: audio bitrate
-	// -movflags frag_keyframe+empty_moov: enable streaming for mp4
-	// -f mp4: output format
 	args := []string{}
 	if startTime != "" {
 		// Add -ss before -i for faster seeking
 		args = append(args, "-ss", startTime)
 	}
+	args = append(args, "-i", filePath)
+
+	// Video transcoding options
+	args = append(args, "-c:v", "libx264", "-preset", "ultrafast")
+
+	// Handle bitrate reduction
+	if strings.HasSuffix(bitrate, "%") {
+		percentageStr := strings.TrimSuffix(bitrate, "%")
+		percentage, err := strconv.ParseFloat(percentageStr, 64)
+		if err == nil {
+			// Get original bitrate
+			origBitrate := s.getBitrate(filePath)
+			if origBitrate > 0 {
+				targetBitrate := int64(float64(origBitrate) * (percentage / 100.0))
+				if targetBitrate > 0 {
+					args = append(args, "-b:v", strconv.FormatInt(targetBitrate, 10))
+					args = append(args, "-maxrate", strconv.FormatInt(targetBitrate, 10))
+					args = append(args, "-bufsize", strconv.FormatInt(targetBitrate*2, 10))
+				}
+			}
+		}
+	} else if bitrate != "" {
+		args = append(args, "-b:v", bitrate)
+	} else {
+		// Default to CRF if no specific bitrate requested
+		args = append(args, "-crf", "23")
+	}
+
+	// Handle resolution reduction
+	if resolution != "" {
+		// Expect resolution like "720", "480", etc.
+		args = append(args, "-vf", fmt.Sprintf("scale=-2:%s", resolution))
+	}
+
 	args = append(args,
-		"-i", filePath,
-		"-c:v", "libx264",
-		"-preset", "ultrafast",
-		"-crf", "23",
 		"-c:a", "aac",
 		"-b:a", "128k",
 		"-movflags", "frag_keyframe+empty_moov",
@@ -386,4 +407,20 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	}
 
 	return nil
+}
+
+func (s *Streamer) getBitrate(filePath string) int64 {
+	cmd := exec.Command("ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=bit_rate",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		filePath,
+	)
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	bitrate, _ := strconv.ParseInt(strings.TrimSpace(string(output)), 10, 64)
+	return bitrate
 }

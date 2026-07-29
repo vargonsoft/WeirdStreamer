@@ -88,6 +88,24 @@ import java.io.File
 import java.util.Locale
 import kotlin.math.abs
 
+data class TranscodeMode(
+    val name: String,
+    val bitrate: String? = null,
+    val resolution: String? = null,
+    val isOriginal: Boolean = false
+)
+
+val transcodeModes = listOf(
+    TranscodeMode("Original", isOriginal = true),
+    TranscodeMode("Compatibility (Auto)"),
+    TranscodeMode("Quality -20%", bitrate = "80%"),
+    TranscodeMode("Quality -35%", bitrate = "65%"),
+    TranscodeMode("Quality -50%", bitrate = "50%"),
+    TranscodeMode("720p", resolution = "720"),
+    TranscodeMode("480p", resolution = "480"),
+    TranscodeMode("360p", resolution = "360")
+)
+
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Unit) {
@@ -97,8 +115,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     // Determine if this is an SMB or Server source
     val isSmbSource = remember(path) { path.startsWith("smb://") }
 
-    // Transcode state - only applicable for server sources
-    var enableTranscode by remember { mutableStateOf(false) }
+    // Transcode state
+    var selectedTranscodeModeIndex by remember { mutableIntStateOf(0) }
+    val currentTranscodeMode = transcodeModes[selectedTranscodeModeIndex]
 
     // Track the start offset for transcoded streams
     var transcodeStartOffset by remember { mutableLongStateOf(0L) }
@@ -106,18 +125,22 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     // Store the original full duration (before any transcoding)
     var fullDuration by remember { mutableLongStateOf(0L) }
 
-    // Build the actual video URL with transcode parameter if needed
-    val videoUrl = remember(path, enableTranscode) {
-        // Reset offset when transcoding is toggled
-        transcodeStartOffset = 0L
-
-        if (!isSmbSource && enableTranscode) {
-            // Add transcode=1 parameter to the URL
-            if (path.contains("?")) {
-                "$path&transcode=1"
-            } else {
-                "$path?transcode=1"
+    // Build the actual video URL with transcode parameters
+    val videoUrl = remember(path, selectedTranscodeModeIndex) {
+        // Reset offset when transcoding is changed (unless it was already seeking)
+        // If we are mid-video and change mode, we'll need to seek back to current position.
+        // But the 'remember' block only triggers on mode change.
+        
+        if (!isSmbSource && !currentTranscodeMode.isOriginal) {
+            var url = if (path.contains("?")) "$path&transcode=1" else "$path?transcode=1"
+            currentTranscodeMode.bitrate?.let { url += "&bitrate=$it" }
+            currentTranscodeMode.resolution?.let { url += "&resolution=$it" }
+            
+            // If we're not starting from 0, add the start parameter
+            if (transcodeStartOffset > 0) {
+                url += "&start=${transcodeStartOffset / 1000f}"
             }
+            url
         } else {
             path
         }
@@ -126,8 +149,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     val exoPlayer = remember(videoUrl) {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                50_000, // minBufferMs (increased from 32s to 50s)
-                120_000, // maxBufferMs (increased from 50s to 120s)
+                50_000, // minBufferMs
+                120_000, // maxBufferMs
                 5_000, // bufferForPlaybackMs
                 10_000 // bufferForPlaybackAfterRebufferMs
             )
@@ -137,7 +160,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             .setLoadControl(loadControl)
             .apply {
                 if (isSmbSource) {
-                    // Use SMB DataSource for SMB paths
                     setMediaSourceFactory(
                         DefaultMediaSourceFactory(context)
                             .setDataSourceFactory(
@@ -148,7 +170,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             )
                     )
                 } else {
-                    // Use OkHttp DataSource for server URLs (handles SSL and auth)
                     val okHttpClient = WeirdStreamerApplication.getOkHttpClient()
                     val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
                         .setUserAgent("WeirdStreamer/1.0")
@@ -197,9 +218,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var currentAspectRatio by remember { mutableStateOf<Float?>(null) }
     var toolbarFocusedButton by remember { mutableIntStateOf(0) } // 0 = Transcode, 1 = Zoom, 2 = Speed, 3 = Zoom+, 4 = Zoom-, 5 = AspectRatio, 6 = Subtitles, 7 = Rotate
     var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) } // Track actual video aspect ratio
-    var videoPaddingPx by remember { mutableIntStateOf(0) } // Size adjustment in pixels (1px in each direction)
+    var videoPaddingPx by remember { mutableIntStateOf(0) } // Size adjustment in pixels
     var showSubtitleDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
+    var showTranscodeDialog by remember { mutableStateOf(false) }
     var availableSubtitles by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedSubtitleIndex by remember { mutableIntStateOf(-1) } // -1 = no subtitles
 
@@ -217,15 +239,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     fun selectSubtitleTrack(index: Int) {
         selectedSubtitleIndex = index
-
-        // Find the text track at the given index
         val tracks = exoPlayer.currentTracks
         var subtitleCount = 0
 
         for (group in tracks.groups) {
             if (group.type == C.TRACK_TYPE_TEXT) {
                 if (index == -1) {
-                    // Disable subtitles
                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                             .buildUpon()
                             .clearOverrides()
@@ -235,7 +254,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 for (i in 0 until group.length) {
                     if (subtitleCount == index) {
-                        // Select this group
                         exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                                 .buildUpon()
                                 .setOverrideForType(
@@ -263,17 +281,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         isSearchingSubtitles = true
         downloadStatus = "Searching subtitles..."
 
-        // Run search in background
         Thread {
             try {
-                // Extract filename from path
                 val filename = path.substringAfterLast("/").substringBefore("?")
-
-                // Search by filename first
                 val results = openSubtitlesClient.searchByFilename(filename)
 
                 if (results.isNotEmpty()) {
-                    downloadingSubtitles = results.take(10) // Show top 10 results
+                    downloadingSubtitles = results.take(10)
                     downloadStatus = null
                     isSearchingSubtitles = false
                 } else {
@@ -298,8 +312,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 if (openSubtitlesClient.downloadSubtitle(subtitle, outputFile)) {
                     downloadStatus = "Downloaded successfully"
-                    // TODO: Load subtitle file into ExoPlayer
-                    // This requires loading the subtitle through MediaItem.SubtitleConfiguration
                 } else {
                     downloadStatus = "Download failed"
                 }
@@ -310,11 +322,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         }.start()
     }
 
-    // Fetch metadata and trickplay for server sources
+    // Fetch metadata and trickplay
     LaunchedEffect(path) {
         if (!isSmbSource) {
             try {
-                // Extract the base64 path parameter
                 val encodedPath = path.substringAfter("path=").substringBefore("&")
                 val okHttpClient = WeirdStreamerApplication.getOkHttpClient()
                 val retrofit = Retrofit.Builder()
@@ -328,12 +339,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 if (response.isSuccessful) {
                     response.body()?.let { metadata ->
-                        // Convert duration from seconds to milliseconds
                         metadata.duration?.let { durationSecs ->
                             fullDuration = (durationSecs * 1000).toLong()
                         }
                         
-                        // Fetch trickplay info
                         val info = viewModel.fetchTrickplayInfo(viewModel.getFileItemForPath(path)!!)
                         if (info != null) {
                             trickplayInfo = info
@@ -349,21 +358,21 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var isSeekingSlider by remember { mutableStateOf(false) }
     var playbackPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
-    var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) } // value to show, isForward
+    var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
     var speedFeedback by remember { mutableStateOf<Float?>(null) }
-    var frameFeedback by remember { mutableStateOf<Pair<Boolean, Long>?>(null) } // isForward to time
+    var frameFeedback by remember { mutableStateOf<Pair<Boolean, Long>?>(null) }
 
     // --- Skip sequence state ---
     var skipIndex by remember { mutableIntStateOf(0) }
-    var lastSkipDirection by remember { mutableStateOf<Int?>(null) } // -1 for left, 1 for right
+    var lastSkipDirection by remember { mutableStateOf<Int?>(null) }
     var lastSkipTime by remember { mutableLongStateOf(0L) }
     var lastSkipAmount by remember { mutableIntStateOf(0) }
-    var skipReversalStep by remember { mutableIntStateOf(0) } // 0: normal, 1: undo, 2: reset
+    var skipReversalStep by remember { mutableIntStateOf(0) }
     var basePlaybackPositionBeforeSkip by remember { mutableLongStateOf(0L) }
 
-    val skipIntervals = listOf(5, 15, 30, 60, 120, 300, 600, 1800) // seconds
+    val skipIntervals = listOf(5, 15, 30, 60, 120, 300, 600, 1800)
     val speedIntervals = listOf(0.1f, 0.25f, 0.5f, 1f, 2f, 4f, 6f, 8f, 10f, 12f, 16f, 32f, 64f)
-    var currentSpeedIndex by remember { mutableIntStateOf(speedIntervals.indexOf(1f)) } // Start at 1x
+    var currentSpeedIndex by remember { mutableIntStateOf(speedIntervals.indexOf(1f)) }
 
     val focusRequester = remember { FocusRequester() }
 
@@ -385,17 +394,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 if (state == Player.STATE_READY) {
                     val currentDuration = exoPlayer.duration
                     if (fullDuration > 0) {
-                        // Use the metadata duration if available
                         duration = fullDuration
-                    } else if (enableTranscode) {
-                        // Fallback: calculate from transcode offset
+                    } else if (!currentTranscodeMode.isOriginal) {
                         val calculatedFullDuration = currentDuration + transcodeStartOffset
                         if (calculatedFullDuration > fullDuration) {
                             fullDuration = calculatedFullDuration
                         }
                         duration = fullDuration
                     } else {
-                        // Use actual stream duration
                         fullDuration = currentDuration
                         duration = currentDuration
                     }
@@ -406,13 +412,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         val nextPath = videos[currentIndex + 1]
                         viewModel.playVideo(nextPath)
                     } else {
-                        // Replay current video
                         exoPlayer.seekTo(0)
                         exoPlayer.play()
                     }
                 }
                 isBuffering = state == Player.STATE_BUFFERING || state == Player.STATE_IDLE
-                // Update video aspect ratio from player
                 val videoSize = exoPlayer.videoSize
                 if (videoSize.width > 0 && videoSize.height > 0) {
                     videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
@@ -429,7 +433,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     // Progress updates
     LaunchedEffect(exoPlayer, transcodeStartOffset) {
         while (true) {
-            playbackPosition = if (enableTranscode) {
+            playbackPosition = if (!currentTranscodeMode.isOriginal) {
                 exoPlayer.currentPosition + transcodeStartOffset
             } else {
                 exoPlayer.currentPosition
@@ -483,7 +487,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     }
 
     fun calculatePanLimits(screenWidth: Float, screenHeight: Float): Pair<Float, Float> {
-        // Assume 16:9 aspect ratio for video if we don't have exact dimensions
         val videoRatio = 16f / 9f
         val screenRatio = screenWidth / screenHeight
 
@@ -515,7 +518,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         val currentDuration = exoPlayer.duration
         val maxPos = if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration
 
-        if (!isSmbSource && enableTranscode) {
+        if (!isSmbSource && !currentTranscodeMode.isOriginal) {
             val actualPosition =
                 if (useAbsoluteAmount) basePlaybackPositionBeforeSkip else (exoPlayer.currentPosition + transcodeStartOffset)
             val maxTranscodePos =
@@ -523,18 +526,19 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             val finalTarget = (actualPosition + amount * 1000).coerceIn(0L, maxTranscodePos)
 
             val startTimeSeconds = finalTarget / 1000f
-            val baseUrlWithPath = if (path.contains("?")) {
+            var newUrl = if (path.contains("?")) {
                 val base = path.substringBefore("?")
                 val pathParam = path.substringAfter("path=").substringBefore("&")
-                "$base?path=$pathParam"
+                "$base?path=$pathParam&transcode=1"
             } else {
-                path
+                "$path?transcode=1"
             }
-            val newUrl = "$baseUrlWithPath&auto-transcode=0&transcode=1&start=$startTimeSeconds"
-            Log.d(
-                "VideoPlayer",
-                "Transcode seek to $startTimeSeconds sec, URL: $newUrl"
-            )
+            
+            currentTranscodeMode.bitrate?.let { newUrl += "&bitrate=$it" }
+            currentTranscodeMode.resolution?.let { newUrl += "&resolution=$it" }
+            newUrl += "&start=$startTimeSeconds"
+
+            Log.d("VideoPlayer", "Transcode seek to $startTimeSeconds sec, URL: $newUrl")
             transcodeStartOffset = finalTarget
             val mediaItem = MediaItem.fromUri(newUrl)
             exoPlayer.setMediaItem(mediaItem)
@@ -563,7 +567,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             lastControlsHideTime = now
             isSeekingSlider = false
         } else {
-            // If back is pressed within 1 second of controls disappearing, ignore it.
             if (now - lastControlsHideTime > 1000) {
                 onBack(path)
             }
@@ -572,7 +575,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     BackHandler {
         if (showZoomToolbar && !isZoomMode) {
-            // Hide toolbar if it's showing and not in zoom mode
             showZoomToolbar = false
         } else if (isZoomMode) {
             if (zoomLevel > 1f) {
@@ -581,7 +583,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 panX = (panX * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
                 panY = (panY * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
             } else {
-                // At 1x, exit zoom mode
                 isZoomMode = false
                 showZoomToolbar = false
                 panX = 0f
@@ -652,27 +653,20 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         }
                         Key.DirectionUp -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Hide toolbar and show playback controls
                                 showZoomToolbar = false
                                 showControls = true
                                 updateInteraction()
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
-                                // Pan up in zoom mode (only when actually zoomed)
-                                val (_, maxPY) = calculatePanLimits(
-                                    1920f,
-                                    1080f
-                                )  // Standard TV size
+                                val (_, maxPY) = calculatePanLimits(1920f, 1080f)
                                 panY = (panY + 100f).coerceIn(-maxPY, maxPY)
                                 updateInteraction()
                                 true
                             } else if (isTrickplayVisible) {
-                                // Already in trickplay, handle up to exit trickplay
                                 isTrickplayVisible = false
                                 updateInteraction()
                                 true
                             } else if (isSeekingSlider) {
-                                // Move from slider to trickplay
                                 if (trickplayInfo != null) {
                                     isTrickplayVisible = true
                                     if (selectedTrickplayIndex == -1) {
@@ -683,15 +677,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 updateInteraction()
                                 true
                             } else if (showControls && !isSeekingSlider) {
-                                // Move from playback controls to slider
                                 isSeekingSlider = true
                                 updateInteraction()
                                 true
                             } else if (trickplayInfo != null) {
-                                // Enter trickplay if paused and info exists
                                 isTrickplayVisible = true
                                 if (selectedTrickplayIndex == -1) {
-                                    // Find closest frame to current position
                                     selectedTrickplayIndex = trickplayInfo!!.frames.indexOfFirst { it.time * 1000 >= playbackPosition }.coerceAtLeast(0)
                                 }
                                 updateInteraction()
@@ -704,31 +695,23 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.DirectionDown -> {
                             if (isZoomMode && zoomLevel > 1f) {
-                                // Pan down in zoom mode (only when actually zoomed)
-                                val (_, maxPY) = calculatePanLimits(
-                                    1920f,
-                                    1080f
-                                )  // Standard TV size
+                                val (_, maxPY) = calculatePanLimits(1920f, 1080f)
                                 panY = (panY - 100f).coerceIn(-maxPY, maxPY)
                                 updateInteraction()
                                 true
                             } else if (isZoomMode) {
-                                // In zoom mode at 1x, toggle toolbar
                                 showZoomToolbar = !showZoomToolbar
                                 true
                             } else if (showZoomToolbar) {
-                                // Hide toolbar if it's showing
                                 showZoomToolbar = false
                                 true
                             } else if (isTrickplayVisible) {
-                                // Move from trickplay to slider
                                 isTrickplayVisible = false
                                 selectedTrickplayIndex = -1
                                 isSeekingSlider = true
                                 updateInteraction()
                                 true
                             } else if (isSeekingSlider) {
-                                // Move from slider to playback controls
                                 isSeekingSlider = false
                                 updateInteraction()
                                 true
@@ -737,7 +720,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 lastControlsHideTime = System.currentTimeMillis()
                                 true
                             } else if (!showControls && !showZoomToolbar && !isZoomMode) {
-                                // Show zoom toolbar when controls are hidden and not in zoom mode
                                 showZoomToolbar = true
                                 isSeekingSlider = false
                                 true
@@ -748,76 +730,49 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.DirectionCenter, Key.Enter -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Toolbar is shown, handle button press
                                 when (toolbarFocusedButton) {
                                     0 -> {
-                                        // Transcode button pressed
-                                        enableTranscode = !enableTranscode
+                                        showTranscodeDialog = true
                                     }
                                     1 -> {
-                                        // Zoom button pressed
                                         isZoomMode = true
                                         zoomLevel = 1f
                                         panX = 0f
                                         panY = 0f
-                                        showZoomToolbar =
-                                            false  // Hide toolbar after entering zoom mode
+                                        showZoomToolbar = false
                                     }
-
                                     2 -> {
-                                        // Speed button pressed
                                         showSpeedDialog = true
                                     }
-
                                     3 -> {
-                                        // Zoom+ button pressed
                                         videoPaddingPx += 1
                                     }
-
                                     4 -> {
-                                        // Zoom- button pressed
                                         if (videoPaddingPx > 0) {
                                             videoPaddingPx -= 1
                                         }
                                     }
-
                                     5 -> {
-                                        // Aspect ratio button pressed, cycle to next
-                                        currentAspectRatioIndex =
-                                            (currentAspectRatioIndex + 1) % aspectRatios.size
-                                        currentAspectRatio =
-                                            aspectRatioValues[currentAspectRatioIndex]
+                                        currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size
+                                        currentAspectRatio = aspectRatioValues[currentAspectRatioIndex]
                                     }
-
                                     6 -> {
-                                        // Subtitles button pressed, show subtitle dialog
                                         showSubtitleDialog = true
                                     }
-
                                     7 -> {
-                                        // Rotate button pressed
                                         rotation = (rotation + 90f) % 360f
                                     }
                                 }
                                 true
                             } else if (isZoomMode) {
-                                // In zoom mode, zoom in
                                 if (zoomLevel < 64f) {
                                     val oldZoom = zoomLevel
                                     zoomLevel = if (zoomLevel == 1f) 2f else zoomLevel * 2f
-                                    // Adjust pan to keep it within bounds
-                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(
-                                        -Float.MAX_VALUE,
-                                        Float.MAX_VALUE
-                                    )
-                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(
-                                        -Float.MAX_VALUE,
-                                        Float.MAX_VALUE
-                                    )
+                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
+                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
                                 }
                                 true
                             } else if (isTrickplayVisible) {
-                                // Seek to selected trickplay frame
                                 if (selectedTrickplayIndex != -1) {
                                     val targetTime = trickplayInfo!!.frames[selectedTrickplayIndex].time.toLong() * 1000
                                     performSkip((targetTime - playbackPosition).toInt() / 1000, true)
@@ -842,57 +797,46 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.DirectionLeft -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Navigate left in toolbar (8 buttons: 0-7)
                                 toolbarFocusedButton = (toolbarFocusedButton - 1).coerceAtLeast(0)
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
-                                // Pan left in zoom mode (only when actually zoomed)
-                                val (maxPX, _) = calculatePanLimits(
-                                    1920f,
-                                    1080f
-                                )  // Standard TV size
+                                val (maxPX, _) = calculatePanLimits(1920f, 1080f)
                                 panX = (panX + 100f).coerceIn(-maxPX, maxPX)
                                 updateInteraction()
                                 true
                             } else if (isTrickplayVisible) {
-                                // Navigate left in trickplay frames
                                 if (selectedTrickplayIndex > 0) {
                                     selectedTrickplayIndex--
                                 }
                                 true
                             } else if (!isPlaying && isPaused) {
-                                // Frame backward
                                 exoPlayer.seekTo((exoPlayer.currentPosition - 40L).coerceAtLeast(0L))
                                 frameFeedback = false to System.currentTimeMillis()
                                 updateInteraction()
                                 true
                             } else if (showControls) {
-                                // Skipping -30s
                                 updateInteraction()
                                 performSkip(-30, true)
                                 true
                             } else {
                                 val now = System.currentTimeMillis()
                                 val direction = -1
-                                val withinInterval =
-                                    (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
+                                val withinInterval = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
                                 val opposite = lastSkipDirection == 1 && skipReversalStep == 0
 
                                 if (!withinInterval && !opposite) {
-                                    basePlaybackPositionBeforeSkip =
-                                        if (enableTranscode && !isSmbSource) {
-                                            exoPlayer.currentPosition + transcodeStartOffset
-                                        } else {
-                                            exoPlayer.currentPosition
-                                        }
+                                    basePlaybackPositionBeforeSkip = if (!currentTranscodeMode.isOriginal && !isSmbSource) {
+                                        exoPlayer.currentPosition + transcodeStartOffset
+                                    } else {
+                                        exoPlayer.currentPosition
+                                    }
                                 }
 
                                 var skipAmount: Int
                                 if (opposite) {
-                                    // Reverse direction: first undo last skip, then reset, then start new direction
                                     skipReversalStep++
                                     skipAmount = when (skipReversalStep) {
-                                        1 -> 0 // Undo back to base
+                                        1 -> 0
                                         2 -> 0
                                         else -> {
                                             skipReversalStep = 0
@@ -902,9 +846,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     }
                                 } else {
                                     skipReversalStep = 0
-                                    skipIndex = if (withinInterval) (skipIndex + 1).coerceAtMost(
-                                        skipIntervals.lastIndex
-                                    ) else 0
+                                    skipIndex = if (withinInterval) (skipIndex + 1).coerceAtMost(skipIntervals.lastIndex) else 0
                                     skipAmount = -skipIntervals[skipIndex]
                                 }
 
@@ -920,57 +862,46 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.DirectionRight -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Navigate right in toolbar (8 buttons: 0-7)
                                 toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(7)
                                 true
                             } else if (isZoomMode && zoomLevel > 1f) {
-                                // Pan right in zoom mode (only when actually zoomed)
-                                val (maxPX, _) = calculatePanLimits(
-                                    1920f,
-                                    1080f
-                                )  // Standard TV size
+                                val (maxPX, _) = calculatePanLimits(1920f, 1080f)
                                 panX = (panX - 100f).coerceIn(-maxPX, maxPX)
                                 updateInteraction()
                                 true
                             } else if (isTrickplayVisible) {
-                                // Navigate right in trickplay frames
                                 if (selectedTrickplayIndex < trickplayInfo!!.frames.size - 1) {
                                     selectedTrickplayIndex++
                                 }
                                 true
                             } else if (!isPlaying && isPaused) {
-                                // Frame forward
                                 exoPlayer.seekTo(exoPlayer.currentPosition + 40L)
                                 frameFeedback = true to System.currentTimeMillis()
                                 updateInteraction()
                                 true
                             } else if (showControls) {
-                                // Skipping +30s
                                 updateInteraction()
                                 performSkip(30, true)
                                 true
                             } else {
                                 val now = System.currentTimeMillis()
                                 val direction = 1
-                                val withinInterval =
-                                    (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
+                                val withinInterval = (now - lastSkipTime) <= 1000 && lastSkipDirection == direction && skipReversalStep == 0
                                 val opposite = lastSkipDirection == -1 && skipReversalStep == 0
 
                                 if (!withinInterval && !opposite) {
-                                    basePlaybackPositionBeforeSkip =
-                                        if (enableTranscode && !isSmbSource) {
-                                            exoPlayer.currentPosition + transcodeStartOffset
-                                        } else {
-                                            exoPlayer.currentPosition
-                                        }
+                                    basePlaybackPositionBeforeSkip = if (!currentTranscodeMode.isOriginal && !isSmbSource) {
+                                        exoPlayer.currentPosition + transcodeStartOffset
+                                    } else {
+                                        exoPlayer.currentPosition
+                                    }
                                 }
 
                                 var skipAmount: Int
                                 if (opposite) {
-                                    // Reverse direction: first undo last skip, then reset, then start new direction
                                     skipReversalStep++
                                     skipAmount = when (skipReversalStep) {
-                                        1 -> 0 // Undo back to base
+                                        1 -> 0
                                         2 -> 0
                                         else -> {
                                             skipReversalStep = 0
@@ -980,9 +911,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     }
                                 } else {
                                     skipReversalStep = 0
-                                    skipIndex = if (withinInterval) (skipIndex + 1).coerceAtMost(
-                                        skipIntervals.lastIndex
-                                    ) else 0
+                                    skipIndex = if (withinInterval) (skipIndex + 1).coerceAtMost(skipIntervals.lastIndex) else 0
                                     skipAmount = skipIntervals[skipIndex]
                                 }
 
@@ -998,23 +927,15 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                         Key.Backspace -> {
                             if (showZoomToolbar && !isZoomMode) {
-                                // Hide toolbar if it's showing and not in zoom mode
                                 showZoomToolbar = false
                                 true
                             } else if (isZoomMode) {
                                 if (zoomLevel > 1f) {
                                     val oldZoom = zoomLevel
                                     zoomLevel = if (zoomLevel <= 2f) 1f else zoomLevel / 2f
-                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(
-                                        -Float.MAX_VALUE,
-                                        Float.MAX_VALUE
-                                    )
-                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(
-                                        -Float.MAX_VALUE,
-                                        Float.MAX_VALUE
-                                    )
+                                    panX = (panX * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
+                                    panY = (panY * (zoomLevel / oldZoom)).coerceIn(-Float.MAX_VALUE, Float.MAX_VALUE)
                                 } else {
-                                    // At 1x, exit zoom mode
                                     isZoomMode = false
                                     showZoomToolbar = false
                                     panX = 0f
@@ -1052,13 +973,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             ) {
                 AndroidView(
                     factory = { ctx ->
-                        // Inflate layout with PlayerView configured to use TextureView
                         val view = LayoutInflater.from(ctx).inflate(R.layout.texture_video_view, null) as PlayerView
                         view.apply {
                             player = exoPlayer
                             useController = false
-                            // Use FIT mode - it will fit video into container while maintaining video's aspect ratio
-                            // We'll then stretch it with transforms to fill the constrained box
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             layoutParams = FrameLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1067,7 +985,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         }
                     },
                     update = { view ->
-                        // Update the player reference when exoPlayer changes (e.g., when transcoding is toggled)
                         view.player = exoPlayer
                     },
                     modifier = Modifier
@@ -1076,15 +993,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             this.rotationZ = rotation
                             
                             val isRotated = (rotation / 90f).toInt() % 2 != 0
-                            
-                            // 1. Handle base scaling for rotation to prevent squishing and overflow
                             val rotationScale = if (isRotated && size.width != 0f && size.height != 0f) {
                                 minOf(size.width / size.height, size.height / size.width)
                             } else {
                                 1f
                             }
                             
-                            // 2. Handle aspect ratio stretching
                             val stretchScaleX: Float
                             val stretchScaleY: Float
                             if (currentAspectRatio != null) {
@@ -1100,8 +1014,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 stretchScaleY = 1f
                             }
                             
-                            // 3. Combine all scales
-                            // Base zoom + manual padding + rotation scale + stretch
                             val commonScale = (1f + (videoPaddingPx * 0.005f)) * zoomLevel * rotationScale
                             this.scaleX = commonScale * stretchScaleX
                             this.scaleY = commonScale * stretchScaleY
@@ -1140,7 +1052,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
-
 
         // Skip Feedback Overlay
         Box(modifier = Modifier.fillMaxSize()) {
@@ -1213,7 +1124,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             }
         }
 
-        // Trickplay Overlay (Above Slider)
+        // Trickplay Overlay
         AnimatedVisibility(
             visible = showControls && trickplayInfo != null,
             enter = slideInVertically { it } + fadeIn(),
@@ -1296,7 +1207,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     
                     LaunchedEffect(selectedTrickplayIndex) {
                         if (selectedTrickplayIndex != -1) {
-                            // Scroll so that the selected item is centered
                             trickplayListState.animateScrollToItem(selectedTrickplayIndex)
                         }
                     }
@@ -1318,7 +1228,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     .padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Progress Slider and Timestamps
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -1337,7 +1246,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             .height(24.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
-                        // Background track
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1348,7 +1256,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         val progress =
                             if (duration > 0) playbackPosition.toFloat() / duration else 0f
 
-                        // Progress bar
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth(progress)
@@ -1356,7 +1263,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 .background(Color.Red)
                         )
 
-                        // Thumb
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1383,7 +1289,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Playback controls
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1428,7 +1333,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Transcode Button
                 if (!isSmbSource) {
                     Column(
                         modifier = Modifier
@@ -1446,20 +1350,21 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         Icon(
                             Icons.Default.VideoSettings,
                             contentDescription = "Transcode",
-                            tint = if (enableTranscode) Color.Green else (if (toolbarFocusedButton == 0) Color.White else Color.White.copy(alpha = 0.7f)),
+                            tint = if (!currentTranscodeMode.isOriginal) Color.Green else (if (toolbarFocusedButton == 0) Color.White else Color.White.copy(alpha = 0.7f)),
                             modifier = Modifier.size(if (toolbarFocusedButton == 0) 48.dp else 40.dp)
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (enableTranscode) "On" else "Off",
-                            style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
-                            color = if (enableTranscode) Color.Green else (if (toolbarFocusedButton == 0) Color.White else Color.White.copy(alpha = 0.7f))
+                            text = currentTranscodeMode.name,
+                            style = androidx.tv.material3.MaterialTheme.typography.labelSmall,
+                            color = if (!currentTranscodeMode.isOriginal) Color.Green else (if (toolbarFocusedButton == 0) Color.White else Color.White.copy(alpha = 0.7f)),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                 }
 
-                // Zoom Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1493,7 +1398,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Speed Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1527,7 +1431,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Zoom+ Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1561,7 +1464,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Zoom- Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1595,7 +1497,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Aspect Ratio Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1629,7 +1530,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Subtitles Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1663,7 +1563,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Rotate Button
                 Column(
                     modifier = Modifier
                         .width(100.dp)
@@ -1703,7 +1602,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             Dialog(
                 onDismissRequest = {
                     showSpeedDialog = false
-                    pendingSpeedIndex = currentSpeedIndex // restore
+                    pendingSpeedIndex = currentSpeedIndex
                 },
                 properties = DialogProperties(
                     dismissOnBackPress = true,
@@ -1719,15 +1618,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             if (event.type == KeyEventType.KeyDown) {
                                 when (event.key) {
                                     Key.DirectionUp -> {
-                                        if (pendingSpeedIndex > 0) {
-                                            pendingSpeedIndex--
-                                        }
+                                        if (pendingSpeedIndex > 0) pendingSpeedIndex--
                                         true
                                     }
                                     Key.DirectionDown -> {
-                                        if (pendingSpeedIndex < speedIntervals.size - 1) {
-                                            pendingSpeedIndex++
-                                        }
+                                        if (pendingSpeedIndex < speedIntervals.size - 1) pendingSpeedIndex++
                                         true
                                     }
                                     Key.DirectionCenter, Key.Enter -> {
@@ -1740,104 +1635,103 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     }
                                     Key.Escape, Key.Back, Key.Backspace -> {
                                         showSpeedDialog = false
-                                        pendingSpeedIndex = currentSpeedIndex // restore
                                         true
                                     }
                                     else -> false
                                 }
-                            } else {
-                                false
-                            }
+                            } else false
                         },
                     color = Color.Black.copy(alpha = 0.9f)
                 ) {
-                    val density = LocalDensity.current
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text(
-                            text = "Playback Speed",
-                            style = androidx.tv.material3.MaterialTheme.typography.headlineSmall,
-                            color = Color.White
-                        )
-
-                        val scrollState = rememberScrollState()
-                        val visibleItems = 6
-                        val itemHeightPx = density.run { 48.dp.toPx() }
-                        val itemSpacingPx = density.run { 8.dp.toPx() }
-                        val totalItemHeight = itemHeightPx + itemSpacingPx
-                        val centerIndex = visibleItems / 2
-                        val maxScroll = ((speedIntervals.size - 1) * totalItemHeight) - ((visibleItems - 1) * totalItemHeight)
-                        LaunchedEffect(pendingSpeedIndex, itemHeightPx, itemSpacingPx) {
-                            val scrollOffset = ((pendingSpeedIndex - centerIndex) * totalItemHeight).coerceIn(0f, maxScroll)
-                            scrollState.animateScrollTo(scrollOffset.toInt())
-                        }
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = (visibleItems * 48 + (visibleItems - 1) * 8).dp)
-                                .verticalScroll(scrollState),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                    Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text("Playback Speed", style = androidx.tv.material3.MaterialTheme.typography.headlineSmall, color = Color.White)
+                        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             speedIntervals.forEachIndexed { index, speed ->
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(
-                                            if (pendingSpeedIndex == index) Color.White.copy(alpha = 0.2f)
-                                            else Color.Gray.copy(alpha = 0.2f)
-                                        )
-                                        .clickable {
-                                            pendingSpeedIndex = index
-                                        }
-                                        .height(48.dp)
-                                        .padding(12.dp),
+                                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                        .background(if (pendingSpeedIndex == index) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.2f))
+                                        .clickable { pendingSpeedIndex = index }
+                                        .height(48.dp).padding(12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     if (pendingSpeedIndex == index) {
-                                        Icon(
-                                            Icons.Default.PlayArrow,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                                         Spacer(modifier = Modifier.width(8.dp))
                                     }
-                                    Text(
-                                        text = "${speed}x",
-                                        color = Color.White,
-                                        style = androidx.tv.material3.MaterialTheme.typography.bodyMedium
-                                    )
+                                    Text("${speed}x", color = Color.White, style = androidx.tv.material3.MaterialTheme.typography.bodyMedium)
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            Button(
-                                onClick = {
-                                    val playbackSpeed = speedIntervals[pendingSpeedIndex]
-                                    exoPlayer.playbackParameters = PlaybackParameters(playbackSpeed)
-                                    speedFeedback = if (playbackSpeed != 1f) playbackSpeed else null
-                                    currentSpeedIndex = pendingSpeedIndex
-                                    showSpeedDialog = false
+        // Transcode Dialog
+        if (showTranscodeDialog) {
+            var pendingModeIndex by remember { mutableIntStateOf(selectedTranscodeModeIndex) }
+            Dialog(
+                onDismissRequest = {
+                    showTranscodeDialog = false
+                    pendingModeIndex = selectedTranscodeModeIndex
+                },
+                properties = DialogProperties(
+                    dismissOnBackPress = true,
+                    dismissOnClickOutside = false
+                )
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .width(400.dp)
+                        .background(Color.Black.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
+                        .border(2.dp, Color.White, RoundedCornerShape(16.dp))
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown) {
+                                when (event.key) {
+                                    Key.DirectionUp -> {
+                                        if (pendingModeIndex > 0) pendingModeIndex--
+                                        true
+                                    }
+                                    Key.DirectionDown -> {
+                                        if (pendingModeIndex < transcodeModes.size - 1) pendingModeIndex++
+                                        true
+                                    }
+                                    Key.DirectionCenter, Key.Enter -> {
+                                        if (selectedTranscodeModeIndex != pendingModeIndex) {
+                                            // Capture current position before switching modes
+                                            transcodeStartOffset = playbackPosition
+                                            selectedTranscodeModeIndex = pendingModeIndex
+                                        }
+                                        showTranscodeDialog = false
+                                        true
+                                    }
+                                    Key.Escape, Key.Back, Key.Backspace -> {
+                                        showTranscodeDialog = false
+                                        true
+                                    }
+                                    else -> false
                                 }
-                            ) {
-                                Text("OK")
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Button(
-                                onClick = {
-                                    showSpeedDialog = false
-                                    pendingSpeedIndex = currentSpeedIndex // restore
+                            } else false
+                        },
+                    color = Color.Black.copy(alpha = 0.9f)
+                ) {
+                    Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text("Transcoding Options", style = androidx.tv.material3.MaterialTheme.typography.headlineSmall, color = Color.White)
+                        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            transcodeModes.forEachIndexed { index, mode ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                        .background(if (pendingModeIndex == index) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.2f))
+                                        .clickable { pendingModeIndex = index }
+                                        .height(48.dp).padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (pendingModeIndex == index) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    Text(mode.name, color = Color.White, style = androidx.tv.material3.MaterialTheme.typography.bodyMedium)
                                 }
-                            ) {
-                                Text("Cancel")
                             }
                         }
                     }
@@ -1871,7 +1765,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             color = Color.White
                         )
 
-                        // Available Subtitles Section
                         if (availableSubtitles.isNotEmpty()) {
                             Text(
                                 text = "Available Subtitles",
@@ -1885,7 +1778,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     .verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // Option to disable subtitles
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1952,7 +1844,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             HorizontalDivider(color = Color.White.copy(alpha = 0.3f), thickness = 1.dp)
                         }
 
-                        // Download from OpenSubtitles Option
                         Text(
                             text = "Download Subtitles",
                             style = androidx.tv.material3.MaterialTheme.typography.bodyLarge,
@@ -2028,7 +1919,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         color = Color.White
                     )
 
-                    // Show status/loading
                     if (isSearchingSubtitles) {
                         Row(
                             modifier = Modifier
@@ -2128,14 +2018,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         }
     }
 
-    // Detect subtitle tracks from video
     DisposableEffect(path) {
-        // Listen for tracks available
         val listener = object : Player.Listener {
             override fun onTracksChanged(tracks: Tracks) {
                 val subtitleTracks = mutableListOf<String>()
 
-                // Find all subtitle/text tracks
                 for (group in tracks.groups) {
                     if (group.type == C.TRACK_TYPE_TEXT) {
                         for (i in 0 until group.length) {
@@ -2154,8 +2041,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         }
 
         exoPlayer.addListener(listener)
-
-        // Clean up listener when composable disposes
         onDispose {
             exoPlayer.removeListener(listener)
         }
