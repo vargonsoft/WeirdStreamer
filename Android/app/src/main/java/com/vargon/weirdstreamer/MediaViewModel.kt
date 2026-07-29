@@ -426,11 +426,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getImagesInCurrentFolder(): List<String> {
-        return fileList.filter { !it.isDirectory && isImage(it.path) }.map { it.path }
+        return getFilteredFileList().filter { !it.isDirectory && isImage(it.path) }.map { it.path }
     }
 
     fun getVideosInCurrentFolder(): List<String> {
-        return fileList.filter { !it.isDirectory && isVideo(it.path) }.map { it.path }
+        return getFilteredFileList().filter { !it.isDirectory && isVideo(it.path) }.map { it.path }
     }
 
     fun getFileItemForPath(path: String): FileItem? {
