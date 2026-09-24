@@ -77,7 +77,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(48.dp)
+                .padding(start = 48.dp, top = 48.dp, end = 48.dp)
                 .onPreviewKeyEvent { 
                     if (it.key == Key.Backspace && it.type == KeyEventType.KeyUp) {
                         if (currentSource != null && dialogFocusRequester == null) {
@@ -294,7 +294,7 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(8.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             viewModel.sourceProviders.forEach { provider ->
                 item(span = { GridItemSpan(maxLineSpan) }) {
