@@ -282,6 +282,12 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
 
 @Composable
 private fun SourceSelectionScreen(viewModel: MediaViewModel) {
+    // Reading saved servers hits EncryptedSharedPreferences; do it once per auth/server change,
+    // not on every recomposition.
+    val refreshTrigger = viewModel.authStateRefreshTrigger
+    val serversByProvider = remember(viewModel.sourceProviders, refreshTrigger) {
+        viewModel.sourceProviders.associateWith { it.getServers() }
+    }
     if (viewModel.isGridView) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
@@ -299,7 +305,7 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
                     )
                 }
                 
-                val servers = provider.getServers()
+                val servers = serversByProvider[provider].orEmpty()
                 if (servers.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text("No ${provider.displayName}s found. Use 'Add Source' to add manually.", 
@@ -333,7 +339,7 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
                     )
                 }
                 
-                val servers = provider.getServers()
+                val servers = serversByProvider[provider].orEmpty()
                 if (servers.isEmpty()) {
                     item {
                         Text("No ${provider.displayName}s found. Use 'Add Source' to add manually.", 
@@ -439,21 +445,21 @@ private fun FileBrowserScreen(
     toolbarFocusRequester: FocusRequester,
     onDialogFocusChanged: (FocusRequester?) -> Unit
 ) {
+    val isGridView = viewModel.isGridView
+    val onItemClick: (com.vargon.weirdstreamer.repository.FileItem) -> Unit = remember(viewModel) {
+        { item -> handleFileClick(viewModel, item) }
+    }
     FocusableList(
         items = viewModel.getFilteredFileList(),
         initialSelection = viewModel.getSelection(viewModel.currentPath),
-        isGridView = viewModel.isGridView,
+        isGridView = isGridView,
         onRequestToolbarFocus = { toolbarFocusRequester.requestFocus() },
         onRequestDialogFocus = onDialogFocusChanged
     ) { item, modifier ->
-        if (viewModel.isGridView) {
-            FileTileItem(item, modifier = modifier) {
-                handleFileClick(viewModel, item)
-            }
+        if (isGridView) {
+            FileTileItem(item, modifier = modifier) { onItemClick(item) }
         } else {
-            FileRowItem(item, modifier = modifier) {
-                handleFileClick(viewModel, item)
-            }
+            FileRowItem(item, modifier = modifier) { onItemClick(item) }
         }
     }
 }

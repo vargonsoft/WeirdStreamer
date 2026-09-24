@@ -17,12 +17,16 @@ import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okio.Buffer
 import okio.FileSystem
 import okio.ForwardingSource
+import okio.Path.Companion.toOkioPath
 import okio.buffer
 import okio.source
+import java.io.File
 import java.io.InterruptedIOException
 import java.util.Properties
 import kotlin.math.min
@@ -37,18 +41,19 @@ class SmbFetcher(
 
     companion object {
         private const val TAG = "SmbFetcher"
-        
+
         fun getStableKey(path: String): String {
             return path.replaceFirst(Regex("smb://.*@"), "smb://").removeSuffix("/")
         }
     }
 
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     @OptIn(ExperimentalCoilApi::class)
     override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
         val path = data.toString()
         val diskCacheKey = options.diskCacheKey ?: getStableKey(path)
         val diskCache = imageLoader.diskCache
-        
+
         // 1. FAST PATH: Check Coil's DiskCache for images
         if (diskCache != null && options.diskCachePolicy.readEnabled) {
             val snapshot = diskCache[diskCacheKey]
@@ -102,7 +107,7 @@ class SmbFetcher(
                         }
                         editor.commit()
                         Log.d(TAG, "Successfully cached $path (key: $diskCacheKey)")
-                        
+
                         // Verification check
                         val snapshot = diskCache[diskCacheKey]
                         if (snapshot != null) {

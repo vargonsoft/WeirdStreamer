@@ -87,6 +87,9 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
         
         return ImageLoader.Builder(this)
             .okHttpClient(okHttpClient)
+            // Opaque thumbnails don't need ARGB_8888; halves bitmap memory (fewer GCs on TV).
+            .allowRgb565(true)
+            .crossfade(false)
             .memoryCache {
                 MemoryCache.Builder(this)
                     .maxSizePercent(0.25)

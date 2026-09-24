@@ -444,19 +444,32 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         return getActualFilename(path).substringBefore('?').removeSuffix("/").substringAfterLast('.', "").lowercase()
     }
 
-    fun isImage(path: String): Boolean {
-        val ext = getFileExtension(path)
-        return ext in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
-    }
+    fun isImage(path: String): Boolean = getFileExtension(path) in IMAGE_EXTENSIONS
 
-    fun isVideo(path: String): Boolean {
-        val ext = getFileExtension(path)
-        return ext in setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2")
-    }
+    fun isVideo(path: String): Boolean = getFileExtension(path) in VIDEO_EXTENSIONS
 
     fun isPdf(path: String): Boolean {
         val ext = getFileExtension(path)
         return ext == "pdf"
+    }
+
+    /**
+     * Returns what should be loaded as a thumbnail for [item], or null if nothing should be loaded.
+     * - Server-provided thumbnails are always preferred.
+     * - SMB images/videos are loaded directly (decoded/extracted by SmbFetcher/VideoThumbnailDecoder).
+     * - HTTP images are loaded directly, but HTTP videos are never used as a thumbnail source, since
+     *   Coil would download the entire video file just to extract one frame.
+     * - Other files (PDFs, archives, ...) never trigger a network request.
+     */
+    fun thumbnailSourceFor(item: FileItem): String? {
+        item.thumbnailUrl?.let { return it }
+        if (item.isDirectory || item.path == "UP" || item.name == "..") return null
+        val isSmb = item.path.startsWith("smb://")
+        return when {
+            isImage(item.path) -> item.path
+            isSmb && isVideo(item.path) -> item.path
+            else -> null
+        }
     }
 
     fun getDisplayName(path: String): String {
@@ -568,5 +581,13 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopThumbnailUpdates()
+    }
+
+    companion object {
+        private val NATURAL_TOKEN_REGEX = Regex("(\\d+)|(\\D+)")
+        private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
+        private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2")
+        private const val METADATA_BATCH_SIZE = 12
+        private const val METADATA_FLUSH_INTERVAL_MS = 500L
     }
 }

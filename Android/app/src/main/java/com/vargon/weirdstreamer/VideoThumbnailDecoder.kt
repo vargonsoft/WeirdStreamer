@@ -19,9 +19,12 @@ import coil.decode.Decoder
 import coil.decode.ImageSource
 import coil.fetch.SourceResult
 import coil.request.Options
+import coil.size.pxOrElse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.buffer
@@ -52,7 +55,7 @@ class VideoThumbnailDecoder(
         
         // Tracks paths refreshed in the current app session to avoid redundant network calls.
         private val sessionRefreshedPaths = Collections.synchronizedSet(mutableSetOf<String>())
-        
+
         fun clearSessionCache() {
             sessionRefreshedPaths.clear()
         }
