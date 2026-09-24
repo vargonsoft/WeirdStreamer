@@ -121,6 +121,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var trickplayInfo by remember { mutableStateOf<TrickplayInfo?>(null) }
     var isTrickplayVisible by remember { mutableStateOf(false) }
     var selectedTrickplayIndex by remember { mutableIntStateOf(-1) }
+    var trickplayScrollRequest by remember { mutableIntStateOf(-1) }
+    var lastConfirmEventTime by remember { mutableLongStateOf(0L) }
 
     // Zoom state
     var zoomLevel by remember { mutableFloatStateOf(1f) }
@@ -335,6 +337,17 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (!showControls && !isZoomMode) showControls = true
     }
 
+    fun showTrickplayAtCurrentPosition() {
+        val frames = trickplayInfo?.frames ?: return
+        selectedTrickplayIndex = frames.indexOfFirst {
+            it.time * 1000 >= playbackPosition
+        }.coerceAtLeast(0)
+        trickplayScrollRequest = selectedTrickplayIndex
+        isTrickplayVisible = true
+        isSeekingSlider = false
+        updateInteraction()
+    }
+
     fun calculatePanLimits(screenWidth: Float, screenHeight: Float): Pair<Float, Float> {
         val videoRatio = 16f / 9f
         val screenRatio = screenWidth / screenHeight
@@ -375,9 +388,36 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (showControlsAfter) updateInteraction()
     }
 
+    fun seekToTrickplayTarget(target: Long) {
+        if (!isSmbSource && !currentTranscodeMode.isOriginal) {
+            val startTime = target / 1000f
+            var newUrl = if (path.contains("?")) {
+                path.substringBefore("?") + "?path=" + path.substringAfter("path=").substringBefore("&") + "&transcode=1"
+            } else {
+                "$path?transcode=1"
+            }
+            currentTranscodeMode.bitrate?.let { newUrl += "&bitrate=$it" }
+            currentTranscodeMode.resolution?.let { newUrl += "&resolution=$it" }
+            newUrl += "&start=$startTime"
+            transcodeStartOffset = target
+            exoPlayer.setMediaItem(MediaItem.fromUri(newUrl))
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+        } else {
+            exoPlayer.seekTo(target)
+            exoPlayer.play()
+        }
+        updateInteraction()
+    }
+
     val handleBackAction = {
         val now = System.currentTimeMillis()
-        if (isTrickplayVisible) { isTrickplayVisible = false; updateInteraction() }
+        if (isTrickplayVisible) {
+            isTrickplayVisible = false
+            selectedTrickplayIndex = -1
+            trickplayScrollRequest = -1
+            updateInteraction()
+        }
         else if (showControls) { showControls = false; lastControlsHideTime = now; isSeekingSlider = false }
         else if (now - lastControlsHideTime > 1000) onBack(path)
     }
@@ -425,19 +465,15 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             else if (isZoomMode && zoomLevel > 1f) {
                                 val (_, maxPY) = calculatePanLimits(1920f, 1080f)
                                 panY = (panY + 100f).coerceIn(-maxPY, maxPY); updateInteraction(); true
-                            } else if (isTrickplayVisible) { isTrickplayVisible = false; updateInteraction(); true }
+                            }                             else if (isTrickplayVisible) { isTrickplayVisible = false; selectedTrickplayIndex = -1; updateInteraction(); true }
                             else if (isSeekingSlider) {
-                                if (trickplayInfo != null) {
-                                    isTrickplayVisible = true
-                                    if (selectedTrickplayIndex == -1) selectedTrickplayIndex = trickplayInfo!!.frames.indexOfFirst { it.time * 1000 >= playbackPosition }.coerceAtLeast(0)
-                                    isSeekingSlider = false
-                                }
-                                updateInteraction(); true
+                                if (trickplayInfo != null) showTrickplayAtCurrentPosition()
+                                else updateInteraction()
+                                true
                             } else if (showControls && !isSeekingSlider) { isSeekingSlider = true; updateInteraction(); true }
                             else if (trickplayInfo != null) {
-                                isTrickplayVisible = true
-                                if (selectedTrickplayIndex == -1) selectedTrickplayIndex = trickplayInfo!!.frames.indexOfFirst { it.time * 1000 >= playbackPosition }.coerceAtLeast(0)
-                                updateInteraction(); true
+                                showTrickplayAtCurrentPosition()
+                                true
                             } else { updateInteraction(); false }
                         }
                         Key.DirectionDown -> {
@@ -453,14 +489,29 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             else false
                         }
                         Key.DirectionCenter, Key.Enter -> {
-                            if (showZoomToolbar && !isZoomMode) {
+                            val now = System.currentTimeMillis()
+                            if (now - lastConfirmEventTime < 300L) {
+                                true
+                            } else {
+                                lastConfirmEventTime = now
+                            if (isTrickplayVisible) {
+                                val frames = trickplayInfo?.frames
+                                if (frames != null && selectedTrickplayIndex >= 0 && selectedTrickplayIndex < frames.size) {
+                                    val target = frames[selectedTrickplayIndex].time.toLong() * 1000
+                                    seekToTrickplayTarget(target)
+                                }
+                                true
+                            } else if (showZoomToolbar && !isZoomMode) {
                                 when (toolbarFocusedButton) {
                                     0 -> showTranscodeDialog = true
                                     1 -> { isZoomMode = true; zoomLevel = 1f; panX = 0f; panY = 0f; showZoomToolbar = false }
                                     2 -> showSpeedDialog = true
                                     3 -> videoPaddingPx += 1
                                     4 -> if (videoPaddingPx > 0) videoPaddingPx -= 1
-                                    5 -> { currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size; currentAspectRatio = aspectRatioValues[currentAspectRatioIndex] }
+                                    5 -> {
+                                        currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size
+                                        currentAspectRatio = aspectRatioValues[currentAspectRatioIndex]
+                                    }
                                     6 -> showSubtitleDialog = true
                                     7 -> rotation = (rotation + 90f) % 360f
                                 }
@@ -474,7 +525,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             } else if (isTrickplayVisible) {
                                 if (selectedTrickplayIndex != -1) {
                                     val target = trickplayInfo!!.frames[selectedTrickplayIndex].time.toLong() * 1000
-                                    performSkip((target - playbackPosition).toInt() / 1000, true); isTrickplayVisible = false; exoPlayer.play()
+                                    seekToTrickplayTarget(target)
                                 }
                                 true
                             } else {
@@ -482,13 +533,20 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 if (isPlaying) { exoPlayer.pause(); isPaused = true } else { exoPlayer.play(); isPaused = false }
                                 true
                             }
+                            }
                         }
                         Key.DirectionLeft -> {
                             if (showZoomToolbar && !isZoomMode) { toolbarFocusedButton = (toolbarFocusedButton - 1).coerceAtLeast(0); true }
                             else if (isZoomMode && zoomLevel > 1f) {
                                 val (maxPX, _) = calculatePanLimits(1920f, 1080f)
                                 panX = (panX + 100f).coerceIn(-maxPX, maxPX); updateInteraction(); true
-                            } else if (isTrickplayVisible) { if (selectedTrickplayIndex > 0) selectedTrickplayIndex--; true }
+                            } else if (isTrickplayVisible) {
+                                if (selectedTrickplayIndex > 0) {
+                                    selectedTrickplayIndex--
+                                    trickplayScrollRequest = selectedTrickplayIndex
+                                }
+                                true
+                            }
                             else if (!isPlaying && isPaused) { exoPlayer.seekTo((exoPlayer.currentPosition - 40L).coerceAtLeast(0L)); frameFeedback = false to System.currentTimeMillis(); updateInteraction(); true }
                             else if (showControls) { updateInteraction(); performSkip(-30, true); true }
                             else {
@@ -511,7 +569,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             else if (isZoomMode && zoomLevel > 1f) {
                                 val (maxPX, _) = calculatePanLimits(1920f, 1080f)
                                 panX = (panX - 100f).coerceIn(-maxPX, maxPX); updateInteraction(); true
-                            } else if (isTrickplayVisible) { if (selectedTrickplayIndex < trickplayInfo!!.frames.size - 1) selectedTrickplayIndex++; true }
+                            } else if (isTrickplayVisible) {
+                                if (selectedTrickplayIndex < trickplayInfo!!.frames.size - 1) {
+                                    selectedTrickplayIndex++
+                                    trickplayScrollRequest = selectedTrickplayIndex
+                                }
+                                true
+                            }
                             else if (!isPlaying && isPaused) { exoPlayer.seekTo(exoPlayer.currentPosition + 40L); frameFeedback = true to System.currentTimeMillis(); updateInteraction(); true }
                             else if (showControls) { updateInteraction(); performSkip(30, true); true }
                             else {
@@ -577,12 +641,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         FrameFeedbackOverlay(feedback = frameFeedback)
 
         TrickplayOverlay(
-            visible = showControls,
+            visible = isTrickplayVisible,
             trickplayInfo = trickplayInfo,
             playbackPosition = playbackPosition,
             selectedTrickplayIndex = selectedTrickplayIndex,
-            onIndexChanged = { selectedTrickplayIndex = it },
-            onFrameSelected = { target -> performSkip(((target - playbackPosition) / 1000).toInt(), true); isTrickplayVisible = false; exoPlayer.play() },
+            scrollRequestIndex = trickplayScrollRequest,
             updateInteraction = updateInteraction,
             modifier = Modifier.align(Alignment.BottomCenter)
         )

@@ -2,7 +2,6 @@ package com.vargon.weirdstreamer.ui.components
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -211,7 +210,6 @@ fun ToolbarButton(
                 if (isFocused) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.3f)
             )
             .onFocusChanged { if (it.isFocused) onFocused() }
-            .clickable { onClick() }
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center

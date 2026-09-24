@@ -3,8 +3,6 @@ package com.vargon.weirdstreamer.ui.components
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -14,7 +12,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -144,8 +141,7 @@ fun TrickplayOverlay(
     trickplayInfo: TrickplayInfo?,
     playbackPosition: Long,
     selectedTrickplayIndex: Int,
-    onIndexChanged: (Int) -> Unit,
-    onFrameSelected: (Long) -> Unit,
+    scrollRequestIndex: Int,
     updateInteraction: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -196,16 +192,6 @@ fun TrickplayOverlay(
                                         color = if (selectedTrickplayIndex == index) Color.White else Color.Transparent,
                                         shape = RoundedCornerShape(8.dp)
                                     )
-                                    .onFocusChanged { 
-                                        if (it.isFocused) {
-                                            onIndexChanged(index)
-                                            updateInteraction()
-                                        }
-                                    }
-                                    .focusable()
-                                    .clickable {
-                                        onFrameSelected(frame.time.toLong() * 1000)
-                                    }
                             ) {
                                 AsyncImage(
                                     model = ImageRequest.Builder(LocalContext.current)
@@ -231,9 +217,9 @@ fun TrickplayOverlay(
                     }
                 }
                 
-                LaunchedEffect(selectedTrickplayIndex) {
-                    if (selectedTrickplayIndex != -1) {
-                        trickplayListState.animateScrollToItem(selectedTrickplayIndex)
+                LaunchedEffect(visible, trickplayInfo, scrollRequestIndex) {
+                    if (visible && scrollRequestIndex >= 0) {
+                        trickplayListState.scrollToItem(scrollRequestIndex)
                     }
                 }
             }
