@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -76,25 +78,53 @@ fun BrowserGrid(
     val scope = rememberCoroutineScope()
     val currentItems by rememberUpdatedState(items)
 
-    // A single requester, attached only to the item focus should land on.
-    val targetRequester = remember { FocusRequester() }
+    // Requesters of the currently composed items, by path. Plain (non-state) bookkeeping, so
+    // focus moves never trigger recomposition.
+    val requesters = remember(folderKey) { HashMap<String, FocusRequester>() }
+    val focusedIndex = remember(folderKey) { intArrayOf(-1) }
     val initialPath = remember(folderKey) {
         items.firstOrNull { it.path == initialSelection || it.name == initialSelection }?.path
             ?: items.firstOrNull()?.path
     }
-    var focusTargetPath by remember(folderKey) { mutableStateOf(initialPath) }
+
+    fun tryFocus(path: String): Boolean =
+        requesters[path]?.let { runCatching { it.requestFocus() }.getOrDefault(false) } ?: false
 
     suspend fun focusItem(path: String) {
         val index = currentItems.indexOfFirst { it.path == path }
         if (index < 0) return
-        focusTargetPath = path
         val visible = gridState.layoutInfo.visibleItemsInfo
         if (visible.none { it.index == index }) gridState.scrollToItem(index)
-        // Wait for the targeted item to be composed with the requester attached.
+        // Wait for the targeted item to be composed.
         repeat(3) {
             withFrameNanos { }
-            if (runCatching { targetRequester.requestFocus() }.getOrDefault(false)) return
+            if (tryFocus(path)) return
         }
+    }
+
+    /**
+     * Moves focus exactly one row, staying in the same column. Compose's own focus search can't
+     * be used here: when a held key outruns the scroll animation, the next row isn't composed
+     * yet, the grid extends one item at a time, and focus lands on the row's first (or last)
+     * item instead.
+     */
+    fun moveVertically(rows: Int): Boolean {
+        val list = currentItems
+        val from = focusedIndex[0]
+        if (from !in list.indices) return false
+        var target = from + rows * columns
+        if (target < 0) return false // top row: focusProperties sends it to the toolbar
+        if (target >= list.size) {
+            if (from / columns == (list.size - 1) / columns) return true // already on the last row
+            target = list.size - 1
+        }
+        val path = list[target].path
+        if (!tryFocus(path) && !gridState.isScrollInProgress) {
+            // Not composed and nothing in flight to bring it in: scroll to it explicitly.
+            scope.launch { focusItem(path) }
+        }
+        // While a scroll is still catching up, the key is dropped; the next repeat retries.
+        return true
     }
 
     LaunchedEffect(folderKey, isGridView) {
@@ -162,12 +192,16 @@ fun BrowserGrid(
             modifier = Modifier
                 .fillMaxSize()
                 .onPreviewKeyEvent { event ->
-                    if (!isGridView && event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight &&
-                        (folderChars.isNotEmpty() || fileChars.isNotEmpty())
-                    ) {
-                        showCharacterSelector = true
-                        true
-                    } else false
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionDown -> isGridView && moveVertically(1)
+                        Key.DirectionUp -> isGridView && moveVertically(-1)
+                        Key.DirectionRight -> if (!isGridView && (folderChars.isNotEmpty() || fileChars.isNotEmpty())) {
+                            showCharacterSelector = true
+                            true
+                        } else false
+                        else -> false
+                    }
                 },
             contentPadding = PaddingValues(8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -178,19 +212,25 @@ fun BrowserGrid(
                 key = { _, item -> item.path },
                 contentType = { _, item -> if (item.isDirectory) 0 else 1 }
             ) { index, item ->
+                val requester = remember { FocusRequester() }
+                DisposableEffect(item.path) {
+                    requesters[item.path] = requester
+                    onDispose { if (requesters[item.path] === requester) requesters.remove(item.path) }
+                }
                 var itemModifier: Modifier = Modifier
+                    .focusRequester(requester)
+                    .onFocusChanged { if (it.hasFocus) focusedIndex[0] = index }
                 val isFirstColumn = index % columns == 0
                 val isFirstRow = index < columns
-                if (isFirstColumn || isFirstRow) {
+                val isRowEnd = isGridView && (index % columns == columns - 1 || index == items.lastIndex)
+                if (isFirstColumn || isFirstRow || isRowEnd) {
                     // The lazy grid doesn't hand focus searches off its edges reliably, so the
-                    // way out to the toolbar is explicit.
+                    // edges are explicit: left/up go to the toolbar, right stops at the row end.
                     itemModifier = itemModifier.focusProperties {
                         if (isFirstColumn) left = toolbarFocusRequester
                         if (isFirstRow) up = toolbarFocusRequester
+                        if (isRowEnd) right = FocusRequester.Cancel
                     }
-                }
-                if (item.path == focusTargetPath) {
-                    itemModifier = itemModifier.focusRequester(targetRequester)
                 }
                 itemContent(item, itemModifier)
             }

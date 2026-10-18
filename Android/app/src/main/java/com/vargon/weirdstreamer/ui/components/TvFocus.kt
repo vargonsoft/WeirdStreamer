@@ -45,6 +45,9 @@ fun Modifier.tvClickable(
             focused = state.isFocused
             scope.launch { scale.animateTo(if (state.isFocused) focusedScale else 1f, tween(FOCUS_ANIM_MS)) }
         }
+        .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+        // Scale inside the focus target: a layer outside it would change the bounds the lazy
+        // grid brings into view, making it scroll a few pixels on every focus move.
         .graphicsLayer {
             scaleX = scale.value
             scaleY = scale.value
@@ -56,7 +59,6 @@ fun Modifier.tvClickable(
                 drawOutline(outline, borderColor, style = Stroke(width = borderWidth.toPx()))
             }
         }
-        .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
 }
 
 private const val FOCUS_ANIM_MS = 120
