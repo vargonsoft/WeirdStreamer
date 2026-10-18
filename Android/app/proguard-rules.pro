@@ -19,3 +19,23 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+-keepattributes SourceFile,LineNumberTable
+
+# Gson-deserialized models (reflection on field names / no-arg construction)
+-keep class com.vargon.weirdstreamer.api.models.** { *; }
+-keep class com.vargon.weirdstreamer.api.ThumbnailUpdate { *; }
+-keep class com.vargon.weirdstreamer.SubtitleInfo { *; }
+
+# Retrofit suspend functions need generic signatures
+-keepattributes Signature, InnerClasses, EnclosingMethod, *Annotation*
+-keep,allowobfuscation,allowshrinking interface retrofit2.Call
+-keep,allowobfuscation,allowshrinking class retrofit2.Response
+-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
+
+# jcifs-ng loads protocol/crypto classes reflectively
+-keep class jcifs.** { *; }
+-keep class org.bouncycastle.** { *; }
+-dontwarn jcifs.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.slf4j.**
+-dontwarn javax.servlet.**
