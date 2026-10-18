@@ -43,7 +43,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -67,6 +66,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.vargon.weirdstreamer.ContentFilter
 import com.vargon.weirdstreamer.MediaViewModel
+import com.vargon.weirdstreamer.repository.FileItem
 import com.vargon.weirdstreamer.repository.SourceProvider
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 
@@ -95,8 +95,9 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 modifier = Modifier
                     .fillMaxSize()
                     .align(Alignment.CenterEnd)
-                    .offset { IntOffset(125.dp.roundToPx(), 0) }
-                    .alpha(0.10f),
+                    .offset { IntOffset(125.dp.roundToPx(), 0) },
+                // Alpha on the draw call rather than Modifier.alpha, which needs an offscreen layer.
+                alpha = 0.10f,
                 contentScale = ContentScale.Crop,
                 alignment = Alignment.CenterEnd
             )
@@ -227,7 +228,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     }
                 }
                 viewModel.authRequiredSource != null -> {
-                    showAuthDialog = true
+                    LaunchedEffect(Unit) { showAuthDialog = true }
                 }
                 currentSource == null -> {
                     SourceSelectionScreen(viewModel)
@@ -474,20 +475,27 @@ private fun FileBrowserScreen(
     onDialogFocusChanged: (FocusRequester?) -> Unit
 ) {
     val isGridView = viewModel.isGridView
-    val onItemClick: (com.vargon.weirdstreamer.repository.FileItem) -> Unit = remember(viewModel) {
+    val currentPath = viewModel.currentPath
+    val onItemClick: (FileItem) -> Unit = remember(viewModel) {
         { item -> handleFileClick(viewModel, item) }
     }
-    FocusableList(
+    val onVisibleItemsChanged: (List<FileItem>) -> Unit = remember(viewModel) {
+        { visible -> viewModel.requestMetadataFor(visible) }
+    }
+    BrowserGrid(
+        folderKey = currentPath,
         items = viewModel.getFilteredFileList(),
-        initialSelection = viewModel.getSelection(viewModel.currentPath),
         isGridView = isGridView,
-        onRequestToolbarFocus = { toolbarFocusRequester.requestFocus() },
-        onRequestDialogFocus = onDialogFocusChanged
+        initialSelection = viewModel.getSelection(currentPath),
+        toolbarFocusRequester = toolbarFocusRequester,
+        onDialogFocusChanged = onDialogFocusChanged,
+        onVisibleItemsChanged = onVisibleItemsChanged
     ) { item, modifier ->
+        val thumbnailUrl = remember(item.path, item.thumbnailUrl) { viewModel.thumbnailSourceFor(item) }
         if (isGridView) {
-            FileTileItem(item, modifier = modifier) { onItemClick(item) }
+            FileTileItem(item, thumbnailUrl, modifier = modifier) { onItemClick(item) }
         } else {
-            FileRowItem(item, modifier = modifier) { onItemClick(item) }
+            FileRowItem(item, thumbnailUrl, modifier = modifier) { onItemClick(item) }
         }
     }
 }
@@ -531,7 +539,7 @@ private fun MediaBrowserImageTilesPreview() {
     }
 }
 
-private fun handleFileClick(viewModel: MediaViewModel, item: com.vargon.weirdstreamer.repository.FileItem) {
+private fun handleFileClick(viewModel: MediaViewModel, item: FileItem) {
     if (item.path == "UP") {
         viewModel.navigateUp()
         return

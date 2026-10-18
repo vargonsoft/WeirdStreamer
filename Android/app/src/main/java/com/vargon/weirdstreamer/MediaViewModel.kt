@@ -27,9 +27,14 @@ import jcifs.CIFSContext
 import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.ArrayDeque
@@ -143,8 +148,14 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+    // Read during composition, so avoid hitting EncryptedSharedPreferences more than once per key.
+    private val gridViewPrefCache = HashMap<String, Boolean>()
+
     val isGridView: Boolean
-        get() = viewModeMap[currentViewModeKey] ?: credentialManager.isGridView(currentViewModeKey)
+        get() {
+            val key = currentViewModeKey
+            return viewModeMap[key] ?: gridViewPrefCache.getOrPut(key) { credentialManager.isGridView(key) }
+        }
 
     var selectedVideoPath by mutableStateOf<String?>(null)
         private set
@@ -166,8 +177,14 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     private val selectionMap = mutableStateMapOf<String, String>()
 
     // Metadata fetching state to avoid redundant calls
-    private val pendingMetadataPaths = mutableSetOf<String>()
     private val metadataJobs = mutableMapOf<String, Job>()
+    private val metadataUnavailablePaths = mutableSetOf<String>()
+    private val metadataPermits = Semaphore(METADATA_CONCURRENCY)
+
+    // Per-item updates (metadata, SSE thumbnails) are batched so the list is replaced at most
+    // once per flush instead of once per response. Sort order never depends on these fields.
+    private val pendingItemUpdates = LinkedHashMap<String, (FileItem) -> FileItem>()
+    private var itemUpdateFlushJob: Job? = null
 
     // Natural sort helper function
     private fun naturalCompare(s1: String, s2: String): Int {
@@ -275,7 +292,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         currentPath = path
         metadataJobs.values.forEach { it.cancel() }
         metadataJobs.clear()
-        pendingMetadataPaths.clear()
+        metadataUnavailablePaths.clear()
+        discardItemUpdates()
 
         viewModelScope.launch {
             isLoading = true
@@ -344,34 +362,71 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun fetchMetadata(item: FileItem) {
         val repo = currentRepository ?: return
-        if (item.isDirectory || item.path == "UP" || (item.duration != null && item.duration > 0) || pendingMetadataPaths.contains(item.path)) return
-        
-        pendingMetadataPaths.add(item.path)
-        val job = viewModelScope.launch {
+        val path = item.path
+        if (item.isDirectory || path == "UP" || (item.duration != null && item.duration > 0) ||
+            metadataJobs.containsKey(path) || path in metadataUnavailablePaths) return
+
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try {
-                val result = repo.getMetadata(item)
-                if (result.isSuccess) {
-                    val updatedItem = result.getOrNull()
-                    if (updatedItem != null) {
-                        fileList = fileList.map {
-                            if (it.path == item.path) updatedItem else it
-                        }
-                        viewModelScope.launch {
-                            updateSortedList()
-                        }
-                    }
+                val result = metadataPermits.withPermit { repo.getMetadata(item) }
+                val updatedItem = result.getOrNull()
+                if (updatedItem != null) {
+                    queueItemUpdate(path) { current -> updatedItem.copy(thumbnailUrl = current.thumbnailUrl) }
+                } else {
+                    metadataUnavailablePaths.add(path)
                 }
             } finally {
-                pendingMetadataPaths.remove(item.path)
-                metadataJobs.remove(item.path)
+                if (metadataJobs[path] === coroutineContext.job) metadataJobs.remove(path)
             }
         }
-        metadataJobs[item.path] = job
+        metadataJobs[path] = job
+        job.start()
+    }
+
+    /**
+     * Fetches missing video metadata for the items currently on screen, and drops queued
+     * requests for items that scrolled away.
+     */
+    fun requestMetadataFor(visibleItems: List<FileItem>) {
+        val visiblePaths = visibleItems.mapTo(HashSet()) { it.path }
+        metadataJobs.keys.filter { it !in visiblePaths }.forEach { cancelMetadata(it) }
+        visibleItems.forEach { item ->
+            if (!item.isDirectory && isVideo(item.path)) fetchMetadata(item)
+        }
     }
 
     fun cancelMetadata(path: String) {
         metadataJobs.remove(path)?.cancel()
-        pendingMetadataPaths.remove(path)
+    }
+
+    private fun queueItemUpdate(path: String, transform: (FileItem) -> FileItem) {
+        val previous = pendingItemUpdates[path]
+        pendingItemUpdates[path] = if (previous == null) transform else { item -> transform(previous(item)) }
+        if (pendingItemUpdates.size >= METADATA_BATCH_SIZE) {
+            flushItemUpdates()
+        } else if (itemUpdateFlushJob == null) {
+            itemUpdateFlushJob = viewModelScope.launch {
+                delay(METADATA_FLUSH_INTERVAL_MS)
+                itemUpdateFlushJob = null
+                flushItemUpdates()
+            }
+        }
+    }
+
+    private fun flushItemUpdates() {
+        itemUpdateFlushJob?.cancel()
+        itemUpdateFlushJob = null
+        if (pendingItemUpdates.isEmpty()) return
+        val updates = HashMap(pendingItemUpdates)
+        pendingItemUpdates.clear()
+        fileList = fileList.map { item -> updates[item.path]?.invoke(item) ?: item }
+        _sortedFileList = _sortedFileList.map { item -> updates[item.path]?.invoke(item) ?: item }
+    }
+
+    private fun discardItemUpdates() {
+        itemUpdateFlushJob?.cancel()
+        itemUpdateFlushJob = null
+        pendingItemUpdates.clear()
     }
 
     fun navigateUp() {
@@ -395,6 +450,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         fileList = emptyList()
         currentPathDisplayName = null
         supportsThumbnailRegeneration = false
+        discardItemUpdates()
         stopThumbnailUpdates()
     }
 
@@ -549,12 +605,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     Log.e("MediaViewModel", "Thumbnail update flow error: ${e.message}")
                 }
                 ?.collect { update ->
-                    fileList = fileList.map { item ->
-                        if (item.originalPath == update.path) {
-                            val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) update.thumbnailURL else "$serverUrl${update.thumbnailURL}"
-                            item.copy(thumbnailUrl = "$fullThumbnailUrl?t=${System.currentTimeMillis()}")
-                        } else item
-                    }
+                    val target = fileList.firstOrNull { it.originalPath == update.path } ?: return@collect
+                    val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) update.thumbnailURL else "$serverUrl${update.thumbnailURL}"
+                    val thumbnailUrl = "$fullThumbnailUrl?t=${System.currentTimeMillis()}"
+                    queueItemUpdate(target.path) { it.copy(thumbnailUrl = thumbnailUrl) }
                 }
         }
     }
@@ -589,5 +643,6 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2")
         private const val METADATA_BATCH_SIZE = 12
         private const val METADATA_FLUSH_INTERVAL_MS = 500L
+        private const val METADATA_CONCURRENCY = 4
     }
 }

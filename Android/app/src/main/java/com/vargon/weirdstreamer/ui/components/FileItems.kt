@@ -126,24 +126,11 @@ fun FileTileItem(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -
 
 // Overload for new FileItem from repository
 @Composable
-fun FileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun FileTileItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
-    val viewModel: MediaViewModel = viewModel()
-    
-    LaunchedEffect(item.path) {
-        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
-            viewModel.fetchMetadata(item)
-        }
+    val subtitle = remember(item.isDirectory, isParent, item.size, item.duration) {
+        if (!item.isDirectory && !isParent) fileInfoText(item.size, item.duration) else null
     }
-
-    val subtitle = if (!item.isDirectory && !isParent) {
-        val sizeStr = formatFileSize(item.size)
-        if (item.duration != null && item.duration > 0) {
-            "$sizeStr, ${formatDuration(item.duration)}"
-        } else {
-            sizeStr
-        }
-    } else null
 
     TileItem(
         title = item.name,
@@ -155,12 +142,11 @@ fun FileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> U
         },
         modifier = modifier,
         onClick = onClick,
-        thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && !isParent) item.path else null,
+        thumbnailUrl = thumbnailUrl,
         rotateIcon = if (isParent) 90f else 0f
     )
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun TileItem(
     title: String,
@@ -175,58 +161,36 @@ fun TileItem(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Surface(
-            onClick = onClick,
-            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
-            colors = ClickableSurfaceDefaults.colors(
-                containerColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent,
-                pressedContainerColor = Color.Transparent
-            ),
-            border = ClickableSurfaceDefaults.border(
-                focusedBorder = Border(
-                    border = BorderStroke(4.dp, Color.White),
-                    inset = 0.dp,
-                    shape = MaterialTheme.shapes.medium
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .tvClickable(
+                    shape = MaterialTheme.shapes.medium,
+                    focusedScale = 1.05f,
+                    borderWidth = 4.dp,
+                    onClick = onClick
                 )
-            ),
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
         ) {
-            Box(
-                contentAlignment = Alignment.Center, 
-                modifier = Modifier.fillMaxSize()
-            ) {
-                var isImageLoaded by remember(thumbnailUrl) { mutableStateOf(false) }
-                
-                if (!isImageLoaded) {
-                    val isLargeIcon = icon == Icons.Default.Folder || icon == Icons.Default.Dns || icon == Icons.Default.SubdirectoryArrowLeft
-                    val iconSizeFraction = if (isLargeIcon) 0.8f else 0.5f
-                    val iconPadding = if (isLargeIcon) 4.dp else 10.dp
-                    
-                    Icon(
-                        icon, 
-                        contentDescription = null, 
-                        modifier = Modifier
-                            .fillMaxSize(iconSizeFraction)
-                            .padding(iconPadding)
-                            .graphicsLayer(rotationZ = rotateIcon),
-                        tint = getIconTint(icon)
-                    )
-                }
-                
-                if (thumbnailUrl != null) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(thumbnailUrl)
-                            .crossfade(true)
-                            .size(300)
-                            .build(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        onSuccess = { isImageLoaded = true },
-                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.small)
-                    )
-                }
+            // The icon sits under the thumbnail, which covers it once loaded; no load-state
+            // bookkeeping (and no extra recomposition) needed.
+            val isLargeIcon = icon == Icons.Default.Folder || icon == Icons.Default.Dns || icon == Icons.Default.SubdirectoryArrowLeft
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize(if (isLargeIcon) 0.8f else 0.5f)
+                    .padding(if (isLargeIcon) 4.dp else 10.dp)
+                    .graphicsLayer(rotationZ = rotateIcon),
+                tint = getIconTint(icon)
+            )
+
+            if (thumbnailUrl != null) {
+                ThumbnailImage(
+                    url = thumbnailUrl,
+                    modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.small)
+                )
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
@@ -251,6 +215,24 @@ fun TileItem(
             }
         }
     }
+}
+
+/** Thumbnail sized by its layout constraints, with the request built once per URL. */
+@Composable
+private fun ThumbnailImage(url: String, modifier: Modifier) {
+    val context = LocalContext.current
+    val request = remember(url) {
+        ImageRequest.Builder(context)
+            .data(url)
+            .crossfade(false)
+            .build()
+    }
+    AsyncImage(
+        model = request,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier
+    )
 }
 
 @Preview(name = "Single-line filename", widthDp = 240, heightDp = 220, showBackground = true)
@@ -357,125 +339,76 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
 }
 
 // Overload for new FileItem from repository
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun FileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
-    val viewModel: MediaViewModel = viewModel()
-    
-    LaunchedEffect(item.id, item.path, item.duration) {
-        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
-            viewModel.fetchMetadata(item)
-        }
+    val infoText = remember(item.isDirectory, isParent, item.size, item.duration) {
+        if (!item.isDirectory && !isParent) fileInfoText(item.size, item.duration) else null
     }
-
     val icon = when {
         isParent -> Icons.Default.SubdirectoryArrowLeft
         item.isDirectory -> Icons.Default.Folder
         else -> Icons.Default.Description
     }
-    Surface(
-        onClick = onClick,
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = Color.Transparent,
-            pressedContainerColor = Color.Transparent
-        ),
-        border = ClickableSurfaceDefaults.border(
-            focusedBorder = Border(
-                border = BorderStroke(2.dp, Color.White),
-                inset = 0.dp,
-                shape = MaterialTheme.shapes.small
-            )
-        ),
-        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .tvClickable(shape = MaterialTheme.shapes.small, focusedScale = 1.02f, borderWidth = 2.dp, onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                val thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && !isParent) item.path else null
-                var isImageLoaded by remember(thumbnailUrl) { mutableStateOf(false) }
-                
-                if (!isImageLoaded) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .graphicsLayer(rotationZ = if (isParent) 90f else 0f),
-                        tint = getIconTint(icon)
-                    )
-                }
-                
-                if (thumbnailUrl != null) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(thumbnailUrl)
-                            .crossfade(false)
-                            .size(48)
-                            .build(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        onSuccess = { isImageLoaded = true },
-                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall)
-                    )
-                }
+        Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(32.dp)
+                    .graphicsLayer(rotationZ = if (isParent) 90f else 0f),
+                tint = getIconTint(icon)
+            )
+            if (thumbnailUrl != null) {
+                ThumbnailImage(
+                    url = thumbnailUrl,
+                    modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall)
+                )
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
-                if (!item.isDirectory && !isParent) {
-                    val sizeStr = formatFileSize(item.size)
-                    val infoStr = if (item.duration != null && item.duration > 0) {
-                        "$sizeStr, ${formatDuration(item.duration)}"
-                    } else {
-                        sizeStr
-                    }
-                    Text(text = infoStr, style = MaterialTheme.typography.bodySmall)
-                }
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column {
+            Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
+            if (infoText != null) {
+                Text(text = infoText, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
 }
 
 // Overload for host row with delete action
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun HostRowItem(host: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = Color.Transparent,
-            pressedContainerColor = Color.Transparent
-        ),
-        border = ClickableSurfaceDefaults.border(
-            focusedBorder = Border(
-                border = BorderStroke(2.dp, Color.White),
-                inset = 0.dp,
-                shape = MaterialTheme.shapes.small
-            )
-        ),
-        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .tvClickable(shape = MaterialTheme.shapes.small, focusedScale = 1.02f, borderWidth = 2.dp, onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.Dns, 
-                contentDescription = null, 
-                modifier = Modifier.size(32.dp),
-                tint = getIconTint(Icons.Default.Dns)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(text = host, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        }
+        Icon(
+            Icons.Default.Dns,
+            contentDescription = null,
+            modifier = Modifier.size(32.dp),
+            tint = getIconTint(Icons.Default.Dns)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(text = host, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
     }
+}
+
+private fun fileInfoText(size: Long, duration: Double?): String {
+    val sizeStr = formatFileSize(size)
+    return if (duration != null && duration > 0) "$sizeStr, ${formatDuration(duration)}" else sizeStr
 }
 
 private fun formatFileSize(size: Long): String {

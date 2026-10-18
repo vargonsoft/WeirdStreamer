@@ -1,12 +1,14 @@
 package com.vargon.weirdstreamer.api
 
 import com.google.gson.GsonBuilder
+import com.vargon.weirdstreamer.BuildConfig
 import com.vargon.weirdstreamer.CredentialManager
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.security.cert.X509Certificate
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
@@ -15,8 +17,12 @@ import javax.net.ssl.X509TrustManager
 object ApiClient {
     
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
+        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
     }
+
+    // One client per server, so browsing reuses connections instead of a new pool and TLS
+    // handshake for every folder.
+    private val services = ConcurrentHashMap<String, ApiService>()
     
     // WARNING: This trust manager accepts ALL certificates - use only for development/testing!
     private val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
@@ -40,6 +46,11 @@ object ApiClient {
     }
     
     fun create(
+        serverUrl: String,
+        credentialManager: CredentialManager
+    ): ApiService = services.getOrPut(serverUrl) { build(serverUrl, credentialManager) }
+
+    private fun build(
         serverUrl: String,
         credentialManager: CredentialManager
     ): ApiService {

@@ -4,8 +4,17 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.util.concurrent.ConcurrentHashMap
 
 class CredentialManager(context: Context) {
+    private class CachedToken(val token: String?, val expiresAt: Long)
+
+    companion object {
+        // Tokens are read for every API and thumbnail request; decrypting them each time is
+        // expensive. Shared across instances so a login/logout through one is seen by all.
+        private val tokenCache = ConcurrentHashMap<String, CachedToken>()
+    }
+
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
@@ -83,6 +92,7 @@ class CredentialManager(context: Context) {
 
     // Server API token management
     fun saveServerToken(serverUrl: String, token: String, expiresAt: Long) {
+        tokenCache[serverUrl] = CachedToken(token, expiresAt)
         sharedPreferences.edit().apply {
             putString("${serverUrl}_token", token)
             putLong("${serverUrl}_expires", expiresAt)
@@ -91,17 +101,22 @@ class CredentialManager(context: Context) {
     }
 
     fun getServerToken(serverUrl: String): String? {
-        val token = sharedPreferences.getString("${serverUrl}_token", null)
-        val expiresAt = sharedPreferences.getLong("${serverUrl}_expires", 0)
-        
+        val cached = tokenCache.getOrPut(serverUrl) {
+            CachedToken(
+                sharedPreferences.getString("${serverUrl}_token", null),
+                sharedPreferences.getLong("${serverUrl}_expires", 0)
+            )
+        }
+
         // Check if token is expired
-        if (token != null && System.currentTimeMillis() / 1000 < expiresAt) {
-            return token
+        if (cached.token != null && System.currentTimeMillis() / 1000 < cached.expiresAt) {
+            return cached.token
         }
         return null
     }
 
     fun clearServerToken(serverUrl: String) {
+        tokenCache.remove(serverUrl)
         sharedPreferences.edit().apply {
             remove("${serverUrl}_token")
             remove("${serverUrl}_expires")
