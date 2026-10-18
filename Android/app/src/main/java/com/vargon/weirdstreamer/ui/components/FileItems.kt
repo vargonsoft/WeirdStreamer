@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.SubdirectoryArrowLeft
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +24,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
@@ -228,7 +230,10 @@ fun TileItem(
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Box(modifier = Modifier.height(60.dp), contentAlignment = Alignment.TopCenter) {
+        Column(
+            modifier = Modifier.height(80.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
@@ -236,8 +241,6 @@ fun TileItem(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
             )
-        }
-        Box(modifier = Modifier.height(20.dp), contentAlignment = Alignment.TopCenter) {
             if (subtitle != null) {
                 Text(
                     text = subtitle,
@@ -247,6 +250,34 @@ fun TileItem(
                 )
             }
         }
+    }
+}
+
+@Preview(name = "Single-line filename", widthDp = 240, heightDp = 220, showBackground = true)
+@Composable
+private fun SingleLineTileItemPreview() {
+    WeirdStreamerTheme {
+        TileItem(
+            title = "Summer.jpg",
+            subtitle = "2.4 MB",
+            icon = Icons.Default.Image,
+            modifier = Modifier.width(220.dp),
+            onClick = {}
+        )
+    }
+}
+
+@Preview(name = "Multi-line filename", widthDp = 240, heightDp = 220, showBackground = true)
+@Composable
+private fun MultiLineTileItemPreview() {
+    WeirdStreamerTheme {
+        TileItem(
+            title = "A very long summer vacation image filename.jpg",
+            subtitle = "2.4 MB",
+            icon = Icons.Default.Image,
+            modifier = Modifier.width(220.dp),
+            onClick = {}
+        )
     }
 }
 

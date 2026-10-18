@@ -2,7 +2,18 @@ package com.vargon.weirdstreamer.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -13,10 +24,23 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextField
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -32,13 +56,17 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
-import androidx.tv.material3.*
+import androidx.compose.ui.unit.dp
+import androidx.tv.material3.Button
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Icon
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
+import androidx.tv.material3.Text
 import com.vargon.weirdstreamer.ContentFilter
 import com.vargon.weirdstreamer.MediaViewModel
-import com.vargon.weirdstreamer.R
-import com.vargon.weirdstreamer.repository.MediaSource
 import com.vargon.weirdstreamer.repository.SourceProvider
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 
@@ -460,6 +488,45 @@ private fun FileBrowserScreen(
             FileTileItem(item, modifier = modifier) { onItemClick(item) }
         } else {
             FileRowItem(item, modifier = modifier) { onItemClick(item) }
+        }
+    }
+}
+
+@Preview(name = "Media browser image tiles", widthDp = 960, heightDp = 540, showBackground = true)
+@Composable
+private fun MediaBrowserImageTilesPreview() {
+    WeirdStreamerTheme {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(48.dp)
+        ) {
+            Text(
+                text = "SERVER: Media Library",
+                style = MaterialTheme.typography.titleSmall,
+                color = Color.Gray
+            )
+            Text(
+                text = "/Images",
+                style = MaterialTheme.typography.headlineMedium
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                listOf(
+                    "Summer.jpg",
+                    "A very long summer vacation image filename.jpg",
+                    "Portrait.png",
+                    "Family photo from the beach.jpeg"
+                ).forEach { name ->
+                    TileItem(
+                        title = name,
+                        subtitle = "2.4 MB",
+                        icon = Icons.Default.Image,
+                        modifier = Modifier.width(200.dp),
+                        onClick = {}
+                    )
+                }
+            }
         }
     }
 }
