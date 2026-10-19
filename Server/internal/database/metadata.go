@@ -497,6 +497,28 @@ func (db *DB) DeleteTitle(kind string, id int) error {
 	return tx.Commit()
 }
 
+// TitleIDs returns the IDs of every stored movie or show.
+func (db *DB) TitleIDs(kind string) ([]int, error) {
+	table := "shows"
+	if kind == "movie" {
+		table = "movies"
+	}
+	rows, err := db.mediaConn.Query(`SELECT tmdb_id FROM ` + table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // DeleteSeasons forgets a show's fetched seasons so they're fetched again.
 func (db *DB) DeleteSeasons(showID int) error {
 	_, err := db.mediaConn.Exec(`DELETE FROM seasons WHERE show_id = ?`, showID)

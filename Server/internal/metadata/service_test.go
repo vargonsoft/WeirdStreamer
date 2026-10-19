@@ -291,6 +291,13 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 		return len(s.pending) == 0
 	}, "lookup queue did not drain")
 
+	// A stored record nothing is matched to (and with no artwork folder) is removed too.
+	db.SaveMovie(&database.Movie{TMDBID: 4242, Title: "Orphan", UpdatedAt: time.Now()}, nil)
+	s.SyncAll(ctx)
+	if m, _ := db.GetMovie(4242); m != nil {
+		t.Error("orphaned movie record was not removed")
+	}
+
 	// A title removed from disk loses its lookup and artwork on the next sync.
 	os.RemoveAll(knight)
 	s.SyncAll(ctx)
@@ -332,6 +339,14 @@ func TestPickResultRequiresTitleMatch(t *testing.T) {
 		if got := pickResult([]SearchResult{{ID: 7, Title: c.tmdb, Name: c.tmdb}}, c.query, 0, "", false); got != 7 {
 			t.Errorf("%q did not match %q", c.query, c.tmdb)
 		}
+	}
+	// An exact title (number words = digits) beats one that merely contains the query.
+	ff := []SearchResult{
+		{ID: 1, Title: "Marvel Studios' The Fantastic Four: First Steps - World Premiere", ReleaseDate: "2025-07-21"},
+		{ID: 617126, Title: "The Fantastic 4: First Steps", ReleaseDate: "2025-07-23"},
+	}
+	if got := pickResult(ff, "The Fantastic Four First Steps", 2025, "", false); got != 617126 {
+		t.Errorf("Fantastic Four picked %d, want 617126", got)
 	}
 	// Word overlap needs every word of the shorter title and at most two extras.
 	if titleSimilarity("star wars the empire strikes back", "the empire") != 1 {

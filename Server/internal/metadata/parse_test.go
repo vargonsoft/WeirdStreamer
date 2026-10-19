@@ -109,6 +109,8 @@ func TestNormalizeTitle(t *testing.T) {
 		{"The Lion King 1.5", "The Lion King 1½"},
 		{"90 Day Fiance", "90 Day Fiancé"},
 		{"Pokemon", "Pokémon"},
+		{"The Fantastic Four First Steps", "The Fantastic 4: First Steps"},
+		{"Ocean's Eleven", "Oceans 11"},
 	}
 	for _, p := range pairs {
 		if NormalizeTitle(p[0]) != NormalizeTitle(p[1]) {

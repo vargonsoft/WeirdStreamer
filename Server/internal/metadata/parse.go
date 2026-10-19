@@ -141,7 +141,19 @@ func ParseSeasonFolder(name string) (season int, ok bool) {
 func NormalizeTitle(title string) string {
 	title = foldAccents(strings.ToLower(title))
 	title = strings.NewReplacer("'", "", "’", "", "&", " and ", "½", ".5", "¼", ".25", "¾", ".75").Replace(title)
-	return strings.Join(strings.Fields(nonAlnum.ReplaceAllString(title, " ")), " ")
+	words := strings.Fields(nonAlnum.ReplaceAllString(title, " "))
+	for i, w := range words {
+		if digit, ok := numberWords[w]; ok {
+			words[i] = digit
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// numberWords makes "The Fantastic Four" and "The Fantastic 4" normalize the same.
+var numberWords = map[string]string{
+	"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6",
+	"seven": "7", "eight": "8", "nine": "9", "ten": "10", "eleven": "11", "twelve": "12",
 }
 
 // accentFolds maps accented Latin letters to their base letter ("Fiancé" matches "Fiance").

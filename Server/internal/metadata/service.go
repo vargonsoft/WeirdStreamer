@@ -990,41 +990,52 @@ func movieFolderKey(lib config.MediaPath, files []string) string {
 	return key
 }
 
-// cleanupArtwork removes artwork folders for movies and shows no file is matched to any more.
+// cleanupArtwork removes movies and shows no file is matched to any more: their artwork folders
+// and their records (so matching one again later re-downloads everything).
 func (s *Service) cleanupArtwork() {
 	for _, kind := range []string{config.LibraryTypeMovie, config.LibraryTypeTV} {
-		ids, err := s.db.MatchedTMDBIDs(kind)
+		matched, err := s.db.MatchedTMDBIDs(kind)
 		if err != nil {
 			log.Printf("[METADATA] Artwork cleanup skipped: %v", err)
 			return
 		}
+		// Candidates: artwork folders on disk and stored records.
+		unused := map[int]bool{}
 		dir := filepath.Join(artworkDir(), kind)
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		removed := 0
-		for _, e := range entries {
-			id, err := strconv.Atoi(e.Name())
-			if err != nil || !e.IsDir() || ids[id] {
-				continue
+		if entries, err := os.ReadDir(dir); err == nil {
+			for _, e := range entries {
+				if id, err := strconv.Atoi(e.Name()); err == nil && e.IsDir() && !matched[id] {
+					unused[id] = true
+				}
 			}
+		}
+		if ids, err := s.db.TitleIDs(kind); err == nil {
+			for _, id := range ids {
+				if !matched[id] {
+					unused[id] = true
+				}
+			}
+		}
+
+		removed := 0
+		for id := range unused {
 			s.mu.Lock()
 			busy := s.active[fmt.Sprintf("%s:%d", kind, id)]
 			s.mu.Unlock()
 			if busy {
 				continue
 			}
-			if err := os.RemoveAll(filepath.Join(dir, e.Name())); err == nil {
-				// Drop the record with its artwork, so matching it again re-downloads everything.
-				if err := s.db.DeleteTitle(kind, id); err != nil {
-					log.Printf("[METADATA] Failed to remove %s %d: %v", kind, id, err)
-				}
-				removed++
+			if err := os.RemoveAll(filepath.Join(dir, strconv.Itoa(id))); err != nil {
+				continue
 			}
+			if err := s.db.DeleteTitle(kind, id); err != nil {
+				log.Printf("[METADATA] Failed to remove %s %d: %v", kind, id, err)
+				continue
+			}
+			removed++
 		}
 		if removed > 0 {
-			log.Printf("[METADATA] Removed artwork for %d unused %s titles", removed, kind)
+			log.Printf("[METADATA] Removed %d unused %s titles and their artwork", removed, kind)
 		}
 	}
 }
