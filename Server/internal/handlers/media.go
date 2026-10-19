@@ -378,8 +378,9 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 					dirPath = filepath.Base(mediaPath.Path)
 				}
 				dirs = append(dirs, models.Directory{
-					Path: dirPath,
-					Name: displayName,
+					Path:        dirPath,
+					Name:        displayName,
+					LibraryType: mediaPath.Type,
 				})
 			}
 		}

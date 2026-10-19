@@ -170,6 +170,39 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 		t.Error("no metadata-ready notifications")
 	}
 
+	// Library view: titles sorted by title, unmatched files listed separately.
+	fileInfo := func(path string) models.LibraryFile { return models.LibraryFile{Path: path, Name: filepath.Base(path)} }
+	listing, err := s.Library(ctx, movieLib, fileInfo)
+	if err != nil || len(listing.Titles) != 1 || listing.Titles[0].TMDBID != 9476 || listing.Titles[0].Poster == "" || len(listing.Unmatched) != 0 {
+		t.Errorf("movie listing = %+v, %v", listing, err)
+	}
+	page, err := s.Title(ctx, movieLib, "movie", 9476, fileInfo)
+	if err != nil || len(page.Files) != 1 || page.Files[0].Path != moviePath || page.Directors[0].Name != "Brian Helgeland" {
+		t.Errorf("movie page = %+v, %v", page, err)
+	}
+	if _, err := s.Title(ctx, movieLib, "movie", 603, fileInfo); err != ErrNotInLibrary {
+		t.Errorf("title not in library: err = %v", err)
+	}
+	tvListing, err := s.Library(ctx, tvLib, fileInfo)
+	if err != nil || len(tvListing.Titles) != 1 || tvListing.Titles[0].Kind != "show" || tvListing.Titles[0].Title != "1923" {
+		t.Errorf("tv listing = %+v, %v", tvListing, err)
+	}
+	showPage, err := s.Title(ctx, tvLib, "show", 157744, fileInfo)
+	if err != nil || len(showPage.Seasons) != 1 || showPage.Seasons[0].Episodes[0].Title != "Nature's Empty Throne" ||
+		showPage.Seasons[0].Episodes[0].Files[0].Path != episodePath || showPage.Cast[0].Name != "Helen Mirren" {
+		t.Errorf("show page = %+v, %v", showPage, err)
+	}
+	// A file added later shows up as unmatched once its lookup finds nothing.
+	stray := filepath.Join(movies, "Unknown Film.mkv")
+	os.WriteFile(stray, nil, 0644)
+	s.SyncAll(ctx)
+	waitFor(t, func() bool {
+		l, _ := s.Library(ctx, movieLib, fileInfo)
+		return len(l.Unmatched) == 1 && l.Unmatched[0].Path == stray
+	}, "unmatched file not listed")
+	os.Remove(stray)
+	s.SyncAll(ctx)
+
 	// A folder added after the sync is discovered by browsing: one video means one movie; a
 	// collection of different titles or a folder without video stays a plain folder.
 	added := filepath.Join(movies, "Knight Copy")

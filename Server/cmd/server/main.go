@@ -109,6 +109,8 @@ func main() {
 	api.HandleFunc("/media/stream", mediaHandler.StreamMedia).Methods("GET")
 	api.HandleFunc("/media/metadata", mediaHandler.GetMediaMetadata).Methods("GET")
 	api.HandleFunc("/media/details", mediaHandler.GetMediaDetails).Methods("GET")
+	api.HandleFunc("/library", mediaHandler.GetLibrary).Methods("GET")
+	api.HandleFunc("/library/title", mediaHandler.GetLibraryTitle).Methods("GET")
 	api.HandleFunc("/media/match", mediaHandler.GetMatch).Methods("GET")
 	api.HandleFunc("/media/match", mediaHandler.SetMatch).Methods("PUT")
 	api.HandleFunc("/media/match", mediaHandler.ResetMatch).Methods("DELETE")

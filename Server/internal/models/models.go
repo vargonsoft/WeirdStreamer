@@ -110,3 +110,59 @@ type ErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message,omitempty"`
 }
+
+// LibraryListing is a movie or TV library as a list of titles (Library view).
+type LibraryListing struct {
+	LibraryID   string         `json:"library_id"`
+	LibraryName string         `json:"library_name"`
+	LibraryType string         `json:"library_type"`
+	Titles      []LibraryTitle `json:"titles"`
+	Unmatched   []LibraryFile  `json:"unmatched"` // files (or, for TV, shows) without a match
+}
+
+// LibraryTitle is one movie or show in a library listing.
+type LibraryTitle struct {
+	Kind      string `json:"kind"` // "movie" or "show"
+	TMDBID    int    `json:"tmdb_id"`
+	Title     string `json:"title"`
+	Year      int    `json:"year,omitempty"`
+	Poster    string `json:"poster,omitempty"`
+	FileCount int    `json:"file_count"`
+}
+
+// LibraryFile is a playable file on a title page or in the Unmatched section.
+type LibraryFile struct {
+	ID           int64   `json:"id,omitempty"` // media item ID (trickplay), once the file is known
+	Path         string  `json:"path"`
+	Name         string  `json:"name"`
+	Size         int64   `json:"size,omitempty"`
+	Duration     float64 `json:"duration,omitempty"`
+	ThumbnailURL string  `json:"thumbnail_url,omitempty"`
+	Count        int     `json:"count,omitempty"` // unmatched TV shows: how many files
+}
+
+// TitleDetail is a title page: the full metadata plus the library's files for it.
+type TitleDetail struct {
+	MediaDetails
+	Files      []LibraryFile   `json:"files,omitempty"`       // movies
+	Seasons    []LibrarySeason `json:"seasons,omitempty"`     // shows: seasons with episodes on disk
+	OtherFiles []LibraryFile   `json:"other_files,omitempty"` // shows: files that aren't episodes
+}
+
+type LibrarySeason struct {
+	Season   int              `json:"season"`
+	Name     string           `json:"name"`
+	Poster   string           `json:"poster,omitempty"`
+	Episodes []LibraryEpisode `json:"episodes"`
+}
+
+type LibraryEpisode struct {
+	Season   int           `json:"season"`
+	Episode  int           `json:"episode"`
+	Title    string        `json:"title"`
+	Overview string        `json:"overview,omitempty"`
+	AirDate  string        `json:"air_date,omitempty"`
+	Runtime  int           `json:"runtime,omitempty"`
+	Still    string        `json:"still,omitempty"`
+	Files    []LibraryFile `json:"files"`
+}

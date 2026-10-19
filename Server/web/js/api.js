@@ -217,6 +217,15 @@ class MediaAPI {
         return this.request(`/api/media/match?${this.matchTargetQuery(target)}`, { method: 'DELETE' });
     }
 
+    // Library view (movie and tv libraries as lists of titles)
+    async getLibrary(libId) {
+        return this.request(`/api/library?lib=${encodeURIComponent(libId)}`);
+    }
+
+    async getLibraryTitle(libId, kind, id) {
+        return this.request(`/api/library/title?lib=${encodeURIComponent(libId)}&kind=${kind}&id=${id}`);
+    }
+
     async matchSeasons(showId) {
         return this.request(`/api/media/match/seasons?show=${showId}`);
     }

@@ -82,6 +82,15 @@ class CredentialManager(context: Context) {
         return sharedPreferences.getString("last_path", null)
     }
 
+    // Library view (titles instead of folders) per movie/tv library; on unless turned off
+    fun setLibraryMode(key: String, enabled: Boolean) {
+        sharedPreferences.edit().putBoolean("library_mode_$key", enabled).apply()
+    }
+
+    fun isLibraryMode(key: String): Boolean {
+        return sharedPreferences.getBoolean("library_mode_$key", true)
+    }
+
     fun setGridView(path: String, isGrid: Boolean) {
         sharedPreferences.edit().putBoolean("grid_view_$path", isGrid).apply()
     }

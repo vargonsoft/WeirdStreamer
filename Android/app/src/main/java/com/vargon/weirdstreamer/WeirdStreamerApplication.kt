@@ -29,7 +29,7 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
 
     companion object {
         private var instance: WeirdStreamerApplication? = null
-        private val SERVER_AUTH_PATHS = listOf("/api/", "/thumbnails/", "/trickplay/")
+        private val SERVER_AUTH_PATHS = listOf("/api/", "/thumbnails/", "/trickplay/", "/artwork/")
 
         fun getOkHttpClient(): OkHttpClient {
             return instance?.okHttpClient ?: throw IllegalStateException("Application not initialized")

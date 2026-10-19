@@ -356,6 +356,17 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+
+            // Required by TMDB's terms for apps that show its data.
+            item {
+                Text(
+                    "Movie and TV information and images from TMDB (themoviedb.org). " +
+                        "This product uses the TMDB API but is not endorsed or certified by TMDB.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+            }
         }
     }
 }

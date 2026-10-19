@@ -4,7 +4,10 @@ import android.util.Base64
 import com.vargon.weirdstreamer.CredentialManager
 import com.vargon.weirdstreamer.api.ApiClient
 import com.vargon.weirdstreamer.api.ApiService
+import com.vargon.weirdstreamer.api.models.LibraryFile
+import com.vargon.weirdstreamer.api.models.LibraryListing
 import com.vargon.weirdstreamer.api.models.LoginRequest
+import com.vargon.weirdstreamer.api.models.TitleDetail
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,9 +21,57 @@ class ServerRepository(
     private val apiService: ApiService = ApiClient.create(serverUrl, credentialManager)
 
     private var shareMap = mutableMapOf<String, String>()
+    // Library ID -> "movie" or "tv", learned from the root listing and browse responses
+    private var libraryTypes = mutableMapOf<String, String>()
     override suspend fun inheritState(other: MediaRepository?) {
         (other as? ServerRepository)?.let { previous ->
             shareMap = previous.shareMap
+            libraryTypes = previous.libraryTypes
+        }
+    }
+
+    /** The library a browse path is in: its first segment. */
+    fun libraryIdOf(path: String): String = path.substringBefore("/")
+
+    /** "movie" or "tv" when [path] is inside a library with a type, else null. */
+    fun libraryTypeFor(path: String): String? = if (path.isEmpty()) null else libraryTypes[libraryIdOf(path)]
+
+    fun libraryName(libraryId: String): String = shareMap[libraryId] ?: libraryId
+
+    /** Server-relative artwork/thumbnail URLs as absolute URLs. */
+    fun absoluteUrl(url: String?): String? = url?.let { if (it.startsWith("http")) it else "$serverUrl$it" }
+
+    /** A Library-view file as a playable [FileItem] (stream URL path, like browse items). */
+    fun fileItemFor(file: LibraryFile): FileItem = FileItem(
+        name = file.name,
+        path = getStreamUrl(file.path),
+        isDirectory = false,
+        size = file.size,
+        thumbnailUrl = absoluteUrl(file.thumbnailUrl),
+        duration = file.duration,
+        originalPath = file.path,
+        id = file.id
+    )
+
+    suspend fun library(libraryId: String): Result<LibraryListing> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.getLibrary(libraryId)
+            val body = response.body()
+            if (response.isSuccessful && body != null) Result.success(body)
+            else Result.failure(Exception("Server error: ${response.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun libraryTitle(libraryId: String, kind: String, tmdbId: Int): Result<TitleDetail> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.getLibraryTitle(libraryId, kind, tmdbId)
+            val body = response.body()
+            if (response.isSuccessful && body != null) Result.success(body)
+            else Result.failure(Exception("Server error: ${response.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -33,9 +84,11 @@ class ServerRepository(
                     val items = mutableListOf<FileItem>()
                     val cacheVersion = credentialManager.getThumbnailCacheVersion(serverUrl, path)
                     
+                    directory.libraryType?.let { if (path.isNotEmpty()) libraryTypes[libraryIdOf(path)] = it }
                     directory.dirs?.forEach { dir ->
                         if (!dir.id.contains("/") && !dir.name.contains("/")) {
                             shareMap[dir.id] = dir.name
+                            dir.libraryType?.let { libraryTypes[dir.id] = it }
                         }
                         items.add(FileItem(name = dir.name, path = dir.id, isDirectory = true))
                     }

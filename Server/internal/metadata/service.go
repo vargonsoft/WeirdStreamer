@@ -42,8 +42,11 @@ type Service struct {
 	// Folders a discovery found not to be a single movie or a show with episodes, so browsing
 	// doesn't list them again on every request.
 	notTitleFolders map[string]time.Time
-	jobs            chan job
-	syncing         atomic.Bool
+	// Per-library file index for Library view, built by each sync; stale after a discovery.
+	indexes    map[string]*libraryIndex
+	staleIndex map[string]bool
+	jobs       chan job
+	syncing    atomic.Bool
 
 	newClient func(token, language string) *Client // replaceable in tests
 }
@@ -80,6 +83,8 @@ func NewService(db *database.DB, notify func(path string)) *Service {
 		active:  map[string]bool{},
 
 		notTitleFolders: map[string]time.Time{},
+		indexes:         map[string]*libraryIndex{},
+		staleIndex:      map[string]bool{},
 		jobs:            make(chan job, 16384),
 
 		newClient: NewClient,
@@ -680,6 +685,8 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 	notifyPaths := map[string]string{}
 
 	showKeyCounts := map[string]map[string]int{} // tv: show folder -> episode key -> count
+	index := newLibraryIndex()
+	otherByShowFolder := map[string][]string{} // tv: non-episode files, by show folder
 	for folder, files := range filesByFolder {
 		if lib.Type == config.LibraryTypeMovie && folder != root {
 			if folderKey := movieFolderKey(lib, files); folderKey != "" {
@@ -693,8 +700,14 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 			ref, ok := ResolveFile(lib, f)
 			// Only episodes name a show; other TV files (extras, "Week 3" recordings) don't.
 			if !ok || (lib.Type == config.LibraryTypeTV && !ref.IsEpisode) {
+				if show := ShowFolderOf(lib, f); lib.Type == config.LibraryTypeTV && show != "" && show != f {
+					otherByShowFolder[show] = append(otherByShowFolder[show], f)
+				} else {
+					index.unmatched = append(index.unmatched, f)
+				}
 				continue
 			}
+			index.files[ref.Key] = append(index.files[ref.Key], f)
 			keepKeys[ref.Key] = true
 			if _, seen := refs[ref.Key]; !seen {
 				refs[ref.Key] = ref
@@ -723,10 +736,19 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 	// Each TV show folder stands for the show most of its episodes name.
 	for show, counts := range showKeyCounts {
 		keepFolders[show] = true
-		if err := s.db.SetFolderKey(lib.ID, show, lib.Type, mostCommonKey(counts)); err != nil {
+		key := mostCommonKey(counts)
+		if err := s.db.SetFolderKey(lib.ID, show, lib.Type, key); err != nil {
 			return err
 		}
+		index.other[key] = append(index.other[key], otherByShowFolder[show]...)
+		delete(otherByShowFolder, show)
 	}
+	for _, files := range otherByShowFolder { // show folders without any episodes
+		index.unmatched = append(index.unmatched, files...)
+	}
+	s.mu.Lock()
+	s.indexes[lib.ID], s.staleIndex[lib.ID] = index, false
+	s.mu.Unlock()
 
 	if err := s.db.PruneLibraryMetadata(lib.Type, lib.ID, keepKeys, keepFolders); err != nil {
 		return err
@@ -815,11 +837,13 @@ func (s *Service) runDiscover(lib config.MediaPath, folder string) error {
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
 	if len(jobs) == 0 {
-		s.mu.Lock()
 		s.notTitleFolders[folder] = time.Now()
-		s.mu.Unlock()
+	} else {
+		s.staleIndex[lib.ID] = true // new files: Library view rebuilds its index
 	}
+	s.mu.Unlock()
 	for _, j := range jobs {
 		s.enqueue(j)
 	}

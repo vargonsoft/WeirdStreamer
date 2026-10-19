@@ -53,6 +53,19 @@ import kotlinx.coroutines.launch
 
 private const val GRID_COLUMNS = 4
 
+/** Lets the toolbar hand focus down to whichever content is showing. */
+class ContentEntry {
+    /** Focuses the first item of the top row on screen; false if there is nothing to focus. */
+    var focusTop: (() -> Boolean)? = null
+}
+
+/** The key of the first item in the topmost fully visible row of a lazy grid, skipping [skip]. */
+internal fun LazyGridState.topRowKey(skip: (Any) -> Boolean = { false }): Any? {
+    val visible = layoutInfo.visibleItemsInfo.filterNot { skip(it.key) }
+    // Items are in index order, so the first one fully on screen starts its row.
+    return (visible.firstOrNull { it.offset.y >= 0 } ?: visible.firstOrNull())?.key
+}
+
 /**
  * Folder contents as a native lazy grid (or a one-column list). D-pad focus movement and
  * scrolling are left to Compose: on TV devices lazy layouts already keep the focused item at a
@@ -69,6 +82,8 @@ fun BrowserGrid(
     isGridView: Boolean,
     initialSelection: String?,
     toolbarFocusRequester: FocusRequester,
+    contentEntry: ContentEntry,
+    takeFocus: Boolean,
     onDialogFocusChanged: (FocusRequester?) -> Unit,
     onVisibleItemsChanged: (List<FileItem>) -> Unit,
     itemContent: @Composable (FileItem, Modifier) -> Unit
@@ -127,8 +142,19 @@ fun BrowserGrid(
         return true
     }
 
-    LaunchedEffect(folderKey, isGridView) {
-        initialPath?.let { focusItem(it) }
+    DisposableEffect(contentEntry, folderKey) {
+        val focusTop = {
+            val path = gridState.topRowKey() as? String
+            if (path != null && !tryFocus(path)) scope.launch { focusItem(path) }
+            path != null
+        }
+        contentEntry.focusTop = focusTop
+        onDispose { if (contentEntry.focusTop === focusTop) contentEntry.focusTop = null }
+    }
+
+    // Not keyed on isGridView: the list/grid toggle is on the toolbar, which keeps focus.
+    LaunchedEffect(folderKey) {
+        if (takeFocus) initialPath?.let { focusItem(it) }
     }
 
     LaunchedEffect(gridState, columns) {

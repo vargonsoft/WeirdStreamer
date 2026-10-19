@@ -15,6 +15,9 @@ import androidx.media3.common.util.UnstableApi
 import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
 import com.vargon.weirdstreamer.api.ThumbnailUpdateListener
+import com.vargon.weirdstreamer.api.models.LibraryFile
+import com.vargon.weirdstreamer.api.models.LibraryListing
+import com.vargon.weirdstreamer.api.models.TitleDetail
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.vargon.weirdstreamer.repository.FileItem
 import com.vargon.weirdstreamer.repository.MediaRepository
@@ -216,12 +219,131 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         return s1.length - s2.length
     }
 
-    fun toggleViewMode() {
-        val key = currentViewModeKey
-        val newState = !isGridView
-        viewModeMap = viewModeMap + (key to newState)
-        credentialManager.setGridView(key, newState)
+    // ---- Library view: movie/tv libraries as titles instead of folders (server sources) ----
+
+    /** "movie" or "tv" when the current folder is in a library with a type. */
+    var libraryType by mutableStateOf<String?>(null)
+        private set
+    var libraryListing by mutableStateOf<LibraryListing?>(null)
+        private set
+    var libraryLoading by mutableStateOf(false)
+        private set
+    var libraryError by mutableStateOf<String?>(null)
+        private set
+    /** The title page being shown, if any. */
+    var openTitle by mutableStateOf<TitleDetail?>(null)
+        private set
+    var titleLoading by mutableStateOf(false)
+        private set
+    /**
+     * Set by the view toggle so the newly shown view leaves focus on the toolbar; cleared by
+     * navigation, after which views take focus as usual.
+     */
+    var toolbarKeepsFocus = false
+        private set
+    /** Where the poster grid was when a title was opened, to restore it on the way back. */
+    var libraryReturn: LibraryReturn? = null
+
+    private var libraryModeMap by mutableStateOf(mapOf<String, Boolean>())
+    private val libraryModeCache = HashMap<String, Boolean>()
+    // Files of the title being played from, so the player can find the item and its neighbours
+    private var playbackQueue: List<FileItem> = emptyList()
+
+    private val serverRepository: ServerRepository?
+        get() = currentRepository as? ServerRepository
+
+    val currentLibraryId: String?
+        get() = if (libraryType != null) serverRepository?.libraryIdOf(currentPath) else null
+
+    private val libraryModeKey: String
+        get() = "${currentSource?.serverAddress}|${currentLibraryId}"
+
+    /** Whether the current library is shown as titles (Library view) rather than folders. */
+    val isLibraryView: Boolean
+        get() {
+            if (libraryType == null) return false
+            val key = libraryModeKey
+            return libraryModeMap[key] ?: libraryModeCache.getOrPut(key) { credentialManager.isLibraryMode(key) }
+        }
+
+    private fun setLibraryMode(enabled: Boolean) {
+        val key = libraryModeKey
+        libraryModeMap = libraryModeMap + (key to enabled)
+        credentialManager.setLibraryMode(key, enabled)
     }
+
+    private fun setGridView(grid: Boolean) {
+        val key = currentViewModeKey
+        viewModeMap = viewModeMap + (key to grid)
+        credentialManager.setGridView(key, grid)
+    }
+
+    /** Cycles list -> grid -> library (movie/tv libraries only) -> list. */
+    fun toggleViewMode() {
+        toolbarKeepsFocus = true
+        when {
+            isLibraryView -> {
+                setLibraryMode(false)
+                setGridView(false)
+            }
+            !isGridView -> setGridView(true)
+            libraryType != null -> {
+                setLibraryMode(true)
+                loadLibrary()
+            }
+            else -> setGridView(false)
+        }
+    }
+
+    fun loadLibrary() {
+        val repo = serverRepository ?: return
+        val libraryId = currentLibraryId ?: return
+        viewModelScope.launch {
+            libraryLoading = true
+            libraryError = null
+            val result = repo.library(libraryId)
+            libraryListing = result.getOrNull()
+            libraryError = result.exceptionOrNull()?.let { it.localizedMessage ?: "Failed to load library" }
+            libraryLoading = false
+        }
+    }
+
+    fun openLibraryTitle(kind: String, tmdbId: Int) {
+        toolbarKeepsFocus = false
+        val repo = serverRepository ?: return
+        val libraryId = currentLibraryId ?: return
+        viewModelScope.launch {
+            titleLoading = true
+            val result = repo.libraryTitle(libraryId, kind, tmdbId)
+            openTitle = result.getOrNull()
+            if (result.isFailure) libraryError = result.exceptionOrNull()?.localizedMessage
+            titleLoading = false
+        }
+    }
+
+    fun closeLibraryTitle() {
+        openTitle = null
+    }
+
+    /** Leaves Library view for the server's list of libraries. */
+    fun leaveLibrary() {
+        val source = currentSource ?: return
+        val repo = currentRepository ?: return
+        openTitle = null
+        currentPathDisplayName = null
+        loadPath(source, repo.getInitialPath())
+    }
+
+    /** Server-relative artwork and thumbnail URLs as absolute URLs. */
+    fun serverUrl(url: String?): String? = serverRepository?.absoluteUrl(url)
+
+    /** Plays a Library-view file; [queue] (the title's files) becomes the player's previous/next list. */
+    fun playLibraryFile(file: LibraryFile, queue: List<LibraryFile>) {
+        val repo = serverRepository ?: return
+        playbackQueue = queue.map { repo.fileItemFor(it) }
+        playVideo(repo.fileItemFor(file).path)
+    }
+
 
     fun toggleContentFilter() {
         contentFilter = when (contentFilter) {
@@ -288,6 +410,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadPath(source: MediaSource, path: String, user: String? = null, pass: String? = null, save: Boolean = false) {
+        toolbarKeepsFocus = false
         currentSource = source
         currentPath = path
         metadataJobs.values.forEach { it.cancel() }
@@ -343,6 +466,13 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                         listOf(FileItem("..", "UP", true)) + items.filter { it.name != ".." }
                     }
                     updateSortedList()
+                    val newLibraryType = (repository as? ServerRepository)?.libraryTypeFor(path)
+                    if (newLibraryType == null || libraryListing?.libraryId != (repository as ServerRepository).libraryIdOf(path)) {
+                        libraryListing = null
+                        openTitle = null
+                    }
+                    libraryType = newLibraryType
+                    if (isLibraryView && libraryListing == null) loadLibrary()
                 } else {
                     val exception = result.exceptionOrNull() ?: Exception("Unknown error")
                     if (repository.isAuthRequired(exception)) {
@@ -450,6 +580,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         fileList = emptyList()
         currentPathDisplayName = null
         supportsThumbnailRegeneration = false
+        libraryType = null
+        libraryListing = null
+        openTitle = null
         discardItemUpdates()
         stopThumbnailUpdates()
     }
@@ -537,11 +670,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getVideosInCurrentFolder(): List<String> {
+        if (playbackQueue.any { it.path == selectedVideoPath }) return playbackQueue.map { it.path }
         return getFilteredFileList().filter { !it.isDirectory && isVideo(it.path) }.map { it.path }
     }
 
     fun getFileItemForPath(path: String): FileItem? {
-        return fileList.find { it.path == path }
+        return fileList.find { it.path == path } ?: playbackQueue.find { it.path == path }
     }
 
     suspend fun fetchTrickplayInfo(id: Long): TrickplayInfo? {
@@ -605,6 +739,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     Log.e("MediaViewModel", "Thumbnail update flow error: ${e.message}")
                 }
                 ?.collect { update ->
+                    // Library view thumbnails are generated when a title page is first opened.
+                    openTitle?.let { title -> openTitle = title.withThumbnail(update.path, update.thumbnailURL) }
                     val target = fileList.firstOrNull { it.originalPath == update.path } ?: return@collect
                     val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) update.thumbnailURL else "$serverUrl${update.thumbnailURL}"
                     val thumbnailUrl = "$fullThumbnailUrl?t=${System.currentTimeMillis()}"
@@ -645,4 +781,26 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         private const val METADATA_FLUSH_INTERVAL_MS = 500L
         private const val METADATA_CONCURRENCY = 4
     }
+}
+
+/** The poster grid's focused title and scroll position in a library. */
+data class LibraryReturn(val libraryId: String, val titleKey: String, val index: Int, val offset: Int)
+
+/** [this] with [path]'s thumbnail set, or [this] itself when [path] isn't one of its files. */
+private fun TitleDetail.withThumbnail(path: String, thumbnailUrl: String): TitleDetail {
+    var changed = false
+    fun List<LibraryFile>.update() = map { file ->
+        if (file.path == path && file.thumbnailUrl != thumbnailUrl) {
+            changed = true
+            file.copy(thumbnailUrl = thumbnailUrl)
+        } else file
+    }
+    val updated = copy(
+        files = files?.update(),
+        otherFiles = otherFiles?.update(),
+        seasons = seasons?.map { season ->
+            season.copy(episodes = season.episodes.map { it.copy(files = it.files.update()) })
+        }
+    )
+    return if (changed) updated else this
 }

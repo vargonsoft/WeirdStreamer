@@ -235,7 +235,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 if (response.isSuccessful) {
                     response.body()?.let { metadata ->
                         metadata.duration?.let { fullDuration = (it * 1000).toLong() }
-                        viewModel.fetchTrickplayInfo(viewModel.getFileItemForPath(path)!!)?.let { trickplayInfo = it }
+                        viewModel.getFileItemForPath(path)?.let { viewModel.fetchTrickplayInfo(it) }?.let { trickplayInfo = it }
                     }
                 }
             } catch (e: Exception) { Log.e("VideoPlayer", "Failed to load metadata", e) }

@@ -1,6 +1,8 @@
 package com.vargon.weirdstreamer.api
 
 import com.vargon.weirdstreamer.api.models.Directory
+import com.vargon.weirdstreamer.api.models.LibraryListing
+import com.vargon.weirdstreamer.api.models.TitleDetail
 import com.vargon.weirdstreamer.api.models.LoginRequest
 import com.vargon.weirdstreamer.api.models.LoginResponse
 import com.vargon.weirdstreamer.api.models.MediaItem
@@ -40,4 +42,14 @@ interface ApiService {
 
     @GET("/api/media/trickplay/{id}")
     suspend fun getTrickplayInfo(@Path("id") id: Long): Response<TrickplayInfo>
+
+    @GET("/api/library")
+    suspend fun getLibrary(@Query("lib") libraryId: String): Response<LibraryListing>
+
+    @GET("/api/library/title")
+    suspend fun getLibraryTitle(
+        @Query("lib") libraryId: String,
+        @Query("kind") kind: String,
+        @Query("id") tmdbId: Int
+    ): Response<TitleDetail>
 }

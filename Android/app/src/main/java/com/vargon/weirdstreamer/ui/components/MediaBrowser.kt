@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -77,12 +78,22 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     var showAuthDialog by remember { mutableStateOf(false) }
     var showRegenerateThumbnailsDialog by remember { mutableStateOf(false) }
     val toolbarFocusRequester = remember { FocusRequester() }
+    // Up and left off the content's edges go to the Up button; Down from the toolbar goes back in.
+    val upFocusRequester = remember { FocusRequester() }
+    val contentEntry = remember { ContentEntry() }
     var dialogFocusRequester by remember { mutableStateOf<FocusRequester?>(null) }
 
     val currentSource = viewModel.currentSource
 
+    val goBack: () -> Unit = {
+        when {
+            viewModel.openTitle != null -> viewModel.closeLibraryTitle()
+            viewModel.isLibraryView -> viewModel.leaveLibrary()
+            else -> viewModel.navigateUp()
+        }
+    }
     BackHandler(enabled = currentSource != null && dialogFocusRequester == null) {
-        viewModel.navigateUp()
+        goBack()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -110,7 +121,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 .onPreviewKeyEvent { 
                     if (it.key == Key.Backspace && it.type == KeyEventType.KeyUp) {
                         if (currentSource != null && dialogFocusRequester == null) {
-                            viewModel.navigateUp()
+                            goBack()
                             true
                         } else false
                     } else false
@@ -124,7 +135,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         if (dialogFocusRequester != null) {
                             dialogFocusRequester?.requestFocus()
                             true
-                        } else false
+                        } else contentEntry.focusTop?.invoke() ?: false
                     } else false
                 }
             ) {
@@ -135,7 +146,11 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                             style = MaterialTheme.typography.titleSmall,
                             color = Color.Gray
                         )
-                        val display = viewModel.currentPathDisplayName ?: if (viewModel.currentPath.isNotEmpty()) viewModel.currentPath else "/"
+                        val display = when {
+                            viewModel.openTitle != null -> viewModel.openTitle!!.title
+                            viewModel.isLibraryView -> viewModel.libraryListing?.libraryName ?: "Library"
+                            else -> viewModel.currentPathDisplayName ?: if (viewModel.currentPath.isNotEmpty()) viewModel.currentPath else "/"
+                        }
                         TextWithStartEllipsis(
                             text = display,
                             style = MaterialTheme.typography.headlineMedium,
@@ -158,6 +173,11 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         Icon(Icons.Default.Home, contentDescription = "Back to Servers")
                     }
                     Spacer(modifier = Modifier.width(16.dp))
+                    // Replaces the ".." entry: up a folder, or back out of a title or library.
+                    Button(onClick = goBack, modifier = Modifier.focusRequester(upFocusRequester)) {
+                        Icon(Icons.Default.ArrowUpward, contentDescription = "Up")
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
                 } else {
                     Button(
                         onClick = { showMainAddDialog = true },
@@ -171,8 +191,14 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 }
 
                 Button(onClick = { viewModel.toggleViewMode() }) {
+                    // Shows the mode it switches to: list -> grid -> library (movie/tv libraries) -> list
                     Icon(
-                        if (viewModel.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
+                        when {
+                            viewModel.isLibraryView -> Icons.AutoMirrored.Filled.ViewList
+                            !viewModel.isGridView -> Icons.Default.GridView
+                            viewModel.libraryType != null -> Icons.Default.VideoLibrary
+                            else -> Icons.AutoMirrored.Filled.ViewList
+                        },
                         contentDescription = "Switch View"
                     )
                 }
@@ -186,7 +212,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         Spacer(modifier = Modifier.width(16.dp))
                     }
 
-                    Button(onClick = { viewModel.toggleContentFilter() }) {
+                    if (!viewModel.isLibraryView) Button(onClick = { viewModel.toggleContentFilter() }) {
                         Icon(
                             when (viewModel.contentFilter) {
                                 ContentFilter.ALL -> Icons.Default.FilterList
@@ -233,10 +259,19 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 currentSource == null -> {
                     SourceSelectionScreen(viewModel)
                 }
+                viewModel.isLibraryView -> {
+                    val title = viewModel.openTitle
+                    if (title != null) {
+                        TitleScreen(viewModel, title)
+                    } else {
+                        LibraryScreen(viewModel, upFocusRequester, contentEntry)
+                    }
+                }
                 else -> {
                     FileBrowserScreen(
                         viewModel = viewModel,
-                        toolbarFocusRequester = toolbarFocusRequester,
+                        toolbarFocusRequester = upFocusRequester,
+                        contentEntry = contentEntry,
                         onDialogFocusChanged = { dialogFocusRequester = it }
                     )
                 }
@@ -472,6 +507,7 @@ private fun MainAddSourceDialog(
 private fun FileBrowserScreen(
     viewModel: MediaViewModel,
     toolbarFocusRequester: FocusRequester,
+    contentEntry: ContentEntry,
     onDialogFocusChanged: (FocusRequester?) -> Unit
 ) {
     val isGridView = viewModel.isGridView
@@ -482,12 +518,17 @@ private fun FileBrowserScreen(
     val onVisibleItemsChanged: (List<FileItem>) -> Unit = remember(viewModel) {
         { visible -> viewModel.requestMetadataFor(visible) }
     }
+    // TV has an Up button on the toolbar instead of a ".." entry.
+    val allItems = viewModel.getFilteredFileList()
+    val items = remember(allItems) { allItems.filter { it.path != "UP" } }
     BrowserGrid(
         folderKey = currentPath,
-        items = viewModel.getFilteredFileList(),
+        items = items,
         isGridView = isGridView,
         initialSelection = viewModel.getSelection(currentPath),
         toolbarFocusRequester = toolbarFocusRequester,
+        contentEntry = contentEntry,
+        takeFocus = !viewModel.toolbarKeepsFocus,
         onDialogFocusChanged = onDialogFocusChanged,
         onVisibleItemsChanged = onVisibleItemsChanged
     ) { item, modifier ->

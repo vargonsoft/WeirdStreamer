@@ -816,3 +816,361 @@ header h1 {
 .match-episode-row.picked .date {
     color: rgba(255, 255, 255, 0.85);
 }
+
+/* Folders | Library switch */
+.view-toggle {
+    float: right;
+    display: inline-flex;
+    border: 1px solid var(--primary-color);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.view-toggle button {
+    border: none;
+    background: transparent;
+    color: var(--primary-color);
+    padding: 4px 14px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.view-toggle button.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+/* Library view */
+.library-view {
+    padding-bottom: 20px;
+}
+
+.library-empty {
+    color: #888;
+    padding: 20px 0;
+}
+
+.library-section {
+    font-size: 18px;
+    margin: 28px 0 12px;
+}
+
+.poster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 20px 16px;
+}
+
+.poster-card {
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+}
+
+.poster-card .poster {
+    position: relative;
+    aspect-ratio: 2 / 3;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #ddd;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.poster-card:hover .poster,
+.poster-card:focus-visible .poster {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.poster-card:focus-visible {
+    outline: none;
+}
+
+.poster-card:focus-visible .poster {
+    outline: 3px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.poster.no-poster {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.poster-card:hover .fix-match-btn {
+    opacity: 1;
+}
+
+.poster-title {
+    font-weight: 600;
+    margin-top: 8px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+}
+
+.poster-year {
+    font-size: 13px;
+    color: #777;
+}
+
+/* Title page */
+.title-hero {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    padding: 24px;
+    border-radius: 12px;
+    background: #f4f4f8;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.title-hero.has-backdrop {
+    color: white;
+    background: #111;
+}
+
+.title-hero.has-backdrop::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(90deg, rgba(10, 10, 16, 0.92) 30%, rgba(10, 10, 16, 0.6)), var(--backdrop);
+    background-size: cover;
+    background-position: center top;
+    z-index: -1;
+}
+
+.title-poster {
+    flex: 0 0 240px;
+    aspect-ratio: 2 / 3;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+
+.title-poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.title-poster.no-poster {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 72px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.title-info {
+    flex: 1 1 320px;
+    min-width: 0;
+}
+
+.title-info h1 {
+    font-size: 32px;
+    margin-bottom: 6px;
+}
+
+.title-meta {
+    opacity: 0.85;
+    margin-bottom: 10px;
+}
+
+.title-tagline {
+    font-style: italic;
+    opacity: 0.85;
+    margin-bottom: 10px;
+}
+
+.title-overview {
+    line-height: 1.5;
+    margin-bottom: 12px;
+    max-width: 70ch;
+}
+
+.title-credit {
+    margin-bottom: 6px;
+}
+
+.title-cast {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    padding: 10px 0 4px;
+}
+
+.cast-member {
+    flex: 0 0 84px;
+    text-align: center;
+    font-size: 12px;
+}
+
+.cast-face {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 6px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: rgba(128, 128, 128, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.cast-face img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.cast-name {
+    font-weight: 600;
+}
+
+.cast-role {
+    opacity: 0.75;
+}
+
+.title-files .media-grid {
+    margin-top: 20px;
+}
+
+.title-file {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.play-btn {
+    align-self: flex-start;
+}
+
+/* TV: seasons and episodes */
+.season-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 24px 0 12px;
+}
+
+.season-picker button {
+    border: 1px solid var(--primary-color);
+    background: transparent;
+    color: var(--primary-color);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.season-picker button.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+.episode-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.episode-row {
+    display: grid;
+    grid-template-columns: 200px 1fr auto;
+    gap: 16px;
+    align-items: center;
+    background: #f9f9f9;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.episode-still {
+    aspect-ratio: 16 / 9;
+    border: none;
+    padding: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #ddd;
+    cursor: pointer;
+}
+
+.episode-still img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.episode-title {
+    font-weight: 600;
+}
+
+.episode-meta {
+    font-size: 12px;
+    color: #777;
+    margin: 2px 0 4px;
+}
+
+.episode-overview {
+    font-size: 13px;
+    color: #444;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.episode-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: stretch;
+}
+
+.fix-match-btn.inline {
+    position: static;
+    opacity: 1;
+    justify-content: center;
+    box-shadow: none;
+    border: 1px solid #ccc;
+}
+
+@media (max-width: 640px) {
+    .episode-row {
+        grid-template-columns: 1fr;
+    }
+    .title-poster {
+        flex-basis: 160px;
+    }
+}
+
+/* Elements toggled with the hidden attribute stay hidden whatever their display rule */
+[hidden] {
+    display: none !important;
+}
