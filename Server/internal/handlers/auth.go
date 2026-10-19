@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/models"
@@ -40,28 +41,43 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    response.Token,
+		Path:     "/",
+		Expires:  time.Unix(response.ExpiresAt, 0),
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+	})
 	respondJSON(w, http.StatusOK, response)
 }
 
-// AuthMiddleware validates JWT tokens
+// Logout clears the browser session cookie.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// sessionCookieName holds the JWT for browser clients, which can't set an Authorization header
+// on <img>, <video> or EventSource requests.
+const sessionCookieName = "ws_session"
+
+// AuthMiddleware validates the JWT from the Authorization header or, for GET/HEAD requests only,
+// the session cookie. Restricting the cookie to safe methods means another site can't use a
+// logged-in browser to change anything. Tokens in the query string are not accepted, since they
+// end up in logs and browser history.
 func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var token string
-		
-		// Try to get token from Authorization header first
-		authHeader := r.Header.Get("Authorization")
-		if authHeader != "" {
-			parts := strings.Split(authHeader, " ")
-			if len(parts) == 2 && parts[0] == "Bearer" {
-				token = parts[1]
-			}
-		}
-		
-		// If no header token, try query parameter (for media streaming)
-		if token == "" {
-			token = r.URL.Query().Get("token")
-		}
-		
+		token := tokenFromRequest(r)
 		if token == "" {
 			respondError(w, http.StatusUnauthorized, "Missing authorization")
 			return
@@ -73,11 +89,28 @@ func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Add claims to context
-		ctx := r.Context()
-		ctx = auth.WithClaims(ctx, claims)
+		user, err := h.authService.UserForClaims(claims)
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "Unknown user")
+			return
+		}
+
+		ctx := auth.WithClaims(r.Context(), claims)
+		ctx = auth.WithUser(ctx, user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func tokenFromRequest(r *http.Request) string {
+	if parts := strings.SplitN(r.Header.Get("Authorization"), " ", 2); len(parts) == 2 && parts[0] == "Bearer" {
+		return parts[1]
+	}
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		if cookie, err := r.Cookie(sessionCookieName); err == nil {
+			return cookie.Value
+		}
+	}
+	return ""
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {

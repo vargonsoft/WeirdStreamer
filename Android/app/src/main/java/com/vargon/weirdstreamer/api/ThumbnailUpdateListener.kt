@@ -71,7 +71,8 @@ class ThumbnailUpdateListener(
             if (isClosing) return
 
             val request = Request.Builder()
-                .url("$serverUrl/api/media/thumbnail-updates?token=$token")
+                .url("$serverUrl/api/media/thumbnail-updates")
+                .header("Authorization", "Bearer $token")
                 .build()
             
             val listener = object : EventSourceListener() {

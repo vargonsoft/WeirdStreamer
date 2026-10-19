@@ -1,8 +1,6 @@
 package media
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -19,6 +17,7 @@ import (
 
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/database"
 )
 
 // ThumbnailGenerator handles on-demand thumbnail generation with caching
@@ -32,8 +31,7 @@ func NewThumbnailGenerator() *ThumbnailGenerator {
 
 // GenerateThumbnailHash creates a unique hash for a file path
 func GenerateThumbnailHash(filePath string) string {
-	hash := sha256.Sum256([]byte(filePath))
-	return hex.EncodeToString(hash[:])
+	return database.PathHash(filePath)
 }
 
 // GetThumbnailPath returns the full path and URL path for a thumbnail

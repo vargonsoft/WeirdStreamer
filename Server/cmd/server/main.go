@@ -73,6 +73,7 @@ func main() {
 
 	// Public routes
 	r.HandleFunc("/api/auth/login", authHandler.Login).Methods("POST")
+	r.HandleFunc("/api/auth/logout", authHandler.Logout).Methods("POST")
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
@@ -104,16 +105,15 @@ func main() {
 	api.HandleFunc("/users", userHandler.DeleteUser).Methods("DELETE")
 	api.HandleFunc("/users/change-password", userHandler.ChangePassword).Methods("POST")
 
-	// Thumbnail serving (no auth required for thumbnails)
-	r.HandleFunc("/thumbnails/{filename:.*}", mediaHandler.ServeThumbnail).Methods("GET")
+	// Thumbnails and trickplay frames require login and are checked against the file's library
+	thumbs := r.PathPrefix("/thumbnails").Subrouter()
+	thumbs.Use(authHandler.AuthMiddleware)
+	thumbs.HandleFunc("/{filename:.*}", mediaHandler.ServeThumbnail).Methods("GET", "HEAD")
 
-	// Trickplay serving (no auth required)
-	if config.GlobalConfig.Media.TrickplayPath != "" {
-		trickplayDir := http.Dir(config.GlobalConfig.Media.TrickplayPath)
-		r.PathPrefix("/trickplay/").Handler(http.StripPrefix("/trickplay/", http.FileServer(trickplayDir)))
-	}
+	trickplay := r.PathPrefix("/trickplay").Subrouter()
+	trickplay.Use(authHandler.AuthMiddleware)
+	trickplay.HandleFunc("/{hash}/{frame}", mediaHandler.ServeTrickplayFrame).Methods("GET", "HEAD")
 
-	// Serve web client
 	webDir := "./web"
 	if _, err := os.Stat(webDir); err == nil {
 		r.PathPrefix("/").Handler(http.FileServer(http.Dir(webDir)))

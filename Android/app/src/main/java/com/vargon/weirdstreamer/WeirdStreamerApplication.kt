@@ -29,6 +29,7 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
 
     companion object {
         private var instance: WeirdStreamerApplication? = null
+        private val SERVER_AUTH_PATHS = listOf("/api/", "/thumbnails/", "/trickplay/")
 
         fun getOkHttpClient(): OkHttpClient {
             return instance?.okHttpClient ?: throw IllegalStateException("Application not initialized")
@@ -65,10 +66,10 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
                 val request = chain.request()
                 val url = request.url.toString()
                 
-                // If it's a server API thumbnail request, add auth header
-                if (url.contains("/thumbnails/") || url.contains("/api/")) {
-                    // Extract server URL from the thumbnail URL
-                    val serverUrl = url.substringBefore("/thumbnails/").substringBefore("/api/")
+                // Server API, thumbnail and trickplay requests all need the auth header
+                val serverPath = SERVER_AUTH_PATHS.firstOrNull { url.contains(it) }
+                if (serverPath != null) {
+                    val serverUrl = url.substringBefore(serverPath)
                     val token = credentialManager.getServerToken(serverUrl)
                     
                     if (token != null) {

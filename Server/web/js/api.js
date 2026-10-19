@@ -3,10 +3,15 @@ console.log('api.js loaded');
 const API_BASE = window.location.origin;
 console.log('API_BASE:', API_BASE);
 
+// Bumped when the session format changed: logins now also set an HttpOnly session cookie, which
+// <img>, <video> and EventSource requests rely on, so older stored sessions must log in again.
+const TOKEN_KEY = 'auth_token_v2';
+localStorage.removeItem('auth_token');
+
 // API Client
 class MediaAPI {
     constructor() {
-        this.token = localStorage.getItem('auth_token');
+        this.token = localStorage.getItem(TOKEN_KEY);
         this.eventSource = null;
         this.thumbnailCallbacks = [];
         console.log('MediaAPI initialized, token:', this.token ? 'exists' : 'null');
@@ -53,8 +58,8 @@ class MediaAPI {
             return;
         }
 
-        // EventSource doesn't support custom headers, so we accept token via query param
-        const url = `${API_BASE}/api/media/thumbnail-updates?token=${encodeURIComponent(this.token)}`;
+        // EventSource can't set headers; it authenticates with the session cookie.
+        const url = `${API_BASE}/api/media/thumbnail-updates`;
         console.log('[SSE] Connecting to thumbnail updates...', url);
         this.eventSource = new EventSource(url);
 
@@ -107,14 +112,16 @@ class MediaAPI {
 
         console.log('Login response:', data);
         this.token = data.token;
-        localStorage.setItem('auth_token', data.token);
+        localStorage.setItem(TOKEN_KEY, data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         return data;
     }
 
     logout() {
+        // Clears the HttpOnly session cookie, which scripts can't remove themselves
+        fetch(`${API_BASE}/api/auth/logout`, { method: 'POST' }).catch(() => {});
         this.token = null;
-        localStorage.removeItem('auth_token');
+        localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem('user');
     }
 
@@ -148,23 +155,14 @@ class MediaAPI {
         if (forceTranscode) {
             url += '&transcode=1';
         }
-        console.log('Token available:', !!this.token);
-        if (this.token) {
-            const urlWithToken = `${url}&token=${encodeURIComponent(this.token)}`;
-            console.log('Stream URL with token:', urlWithToken);
-            return urlWithToken;
-        }
-        console.log('Stream URL without token:', url);
+        // Authenticated by the session cookie
         return url;
     }
 
     getThumbnailUrl(thumbnailUrl) {
         if (!thumbnailUrl) return '';
-        const url = `${API_BASE}${thumbnailUrl}`;
-        if (this.token) {
-            return `${url}${thumbnailUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(this.token)}`;
-        }
-        return url;
+        // Authenticated by the session cookie
+        return `${API_BASE}${thumbnailUrl}`;
     }
 
     async scanMedia() {

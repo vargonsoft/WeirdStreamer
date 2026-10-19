@@ -85,3 +85,9 @@ func (s *Service) ValidateToken(tokenString string) (*Claims, error) {
 
 	return claims, nil
 }
+
+// UserForClaims loads the user a validated token belongs to, so deleted users lose access
+// and group changes apply without logging in again.
+func (s *Service) UserForClaims(claims *Claims) (*models.User, error) {
+	return s.db.GetUserByUsername(claims.Username)
+}

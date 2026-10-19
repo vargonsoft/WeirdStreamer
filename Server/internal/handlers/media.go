@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -23,17 +23,12 @@ import (
 )
 
 // SSE client for thumbnail notifications
-type thumbnailClient struct {
-	channel chan string
-}
-
 type MediaHandler struct {
 	db                 *database.DB
 	streamer           *media.Streamer
 	scanner            *media.Scanner
 	thumbnailGenerator *media.ThumbnailGenerator
-	thumbnailClients   map[string]*thumbnailClient
-	clientsMux         sync.RWMutex
+	thumbnailHub       *thumbnailHub
 	authService        *auth.Service
 }
 
@@ -43,34 +38,9 @@ func NewMediaHandler(db *database.DB, authService *auth.Service) *MediaHandler {
 		streamer:           media.NewStreamer(),
 		scanner:            media.NewScanner(db),
 		thumbnailGenerator: media.NewThumbnailGenerator(),
-		thumbnailClients:   make(map[string]*thumbnailClient),
+		thumbnailHub:       newThumbnailHub(),
 		authService:        authService,
 	}
-}
-
-func (h *MediaHandler) getUserGroup(r *http.Request) string {
-	claims := auth.GetClaims(r.Context())
-	if claims == nil {
-		return ""
-	}
-	user, err := h.db.GetUserByUsername(claims.Username)
-	if err != nil {
-		return ""
-	}
-	return user.Group
-}
-
-func (h *MediaHandler) canAccessLibrary(r *http.Request, lib config.MediaPath) bool {
-	userGroup := h.getUserGroup(r)
-	if userGroup == "" {
-		return false
-	}
-	for _, group := range lib.Groups {
-		if group == userGroup {
-			return true
-		}
-	}
-	return false
 }
 
 // ListMedia godoc
@@ -84,8 +54,7 @@ func (h *MediaHandler) canAccessLibrary(r *http.Request, lib config.MediaPath) b
 // @Security BearerAuth
 // @Router /api/media [get]
 func (h *MediaHandler) ListMedia(w http.ResponseWriter, r *http.Request) {
-	userGroup := h.getUserGroup(r)
-	if userGroup == "" {
+	if userGroup(r) == "" {
 		respondJSON(w, http.StatusOK, []models.MediaItem{})
 		return
 	}
@@ -101,11 +70,8 @@ func (h *MediaHandler) ListMedia(w http.ResponseWriter, r *http.Request) {
 	// Filter items based on library access
 	filteredItems := []models.MediaItem{}
 	for _, item := range items {
-		for _, lib := range config.GlobalConfig.Media.Paths {
-			if strings.HasPrefix(item.Path, lib.Path) && h.canAccessLibrary(r, lib) {
-				filteredItems = append(filteredItems, item)
-				break
-			}
+		if h.canAccessPath(r, item.Path) {
+			filteredItems = append(filteredItems, item)
 		}
 	}
 
@@ -133,15 +99,7 @@ func (h *MediaHandler) GetMediaInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check access
-	authorized := false
-	for _, lib := range config.GlobalConfig.Media.Paths {
-		if strings.HasPrefix(item.Path, lib.Path) && h.canAccessLibrary(r, lib) {
-			authorized = true
-			break
-		}
-	}
-
-	if !authorized {
+	if !h.canAccessPath(r, item.Path) {
 		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
@@ -179,15 +137,7 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Check access
-	authorized := false
-	for _, lib := range config.GlobalConfig.Media.Paths {
-		if strings.HasPrefix(item.Path, lib.Path) && h.canAccessLibrary(r, lib) {
-			authorized = true
-			break
-		}
-	}
-
-	if !authorized {
+	if !h.canAccessPath(r, item.Path) {
 		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
@@ -293,15 +243,7 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check access
-	authorized := false
-	for _, lib := range config.GlobalConfig.Media.Paths {
-		if strings.HasPrefix(path, lib.Path) && h.canAccessLibrary(r, lib) {
-			authorized = true
-			break
-		}
-	}
-
-	if !authorized {
+	if !h.canAccessPath(r, path) {
 		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
@@ -355,15 +297,7 @@ func (h *MediaHandler) GetMediaMetadata(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Check access
-	authorized := false
-	for _, lib := range config.GlobalConfig.Media.Paths {
-		if strings.HasPrefix(path, lib.Path) && h.canAccessLibrary(r, lib) {
-			authorized = true
-			break
-		}
-	}
-
-	if !authorized {
+	if !h.canAccessPath(r, path) {
 		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
@@ -474,8 +408,9 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate path is within allowed media paths
-	if !h.isValidMediaPath(targetPath) {
+	// The resolved path must stay inside the library it was addressed through ("../" can't
+	// escape into another library or outside the media paths).
+	if lib, ok := libraryForPath(targetPath); !ok || lib.ID != targetLib.ID {
 		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
@@ -718,91 +653,95 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// ServeThumbnail serves thumbnail files with on-the-fly generation
+// ServeThumbnail serves a thumbnail, generating it on the fly if missing. Thumbnails are named
+// by the hash of their media file's path, which identifies the item and therefore its library,
+// so access follows the same group rules as streaming the file.
 func (h *MediaHandler) ServeThumbnail(w http.ResponseWriter, r *http.Request) {
+	name := filepath.Base(mux.Vars(r)["filename"])
+	ext := strings.ToLower(filepath.Ext(name))
+	hash := strings.TrimSuffix(name, filepath.Ext(name))
+	if (ext != ".jpg" && ext != ".png") || !isPathHash(hash) {
+		respondError(w, http.StatusBadRequest, "Invalid thumbnail name")
+		return
+	}
+
+	item, ok := h.itemForHash(w, r, hash)
+	if !ok {
+		return
+	}
+
+	thumbnailPath, _ := media.GetThumbnailPath(config.GlobalConfig.Media.ThumbnailPath, hash, ext)
+	if _, err := os.Stat(thumbnailPath); err != nil {
+		log.Printf("Generating thumbnail on-the-fly for: %s", item.Path)
+		generatedPath, err := h.thumbnailGenerator.GenerateThumbnail(item.Path)
+		if err != nil {
+			log.Printf("Failed to generate thumbnail for %s: %v", item.Path, err)
+			respondError(w, http.StatusNotFound, "Thumbnail not available")
+			return
+		}
+		thumbnailPath = generatedPath
+	}
+
+	// URLs are per-file and change (?v= / ?t=) when a thumbnail is regenerated.
+	w.Header().Set("Cache-Control", "private, max-age=604800")
+	http.ServeFile(w, r, thumbnailPath)
+}
+
+// ServeTrickplayFrame serves one trickplay frame, with the same access rules as thumbnails.
+func (h *MediaHandler) ServeTrickplayFrame(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	filename := vars["filename"]
-
-	// Security: prevent path traversal
-	filename = filepath.Clean("/" + filename)[1:]
-	if strings.Contains(filename, "..") {
-		respondError(w, http.StatusBadRequest, "Invalid filename")
+	hash, frame := vars["hash"], vars["frame"]
+	if !isPathHash(hash) || !trickplayFramePattern.MatchString(frame) {
+		respondError(w, http.StatusBadRequest, "Invalid trickplay frame")
+		return
+	}
+	trickplayDir := config.GlobalConfig.Media.TrickplayPath
+	if trickplayDir == "" {
+		respondError(w, http.StatusNotFound, "Trickplay not configured")
 		return
 	}
 
-	thumbnailPath := filepath.Join(config.GlobalConfig.Media.ThumbnailPath, filename)
-
-	// Check if thumbnail exists
-	if _, err := os.Stat(thumbnailPath); err == nil {
-		// Thumbnail exists, serve it
-		http.ServeFile(w, r, thumbnailPath)
+	if _, ok := h.itemForHash(w, r, hash); !ok {
 		return
 	}
 
-	// Thumbnail doesn't exist - try to find the source file and generate it
-	// Extract hash from filename (e.g., "abc123.jpg" -> "abc123")
-	hash := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+	w.Header().Set("Cache-Control", "private, max-age=604800")
+	http.ServeFile(w, r, filepath.Join(trickplayDir, hash, frame))
+}
 
-	// Look up the media item by thumbnail hash
-	// We need to find which file this thumbnail belongs to
-	mediaItems, err := h.db.ListMediaItems("")
+// itemForHash looks up the media item a thumbnail/trickplay hash belongs to and checks the
+// requester may access it, writing the error response if not.
+func (h *MediaHandler) itemForHash(w http.ResponseWriter, r *http.Request, hash string) (*models.MediaItem, bool) {
+	item, err := h.db.GetMediaItemByPathHash(hash)
 	if err != nil {
-		log.Printf("Failed to list media items for thumbnail generation: %v", err)
-		respondError(w, http.StatusNotFound, "Thumbnail not found")
-		return
+		respondError(w, http.StatusNotFound, "Not found")
+		return nil, false
 	}
+	if !h.canAccessPath(r, item.Path) {
+		// Same response as a missing item, so hashes can't be probed.
+		respondError(w, http.StatusNotFound, "Not found")
+		return nil, false
+	}
+	return item, true
+}
 
-	// Find the media item that matches this thumbnail hash
-	var sourceFile string
-	for _, item := range mediaItems {
-		itemHash := media.GenerateThumbnailHash(item.Path)
-		if itemHash == hash {
-			sourceFile = item.Path
-			break
+var trickplayFramePattern = regexp.MustCompile(`^frame-\d+\.jpg$`)
+
+func isPathHash(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
 		}
 	}
-
-	if sourceFile == "" {
-		// No matching source file found
-		respondError(w, http.StatusNotFound, "Thumbnail source not found")
-		return
-	}
-
-	// Verify the source file still exists
-	if _, err := os.Stat(sourceFile); os.IsNotExist(err) {
-		respondError(w, http.StatusNotFound, "Source file not found")
-		return
-	}
-
-	// Generate thumbnail on-the-fly
-	log.Printf("Generating thumbnail on-the-fly for: %s", sourceFile)
-	generatedPath, err := h.thumbnailGenerator.GenerateThumbnail(sourceFile)
-	if err != nil {
-		log.Printf("Failed to generate thumbnail for %s: %v", sourceFile, err)
-		respondError(w, http.StatusInternalServerError, "Failed to generate thumbnail")
-		return
-	}
-
-	// Serve the newly generated thumbnail
-	http.ServeFile(w, r, generatedPath)
+	return true
 }
 
 func (h *MediaHandler) isValidMediaPath(path string) bool {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return false
-	}
-
-	for _, mediaPath := range config.GlobalConfig.Media.Paths {
-		absRoot, err := filepath.Abs(mediaPath.Path)
-		if err != nil {
-			continue
-		}
-		if strings.HasPrefix(absPath, absRoot) {
-			return true
-		}
-	}
-	return false
+	_, ok := libraryForPath(path)
+	return ok
 }
 
 // getMediaTypeFromExtension determines the media type based on file extension
@@ -861,72 +800,35 @@ func (h *MediaHandler) getMimeTypeFromExtension(ext string) string {
 	return "application/octet-stream"
 }
 
-// ThumbnailUpdates handles Server-Sent Events for thumbnail generation progress
+// ThumbnailUpdates streams thumbnail-ready events over SSE. It sits behind AuthMiddleware, and
+// each client only receives events for files its group can access.
 func (h *MediaHandler) ThumbnailUpdates(w http.ResponseWriter, r *http.Request) {
-	// EventSource doesn't support custom headers, so we accept token via query param
-	tokenString := r.URL.Query().Get("token")
-	if tokenString == "" {
-		http.Error(w, "Unauthorized: token required", http.StatusUnauthorized)
-		return
-	}
-
-	// Validate the token using authService
-	_, err := h.authService.ValidateToken(tokenString)
-	if err != nil {
-		http.Error(w, "Unauthorized: invalid token", http.StatusUnauthorized)
-		return
-	}
-
-	// Set headers for SSE
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
-	// Create unique client ID
-	clientID := fmt.Sprintf("client_%d", len(h.thumbnailClients))
-
-	// Create channel for this client
-	client := &thumbnailClient{
-		channel: make(chan string, 10),
-	}
-
-	// Register client
-	h.clientsMux.Lock()
-	h.thumbnailClients[clientID] = client
-	h.clientsMux.Unlock()
-
-	// Remove client on disconnect
-	defer func() {
-		h.clientsMux.Lock()
-		delete(h.thumbnailClients, clientID)
-		close(client.channel)
-		h.clientsMux.Unlock()
-	}()
-
-	// Send keep-alive comments periodically
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 		return
 	}
 
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	id, events := h.thumbnailHub.register(userGroup(r))
+	defer h.thumbnailHub.unregister(id)
+
 	// Send initial connection message to trigger onopen event
 	fmt.Fprintf(w, ": connected\n\n")
 	flusher.Flush()
 
-	// Create ticker for keep-alive comments (every 30 seconds)
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	// Listen for messages
 	for {
 		select {
-		case msg := <-client.channel:
+		case msg := <-events:
 			fmt.Fprintf(w, "data: %s\n\n", msg)
 			flusher.Flush()
 		case <-ticker.C:
-			// Send keep-alive comment to prevent connection timeout
 			fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		case <-r.Context().Done():
@@ -935,32 +837,19 @@ func (h *MediaHandler) ThumbnailUpdates(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// notifyThumbnailReady sends notification to all SSE clients about a new thumbnail
+// notifyThumbnailReady tells SSE clients that may access filePath about its new thumbnail
 func (h *MediaHandler) notifyThumbnailReady(filePath, thumbnailURL string) {
 	if thumbnailURL == "" {
 		return
 	}
-
-	notification := map[string]string{
+	jsonData, err := json.Marshal(map[string]string{
 		"path":         filePath,
 		"thumbnailURL": thumbnailURL,
-	}
-
-	jsonData, err := json.Marshal(notification)
+	})
 	if err != nil {
 		return
 	}
-
-	h.clientsMux.RLock()
-	defer h.clientsMux.RUnlock()
-
-	for _, client := range h.thumbnailClients {
-		select {
-		case client.channel <- string(jsonData):
-		default:
-			// Channel full, skip
-		}
-	}
+	h.thumbnailHub.broadcast(filePath, string(jsonData))
 }
 // isMacFile checks if a filename is a Mac-specific file that should be ignored
 func (h *MediaHandler) isMacFile(filename string) bool {

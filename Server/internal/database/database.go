@@ -1,7 +1,9 @@
 package database
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -80,7 +82,65 @@ func (db *DB) initSchema() error {
 		return err
 	}
 
+	// path_hash maps thumbnail and trickplay file names back to their media item, so access to
+	// them can be checked against the item's library.
+	_, _ = db.mediaConn.Exec("ALTER TABLE media_items ADD COLUMN path_hash TEXT")
+	if _, err := db.mediaConn.Exec("CREATE INDEX IF NOT EXISTS idx_media_path_hash ON media_items(path_hash)"); err != nil {
+		return err
+	}
+	if err := db.backfillPathHashes(); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// PathHash is the hex SHA-256 of a media file's path. Thumbnail and trickplay files are named by it.
+func PathHash(path string) string {
+	sum := sha256.Sum256([]byte(path))
+	return hex.EncodeToString(sum[:])
+}
+
+func (db *DB) backfillPathHashes() error {
+	rows, err := db.mediaConn.Query("SELECT id, path FROM media_items WHERE path_hash IS NULL")
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id   int64
+		path string
+	}
+	var pending []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.path); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, r)
+	}
+	rows.Close()
+	if len(pending) == 0 {
+		return nil
+	}
+
+	tx, err := db.mediaConn.Begin()
+	if err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare("UPDATE media_items SET path_hash = ? WHERE id = ?")
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	defer stmt.Close()
+	for _, r := range pending {
+		if _, err := stmt.Exec(PathHash(r.path), r.id); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (db *DB) Close() error {
@@ -193,9 +253,9 @@ func (db *DB) UpdateUserPassword(username, newPassword string) error {
 func (db *DB) SaveMediaItem(item *models.MediaItem) error {
 	result, err := db.mediaConn.Exec(`
 		INSERT OR REPLACE INTO media_items 
-		(path, name, type, size, mime_type, thumbnail_url, duration, width, height, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, item.Path, item.Name, item.Type, item.Size, item.MimeType, item.ThumbnailURL, item.Duration, item.Width, item.Height)
+		(path, name, type, size, mime_type, thumbnail_url, duration, width, height, path_hash, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+	`, item.Path, item.Name, item.Type, item.Size, item.MimeType, item.ThumbnailURL, item.Duration, item.Width, item.Height, PathHash(item.Path))
 
 	if err != nil {
 		return err
@@ -226,6 +286,21 @@ func (db *DB) GetMediaItemByID(id int64) (*models.MediaItem, error) {
 		SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, created_at, updated_at
 		FROM media_items WHERE id = ?
 	`, id).Scan(&item.ID, &item.Path, &item.Name, &item.Type, &item.Size, &item.MimeType,
+		&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.CreatedAt, &item.UpdatedAt)
+
+	if err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+// GetMediaItemByPathHash finds the media item whose thumbnail/trickplay files use hash.
+func (db *DB) GetMediaItemByPathHash(hash string) (*models.MediaItem, error) {
+	item := &models.MediaItem{}
+	err := db.mediaConn.QueryRow(`
+		SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, created_at, updated_at
+		FROM media_items WHERE path_hash = ?
+	`, hash).Scan(&item.ID, &item.Path, &item.Name, &item.Type, &item.Size, &item.MimeType,
 		&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.CreatedAt, &item.UpdatedAt)
 
 	if err != nil {
