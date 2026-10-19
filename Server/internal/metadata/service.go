@@ -194,7 +194,7 @@ func (s *Service) runLookup(ctx context.Context, client *Client, j job) error {
 	if err != nil {
 		return err
 	}
-	if existing != nil && existing.Status != "matched" && !due(existing.Status, existing.AttemptedAt) {
+	if existing != nil && existing.Status != "matched" && (existing.Manual || !due(existing.Status, existing.AttemptedAt)) {
 		return nil
 	}
 
@@ -231,8 +231,9 @@ func (s *Service) runLookup(ctx context.Context, client *Client, j job) error {
 	} else {
 		changed, err = s.ensureShow(ctx, client, tmdbID)
 	}
-	if errors.Is(err, ErrNotFound) {
+	if errors.Is(err, ErrNotFound) && !l.Manual {
 		// The search result has no details record (removed from TMDB): treat as no match.
+		// A manual match is kept as chosen.
 		l.TMDBID, l.Status, l.AttemptedAt = 0, "not_found", time.Now()
 		return s.db.SaveLookup(l)
 	}
@@ -370,7 +371,7 @@ func (s *Service) markActive(key string, on bool) {
 
 // ensureMovie fetches and stores a movie's details and artwork unless they are fresh.
 func (s *Service) ensureMovie(ctx context.Context, client *Client, id int) (bool, error) {
-	if m, err := s.db.GetMovie(id); err != nil || (m != nil && time.Since(m.UpdatedAt) < refreshDetails) {
+	if m, err := s.db.GetMovie(id); err != nil || movieFresh(m) {
 		return false, err
 	}
 	s.markActive(fmt.Sprintf("movie:%d", id), true)
@@ -405,8 +406,15 @@ func (s *Service) ensureMovie(ctx context.Context, client *Client, id int) (bool
 
 // ensureShow fetches and stores a show's details and artwork unless they are fresh.
 func (s *Service) ensureShow(ctx context.Context, client *Client, id int) (bool, error) {
-	if sh, err := s.db.GetShow(id); err != nil || (sh != nil && time.Since(sh.UpdatedAt) < refreshDetails) {
+	sh, err := s.db.GetShow(id)
+	if err != nil || showFresh(sh) {
 		return false, err
+	}
+	if sh != nil && !artworkPresent(sh.Poster, sh.Backdrop) {
+		// Its artwork folder is gone, episode stills included: fetch the seasons again too.
+		if err := s.db.DeleteSeasons(id); err != nil {
+			return false, err
+		}
 	}
 	s.markActive(fmt.Sprintf("tv:%d", id), true)
 	defer s.markActive(fmt.Sprintf("tv:%d", id), false)
@@ -420,7 +428,7 @@ func (s *Service) ensureShow(ctx context.Context, client *Client, id int) (bool,
 	if len(d.EpisodeRunTime) > 0 {
 		runtime = d.EpisodeRunTime[0]
 	}
-	sh := &database.Show{
+	sh = &database.Show{
 		TMDBID: d.ID, Name: d.Name, OriginalName: d.OriginalName, Year: yearOf(d.FirstAirDate),
 		FirstAirDate: d.FirstAirDate, Overview: d.Overview, Tagline: d.Tagline, Genres: genreList(d.Genres),
 		IMDBID: d.ExternalIDs.IMDBID, Runtime: runtime,
@@ -501,6 +509,28 @@ func (s *Service) runSeason(ctx context.Context, client *Client, showID, number 
 		s.notify(notifyPath)
 	}
 	return nil
+}
+
+// movieFresh reports whether a stored movie needs no refresh: recent, with its artwork on disk.
+func movieFresh(m *database.Movie) bool {
+	return m != nil && time.Since(m.UpdatedAt) < refreshDetails && artworkPresent(m.Poster, m.Backdrop)
+}
+
+func showFresh(sh *database.Show) bool {
+	return sh != nil && time.Since(sh.UpdatedAt) < refreshDetails && artworkPresent(sh.Poster, sh.Backdrop)
+}
+
+// artworkPresent reports whether every given (non-empty) artwork file exists.
+func artworkPresent(rels ...string) bool {
+	for _, rel := range rels {
+		if rel == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(artworkDir(), filepath.FromSlash(rel))); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // crewCredits keeps directors and writers, once per person and role.
@@ -723,13 +753,13 @@ func (s *Service) needsWork(l *database.Lookup, seasons []int) bool {
 		return true
 	}
 	if existing.Status != "matched" {
-		return due(existing.Status, existing.AttemptedAt)
+		return !existing.Manual && due(existing.Status, existing.AttemptedAt)
 	}
 	if l.Kind == config.LibraryTypeMovie {
 		m, err := s.db.GetMovie(existing.TMDBID)
-		return err != nil || m == nil || time.Since(m.UpdatedAt) > refreshDetails
+		return err != nil || !movieFresh(m)
 	}
-	if sh, err := s.db.GetShow(existing.TMDBID); err != nil || sh == nil || time.Since(sh.UpdatedAt) > refreshDetails {
+	if sh, err := s.db.GetShow(existing.TMDBID); err != nil || !showFresh(sh) {
 		return true
 	}
 	for _, n := range seasons {
@@ -986,6 +1016,10 @@ func (s *Service) cleanupArtwork() {
 				continue
 			}
 			if err := os.RemoveAll(filepath.Join(dir, e.Name())); err == nil {
+				// Drop the record with its artwork, so matching it again re-downloads everything.
+				if err := s.db.DeleteTitle(kind, id); err != nil {
+					log.Printf("[METADATA] Failed to remove %s %d: %v", kind, id, err)
+				}
 				removed++
 			}
 		}

@@ -65,6 +65,8 @@ type SearchResult struct {
 	FirstAirDate  string   `json:"first_air_date"` // tv
 	OriginCountry []string `json:"origin_country"`
 	Popularity    float64  `json:"popularity"`
+	Overview      string   `json:"overview"`
+	PosterPath    string   `json:"poster_path"`
 }
 
 type Genre struct {

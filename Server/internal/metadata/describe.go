@@ -60,6 +60,7 @@ func (s *Service) Annotate(lib config.MediaPath, folder string, dirs []models.Di
 		}
 		if ref, ok := ResolveFolder(lib, path, key); ok {
 			dirs[i].Metadata = d.summary(ref, path, true)
+			dirs[i].Fixable = true
 		}
 	}
 	for i := range items {
@@ -157,7 +158,7 @@ func (s *Service) addCredits(details *models.MediaDetails, owner string, roles .
 // summary returns ref's metadata, scheduling a lookup (or season fetch) when it is missing.
 func (d *describer) summary(ref Ref, path string, isDir bool) *models.ItemMetadata {
 	l := d.lookup(ref)
-	if l == nil || (l.Status != "matched" && due(l.Status, l.AttemptedAt)) {
+	if l == nil || (l.Status != "matched" && !l.Manual && due(l.Status, l.AttemptedAt)) {
 		// Folders are looked up through their files (sync or discovery), which name the title.
 		if !isDir {
 			d.s.EnqueueRef(ref, path)

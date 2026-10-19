@@ -84,6 +84,10 @@ type Directory struct {
 	Items    []MediaItem   `json:"items"`
 	Dirs     []Directory   `json:"dirs"`
 	Metadata *ItemMetadata `json:"metadata,omitempty"` // movie, show or season this folder stands for
+	// The folder stands for one title, so its match can be fixed by hand (collections can't)
+	Fixable bool `json:"fixable,omitempty"`
+	// The library's type ("movie", "tv") on browse responses, so clients know metadata applies
+	LibraryType string `json:"library_type,omitempty"`
 }
 
 type LoginRequest struct {

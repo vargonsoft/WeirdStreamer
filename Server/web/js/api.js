@@ -14,6 +14,7 @@ class MediaAPI {
         this.token = localStorage.getItem(TOKEN_KEY);
         this.eventSource = null;
         this.thumbnailCallbacks = [];
+        this.metadataCallbacks = [];
         console.log('MediaAPI initialized, token:', this.token ? 'exists' : 'null');
     }
 
@@ -78,6 +79,16 @@ class MediaAPI {
             }
         };
 
+        // Named "metadata" events: TMDB info for something on screen changed.
+        this.eventSource.addEventListener('metadata', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                this.metadataCallbacks.forEach(callback => callback(data));
+            } catch (error) {
+                console.error('[SSE] Error parsing metadata event:', error);
+            }
+        });
+
         this.eventSource.onerror = (error) => {
             console.error('[SSE] Connection error', error);
             console.log('[SSE] ReadyState:', this.eventSource?.readyState);
@@ -101,6 +112,19 @@ class MediaAPI {
 
     clearThumbnailCallbacks() {
         this.thumbnailCallbacks = [];
+    }
+
+    onMetadataUpdate(callback) {
+        this.metadataCallbacks.push(callback);
+    }
+
+    // Base64 of a path's UTF-8 bytes, as the server expects (btoa alone fails on non-Latin-1
+    // names like "Shōgun").
+    encodePath(path) {
+        const bytes = new TextEncoder().encode(path);
+        let binary = '';
+        bytes.forEach(b => { binary += String.fromCharCode(b); });
+        return btoa(binary);
     }
 
     async login(username, password) {
@@ -145,7 +169,7 @@ class MediaAPI {
 
     getStreamUrl(path, forceTranscode = false) {
         // Base64 encode the path to avoid special character issues in URLs
-        const encodedPath = btoa(path);
+        const encodedPath = encodeURIComponent(this.encodePath(path));
         let url = `${API_BASE}/api/media/stream?path=${encodedPath}`;
 
         // Disable auto-transcoding for WebUI - let browser attempt native playback first
@@ -163,6 +187,34 @@ class MediaAPI {
         if (!thumbnailUrl) return '';
         // Authenticated by the session cookie
         return `${API_BASE}${thumbnailUrl}`;
+    }
+
+    // Manual metadata matching. target is { path } for a file or { dir } for a folder.
+    matchTargetQuery(target) {
+        return target.dir !== undefined
+            ? `dir=${encodeURIComponent(target.dir)}`
+            : `path=${encodeURIComponent(this.encodePath(target.path))}`;
+    }
+
+    async getMatch(target) {
+        return this.request(`/api/media/match?${this.matchTargetQuery(target)}`);
+    }
+
+    async searchMatch(kind, query, year) {
+        const params = new URLSearchParams({ kind, query });
+        if (year) params.set('year', year);
+        return this.request(`/api/media/match/search?${params}`);
+    }
+
+    async setMatch(target, tmdbId) {
+        const body = target.dir !== undefined
+            ? { dir: target.dir, tmdb_id: tmdbId }
+            : { path: this.encodePath(target.path), tmdb_id: tmdbId };
+        return this.request('/api/media/match', { method: 'PUT', body: JSON.stringify(body) });
+    }
+
+    async resetMatch(target) {
+        return this.request(`/api/media/match?${this.matchTargetQuery(target)}`, { method: 'DELETE' });
     }
 
     async scanMedia() {

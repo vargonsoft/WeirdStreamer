@@ -13,18 +13,20 @@ import (
 	"github.com/weirdstreamer/server/internal/config"
 )
 
-// GetMediaDetails returns full TMDB metadata (credits included) for a file or folder.
-// Files are addressed like streams (?path=<base64 absolute path>); folders by their browse
-// path (?dir=<library id>/<relative path>).
-func (h *MediaHandler) GetMediaDetails(w http.ResponseWriter, r *http.Request) {
-	if h.meta == nil {
-		respondError(w, http.StatusNotFound, "Metadata not enabled")
-		return
-	}
+// mediaTarget is a file or folder addressed by a metadata request: files like streams
+// (path=<base64 absolute path>), folders by their browse path (dir=<library id>/<relative path>).
+type mediaTarget struct {
+	lib   config.MediaPath
+	path  string
+	isDir bool
+}
 
+// resolveTarget finds the library item a request addresses and checks the user may access it,
+// writing the error response if not.
+func (h *MediaHandler) resolveTarget(w http.ResponseWriter, r *http.Request, encodedPath, dir string) (*mediaTarget, bool) {
 	var path string
 	isDir := false
-	if dir := r.URL.Query().Get("dir"); dir != "" {
+	if dir != "" {
 		parts := strings.SplitN(strings.Trim(dir, "/"), "/", 2)
 		for _, lib := range config.GlobalConfig.Media.Paths {
 			if lib.ID == parts[0] {
@@ -36,25 +38,37 @@ func (h *MediaHandler) GetMediaDetails(w http.ResponseWriter, r *http.Request) {
 		}
 		isDir = true
 	} else {
-		decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
+		decoded, err := base64.StdEncoding.DecodeString(encodedPath)
 		if err != nil || len(decoded) == 0 {
 			respondError(w, http.StatusBadRequest, "Missing or invalid path")
-			return
+			return nil, false
 		}
 		path = string(decoded)
 	}
 	absPath, err := filepath.Abs(path)
 	if path == "" || err != nil {
 		respondError(w, http.StatusNotFound, "Not found")
-		return
+		return nil, false
 	}
-
 	lib, ok := libraryForPath(absPath)
 	if !ok || !h.canAccessLibrary(r, lib) {
 		respondError(w, http.StatusNotFound, "Not found")
+		return nil, false
+	}
+	return &mediaTarget{lib: lib, path: absPath, isDir: isDir}, true
+}
+
+// GetMediaDetails returns full TMDB metadata (credits included) for a file or folder.
+func (h *MediaHandler) GetMediaDetails(w http.ResponseWriter, r *http.Request) {
+	if h.meta == nil {
+		respondError(w, http.StatusNotFound, "Metadata not enabled")
 		return
 	}
-	details, err := h.meta.Details(lib, absPath, isDir)
+	t, ok := h.resolveTarget(w, r, r.URL.Query().Get("path"), r.URL.Query().Get("dir"))
+	if !ok {
+		return
+	}
+	details, err := h.meta.Details(t.lib, t.path, t.isDir)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to load metadata")
 		return

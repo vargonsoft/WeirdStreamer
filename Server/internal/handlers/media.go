@@ -536,10 +536,11 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := models.Directory{
-		Path:  relativePath,
-		Name:  filepath.Base(relativePath),
-		Dirs:  dirs,
-		Items: items,
+		Path:        relativePath,
+		Name:        filepath.Base(relativePath),
+		Dirs:        dirs,
+		Items:       items,
+		LibraryType: targetLib.Type,
 	}
 
 	respondJSON(w, http.StatusOK, result)

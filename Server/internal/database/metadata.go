@@ -120,6 +120,7 @@ type Lookup struct {
 	TMDBID       int
 	Status       string
 	AttemptedAt  time.Time
+	Manual       bool // set by hand in the web UI; automatic matching never changes it
 }
 
 // Movie and Show artwork fields hold paths relative to the configured artwork directory.
@@ -200,17 +201,20 @@ func EpisodeOwner(show, season, episode int) string {
 }
 
 func (db *DB) initMetadataSchema() error {
-	_, err := db.mediaConn.Exec(metadataSchema)
-	return err
+	if _, err := db.mediaConn.Exec(metadataSchema); err != nil {
+		return err
+	}
+	_, _ = db.mediaConn.Exec("ALTER TABLE metadata_lookups ADD COLUMN manual INTEGER NOT NULL DEFAULT 0")
+	return nil
 }
 
 // GetLookup returns the lookup for a query, or nil if it was never attempted.
 func (db *DB) GetLookup(kind, libraryID, key string) (*Lookup, error) {
 	l := &Lookup{}
 	err := db.mediaConn.QueryRow(`
-		SELECT kind, library_id, query_key, query_title, query_year, query_country, tmdb_id, status, attempted_at
+		SELECT kind, library_id, query_key, query_title, query_year, query_country, tmdb_id, status, attempted_at, manual
 		FROM metadata_lookups WHERE kind = ? AND library_id = ? AND query_key = ?`, kind, libraryID, key).
-		Scan(&l.Kind, &l.LibraryID, &l.QueryKey, &l.QueryTitle, &l.QueryYear, &l.QueryCountry, &l.TMDBID, &l.Status, &l.AttemptedAt)
+		Scan(&l.Kind, &l.LibraryID, &l.QueryKey, &l.QueryTitle, &l.QueryYear, &l.QueryCountry, &l.TMDBID, &l.Status, &l.AttemptedAt, &l.Manual)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -220,9 +224,15 @@ func (db *DB) GetLookup(kind, libraryID, key string) (*Lookup, error) {
 func (db *DB) SaveLookup(l *Lookup) error {
 	_, err := db.mediaConn.Exec(`
 		INSERT OR REPLACE INTO metadata_lookups
-		(kind, library_id, query_key, query_title, query_year, query_country, tmdb_id, status, attempted_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.Kind, l.LibraryID, l.QueryKey, l.QueryTitle, l.QueryYear, l.QueryCountry, l.TMDBID, l.Status, l.AttemptedAt)
+		(kind, library_id, query_key, query_title, query_year, query_country, tmdb_id, status, attempted_at, manual)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.Kind, l.LibraryID, l.QueryKey, l.QueryTitle, l.QueryYear, l.QueryCountry, l.TMDBID, l.Status, l.AttemptedAt, l.Manual)
+	return err
+}
+
+// DeleteLookup forgets a lookup, so the title is matched automatically again.
+func (db *DB) DeleteLookup(kind, libraryID, key string) error {
+	_, err := db.mediaConn.Exec(`DELETE FROM metadata_lookups WHERE kind = ? AND library_id = ? AND query_key = ?`, kind, libraryID, key)
 	return err
 }
 
@@ -458,6 +468,38 @@ func (db *DB) SaveSeasonStatus(showID, season int, status string, at time.Time) 
 	_, err := db.mediaConn.Exec(`INSERT INTO seasons (show_id, season_number, status, fetched_at) VALUES (?, ?, ?, ?)
 		ON CONFLICT(show_id, season_number) DO UPDATE SET status = excluded.status, fetched_at = excluded.fetched_at`,
 		showID, season, status, at)
+	return err
+}
+
+// DeleteTitle removes a movie or show (with its seasons, episodes and credits), so matching it
+// again fetches everything fresh. People are kept: they're shared with other titles.
+func (db *DB) DeleteTitle(kind string, id int) error {
+	tx, err := db.mediaConn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var stmts []string
+	var args [][]any
+	if kind == "movie" {
+		stmts = []string{`DELETE FROM movies WHERE tmdb_id = ?`, `DELETE FROM credits WHERE owner = ?`}
+		args = [][]any{{id}, {MovieOwner(id)}}
+	} else {
+		stmts = []string{`DELETE FROM shows WHERE tmdb_id = ?`, `DELETE FROM seasons WHERE show_id = ?`,
+			`DELETE FROM episodes WHERE show_id = ?`, `DELETE FROM credits WHERE owner = ? OR owner LIKE ?`}
+		args = [][]any{{id}, {id}, {id}, {ShowOwner(id), "episode:" + itoa(id) + ":%"}}
+	}
+	for i, stmt := range stmts {
+		if _, err := tx.Exec(stmt, args[i]...); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// DeleteSeasons forgets a show's fetched seasons so they're fetched again.
+func (db *DB) DeleteSeasons(showID int) error {
+	_, err := db.mediaConn.Exec(`DELETE FROM seasons WHERE show_id = ?`, showID)
 	return err
 }
 

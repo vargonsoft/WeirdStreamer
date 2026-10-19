@@ -520,3 +520,196 @@ header h1 {
     animation: pulse 2s ease-in-out infinite;
 }
 
+
+/* Metadata match line under item names */
+.media-match {
+    font-size: 12px;
+    color: var(--primary-color);
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.directory-item .media-match {
+    padding: 0 10px 10px;
+}
+
+.folder-thumbnail img.poster {
+    object-fit: cover;
+}
+
+/* "Fix match" button: top-right of the thumbnail, shown on hover (admins only) */
+.fix-match-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    background: rgba(0, 0, 0, 0.65);
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s;
+    z-index: 10;
+}
+
+.media-item:hover .fix-match-btn,
+.fix-match-btn:focus-visible {
+    opacity: 1;
+}
+
+.fix-match-btn:hover {
+    background: var(--primary-color);
+}
+
+/* Fix match dialog */
+.match-dialog {
+    width: min(760px, 92vw);
+    gap: 12px;
+}
+
+.match-close {
+    position: absolute;
+    right: 20px;
+    top: 10px;
+    font-size: 30px;
+    cursor: pointer;
+    color: #666;
+}
+
+.match-target {
+    color: #666;
+    font-size: 13px;
+    word-break: break-all;
+    margin-top: -6px;
+}
+
+.match-current {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    background: #f4f4f8;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.match-current img {
+    width: 46px;
+    height: 69px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.match-status {
+    flex: 1;
+    min-width: 200px;
+}
+
+.match-hint {
+    flex-basis: 100%;
+    font-size: 12px;
+    color: #888;
+}
+
+.match-search {
+    display: flex;
+    gap: 8px;
+}
+
+.match-search #match-query {
+    flex: 1;
+}
+
+.match-search #match-year {
+    width: 90px;
+}
+
+.match-results {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.match-hit {
+    display: flex;
+    gap: 12px;
+    text-align: left;
+    background: white;
+    border: 1px solid #e3e3e8;
+    border-radius: 8px;
+    padding: 8px;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+}
+
+.match-hit:hover,
+.match-hit:focus-visible {
+    border-color: var(--primary-color);
+    background: #f7f7fd;
+}
+
+.match-hit.current {
+    border-color: var(--primary-color);
+    box-shadow: inset 4px 0 0 var(--primary-color);
+}
+
+.match-hit-poster {
+    flex: 0 0 60px;
+    height: 90px;
+    background: #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.match-hit-poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.match-hit-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.match-hit-overview {
+    font-size: 13px;
+    color: #555;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.match-empty {
+    color: #888;
+    padding: 8px;
+}
+
+.match-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.match-message {
+    flex: 1;
+    font-size: 13px;
+    color: #27ae60;
+}
+
+.match-message.error {
+    color: #e74c3c;
+}
+
+.btn-secondary {
+    background: #888;
+}

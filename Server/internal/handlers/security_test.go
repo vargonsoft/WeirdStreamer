@@ -263,3 +263,31 @@ func TestServeArtworkChecksLibraryAccess(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchEndpointsRequireAdmin(t *testing.T) {
+	setupConfig(t)
+	dir := t.TempDir()
+	db, err := database.New(filepath.Join(dir, "users.db"), filepath.Join(dir, "media.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	h := NewMediaHandler(db, auth.NewService(db))
+	for _, c := range []struct {
+		method, url string
+		handler     http.HandlerFunc
+	}{
+		{http.MethodGet, "/api/media/match?dir=movies", h.GetMatch},
+		{http.MethodGet, "/api/media/match/search?kind=movie&query=x", h.SearchMatch},
+		{http.MethodPut, "/api/media/match", h.SetMatch},
+		{http.MethodDelete, "/api/media/match?dir=movies", h.ResetMatch},
+	} {
+		req := httptest.NewRequest(c.method, c.url, strings.NewReader(`{"dir":"movies","tmdb_id":1}`))
+		req = req.WithContext(auth.WithClaims(req.Context(), &auth.Claims{Username: "u", IsAdmin: false}))
+		rec := httptest.NewRecorder()
+		c.handler(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s %s as non-admin: status %d, want 403", c.method, c.url, rec.Code)
+		}
+	}
+}

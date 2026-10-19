@@ -27,6 +27,7 @@ func fakeTMDB(t *testing.T) *httptest.Server {
 			"credits":{"cast":[{"id":1810,"name":"Heath Ledger","character":"William Thatcher","order":0,"profile_path":"/h.jpg"}],
 				"crew":[{"id":7,"name":"Brian Helgeland","job":"Director"},{"id":7,"name":"Brian Helgeland","job":"Screenplay"}]},
 			"images":{"logos":[{"file_path":"/fr.png","iso_639_1":"fr","vote_average":9},{"file_path":"/en.png","iso_639_1":"en","vote_average":1}]}}`,
+		"/3/movie/603": `{"id":603,"title":"The Matrix","release_date":"1999-03-30","overview":"Neo.","poster_path":"/m.jpg"}`,
 		"/3/search/tv": `{"results":[{"id":157744,"name":"1923","first_air_date":"2022-12-18","origin_country":["US"]}]}`,
 		"/3/tv/157744": `{"id":157744,"name":"1923","first_air_date":"2022-12-18","overview":"Duttons.","episode_run_time":[50],
 			"poster_path":"/tp.jpg","created_by":[{"id":5,"name":"Taylor Sheridan"}],"external_ids":{"imdb_id":"tt18335752"},
@@ -233,6 +234,63 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 	os.RemoveAll(filepath.Join(tv, "Renamed Show"))
 	os.RemoveAll(filepath.Join(tv, "Empty Show"))
 
+	// A manual match replaces the automatic one, survives syncs, and can be reset.
+	ref, err := s.MatchTarget(movieLib, moviePath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMatch(ref, 603, moviePath); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { m, _ := db.GetMovie(603); return m != nil }, "manual match details were not fetched")
+	s.SyncAll(ctx)
+	info, _ := s.MatchInfo(ref)
+	if !info.Manual || info.Current == nil || info.Current.TMDBID != 603 || info.Query != "A Knights Tale" || info.Year != 2001 {
+		t.Errorf("after manual match + sync: %+v / %+v", info, info.Current)
+	}
+	// The movie folder resolves to the same title, so it can be fixed (and shows the fix) too.
+	folderRef, err := s.MatchTarget(movieLib, knight, true)
+	if err != nil || folderRef.Key != ref.Key {
+		t.Errorf("folder target = %+v, %v; want key %q", folderRef, err, ref.Key)
+	}
+	if err := s.SetMatch(ref, 0, moviePath); err != nil {
+		t.Fatal(err)
+	}
+	s.SyncAll(ctx)
+	if info, _ := s.MatchInfo(ref); !info.Manual || info.Status != "not_found" {
+		t.Errorf("manual no-match was not kept: %+v", info)
+	}
+	if err := s.ResetMatch(ref, moviePath); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		info, _ := s.MatchInfo(ref)
+		return info.Current != nil && info.Current.TMDBID == 9476 && !info.Manual
+	},
+		"reset did not restore the automatic match")
+	// Collection folders and non-episode TV files can't be fixed as a whole.
+	os.MkdirAll(filepath.Join(movies, "Mixed"), 0755)
+	os.WriteFile(filepath.Join(movies, "Mixed", "One.mkv"), nil, 0644)
+	os.WriteFile(filepath.Join(movies, "Mixed", "Two.mkv"), nil, 0644)
+	s.SyncAll(ctx)
+	if _, err := s.MatchTarget(movieLib, filepath.Join(movies, "Mixed"), true); err != ErrNotFixable {
+		t.Errorf("collection folder target err = %v, want ErrNotFixable", err)
+	}
+	os.RemoveAll(filepath.Join(movies, "Mixed"))
+
+	// Artwork deleted from disk (while the record says it's there) is downloaded again.
+	os.RemoveAll(filepath.Join(artwork, "movie", "9476"))
+	s.SyncAll(ctx)
+	waitFor(t, func() bool {
+		_, err := os.Stat(filepath.Join(artwork, "movie", "9476", "poster.jpg"))
+		return err == nil
+	}, "missing artwork was not downloaded again")
+	waitFor(t, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.pending) == 0
+	}, "lookup queue did not drain")
+
 	// A title removed from disk loses its lookup and artwork on the next sync.
 	os.RemoveAll(knight)
 	s.SyncAll(ctx)
@@ -241,6 +299,9 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(artwork, "movie", "9476")); !os.IsNotExist(err) {
 		t.Errorf("artwork for removed movie not cleaned up: %v", err)
+	}
+	if m, _ := db.GetMovie(9476); m != nil {
+		t.Error("removed movie's record was kept without its artwork")
 	}
 }
 

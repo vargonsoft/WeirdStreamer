@@ -6,7 +6,8 @@ const state = {
     mediaItems: [],
     directories: [],
     currentConfig: null,
-    availableGroups: []
+    availableGroups: [],
+    libraryType: ''   // "movie" or "tv" when browsing a typed library
 };
 
 // DOM Elements
@@ -128,6 +129,8 @@ function setupEventListeners() {
         });
     });
     
+    setupMatchDialog();
+
     // Modal close buttons
     document.querySelectorAll('.close').forEach(closeBtn => {
         closeBtn.addEventListener('click', () => {
@@ -237,6 +240,18 @@ function showMainScreen() {
         }
     });
     
+    // Metadata for something on screen changed (a lookup or manual fix finished): refresh,
+    // batching bursts of events into one reload.
+    let metadataReload = null;
+    api.onMetadataUpdate(() => {
+        if (!state.libraryType) return;
+        clearTimeout(metadataReload);
+        metadataReload = setTimeout(() => {
+            loadMedia(false);
+            if (matchState.target) refreshMatchInfo();
+        }, 1500);
+    });
+
     // Initialize from URL parameters if present
     const url = new URL(window.location);
     const urlPath = url.searchParams.get('path');
@@ -333,6 +348,7 @@ async function loadMedia(pushHistory = true) {
         const data = await api.browseDirectory(state.currentPath);
         state.directories = data.dirs || [];
         state.mediaItems = data.items || [];
+        state.libraryType = data.library_type || '';
         
         // Apply natural sort to directories and media items
         state.directories.sort((a, b) => naturalCompare(a.name, b.name));
@@ -432,7 +448,19 @@ function createDirectoryElement(dir) {
     
     const thumbnail = document.createElement('div');
     thumbnail.className = 'media-thumbnail folder-thumbnail';
-    thumbnail.textContent = '📁';
+    if (dir.metadata && dir.metadata.poster) {
+        const img = document.createElement('img');
+        img.src = API_BASE + dir.metadata.poster;
+        img.alt = dir.name;
+        img.className = 'poster';
+        img.onerror = () => img.replaceWith(document.createTextNode('📁'));
+        thumbnail.appendChild(img);
+    } else {
+        thumbnail.textContent = '📁';
+    }
+    if (dir.fixable && canFixMatches()) {
+        thumbnail.appendChild(createFixMatchButton({ dir: dir.path }, dir.name));
+    }
     
     const name = document.createElement('div');
     name.className = 'media-name';
@@ -451,6 +479,8 @@ function createDirectoryElement(dir) {
     
     div.appendChild(thumbnail);
     div.appendChild(name);
+    const match = createMatchLabel(dir.metadata);
+    if (match) div.appendChild(match);
     return div;
 }
 
@@ -494,6 +524,11 @@ function createMediaElement(item) {
     
     info.appendChild(name);
     info.appendChild(size);
+    const match = createMatchLabel(item.metadata);
+    if (match) info.appendChild(match);
+    if (item.type === 'video' && canFixMatches()) {
+        thumbnail.appendChild(createFixMatchButton({ path: item.path }, item.name));
+    }
     div.appendChild(thumbnail);
     div.appendChild(info);
     
@@ -1042,3 +1077,234 @@ function handleSaveTheme() {
 // Initialize app when DOM is ready
 console.log('Calling init()');
 init();
+
+// ---------------------------------------------------------------------------------------------
+// Manual metadata matching
+
+const matchState = { target: null, name: '', info: null };
+
+function canFixMatches() {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return !!user.is_admin && !!state.libraryType;
+}
+
+// A one-line summary of what an item is matched to, shown under its name.
+function describeMatch(md) {
+    const year = md.year ? ` (${md.year})` : '';
+    switch (md.kind) {
+        case 'episode': {
+            const code = `S${String(md.season).padStart(2, '0')}E${String(md.episode).padStart(2, '0')}`;
+            return `${md.show_title} · ${code} · ${md.title}`;
+        }
+        case 'season':
+            return `${md.show_title} · ${md.title}`;
+        default:
+            return md.title + year;
+    }
+}
+
+function createMatchLabel(md) {
+    if (!md) return null;
+    const label = document.createElement('div');
+    label.className = 'media-match';
+    label.textContent = describeMatch(md);
+    if (md.overview) label.title = md.overview;
+    return label;
+}
+
+function createFixMatchButton(target, name) {
+    const btn = document.createElement('button');
+    btn.className = 'fix-match-btn';
+    btn.type = 'button';
+    btn.textContent = '✎';
+    btn.title = 'Fix match';
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        openMatchDialog(target, name);
+    };
+    return btn;
+}
+
+function setupMatchDialog() {
+    const modal = document.getElementById('match-modal');
+    const close = () => {
+        modal.classList.remove('active');
+        matchState.target = null;
+    };
+    document.getElementById('match-close').addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('active')) close();
+    });
+    document.getElementById('match-search').addEventListener('submit', (e) => {
+        e.preventDefault();
+        runMatchSearch();
+    });
+    document.getElementById('match-none').addEventListener('click', async () => {
+        if (!confirm('Mark this as having no match? Automatic matching will leave it alone.')) return;
+        await applyMatch(0, 'Marked as no match.');
+    });
+    document.getElementById('match-reset').addEventListener('click', async () => {
+        try {
+            matchState.info = await api.resetMatch(matchState.target);
+            setMatchMessage('Reset. Matching automatically…');
+            renderMatchCurrent();
+        } catch (error) {
+            setMatchMessage('Reset failed: ' + error.message, true);
+        }
+    });
+}
+
+async function openMatchDialog(target, name) {
+    matchState.target = target;
+    matchState.name = name;
+    matchState.info = null;
+    document.getElementById('match-target').textContent = name;
+    document.getElementById('match-current').innerHTML = '';
+    document.getElementById('match-results').innerHTML = '';
+    setMatchMessage('');
+    document.getElementById('match-modal').classList.add('active');
+
+    try {
+        matchState.info = await api.getMatch(target);
+    } catch (error) {
+        document.getElementById('match-current').textContent = error.message;
+        return;
+    }
+    document.getElementById('match-query').value = matchState.info.query || '';
+    document.getElementById('match-year').value = matchState.info.year || '';
+    renderMatchCurrent();
+    runMatchSearch();
+    document.getElementById('match-query').focus();
+}
+
+async function refreshMatchInfo() {
+    try {
+        matchState.info = await api.getMatch(matchState.target);
+        renderMatchCurrent();
+    } catch (error) {
+        console.log('Could not refresh match:', error);
+    }
+}
+
+function renderMatchCurrent() {
+    const info = matchState.info;
+    const box = document.getElementById('match-current');
+    box.innerHTML = '';
+    document.getElementById('match-reset').style.display = info && info.manual ? '' : 'none';
+    if (!info) return;
+
+    const status = document.createElement('div');
+    status.className = 'match-status';
+    const kindLabel = info.kind === 'tv' ? 'TV show' : 'Movie';
+    if (info.current) {
+        if (info.current.poster) {
+            const img = document.createElement('img');
+            img.src = API_BASE + info.current.poster;
+            img.alt = '';
+            box.appendChild(img);
+        }
+        status.innerHTML = '<span class="match-caption"></span><strong></strong>';
+        status.querySelector('.match-caption').textContent = `${kindLabel} matched${info.manual ? ' by hand' : ''}: `;
+        status.querySelector('strong').textContent = info.current.title + (info.current.year ? ` (${info.current.year})` : '');
+    } else {
+        status.textContent = {
+            not_found: info.manual ? 'Marked as no match.' : `No ${kindLabel.toLowerCase()} match found.`,
+            error: 'The last lookup failed.',
+            pending: 'Not matched yet (lookup pending).',
+            matched: 'Matched; fetching details…',
+        }[info.status] || info.status;
+    }
+    box.appendChild(status);
+    const hint = document.createElement('div');
+    hint.className = 'match-hint';
+    hint.textContent = 'Choosing a result applies to every file in this library with the same title.';
+    box.appendChild(hint);
+    markCurrentHit();
+}
+
+// Highlights the result that is the current match (its details may arrive after the search).
+function markCurrentHit() {
+    const currentId = matchState.info && matchState.info.current && matchState.info.current.tmdb_id;
+    document.querySelectorAll('.match-hit').forEach(row => {
+        const isCurrent = Number(row.dataset.tmdbId) === currentId;
+        row.classList.toggle('current', isCurrent);
+        row.title = isCurrent ? 'Current match' : 'Use this match';
+        row.querySelector('.current-tag').hidden = !isCurrent;
+    });
+}
+
+async function runMatchSearch() {
+    const query = document.getElementById('match-query').value.trim();
+    const year = document.getElementById('match-year').value.trim();
+    const results = document.getElementById('match-results');
+    if (!query || !matchState.info) return;
+    results.innerHTML = '<p class="match-empty">Searching…</p>';
+    let hits;
+    try {
+        hits = await api.searchMatch(matchState.info.kind, query, year);
+    } catch (error) {
+        results.innerHTML = '';
+        setMatchMessage('Search failed: ' + error.message, true);
+        return;
+    }
+    results.innerHTML = '';
+    if (hits.length === 0) {
+        results.innerHTML = `<p class="match-empty">No results${year ? ' (try without the year)' : ''}.</p>`;
+        return;
+    }
+    hits.forEach(hit => results.appendChild(createMatchHit(hit)));
+    markCurrentHit();
+}
+
+function createMatchHit(hit) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'match-hit';
+    row.dataset.tmdbId = hit.tmdb_id;
+
+    const poster = document.createElement('div');
+    poster.className = 'match-hit-poster';
+    if (hit.poster) {
+        const img = document.createElement('img');
+        img.src = hit.poster;
+        img.alt = '';
+        img.loading = 'lazy';
+        poster.appendChild(img);
+    }
+    const text = document.createElement('div');
+    text.className = 'match-hit-text';
+    const title = document.createElement('div');
+    title.className = 'match-hit-title';
+    title.textContent = hit.title + (hit.year ? ` (${hit.year})` : '');
+    const tag = document.createElement('span');
+    tag.className = 'current-tag';
+    tag.textContent = ' — current';
+    tag.hidden = true;
+    title.appendChild(tag);
+    const overview = document.createElement('div');
+    overview.className = 'match-hit-overview';
+    overview.textContent = hit.overview || 'No synopsis.';
+    text.appendChild(title);
+    text.appendChild(overview);
+    row.appendChild(poster);
+    row.appendChild(text);
+    row.onclick = () => applyMatch(hit.tmdb_id, `Matched to ${hit.title}. Fetching details…`);
+    return row;
+}
+
+async function applyMatch(tmdbId, message) {
+    try {
+        matchState.info = await api.setMatch(matchState.target, tmdbId);
+        setMatchMessage(message);
+        renderMatchCurrent();
+    } catch (error) {
+        setMatchMessage('Could not save: ' + error.message, true);
+    }
+}
+
+function setMatchMessage(text, isError = false) {
+    const el = document.getElementById('match-message');
+    el.textContent = text;
+    el.classList.toggle('error', isError);
+}
