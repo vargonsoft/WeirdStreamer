@@ -180,6 +180,25 @@ func TestPickResultRequiresTitleMatch(t *testing.T) {
 	if got := pickResult(hp, "Harry Potter and the Sorcerers Stone", 2005, "", false); got != 0 {
 		t.Errorf("alternate-title result accepted with the wrong year: got %d", got)
 	}
+	for _, c := range []struct {
+		query, tmdb string
+	}{
+		{"Tinkerbell and the Great Fairy Rescue", "Tinker Bell and the Great Fairy Rescue"},
+		{"Transformers 3 - Dark of the Moon", "Transformers: Dark of the Moon"},
+		{"90 Day Fiance", "90 Day Fiancé"},
+		{"Big Brother Sweden", "Big Brother (Sweden and Norway)"},
+	} {
+		if got := pickResult([]SearchResult{{ID: 7, Title: c.tmdb, Name: c.tmdb}}, c.query, 0, "", false); got != 7 {
+			t.Errorf("%q did not match %q", c.query, c.tmdb)
+		}
+	}
+	// Word overlap needs every word of the shorter title and at most two extras.
+	if titleSimilarity("star wars the empire strikes back", "the empire") != 1 {
+		t.Errorf("contained title should be a partial match")
+	}
+	if titleSimilarity("a b c d e f", "a b x") != 0 {
+		t.Errorf("titles with different words should not match")
+	}
 	shows := []SearchResult{{ID: 10, Name: "Big Brother", OriginCountry: []string{"US"}}, {ID: 11, Name: "Big Brother", OriginCountry: []string{"GB"}}}
 	if got := pickResult(shows, "Big Brother", 0, "GB", true); got != 11 {
 		t.Errorf("country hint ignored: got %d", got)

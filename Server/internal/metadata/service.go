@@ -258,14 +258,7 @@ func pickResult(results []SearchResult, title string, year int, country string, 
 		}
 		titleScore := 0
 		for _, n := range names {
-			got := NormalizeTitle(n)
-			switch {
-			case got == "":
-			case got == want:
-				titleScore = max(titleScore, 3)
-			case strings.Contains(got, want) || strings.Contains(want, got):
-				titleScore = max(titleScore, 1)
-			}
+			titleScore = max(titleScore, titleSimilarity(want, NormalizeTitle(n)))
 		}
 		if titleScore == 0 {
 			if i != 0 || year == 0 || yearOf(date) != year {
@@ -296,6 +289,38 @@ func pickResult(results []SearchResult, title string, year int, country string, 
 		}
 	}
 	return best
+}
+
+// titleSimilarity scores two normalized titles: 3 for the same title (ignoring spaces, so
+// "Tinkerbell" matches "Tinker Bell"), 1 for a partial match, 0 for unrelated titles.
+func titleSimilarity(want, got string) int {
+	switch {
+	case want == "" || got == "":
+		return 0
+	case want == got || strings.ReplaceAll(want, " ", "") == strings.ReplaceAll(got, " ", ""):
+		return 3
+	case strings.Contains(got, want) || strings.Contains(want, got):
+		return 1
+	}
+	// Same words apart from at most two extras: "Transformers 3 Dark of the Moon" vs
+	// "Transformers: Dark of the Moon".
+	a, b := strings.Fields(want), strings.Fields(got)
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	words := map[string]bool{}
+	for _, w := range b {
+		words[w] = true
+	}
+	for _, w := range a {
+		if !words[w] {
+			return 0
+		}
+	}
+	if len(a) >= 2 && len(b)-len(a) <= 2 {
+		return 1
+	}
+	return 0
 }
 
 func yearOf(date string) int {

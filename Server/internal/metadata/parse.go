@@ -24,6 +24,14 @@ var (
 	nonAlnum = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 
 	countryTag = regexp.MustCompile(`(?i)[(\[](uk|us|usa|au|ca|nz|ie)[)\]]`)
+
+	// " - Special Edition", " - Restored International Cut": edition labels after a dash. The dash
+	// is required so titles like "The Final Cut" are left alone.
+	editionTag = regexp.MustCompile(`(?i)\s+-\s+(?:special|collector'?s|anniversary|ultimate|extended|director'?s|theatrical|unrated|uncut|remastered|restored)\b.*$`)
+	// Trailing part or disc markers: "Ice Age Disc1", "Title - pt1", "Title - a".
+	partMarker = regexp.MustCompile(`(?i)(?:[ ._-]+(?:disc|disk|cd|pt)[ ._-]*\d{1,2}|\s+-\s+[a-z])$`)
+	// A season in a show folder name: "Big Brother Sweden - Season 7".
+	showSeasonSuffix = regexp.MustCompile(`(?i)\s+-\s+season\s+\d+$`)
 )
 
 // countryCodes maps folder country tags to TMDB origin_country codes.
@@ -36,6 +44,7 @@ func ParseShowFolder(name string) (title string, year int, country string) {
 		country = countryCodes[strings.ToLower(m[1])]
 		name = countryTag.ReplaceAllString(name, " ")
 	}
+	name = showSeasonSuffix.ReplaceAllString(strings.TrimSpace(name), "")
 	title, year = ParseTitleYear(name)
 	return title, year, country
 }
@@ -66,7 +75,11 @@ func ParseTitleYear(name string) (title string, year int) {
 	if cut >= 0 {
 		name = name[:cut]
 	}
-	return cleanTitle(name), year
+	title = cleanTitle(name)
+	if stripped := cleanTitle(partMarker.ReplaceAllString(editionTag.ReplaceAllString(title, ""), "")); stripped != "" {
+		title = stripped
+	}
+	return title, year
 }
 
 // ParseEpisode extracts the season and episode numbers from an episode file name, such as
@@ -96,9 +109,33 @@ func ParseSeasonFolder(name string) (season int, ok bool) {
 // NormalizeTitle reduces a title to lowercase words for matching and lookup keys:
 // "Cats & Dogs: The Revenge" and "Cats & Dogs - The Revenge" normalize the same.
 func NormalizeTitle(title string) string {
-	title = strings.ToLower(title)
+	title = foldAccents(strings.ToLower(title))
 	title = strings.NewReplacer("'", "", "’", "", "&", " and ", "½", ".5", "¼", ".25", "¾", ".75").Replace(title)
 	return strings.Join(strings.Fields(nonAlnum.ReplaceAllString(title, " ")), " ")
+}
+
+// accentFolds maps accented Latin letters to their base letter ("Fiancé" matches "Fiance").
+var accentFolds = func() map[rune]rune {
+	m := map[rune]rune{}
+	for base, accented := range map[rune]string{
+		'a': "àáâãäåāăą", 'c': "çćĉċč", 'd': "ďđ", 'e': "èéêëēĕėęě", 'g': "ĝğġģ", 'h': "ĥħ",
+		'i': "ìíîïĩīĭįı", 'j': "ĵ", 'k': "ķ", 'l': "ĺļľŀł", 'n': "ñńņňŉ", 'o': "òóôõöøōŏő",
+		'r': "ŕŗř", 's': "śŝşšș", 't': "ţťŧț", 'u': "ùúûüũūŭůűų", 'w': "ŵ", 'y': "ýÿŷ", 'z': "źżž",
+	} {
+		for _, r := range accented {
+			m[r] = base
+		}
+	}
+	return m
+}()
+
+func foldAccents(s string) string {
+	return strings.Map(func(r rune) rune {
+		if base, ok := accentFolds[r]; ok {
+			return base
+		}
+		return r
+	}, s)
 }
 
 // LookupKey identifies one title/year query; files that parse to the same key share a lookup.

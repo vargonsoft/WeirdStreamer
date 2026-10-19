@@ -23,6 +23,16 @@ func TestParseTitleYear(t *testing.T) {
 		{"Toy Story 3 1080p BluRay.mkv", "Toy Story 3", 0},
 		{"Shōgun (2024)", "Shōgun", 2024},
 		{"Harry Potter and the Deathly Hallows - Part 1", "Harry Potter and the Deathly Hallows - Part 1", 0},
+		// Edition labels and part/disc markers are dropped; real titles that look similar are kept.
+		{"The Lion King - Special Edition (1994)", "The Lion King", 1994},
+		{"Superman II - Restored International Cut", "Superman II", 0},
+		{"The Final Cut (1983)", "The Final Cut", 1983},
+		{"Ice Age Disc1.mkv", "Ice Age", 0},
+		{"The Facts of Life Goes to Paris - a.mkv", "The Facts of Life Goes to Paris", 0},
+		{"Harry Potter and the Deathly Hallows - Part 1 - pt2.mkv", "Harry Potter and the Deathly Hallows - Part 1", 0},
+		{"Babylon 5", "Babylon 5", 0},
+		{"WALL-E (2008)", "WALL-E", 2008},
+		{"Plan 9 from Outer Space (1957)", "Plan 9 from Outer Space", 1957},
 	}
 	for _, c := range cases {
 		title, year := ParseTitleYear(c.in)
@@ -77,6 +87,8 @@ func TestNormalizeTitle(t *testing.T) {
 		{"Cats and Dogs", "Cats & Dogs"},
 		{"Hellboy II - The Golden Army", "Hellboy II: The Golden Army"},
 		{"The Lion King 1.5", "The Lion King 1½"},
+		{"90 Day Fiance", "90 Day Fiancé"},
+		{"Pokemon", "Pokémon"},
 	}
 	for _, p := range pairs {
 		if NormalizeTitle(p[0]) != NormalizeTitle(p[1]) {
@@ -95,6 +107,7 @@ func TestParseShowFolder(t *testing.T) {
 		{"Big Brother (UK)", "Big Brother", 0, "GB"},
 		{"The Traitors (US)", "The Traitors", 0, "US"},
 		{"1923", "1923", 0, ""},
+		{"Big Brother Sweden - Season 7", "Big Brother Sweden", 0, ""},
 	}
 	for _, c := range cases {
 		title, year, country := ParseShowFolder(c.in)
