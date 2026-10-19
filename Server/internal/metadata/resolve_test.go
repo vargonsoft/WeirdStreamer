@@ -30,7 +30,9 @@ func TestResolveFileTV(t *testing.T) {
 		// The more specific of the two names wins, keeping the other's year/country
 		{"Big Brother Sweden/big brother - S07E01.mkv", "big brother sweden", 7, 1},
 		{"Example Show/Example Show - Example Episode - S01E01.mkv", "example show example episode", 1, 1},
-		{"Big Brother 7 UK/Big Brother - S07E01.mkv", "big brother 7|gb", 7, 1},
+		// ...but extra numbers are a season number, not a different show
+		{"Big Brother 7 UK/Big Brother - S07E01.mkv", "big brother|gb", 7, 1},
+		{"Babylon 5/Babylon 5 - S01E01.mkv", "babylon 5", 1, 1},
 		// A country the file names beats the folder's
 		{"Big Brother (UK)/Big Brother US - S01E01.mkv", "big brother|us", 1, 1},
 		// Files that don't name a show use the folder
@@ -52,10 +54,10 @@ func TestResolveFileTV(t *testing.T) {
 	if alt, ok := fallbackFor(lib, file, ref); !ok || alt.Title != "Mixed" {
 		t.Errorf("fallback for mixed-folder file = %+v, %v", alt, ok)
 	}
-	file = filepath.Join(root, "Big Brother 7 UK/Big Brother - S07E01.mkv")
+	file = filepath.Join(root, "Big Brother Sweden/big brother - S07E01.mkv")
 	ref, _ = ResolveFile(lib, file)
-	if alt, ok := fallbackFor(lib, file, ref); !ok || alt.Key != "big brother|gb" {
-		t.Errorf("fallback for more specific folder = %+v, %v; want the file's show with the folder's country", alt, ok)
+	if alt, ok := fallbackFor(lib, file, ref); !ok || alt.Key != "big brother" {
+		t.Errorf("fallback for more specific folder = %+v, %v; want the file's show", alt, ok)
 	}
 	file = filepath.Join(root, "TWD/S04E13 - Alone.mkv")
 	ref, _ = ResolveFile(lib, file)

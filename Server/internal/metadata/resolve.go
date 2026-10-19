@@ -61,7 +61,8 @@ func episodeShow(lib config.MediaPath, root, path string) (primary, fallback *Re
 	}
 	fileWords, folderWords := NormalizeTitle(file.Title), NormalizeTitle(folder.Title)
 	switch {
-	case fileWords == folderWords:
+	case fileWords == folderWords || sameApartFromNumbers(fileWords, folderWords):
+		// Extra numbers are season numbers, not part of the show name ("Big Brother 7 UK").
 		merged := mergeShowRefs(lib, file, folder)
 		return &merged, nil, true
 	case wordsWithin(fileWords, folderWords):
@@ -85,6 +86,26 @@ func mergeShowRefs(lib config.MediaPath, base, other Ref) Ref {
 	}
 	ref, _ := tvRef(lib, base.Title, year, country)
 	return ref
+}
+
+// sameApartFromNumbers reports whether one title is the other plus only numeric words.
+func sameApartFromNumbers(a, b string) bool {
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	if a == "" || !wordsWithin(a, b) {
+		return false
+	}
+	words := map[string]bool{}
+	for _, w := range strings.Fields(a) {
+		words[w] = true
+	}
+	for _, w := range strings.Fields(b) {
+		if !words[w] && strings.Trim(w, "0123456789") != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // wordsWithin reports whether every word of a also appears in b.
