@@ -29,6 +29,7 @@
     ],
     "thumbnailPath": "./thumbnails",
     "trickplayPath": "./trickplay",
+    "artworkPath": "./artwork",
     "supportedVideoFormats": [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".3gp", ".3gpp", ".m4v", ".mpg", ".mpeg", ".ts", ".mp2"],
     "supportedImageFormats": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
     "supportedDocFormats": [".pdf"],
@@ -42,5 +43,9 @@
     "chunkSize": 1048576,
     "enableHTTP2": true,
     "autoConvertImages": true
+  },
+  "metadata": {
+    "tmdbAccessToken": "",
+    "language": "en-US"
   }
 }

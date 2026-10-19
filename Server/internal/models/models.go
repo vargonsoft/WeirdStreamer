@@ -26,6 +26,47 @@ type MediaItem struct {
 	Height       int       `json:"height"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+
+	Metadata *ItemMetadata `json:"metadata,omitempty"` // TMDB info, for files in movie/tv libraries
+}
+
+// ItemMetadata is the TMDB summary attached to browse results. Image fields are server URLs.
+type ItemMetadata struct {
+	Kind      string `json:"kind"` // "movie", "show", "season" or "episode"
+	TMDBID    int    `json:"tmdb_id"`
+	Title     string `json:"title"`
+	Year      int    `json:"year,omitempty"`
+	Overview  string `json:"overview,omitempty"`
+	Runtime   int    `json:"runtime,omitempty"` // minutes
+	AirDate   string `json:"air_date,omitempty"`
+	Poster    string `json:"poster,omitempty"`
+	Backdrop  string `json:"backdrop,omitempty"`
+	Logo      string `json:"logo,omitempty"`
+	Still     string `json:"still,omitempty"`
+	ShowTitle string `json:"show_title,omitempty"`
+	Season    *int   `json:"season,omitempty"`
+	Episode   *int   `json:"episode,omitempty"`
+}
+
+// MediaDetails is the full record returned by /api/media/details.
+type MediaDetails struct {
+	ItemMetadata
+	Tagline     string       `json:"tagline,omitempty"`
+	Genres      []string     `json:"genres,omitempty"`
+	ReleaseDate string       `json:"release_date,omitempty"`
+	IMDBID      string       `json:"imdb_id,omitempty"`
+	Directors   []CreditInfo `json:"directors,omitempty"`
+	Writers     []CreditInfo `json:"writers,omitempty"`
+	Creators    []CreditInfo `json:"creators,omitempty"`
+	Cast        []CreditInfo `json:"cast,omitempty"`
+	GuestStars  []CreditInfo `json:"guest_stars,omitempty"`
+}
+
+type CreditInfo struct {
+	TMDBID    int    `json:"tmdb_id"`
+	Name      string `json:"name"`
+	Character string `json:"character,omitempty"`
+	Profile   string `json:"profile,omitempty"` // headshot URL, when downloaded
 }
 
 type TrickplayFrame struct {
@@ -38,10 +79,11 @@ type TrickplayInfo struct {
 }
 
 type Directory struct {
-	Path  string      `json:"path"`
-	Name  string      `json:"name"`
-	Items []MediaItem `json:"items"`
-	Dirs  []Directory `json:"dirs"`
+	Path     string        `json:"path"`
+	Name     string        `json:"name"`
+	Items    []MediaItem   `json:"items"`
+	Dirs     []Directory   `json:"dirs"`
+	Metadata *ItemMetadata `json:"metadata,omitempty"` // movie, show or season this folder stands for
 }
 
 type LoginRequest struct {

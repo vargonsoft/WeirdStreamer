@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/config"
@@ -157,16 +158,16 @@ func TestThumbnailHubFiltersByGroupAndKeepsIDsUnique(t *testing.T) {
 		t.Fatal("client IDs collide")
 	}
 
-	hub.broadcast(filepath.Join(private, "b.mp4"), "private")
-	hub.broadcast(filepath.Join(movies, "a.mp4"), "movies")
+	hub.broadcast(filepath.Join(private, "b.mp4"), sseEvent{data: "private"})
+	hub.broadcast(filepath.Join(movies, "a.mp4"), sseEvent{data: "movies"})
 
-	if got := <-normal; got != "movies" {
+	if got := (<-normal).data; got != "movies" {
 		t.Errorf("normal user got %q, want only the movies event", got)
 	}
-	if got := <-adult; got != "private" {
+	if got := (<-adult).data; got != "private" {
 		t.Errorf("adult user first event %q, want %q", got, "private")
 	}
-	if got := <-adult; got != "movies" {
+	if got := (<-adult).data; got != "movies" {
 		t.Errorf("adult user second event %q, want %q", got, "movies")
 	}
 
@@ -176,8 +177,8 @@ func TestThumbnailHubFiltersByGroupAndKeepsIDsUnique(t *testing.T) {
 	if thirdID == normalID || thirdID == adultID {
 		t.Errorf("reused client ID %d", thirdID)
 	}
-	hub.broadcast(filepath.Join(movies, "c.mp4"), "again")
-	if got := <-adult; got != "again" {
+	hub.broadcast(filepath.Join(movies, "c.mp4"), sseEvent{data: "again"})
+	if got := (<-adult).data; got != "again" {
 		t.Errorf("adult user stopped receiving events: %q", got)
 	}
 }
@@ -214,6 +215,51 @@ func TestServeThumbnailChecksLibraryAccess(t *testing.T) {
 		router.ServeHTTP(rec, req)
 		if rec.Code != want {
 			t.Errorf("group %s: status %d, want %d", group, rec.Code, want)
+		}
+	}
+}
+
+func TestServeArtworkChecksLibraryAccess(t *testing.T) {
+	setupConfig(t)
+	artworkDir := t.TempDir()
+	config.GlobalConfig.Media.ArtworkPath = artworkDir
+	os.MkdirAll(filepath.Join(artworkDir, "movie", "603"), 0755)
+	os.WriteFile(filepath.Join(artworkDir, "movie", "603", "poster.jpg"), []byte("jpeg"), 0644)
+	os.MkdirAll(filepath.Join(artworkDir, "person"), 0755)
+	os.WriteFile(filepath.Join(artworkDir, "person", "1.jpg"), []byte("jpeg"), 0644)
+
+	dir := t.TempDir()
+	db, err := database.New(filepath.Join(dir, "users.db"), filepath.Join(dir, "media.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	// The movie is only in the adults-only "private" library.
+	db.SaveLookup(&database.Lookup{Kind: "movie", LibraryID: "private", QueryKey: "the matrix|1999",
+		QueryTitle: "The Matrix", TMDBID: 603, Status: "matched", AttemptedAt: time.Now()})
+
+	h := NewMediaHandler(db, auth.NewService(db))
+	router := mux.NewRouter()
+	router.HandleFunc("/artwork/{kind:movie|tv}/{id:[0-9]+}/{file}", h.ServeArtwork)
+	router.HandleFunc("/artwork/{kind:person}/{file}", h.ServeArtwork)
+
+	cases := []struct {
+		group, url string
+		want       int
+	}{
+		{"adults", "/artwork/movie/603/poster.jpg", http.StatusOK},
+		{"normal", "/artwork/movie/603/poster.jpg", http.StatusNotFound},
+		{"adults", "/artwork/movie/604/poster.jpg", http.StatusNotFound},
+		{"normal", "/artwork/person/1.jpg", http.StatusOK},
+		{"adults", "/artwork/movie/603/..%2Fx.jpg", 0}, // any non-200: mux redirects to a cleaned path
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest(http.MethodGet, c.url, nil)
+		req = req.WithContext(auth.WithUser(req.Context(), &models.User{Username: "u", Group: c.group}))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if (c.want == 0 && rec.Code == http.StatusOK) || (c.want != 0 && rec.Code != c.want) {
+			t.Errorf("%s as %s: status %d, want %d", c.url, c.group, rec.Code, c.want)
 		}
 	}
 }

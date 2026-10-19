@@ -652,6 +652,9 @@ async function showSettings() {
             document.getElementById('server-host').value = config.server.host;
             document.getElementById('enable-http2').checked = config.streaming.enableHTTP2;
             document.getElementById('chunk-size').value = config.streaming.chunkSize;
+            const metadata = config.metadata || {};
+            document.getElementById('tmdb-token').value = metadata.tmdbAccessToken || '';
+            document.getElementById('metadata-language').value = metadata.language || '';
 
             // Render media paths
             renderMediaPaths(config.media.paths);
@@ -819,6 +822,11 @@ async function handleSaveSettings() {
         state.currentConfig.server.host = document.getElementById('server-host').value;
         state.currentConfig.streaming.enableHTTP2 = document.getElementById('enable-http2').checked;
         state.currentConfig.streaming.chunkSize = parseInt(document.getElementById('chunk-size').value);
+        state.currentConfig.metadata = {
+            ...(state.currentConfig.metadata || {}),
+            tmdbAccessToken: document.getElementById('tmdb-token').value.trim(),
+            language: document.getElementById('metadata-language').value.trim(),
+        };
         
         const result = await api.updateConfig(state.currentConfig);
         // If server returned updated config (with IDs), adopt it locally

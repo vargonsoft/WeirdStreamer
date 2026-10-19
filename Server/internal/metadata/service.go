@@ -1,0 +1,736 @@
+package metadata
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/database"
+)
+
+const (
+	workerCount         = 3
+	retryNotFound       = 7 * 24 * time.Hour
+	retryError          = time.Hour
+	refreshDetails      = 30 * 24 * time.Hour
+	headshotsPerCredits = 10
+	castPerTitle        = 20
+	guestsPerEpisode    = 10
+)
+
+// Service matches files in "movie" and "tv" libraries to TMDB in the background and stores
+// the results and artwork. Lookups never block callers: Enqueue only schedules work.
+type Service struct {
+	db     *database.DB
+	notify func(path string) // called with a file/folder path when its metadata is ready
+
+	mu       sync.Mutex
+	client   *Client
+	clientID string          // token+language the client was built with
+	pending  map[string]bool // job IDs queued or running
+	active   map[string]bool // "movie:123"/"tv:123" being written, protected from cleanup
+	jobs     chan job
+	syncing  atomic.Bool
+
+	newClient func(token, language string) *Client // replaceable in tests
+}
+
+type job struct {
+	lookup     *database.Lookup // set for title lookups
+	seasons    []int            // tv lookups: seasons on disk to fetch once the show is matched
+	showID     int              // set for season fetches
+	season     int
+	notifyPath string
+}
+
+func (j job) id() string {
+	if j.lookup != nil {
+		return "lookup:" + j.lookup.Kind + ":" + j.lookup.LibraryID + ":" + j.lookup.QueryKey
+	}
+	return fmt.Sprintf("season:%d:%d", j.showID, j.season)
+}
+
+func NewService(db *database.DB, notify func(path string)) *Service {
+	return &Service{
+		db:      db,
+		notify:  notify,
+		pending: map[string]bool{},
+		active:  map[string]bool{},
+		jobs:    make(chan job, 16384),
+
+		newClient: NewClient,
+	}
+}
+
+// Start runs the lookup workers until ctx is done.
+func (s *Service) Start(ctx context.Context) {
+	for i := 0; i < workerCount; i++ {
+		go func() {
+			for {
+				select {
+				case j := <-s.jobs:
+					s.run(ctx, j)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+}
+
+// tmdb returns a client for the current configuration, or nil when no token is configured.
+// Built lazily so a token added through Settings takes effect without a restart.
+func (s *Service) tmdb() *Client {
+	cfg := config.GlobalConfig.Metadata
+	if cfg.TMDBAccessToken == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id := cfg.TMDBAccessToken + "|" + cfg.Language; s.client == nil || s.clientID != id {
+		s.client, s.clientID = s.newClient(cfg.TMDBAccessToken, cfg.Language), id
+	}
+	return s.client
+}
+
+func artworkDir() string {
+	return config.GlobalConfig.Media.ArtworkPath
+}
+
+// EnqueueRef schedules a lookup for ref's title (and its season, for episodes) if needed.
+func (s *Service) EnqueueRef(ref Ref, notifyPath string) {
+	l := &database.Lookup{Kind: ref.Kind, LibraryID: ref.LibraryID, QueryKey: ref.Key,
+		QueryTitle: ref.Title, QueryYear: ref.Year, QueryCountry: ref.Country}
+	var seasons []int
+	if ref.Kind == config.LibraryTypeTV && (ref.IsEpisode || ref.Season > 0) {
+		seasons = []int{ref.Season}
+	}
+	s.enqueue(job{lookup: l, seasons: seasons, notifyPath: notifyPath})
+}
+
+func (s *Service) enqueue(j job) {
+	if s.tmdb() == nil {
+		return
+	}
+	id := j.id()
+	s.mu.Lock()
+	if s.pending[id] {
+		s.mu.Unlock()
+		return
+	}
+	s.pending[id] = true
+	s.mu.Unlock()
+	select {
+	case s.jobs <- j:
+	default:
+		// Queue full: drop it; the next browse or sync schedules it again.
+		s.mu.Lock()
+		delete(s.pending, id)
+		s.mu.Unlock()
+	}
+}
+
+func (s *Service) run(ctx context.Context, j job) {
+	defer func() {
+		s.mu.Lock()
+		delete(s.pending, j.id())
+		s.mu.Unlock()
+	}()
+	client := s.tmdb()
+	if client == nil {
+		return
+	}
+	var err error
+	if j.lookup != nil {
+		err = s.runLookup(ctx, client, j)
+	} else {
+		err = s.runSeason(ctx, client, j.showID, j.season, j.notifyPath)
+	}
+	if err != nil && !errors.Is(err, context.Canceled) {
+		log.Printf("[METADATA] %s: %v", j.id(), err)
+	}
+}
+
+// due reports whether a previous attempt with this status should be retried now.
+func due(status string, at time.Time) bool {
+	switch status {
+	case "not_found":
+		return time.Since(at) > retryNotFound
+	case "error":
+		return time.Since(at) > retryError
+	}
+	return true
+}
+
+func (s *Service) runLookup(ctx context.Context, client *Client, j job) error {
+	l := j.lookup
+	existing, err := s.db.GetLookup(l.Kind, l.LibraryID, l.QueryKey)
+	if err != nil {
+		return err
+	}
+	if existing != nil && existing.Status != "matched" && !due(existing.Status, existing.AttemptedAt) {
+		return nil
+	}
+
+	tmdbID := 0
+	if existing != nil && existing.Status == "matched" {
+		tmdbID = existing.TMDBID
+	} else {
+		tmdbID, err = s.search(ctx, client, l)
+		l.AttemptedAt = time.Now()
+		switch {
+		case err != nil:
+			l.Status = "error"
+			s.db.SaveLookup(l)
+			return err
+		case tmdbID == 0:
+			l.Status = "not_found"
+			log.Printf("[METADATA] No TMDB match for %s %q (%d)", l.Kind, l.QueryTitle, l.QueryYear)
+			return s.db.SaveLookup(l)
+		}
+		l.TMDBID, l.Status = tmdbID, "matched"
+		if err := s.db.SaveLookup(l); err != nil {
+			return err
+		}
+	}
+
+	changed := false
+	if l.Kind == config.LibraryTypeMovie {
+		changed, err = s.ensureMovie(ctx, client, tmdbID)
+	} else {
+		changed, err = s.ensureShow(ctx, client, tmdbID)
+	}
+	if err != nil {
+		return err
+	}
+	for _, season := range j.seasons {
+		s.enqueue(job{showID: tmdbID, season: season, notifyPath: j.notifyPath})
+	}
+	if changed && s.notify != nil && j.notifyPath != "" {
+		s.notify(j.notifyPath)
+	}
+	return nil
+}
+
+// search finds the best TMDB match for a lookup, or 0 if there is none.
+func (s *Service) search(ctx context.Context, client *Client, l *database.Lookup) (int, error) {
+	isTV := l.Kind == config.LibraryTypeTV
+	find := func(year int) ([]SearchResult, error) {
+		if isTV {
+			return client.SearchTV(ctx, l.QueryTitle, year)
+		}
+		return client.SearchMovie(ctx, l.QueryTitle, year)
+	}
+	results, err := find(l.QueryYear)
+	if err == nil && len(results) == 0 && l.QueryYear > 0 {
+		// The folder's year may be off (re-release, festival date); try the title alone.
+		results, err = find(0)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return pickResult(results, l.QueryTitle, l.QueryYear, l.QueryCountry, isTV), nil
+}
+
+// pickResult scores search results by title match, year and country. It requires a full or
+// partial title match, except that TMDB's top result is accepted when its year matches exactly:
+// TMDB's search also matches alternate titles ("Sorcerer's Stone" finds "Philosopher's Stone").
+func pickResult(results []SearchResult, title string, year int, country string, isTV bool) int {
+	want := NormalizeTitle(title)
+	best, bestScore := 0, -100
+	for i, r := range results {
+		if i >= 10 {
+			break
+		}
+		names, date := []string{r.Title, r.OriginalTitle}, r.ReleaseDate
+		if isTV {
+			names, date = []string{r.Name, r.OriginalName}, r.FirstAirDate
+		}
+		titleScore := 0
+		for _, n := range names {
+			got := NormalizeTitle(n)
+			switch {
+			case got == "":
+			case got == want:
+				titleScore = max(titleScore, 3)
+			case strings.Contains(got, want) || strings.Contains(want, got):
+				titleScore = max(titleScore, 1)
+			}
+		}
+		if titleScore == 0 {
+			if i != 0 || year == 0 || yearOf(date) != year {
+				continue
+			}
+		}
+		score := titleScore * 10
+		if ry := yearOf(date); year > 0 && ry > 0 {
+			switch d := ry - year; {
+			case d == 0:
+				score += 6
+			case d == 1 || d == -1:
+				score += 3
+			default:
+				score -= 6
+			}
+		}
+		if country != "" {
+			for _, c := range r.OriginCountry {
+				if c == country {
+					score += 5
+				}
+			}
+		}
+		score -= i // earlier results are more relevant/popular
+		if score > bestScore {
+			best, bestScore = r.ID, score
+		}
+	}
+	return best
+}
+
+func yearOf(date string) int {
+	if len(date) >= 4 {
+		y, _ := strconv.Atoi(date[:4])
+		return y
+	}
+	return 0
+}
+
+// markActive protects an artwork folder from cleanup while it is being written.
+func (s *Service) markActive(key string, on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if on {
+		s.active[key] = true
+	} else {
+		delete(s.active, key)
+	}
+}
+
+// ensureMovie fetches and stores a movie's details and artwork unless they are fresh.
+func (s *Service) ensureMovie(ctx context.Context, client *Client, id int) (bool, error) {
+	if m, err := s.db.GetMovie(id); err != nil || (m != nil && time.Since(m.UpdatedAt) < refreshDetails) {
+		return false, err
+	}
+	s.markActive(fmt.Sprintf("movie:%d", id), true)
+	defer s.markActive(fmt.Sprintf("movie:%d", id), false)
+
+	d, err := client.Movie(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	dir := fmt.Sprintf("movie/%d", id)
+	m := &database.Movie{
+		TMDBID: d.ID, Title: d.Title, OriginalTitle: d.OriginalTitle, Year: yearOf(d.ReleaseDate),
+		ReleaseDate: d.ReleaseDate, Overview: d.Overview, Tagline: d.Tagline, Runtime: d.Runtime,
+		Genres: genreList(d.Genres), IMDBID: d.IMDBID,
+		Poster:    s.download(ctx, client, "w500", d.PosterPath, dir+"/poster"),
+		Backdrop:  s.download(ctx, client, "w1280", d.BackdropPath, dir+"/backdrop"),
+		Logo:      s.download(ctx, client, "w500", pickLogo(d.Images.Logos, client.language), dir+"/logo"),
+		UpdatedAt: time.Now(),
+	}
+
+	var credits []database.Credit
+	for i, c := range d.Credits.Cast {
+		if i >= castPerTitle {
+			break
+		}
+		credits = append(credits, database.Credit{Person: s.person(ctx, client, c, i < headshotsPerCredits),
+			Role: "cast", Character: c.Character, Order: c.Order})
+	}
+	credits = append(credits, crewCredits(d.Credits.Crew)...)
+	return true, s.db.SaveMovie(m, credits)
+}
+
+// ensureShow fetches and stores a show's details and artwork unless they are fresh.
+func (s *Service) ensureShow(ctx context.Context, client *Client, id int) (bool, error) {
+	if sh, err := s.db.GetShow(id); err != nil || (sh != nil && time.Since(sh.UpdatedAt) < refreshDetails) {
+		return false, err
+	}
+	s.markActive(fmt.Sprintf("tv:%d", id), true)
+	defer s.markActive(fmt.Sprintf("tv:%d", id), false)
+
+	d, err := client.TV(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	dir := fmt.Sprintf("tv/%d", id)
+	runtime := 0
+	if len(d.EpisodeRunTime) > 0 {
+		runtime = d.EpisodeRunTime[0]
+	}
+	sh := &database.Show{
+		TMDBID: d.ID, Name: d.Name, OriginalName: d.OriginalName, Year: yearOf(d.FirstAirDate),
+		FirstAirDate: d.FirstAirDate, Overview: d.Overview, Tagline: d.Tagline, Genres: genreList(d.Genres),
+		IMDBID: d.ExternalIDs.IMDBID, Runtime: runtime,
+		Poster:    s.download(ctx, client, "w500", d.PosterPath, dir+"/poster"),
+		Backdrop:  s.download(ctx, client, "w1280", d.BackdropPath, dir+"/backdrop"),
+		Logo:      s.download(ctx, client, "w500", pickLogo(d.Images.Logos, client.language), dir+"/logo"),
+		UpdatedAt: time.Now(),
+	}
+
+	var credits []database.Credit
+	for i, c := range d.AggregateCredits.Cast {
+		if i >= castPerTitle {
+			break
+		}
+		character := ""
+		if len(c.Roles) > 0 {
+			character = c.Roles[0].Character
+		}
+		p := Person{ID: c.ID, Name: c.Name, ProfilePath: c.ProfilePath}
+		credits = append(credits, database.Credit{Person: s.person(ctx, client, p, i < headshotsPerCredits),
+			Role: "cast", Character: character, Order: c.Order})
+	}
+	for i, c := range d.CreatedBy {
+		credits = append(credits, database.Credit{Person: s.person(ctx, client, c, false), Role: "creator", Order: i})
+	}
+	return true, s.db.SaveShow(sh, credits)
+}
+
+func (s *Service) runSeason(ctx context.Context, client *Client, showID, number int, notifyPath string) error {
+	if existing, err := s.db.GetSeason(showID, number); err != nil {
+		return err
+	} else if existing != nil {
+		fresh := existing.Status == "fetched" && time.Since(existing.FetchedAt) < refreshDetails
+		if fresh || (existing.Status != "fetched" && !due(existing.Status, existing.FetchedAt)) {
+			return nil
+		}
+	}
+	s.markActive(fmt.Sprintf("tv:%d", showID), true)
+	defer s.markActive(fmt.Sprintf("tv:%d", showID), false)
+
+	d, err := client.Season(ctx, showID, number)
+	if errors.Is(err, ErrNotFound) {
+		return s.db.SaveSeasonStatus(showID, number, "not_found", time.Now())
+	}
+	if err != nil {
+		s.db.SaveSeasonStatus(showID, number, "error", time.Now())
+		return err
+	}
+
+	dir := fmt.Sprintf("tv/%d", showID)
+	season := &database.Season{ShowID: showID, SeasonNumber: number, Name: d.Name, Overview: d.Overview,
+		Poster:    s.download(ctx, client, "w500", d.PosterPath, fmt.Sprintf("%s/season%02d", dir, number)),
+		Status:    "fetched",
+		FetchedAt: time.Now(),
+	}
+	var episodes []database.Episode
+	credits := map[int][]database.Credit{}
+	for _, e := range d.Episodes {
+		episodes = append(episodes, database.Episode{
+			ShowID: showID, SeasonNumber: number, EpisodeNumber: e.EpisodeNumber, TMDBID: e.ID,
+			Name: e.Name, Overview: e.Overview, AirDate: e.AirDate, Runtime: e.Runtime,
+			Still:     s.download(ctx, client, "w300", e.StillPath, fmt.Sprintf("%s/s%02de%02d", dir, number, e.EpisodeNumber)),
+			UpdatedAt: time.Now(),
+		})
+		c := crewCredits(e.Crew)
+		for i, g := range e.GuestStars {
+			if i >= guestsPerEpisode {
+				break
+			}
+			c = append(c, database.Credit{Person: s.person(ctx, client, g, false), Role: "guest", Character: g.Character, Order: g.Order})
+		}
+		credits[e.EpisodeNumber] = c
+	}
+	if err := s.db.SaveSeason(season, episodes, credits); err != nil {
+		return err
+	}
+	if s.notify != nil && notifyPath != "" {
+		s.notify(notifyPath)
+	}
+	return nil
+}
+
+// crewCredits keeps directors and writers, once per person and role.
+func crewCredits(crew []Person) []database.Credit {
+	var credits []database.Credit
+	seen := map[string]bool{}
+	for _, c := range crew {
+		role := ""
+		switch c.Job {
+		case "Director":
+			role = "director"
+		case "Screenplay", "Writer", "Teleplay", "Story", "Novel", "Author":
+			role = "writer"
+		}
+		key := role + ":" + strconv.Itoa(c.ID)
+		if role == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		credits = append(credits, database.Credit{Person: database.Person{TMDBID: c.ID, Name: c.Name}, Role: role, Order: len(credits)})
+	}
+	return credits
+}
+
+// person builds a credit's person, downloading their headshot when wanted and not yet stored.
+func (s *Service) person(ctx context.Context, client *Client, p Person, headshot bool) database.Person {
+	out := database.Person{TMDBID: p.ID, Name: p.Name}
+	if !headshot || p.ProfilePath == "" {
+		return out
+	}
+	if existing, err := s.db.PersonProfile(p.ID); err == nil && existing != "" {
+		out.Profile = existing
+		return out
+	}
+	out.Profile = s.download(ctx, client, "w185", p.ProfilePath, fmt.Sprintf("person/%d", p.ID))
+	return out
+}
+
+// download saves a TMDB image under the artwork directory and returns its relative path, or ""
+// if there is no image or it couldn't be fetched (metadata is still saved without it).
+func (s *Service) download(ctx context.Context, client *Client, size, imagePath, relBase string) string {
+	if imagePath == "" {
+		return ""
+	}
+	rel := relBase + strings.ToLower(filepath.Ext(imagePath))
+	if err := client.DownloadImage(ctx, size, imagePath, filepath.Join(artworkDir(), filepath.FromSlash(rel))); err != nil {
+		log.Printf("[METADATA] Failed to download %s: %v", imagePath, err)
+		return ""
+	}
+	return rel
+}
+
+// pickLogo chooses the best-rated logo in the configured language, else a language-neutral one.
+func pickLogo(logos []Image, language string) string {
+	lang := strings.SplitN(language, "-", 2)[0]
+	best, bestScore := "", -1.0
+	for _, l := range logos {
+		score := l.VoteAverage
+		switch {
+		case l.Language != nil && *l.Language == lang:
+			score += 100
+		case l.Language == nil:
+			score += 50
+		default:
+			continue
+		}
+		if score > bestScore {
+			best, bestScore = l.FilePath, score
+		}
+	}
+	return best
+}
+
+func genreList(genres []Genre) string {
+	names := make([]string, 0, len(genres))
+	for _, g := range genres {
+		names = append(names, g.Name)
+	}
+	return strings.Join(names, ", ")
+}
+
+// SyncAll walks every typed library, schedules lookups for titles not yet matched, and removes
+// metadata and artwork that no file uses any more. Only one sync runs at a time.
+func (s *Service) SyncAll(ctx context.Context) {
+	if s.tmdb() == nil || !s.syncing.CompareAndSwap(false, true) {
+		return
+	}
+	defer s.syncing.Store(false)
+
+	start := time.Now()
+	complete := true
+	for _, lib := range config.GlobalConfig.Media.Paths {
+		if lib.Type == "" {
+			continue
+		}
+		if err := s.syncLibrary(ctx, lib); err != nil {
+			complete = false
+			log.Printf("[METADATA] Sync of %q failed: %v", lib.Name, err)
+		}
+	}
+	// Only prune artwork after every library was walked, or titles in an unreadable library
+	// would lose theirs.
+	if complete {
+		s.cleanupArtwork()
+	}
+	log.Printf("[METADATA] Library sync finished in %s", time.Since(start).Round(time.Second))
+}
+
+func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
+	root, err := filepath.Abs(lib.Path)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(root); err != nil {
+		return err
+	}
+
+	filesByFolder := map[string][]string{}
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // unreadable entries are skipped, not fatal
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if path != root && skipEntry(d) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.IsDir() && isVideo(d.Name()) {
+			filesByFolder[filepath.Dir(path)] = append(filesByFolder[filepath.Dir(path)], path)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	keepKeys, keepFolders := map[string]bool{}, map[string]bool{}
+	refs := map[string]Ref{}
+	seasons := map[string]map[int]bool{}
+	notifyPaths := map[string]string{}
+
+	for folder, files := range filesByFolder {
+		folderKey := ""
+		if lib.Type == config.LibraryTypeMovie && folder != root {
+			folderKey = movieFolderKey(folder, files)
+			if folderKey != "" {
+				keepFolders[folder] = true
+				if err := s.db.SetFolderKey(lib.ID, folder, lib.Type, folderKey); err != nil {
+					return err
+				}
+			}
+		}
+		for _, f := range files {
+			ref, ok := ResolveFile(lib, f, folderKey)
+			if !ok {
+				continue
+			}
+			keepKeys[ref.Key] = true
+			if _, seen := refs[ref.Key]; !seen {
+				refs[ref.Key] = ref
+				notifyPaths[ref.Key] = f
+			}
+			if ref.IsEpisode {
+				if seasons[ref.Key] == nil {
+					seasons[ref.Key] = map[int]bool{}
+				}
+				seasons[ref.Key][ref.Season] = true
+			}
+		}
+	}
+
+	if err := s.db.PruneLibraryMetadata(lib.Type, lib.ID, keepKeys, keepFolders); err != nil {
+		return err
+	}
+
+	queued := 0
+	for key, ref := range refs {
+		l := &database.Lookup{Kind: ref.Kind, LibraryID: lib.ID, QueryKey: key, QueryTitle: ref.Title,
+			QueryYear: ref.Year, QueryCountry: ref.Country}
+		var seasonList []int
+		for n := range seasons[key] {
+			seasonList = append(seasonList, n)
+		}
+		if !s.needsWork(l, seasonList) {
+			continue
+		}
+		s.enqueue(job{lookup: l, seasons: seasonList, notifyPath: notifyPaths[key]})
+		queued++
+	}
+	log.Printf("[METADATA] %s: %d titles on disk, %d queued for lookup", lib.Name, len(refs), queued)
+	return nil
+}
+
+// needsWork reports whether a title (or one of its seasons) is missing or due for a retry, so a
+// sync doesn't queue thousands of no-op jobs.
+func (s *Service) needsWork(l *database.Lookup, seasons []int) bool {
+	existing, err := s.db.GetLookup(l.Kind, l.LibraryID, l.QueryKey)
+	if err != nil || existing == nil {
+		return true
+	}
+	if existing.Status != "matched" {
+		return due(existing.Status, existing.AttemptedAt)
+	}
+	if l.Kind == config.LibraryTypeMovie {
+		m, err := s.db.GetMovie(existing.TMDBID)
+		return err != nil || m == nil || time.Since(m.UpdatedAt) > refreshDetails
+	}
+	if sh, err := s.db.GetShow(existing.TMDBID); err != nil || sh == nil || time.Since(sh.UpdatedAt) > refreshDetails {
+		return true
+	}
+	for _, n := range seasons {
+		season, err := s.db.GetSeason(existing.TMDBID, n)
+		if err != nil || season == nil {
+			return true
+		}
+		if season.Status == "fetched" && time.Since(season.FetchedAt) > refreshDetails {
+			return true
+		}
+		if season.Status != "fetched" && due(season.Status, season.FetchedAt) {
+			return true
+		}
+	}
+	return false
+}
+
+// movieFolderKey decides whether a folder stands for one movie: its name has a year, or all its
+// videos are the same title (or there is only one). Collection folders return "".
+func movieFolderKey(folder string, files []string) string {
+	title, year := ParseTitleYear(filepath.Base(folder))
+	if title == "" {
+		return ""
+	}
+	if year == 0 && len(files) > 1 {
+		first := ""
+		for _, f := range files {
+			t, _ := ParseTitleYear(filepath.Base(f))
+			if n := NormalizeTitle(t); first == "" {
+				first = n
+			} else if n != first {
+				return ""
+			}
+		}
+	}
+	return LookupKey(title, year)
+}
+
+// cleanupArtwork removes artwork folders for movies and shows no file is matched to any more.
+func (s *Service) cleanupArtwork() {
+	for _, kind := range []string{config.LibraryTypeMovie, config.LibraryTypeTV} {
+		ids, err := s.db.MatchedTMDBIDs(kind)
+		if err != nil {
+			log.Printf("[METADATA] Artwork cleanup skipped: %v", err)
+			return
+		}
+		dir := filepath.Join(artworkDir(), kind)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		removed := 0
+		for _, e := range entries {
+			id, err := strconv.Atoi(e.Name())
+			if err != nil || !e.IsDir() || ids[id] {
+				continue
+			}
+			s.mu.Lock()
+			busy := s.active[fmt.Sprintf("%s:%d", kind, id)]
+			s.mu.Unlock()
+			if busy {
+				continue
+			}
+			if err := os.RemoveAll(filepath.Join(dir, e.Name())); err == nil {
+				removed++
+			}
+		}
+		if removed > 0 {
+			log.Printf("[METADATA] Removed artwork for %d unused %s titles", removed, kind)
+		}
+	}
+}

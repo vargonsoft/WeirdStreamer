@@ -88,6 +88,15 @@
                         <label>Chunk Size (bytes): <input type="number" id="chunk-size" class="settings-input" style="width: 150px;"></label>
                     </div>
 
+                    <div class="settings-group">
+                        <h3>Metadata</h3>
+                        <p style="font-size: 13px; color: #666; margin-bottom: 10px;">Used for libraries with a Movies or TV Shows type.</p>
+                        <label>TMDB API Read Access Token:<br>
+                            <input type="password" id="tmdb-token" class="settings-input" style="width: calc(100% - 20px);" autocomplete="off" placeholder="From themoviedb.org → Settings → API">
+                        </label><br><br>
+                        <label>Language: <input type="text" id="metadata-language" class="settings-input" style="width: 100px;" placeholder="en-US"></label>
+                    </div>
+
                     <button id="save-settings-btn" class="btn" style="margin-top: 20px;">💾 Save Settings</button>
                     <p id="settings-message" style="margin-top: 10px; color: #667eea; font-weight: bold;"></p>
                 </div>
@@ -157,6 +166,11 @@
             </div>
         </div>
     </div>
+
+    <footer style="text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.85); padding: 16px;">
+        Movie and TV information and images from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener" style="color: inherit;">TMDB</a>.
+        This product uses the TMDB API but is not endorsed or certified by TMDB.
+    </footer>
 
     <script src="js/api.js"></script>
     <script src="js/app.js"></script>

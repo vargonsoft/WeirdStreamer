@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/handlers"
+	"github.com/weirdstreamer/server/internal/metadata"
 )
 
 // @title Media Streaming Server API
@@ -51,6 +53,10 @@ func main() {
 	if config.GlobalConfig.Media.TrickplayPath != "" {
 		os.MkdirAll(config.GlobalConfig.Media.TrickplayPath, 0755)
 	}
+	if config.GlobalConfig.Media.ArtworkPath == "" {
+		config.GlobalConfig.Media.ArtworkPath = "./artwork"
+	}
+	os.MkdirAll(config.GlobalConfig.Media.ArtworkPath, 0755)
 
 	// Initialize database
 	db, err := database.New(config.GlobalConfig.Database.UserPath, config.GlobalConfig.Database.MediaPath)
@@ -67,6 +73,21 @@ func main() {
 	mediaHandler := handlers.NewMediaHandler(db, authService)
 	configHandler := handlers.NewConfigHandler(db)
 	userHandler := handlers.NewUserHandler(db)
+
+	// TMDB metadata for "movie" and "tv" libraries, looked up in the background
+	metadataService := metadata.NewService(db, mediaHandler.NotifyMetadataReady)
+	mediaHandler.SetMetadata(metadataService)
+	metadataService.Start(context.Background())
+	if config.GlobalConfig.Metadata.TMDBAccessToken == "" {
+		for _, lib := range config.GlobalConfig.Media.Paths {
+			if lib.Type != "" {
+				log.Printf("Warning: library %q has type %q but metadata.tmdbAccessToken is not set; lookups are disabled", lib.Name, lib.Type)
+			}
+		}
+	}
+	go metadataService.SyncAll(context.Background())
+	// A token or library change saved through Settings starts a sync without a restart
+	configHandler.OnUpdate(func() { go metadataService.SyncAll(context.Background()) })
 
 	// Setup router
 	r := mux.NewRouter()
@@ -87,6 +108,7 @@ func main() {
 	api.HandleFunc("/media/browse", mediaHandler.BrowseDirectory).Methods("GET")
 	api.HandleFunc("/media/stream", mediaHandler.StreamMedia).Methods("GET")
 	api.HandleFunc("/media/metadata", mediaHandler.GetMediaMetadata).Methods("GET")
+	api.HandleFunc("/media/details", mediaHandler.GetMediaDetails).Methods("GET")
 	api.HandleFunc("/media/scan", mediaHandler.ScanMedia).Methods("POST")
 	api.HandleFunc("/media/regenerate-thumbnails", mediaHandler.RegenerateThumbnails).Methods("POST")
 	api.HandleFunc("/media/thumbnail-updates", mediaHandler.ThumbnailUpdates).Methods("GET")
@@ -113,6 +135,12 @@ func main() {
 	trickplay := r.PathPrefix("/trickplay").Subrouter()
 	trickplay.Use(authHandler.AuthMiddleware)
 	trickplay.HandleFunc("/{hash}/{frame}", mediaHandler.ServeTrickplayFrame).Methods("GET", "HEAD")
+
+	// Downloaded TMDB artwork: /artwork/{movie|tv}/{id}/{file} and /artwork/person/{file}
+	artwork := r.PathPrefix("/artwork").Subrouter()
+	artwork.Use(authHandler.AuthMiddleware)
+	artwork.HandleFunc("/{kind:movie|tv}/{id:[0-9]+}/{file}", mediaHandler.ServeArtwork).Methods("GET", "HEAD")
+	artwork.HandleFunc("/{kind:person}/{file}", mediaHandler.ServeArtwork).Methods("GET", "HEAD")
 
 	webDir := "./web"
 	if _, err := os.Stat(webDir); err == nil {

@@ -88,9 +88,11 @@ class ThumbnailUpdateListener(
                     data: String
                 ) {
                     Log.d("ThumbnailSSE", "Event received: $data")
+                    // Thumbnail updates are unnamed events; named ones (e.g. "metadata") have other payloads.
+                    if (type != null && type != "message") return
                     try {
                         val update = gson.fromJson(data, ThumbnailUpdate::class.java)
-                        trySend(update)
+                        if (update?.path != null && update.thumbnailURL != null) trySend(update)
                     } catch (e: Exception) {
                         Log.e("ThumbnailSSE", "Failed to parse event", e)
                     }

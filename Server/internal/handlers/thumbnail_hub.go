@@ -2,7 +2,14 @@ package handlers
 
 import "sync"
 
-// thumbnailHub fans thumbnail-ready events out to SSE clients, filtered by library access.
+// sseEvent is one Server-Sent Event; an empty name is the default "message" event.
+type sseEvent struct {
+	name string
+	data string
+}
+
+// thumbnailHub fans thumbnail- and metadata-ready events out to SSE clients, filtered by
+// library access.
 type thumbnailHub struct {
 	mu      sync.RWMutex
 	nextID  uint64
@@ -11,7 +18,7 @@ type thumbnailHub struct {
 
 type hubClient struct {
 	group  string
-	events chan string
+	events chan sseEvent
 }
 
 func newThumbnailHub() *thumbnailHub {
@@ -20,11 +27,11 @@ func newThumbnailHub() *thumbnailHub {
 
 // register adds a client for a user in group. IDs are never reused, so one client
 // disconnecting can't remove another.
-func (hub *thumbnailHub) register(group string) (uint64, <-chan string) {
+func (hub *thumbnailHub) register(group string) (uint64, <-chan sseEvent) {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
 	hub.nextID++
-	client := &hubClient{group: group, events: make(chan string, 32)}
+	client := &hubClient{group: group, events: make(chan sseEvent, 32)}
 	hub.clients[hub.nextID] = client
 	return hub.nextID, client.events
 }
@@ -38,9 +45,9 @@ func (hub *thumbnailHub) unregister(id uint64) {
 	}
 }
 
-// broadcast sends msg about filePath to every client whose group can access its library.
+// broadcast sends ev about filePath to every client whose group can access its library.
 // Slow clients miss events rather than blocking the sender.
-func (hub *thumbnailHub) broadcast(filePath, msg string) {
+func (hub *thumbnailHub) broadcast(filePath string, ev sseEvent) {
 	lib, ok := libraryForPath(filePath)
 	if !ok {
 		return
@@ -52,7 +59,7 @@ func (hub *thumbnailHub) broadcast(filePath, msg string) {
 			continue
 		}
 		select {
-		case client.events <- msg:
+		case client.events <- ev:
 		default:
 		}
 	}

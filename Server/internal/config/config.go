@@ -15,6 +15,13 @@ type Config struct {
 	Media     MediaConfig     `json:"media"`
 	Auth      AuthConfig      `json:"auth"`
 	Streaming StreamingConfig `json:"streaming"`
+	Metadata  MetadataConfig  `json:"metadata"`
+}
+
+// MetadataConfig configures lookups for "movie" and "tv" libraries.
+type MetadataConfig struct {
+	TMDBAccessToken string `json:"tmdbAccessToken"` // TMDB API read access token (Bearer)
+	Language        string `json:"language"`        // e.g. "en-US"; empty means en-US
 }
 
 type ServerConfig struct {
@@ -57,6 +64,7 @@ type MediaConfig struct {
 	Paths                 []MediaPath `json:"paths"`
 	ThumbnailPath         string      `json:"thumbnailPath"`
 	TrickplayPath         string      `json:"trickplayPath,omitempty"`
+	ArtworkPath           string      `json:"artworkPath,omitempty"` // Downloaded TMDB posters, backdrops, etc.
 	SupportedVideoFormats []string    `json:"supportedVideoFormats"`
 	SupportedImageFormats []string    `json:"supportedImageFormats"`
 	SupportedDocFormats   []string    `json:"supportedDocFormats"`

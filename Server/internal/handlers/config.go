@@ -10,7 +10,13 @@ import (
 )
 
 type ConfigHandler struct {
-	db *database.DB
+	db       *database.DB
+	onUpdate func()
+}
+
+// OnUpdate registers a callback run after the configuration is saved and reloaded.
+func (h *ConfigHandler) OnUpdate(fn func()) {
+	h.onUpdate = fn
 }
 
 func NewConfigHandler(db *database.DB) *ConfigHandler {
@@ -95,6 +101,10 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if err := config.Load(config.Path()); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to reload configuration")
 		return
+	}
+
+	if h.onUpdate != nil {
+		h.onUpdate()
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{

@@ -17,12 +17,15 @@ type DB struct {
 }
 
 func New(userDBPath, mediaDBPath string) (*DB, error) {
-	userConn, err := sql.Open("sqlite3", userDBPath)
+	// WAL plus a busy timeout lets background metadata/thumbnail writers run alongside reads
+	// instead of failing with "database is locked".
+	const dsnOptions = "?_journal_mode=WAL&_busy_timeout=5000"
+	userConn, err := sql.Open("sqlite3", userDBPath+dsnOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	mediaConn, err := sql.Open("sqlite3", mediaDBPath)
+	mediaConn, err := sql.Open("sqlite3", mediaDBPath+dsnOptions)
 	if err != nil {
 		userConn.Close()
 		return nil, err
@@ -89,6 +92,9 @@ func (db *DB) initSchema() error {
 		return err
 	}
 	if err := db.backfillPathHashes(); err != nil {
+		return err
+	}
+	if err := db.initMetadataSchema(); err != nil {
 		return err
 	}
 

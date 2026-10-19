@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/media"
+	"github.com/weirdstreamer/server/internal/metadata"
 	"github.com/weirdstreamer/server/internal/models"
 )
 
@@ -30,6 +32,21 @@ type MediaHandler struct {
 	thumbnailGenerator *media.ThumbnailGenerator
 	thumbnailHub       *thumbnailHub
 	authService        *auth.Service
+	meta               *metadata.Service // nil until SetMetadata
+}
+
+// SetMetadata enables TMDB metadata for movie and tv libraries.
+func (h *MediaHandler) SetMetadata(meta *metadata.Service) {
+	h.meta = meta
+}
+
+// NotifyMetadataReady tells SSE clients that may access path that its metadata changed. Sent as
+// a named "metadata" event so clients that only handle thumbnail messages ignore it.
+func (h *MediaHandler) NotifyMetadataReady(path string) {
+	data, err := json.Marshal(map[string]string{"path": path})
+	if err == nil {
+		h.thumbnailHub.broadcast(path, sseEvent{name: "metadata", data: string(data)})
+	}
 }
 
 func NewMediaHandler(db *database.DB, authService *auth.Service) *MediaHandler {
@@ -512,6 +529,12 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if h.meta != nil {
+		if absTarget, err := filepath.Abs(targetPath); err == nil {
+			h.meta.Annotate(targetLib, absTarget, dirs, items)
+		}
+	}
+
 	result := models.Directory{
 		Path:  relativePath,
 		Name:  filepath.Base(relativePath),
@@ -540,6 +563,9 @@ func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go h.scanner.ScanMediaPaths()
+	if h.meta != nil {
+		go h.meta.SyncAll(context.Background())
+	}
 	respondJSON(w, http.StatusOK, map[string]string{"status": "scan started"})
 }
 
@@ -825,8 +851,11 @@ func (h *MediaHandler) ThumbnailUpdates(w http.ResponseWriter, r *http.Request) 
 
 	for {
 		select {
-		case msg := <-events:
-			fmt.Fprintf(w, "data: %s\n\n", msg)
+		case ev := <-events:
+			if ev.name != "" {
+				fmt.Fprintf(w, "event: %s\n", ev.name)
+			}
+			fmt.Fprintf(w, "data: %s\n\n", ev.data)
 			flusher.Flush()
 		case <-ticker.C:
 			fmt.Fprintf(w, ": keepalive\n\n")
@@ -849,8 +878,9 @@ func (h *MediaHandler) notifyThumbnailReady(filePath, thumbnailURL string) {
 	if err != nil {
 		return
 	}
-	h.thumbnailHub.broadcast(filePath, string(jsonData))
+	h.thumbnailHub.broadcast(filePath, sseEvent{data: string(jsonData)})
 }
+
 // isMacFile checks if a filename is a Mac-specific file that should be ignored
 func (h *MediaHandler) isMacFile(filename string) bool {
 	return filename == ".DS_Store" || strings.HasPrefix(filename, "._")
