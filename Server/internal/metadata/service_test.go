@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -297,6 +298,55 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 	if m, _ := db.GetMovie(4242); m != nil {
 		t.Error("orphaned movie record was not removed")
 	}
+
+	// Episode mapping: a whole file season can be sent to another TMDB season (with an episode
+	// shift), or one file pinned to an exact episode. Only TMDB's S01E02 exists in the fake.
+	s5 := filepath.Join(tv, "1923", "Season 5")
+	os.MkdirAll(s5, 0755)
+	seasonFile := filepath.Join(s5, "1923 - S05E04.mkv")
+	pinnedFile := filepath.Join(season, "1923 - S01E07.mkv")
+	os.WriteFile(seasonFile, nil, 0644)
+	os.WriteFile(pinnedFile, nil, 0644)
+	episodeTitle := func(path string) string {
+		items := []models.MediaItem{{Path: path, Type: "video"}}
+		s.Annotate(tvLib, filepath.Dir(path), nil, items)
+		if items[0].Metadata == nil {
+			return ""
+		}
+		return fmt.Sprintf("S%02dE%02d %s", *items[0].Metadata.Season, *items[0].Metadata.Episode, items[0].Metadata.Title)
+	}
+	if got := episodeTitle(seasonFile); got != "" {
+		t.Fatalf("unmapped S05E04 had metadata: %q", got)
+	}
+	if err := s.SetEpisodeMapping(tvLib, seasonFile, 1, 2, true); err != nil { // season 5 -> 1, episodes -2
+		t.Fatal(err)
+	}
+	if got := episodeTitle(seasonFile); got != "S01E02 Nature's Empty Throne" {
+		t.Errorf("season-mapped file = %q", got)
+	}
+	if info := s.EpisodeInfo(tvLib, seasonFile); info == nil || info.Source != MappedBySeason || info.FileSeason != 5 || info.Title != "Nature's Empty Throne" {
+		t.Errorf("episode info = %+v", info)
+	}
+	if err := s.SetEpisodeMapping(tvLib, pinnedFile, 1, 2, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := episodeTitle(pinnedFile); got != "S01E02 Nature's Empty Throne" {
+		t.Errorf("pinned file = %q", got)
+	}
+	// The original S01E02 file is unaffected by the pin on another file.
+	if got := episodeTitle(episodePath); got != "S01E02 Nature's Empty Throne" {
+		t.Errorf("unrelated episode = %q", got)
+	}
+	s.ClearEpisodeMapping(tvLib, pinnedFile, false)
+	s.ClearEpisodeMapping(tvLib, seasonFile, true)
+	if got := episodeTitle(pinnedFile) + episodeTitle(seasonFile); got != "" {
+		t.Errorf("cleared mappings still apply: %q", got)
+	}
+	if _, err := s.MatchTarget(tvLib, seasonFile, false); err != nil {
+		t.Errorf("episode file not fixable: %v", err)
+	}
+	os.RemoveAll(s5)
+	os.Remove(pinnedFile)
 
 	// A title removed from disk loses its lookup and artwork on the next sync.
 	os.RemoveAll(knight)

@@ -539,21 +539,27 @@ header h1 {
     object-fit: cover;
 }
 
-/* "Fix match" button: top-right of the thumbnail, shown on hover (admins only) */
+/* "Fix match" button: a light pill at the top-right of the thumbnail, readable on dark posters.
+   Shown on hover (always on touch screens), admins only. */
 .fix-match-btn {
     position: absolute;
     top: 8px;
     right: 8px;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.4);
-    background: rgba(0, 0, 0, 0.65);
-    color: white;
-    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 11px 6px 9px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(255, 255, 255, 0.95);
+    color: #1d1d27;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.2s, background 0.2s;
+    transition: opacity 0.2s, background 0.2s, color 0.2s;
     z-index: 10;
 }
 
@@ -562,8 +568,17 @@ header h1 {
     opacity: 1;
 }
 
-.fix-match-btn:hover {
+@media (hover: none) {
+    .fix-match-btn {
+        opacity: 1;
+    }
+}
+
+.fix-match-btn:hover,
+.fix-match-btn:focus-visible {
     background: var(--primary-color);
+    color: white;
+    outline: 2px solid white;
 }
 
 /* Fix match dialog */
@@ -712,4 +727,92 @@ header h1 {
 
 .btn-secondary {
     background: #888;
+}
+
+/* Episode section of the fix match dialog */
+.match-episode:empty {
+    display: none;
+}
+
+.match-episode {
+    border: 1px solid #e3e3e8;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.match-episode h3 {
+    font-size: 15px;
+    margin-bottom: 4px;
+}
+
+.match-episode-summary {
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.match-episode-controls,
+.match-episode-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.match-episode-actions {
+    margin-top: 8px;
+}
+
+.match-episode-actions:empty {
+    display: none;
+}
+
+.match-episode-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-top: 8px;
+    border-top: 1px solid #eee;
+}
+
+.match-episode-row {
+    display: grid;
+    grid-template-columns: 70px 1fr auto;
+    gap: 8px;
+    text-align: left;
+    background: none;
+    border: none;
+    border-bottom: 1px solid #f0f0f0;
+    padding: 6px 4px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    color: inherit;
+}
+
+.match-episode-row:hover,
+.match-episode-row:focus-visible {
+    background: #f7f7fd;
+}
+
+.match-episode-row .code {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.match-episode-row .date {
+    color: #888;
+}
+
+.match-episode-row.current {
+    box-shadow: inset 4px 0 0 #aaa;
+}
+
+.match-episode-row.picked {
+    background: var(--primary-color);
+    color: white;
+}
+
+.match-episode-row.picked .date {
+    color: rgba(255, 255, 255, 0.85);
 }

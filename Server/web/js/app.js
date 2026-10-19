@@ -1081,7 +1081,7 @@ init();
 // ---------------------------------------------------------------------------------------------
 // Manual metadata matching
 
-const matchState = { target: null, name: '', info: null };
+const matchState = { target: null, name: '', info: null, episodePick: null, seasonsFor: null };
 
 function canFixMatches() {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -1116,8 +1116,11 @@ function createFixMatchButton(target, name) {
     const btn = document.createElement('button');
     btn.className = 'fix-match-btn';
     btn.type = 'button';
-    btn.textContent = '✎';
     btn.title = 'Fix match';
+    btn.setAttribute('aria-label', `Fix match for ${name}`);
+    btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" ' +
+        'stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Fix</span>';
     btn.onclick = (e) => {
         e.stopPropagation();
         openMatchDialog(target, name);
@@ -1159,6 +1162,9 @@ async function openMatchDialog(target, name) {
     matchState.target = target;
     matchState.name = name;
     matchState.info = null;
+    matchState.episodePick = null;
+    matchState.seasonsFor = null;
+    document.getElementById('match-episode').innerHTML = '';
     document.getElementById('match-target').textContent = name;
     document.getElementById('match-current').innerHTML = '';
     document.getElementById('match-results').innerHTML = '';
@@ -1221,6 +1227,174 @@ function renderMatchCurrent() {
     hint.textContent = 'Choosing a result applies to every file in this library with the same title.';
     box.appendChild(hint);
     markCurrentHit();
+    renderEpisodeSection();
+}
+
+const EPISODE_SOURCES = {
+    file: 'from the file name',
+    season: 'from a season mapping',
+    manual: 'set for this file',
+};
+
+function episodeCode(season, episode) {
+    return `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+}
+
+// The "Episode" section: which TMDB episode a TV file shows as, with a picker to change it for
+// this file or its whole season.
+async function renderEpisodeSection() {
+    const box = document.getElementById('match-episode');
+    const info = matchState.info;
+    const ep = info && info.episode;
+    if (!ep) {
+        box.innerHTML = '';
+        return;
+    }
+    const show = info.current && info.current.kind === 'show' ? info.current : null;
+    box.innerHTML = '';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Episode';
+    box.appendChild(heading);
+
+    const summary = document.createElement('p');
+    summary.className = 'match-episode-summary';
+    const shownAs = episodeCode(ep.season, ep.episode) + (ep.title ? ` “${ep.title}”` : '');
+    summary.textContent = `This file is ${episodeCode(ep.file_season, ep.file_episode)}, shown as ${shownAs} (${EPISODE_SOURCES[ep.source] || ep.source}).`;
+    box.appendChild(summary);
+
+    if (!show) {
+        const note = document.createElement('p');
+        note.className = 'match-hint';
+        note.textContent = 'Match the show first to pick a different episode.';
+        box.appendChild(note);
+        return;
+    }
+
+    const controls = document.createElement('div');
+    controls.className = 'match-episode-controls';
+    const seasonSelect = document.createElement('select');
+    seasonSelect.className = 'settings-input';
+    seasonSelect.setAttribute('aria-label', 'TMDB season');
+    controls.appendChild(seasonSelect);
+    if (ep.source === 'manual') {
+        controls.appendChild(episodeButton('Clear this file’s fix', () => clearEpisodeMapping(false)));
+    }
+    if (ep.source === 'season') {
+        controls.appendChild(episodeButton(`Clear season ${ep.file_season} mapping`, () => clearEpisodeMapping(true)));
+    }
+    box.appendChild(controls);
+
+    const list = document.createElement('div');
+    list.className = 'match-episode-list';
+    box.appendChild(list);
+    const actions = document.createElement('div');
+    actions.className = 'match-episode-actions';
+    box.appendChild(actions);
+
+    let seasons;
+    try {
+        if (!matchState.seasonsFor || matchState.seasonsFor.show !== show.tmdb_id) {
+            matchState.seasonsFor = { show: show.tmdb_id, seasons: await api.matchSeasons(show.tmdb_id) };
+        }
+        seasons = matchState.seasonsFor.seasons;
+    } catch (error) {
+        list.textContent = 'Could not load seasons: ' + error.message;
+        return;
+    }
+    seasons.forEach(se => {
+        const option = document.createElement('option');
+        option.value = se.number;
+        option.textContent = `${se.number === 0 ? 'Specials' : 'Season ' + se.number}${se.name && !/^(Season \d+|Specials)$/.test(se.name) ? ' – ' + se.name : ''} (${se.episode_count})`;
+        seasonSelect.appendChild(option);
+    });
+    seasonSelect.value = String(ep.season);
+    if (seasonSelect.value !== String(ep.season) && seasons.length) seasonSelect.value = String(seasons[0].number);
+    seasonSelect.onchange = () => loadEpisodeList(show.tmdb_id, Number(seasonSelect.value), list, actions);
+    loadEpisodeList(show.tmdb_id, Number(seasonSelect.value), list, actions);
+}
+
+function episodeButton(label, onClick) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-secondary';
+    btn.textContent = label;
+    btn.onclick = onClick;
+    return btn;
+}
+
+async function loadEpisodeList(showId, season, list, actions) {
+    const ep = matchState.info.episode;
+    list.innerHTML = '<p class="match-empty">Loading episodes…</p>';
+    actions.innerHTML = '';
+    let episodes;
+    try {
+        episodes = await api.matchEpisodes(showId, season);
+    } catch (error) {
+        list.textContent = 'Could not load episodes: ' + error.message;
+        return;
+    }
+    list.innerHTML = '';
+    if (!episodes.length) {
+        list.innerHTML = '<p class="match-empty">No episodes in this season.</p>';
+        return;
+    }
+    episodes.forEach(e => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'match-episode-row';
+        if (season === ep.season && e.number === ep.episode) row.classList.add('current');
+        row.innerHTML = '<span class="code"></span><span class="name"></span><span class="date"></span>';
+        row.querySelector('.code').textContent = episodeCode(season, e.number);
+        row.querySelector('.name').textContent = e.name || '';
+        row.querySelector('.date').textContent = e.air_date || '';
+        row.onclick = () => {
+            list.querySelectorAll('.match-episode-row').forEach(r => r.classList.remove('picked'));
+            row.classList.add('picked');
+            matchState.episodePick = { season, episode: e.number };
+            renderEpisodeActions(actions);
+        };
+        list.appendChild(row);
+    });
+    const current = list.querySelector('.current');
+    if (current) current.scrollIntoView({ block: 'nearest' });
+}
+
+// Buttons to apply the picked episode to this file or to every file of its season.
+function renderEpisodeActions(actions) {
+    const ep = matchState.info.episode;
+    const pick = matchState.episodePick;
+    actions.innerHTML = '';
+    const shift = pick.episode - ep.file_episode;
+    const shiftText = shift === 0 ? 'same episode numbers' : `episode numbers ${shift > 0 ? '+' : ''}${shift}`;
+    actions.appendChild(episodeButton(`Use ${episodeCode(pick.season, pick.episode)} for this file`,
+        () => applyEpisodeMapping(false)));
+    const whole = episodeButton(`Use for all of season ${ep.file_season} (→ season ${pick.season}, ${shiftText})`,
+        () => applyEpisodeMapping(true));
+    whole.className = 'btn';
+    actions.appendChild(whole);
+}
+
+async function applyEpisodeMapping(wholeSeason) {
+    const pick = matchState.episodePick;
+    try {
+        matchState.info = await api.setEpisodeMapping(matchState.target.path, pick.season, pick.episode, wholeSeason);
+        setMatchMessage(wholeSeason ? 'Season mapped. Fetching episode details…' : 'Episode set for this file.');
+        matchState.episodePick = null;
+        renderMatchCurrent();
+    } catch (error) {
+        setMatchMessage('Could not save: ' + error.message, true);
+    }
+}
+
+async function clearEpisodeMapping(wholeSeason) {
+    try {
+        matchState.info = await api.clearEpisodeMapping(matchState.target.path, wholeSeason);
+        setMatchMessage('Episode mapping cleared.');
+        renderMatchCurrent();
+    } catch (error) {
+        setMatchMessage('Could not clear: ' + error.message, true);
+    }
 }
 
 // Highlights the result that is the current match (its details may arrive after the search).

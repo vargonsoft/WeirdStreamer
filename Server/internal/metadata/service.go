@@ -672,6 +672,8 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 	}
 
 	keepKeys, keepFolders := map[string]bool{}, map[string]bool{}
+	keepFiles := map[string]bool{}
+	mappings := s.loadEpisodeMappings(lib.ID)
 	refs := map[string]Ref{}
 	fallbacks := map[string]*Ref{}
 	seasons := map[string]map[int]bool{}
@@ -705,7 +707,10 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 				if seasons[ref.Key] == nil {
 					seasons[ref.Key] = map[int]bool{}
 				}
-				seasons[ref.Key][ref.Season] = true
+				keepFiles[f] = true
+				// Fetch the TMDB season the file is shown as (manual fixes included).
+				mappedSeason, _, _ := mappings.apply(ref, f)
+				seasons[ref.Key][mappedSeason] = true
 				if show := ShowFolderOf(lib, f); show != "" && show != f {
 					if showKeyCounts[show] == nil {
 						showKeyCounts[show] = map[string]int{}
@@ -725,6 +730,11 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 
 	if err := s.db.PruneLibraryMetadata(lib.Type, lib.ID, keepKeys, keepFolders); err != nil {
 		return err
+	}
+	if lib.Type == config.LibraryTypeTV {
+		if err := s.db.PruneEpisodeOverrides(lib.ID, keepFiles); err != nil {
+			return err
+		}
 	}
 
 	queued := 0

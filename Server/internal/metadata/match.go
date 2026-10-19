@@ -26,6 +26,7 @@ type MatchInfo struct {
 	Status  string               `json:"status"` // "matched", "not_found", "error" or "pending"
 	Manual  bool                 `json:"manual"`
 	Current *models.ItemMetadata `json:"current,omitempty"`
+	Episode *EpisodeInfo         `json:"episode,omitempty"` // TV episode files: which TMDB episode it shows as
 }
 
 // SearchHit is one TMDB search result offered in the fix-match dialog.

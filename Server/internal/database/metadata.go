@@ -107,6 +107,24 @@ CREATE TABLE IF NOT EXISTS credits (
 	ord INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_credits_owner ON credits(owner);
+
+-- Manual episode fixes. A season map sends every file of one season (for one show lookup) to a
+-- TMDB season, shifting episode numbers by episode_offset; an override pins one file.
+CREATE TABLE IF NOT EXISTS season_maps (
+	library_id TEXT NOT NULL,
+	query_key TEXT NOT NULL,
+	file_season INTEGER NOT NULL,
+	tmdb_season INTEGER NOT NULL,
+	episode_offset INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (library_id, query_key, file_season)
+);
+CREATE TABLE IF NOT EXISTS episode_overrides (
+	library_id TEXT NOT NULL,
+	file_path TEXT NOT NULL,
+	season INTEGER NOT NULL,
+	episode INTEGER NOT NULL,
+	PRIMARY KEY (library_id, file_path)
+);
 `
 
 // Lookup is the result of matching one title query against TMDB.
@@ -517,6 +535,87 @@ func (db *DB) TitleIDs(kind string) ([]int, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// SeasonMap sends a show's file season to a TMDB season.
+type SeasonMap struct {
+	FileSeason    int
+	TMDBSeason    int
+	EpisodeOffset int
+}
+
+// EpisodeMappings returns a library's season maps (by "query key|file season") and per-file
+// episode overrides (by file path, as [season, episode]).
+func (db *DB) EpisodeMappings(libraryID string) (map[string]SeasonMap, map[string][2]int, error) {
+	maps := map[string]SeasonMap{}
+	rows, err := db.mediaConn.Query(`SELECT query_key, file_season, tmdb_season, episode_offset FROM season_maps WHERE library_id = ?`, libraryID)
+	if err != nil {
+		return nil, nil, err
+	}
+	for rows.Next() {
+		var key string
+		var m SeasonMap
+		if err := rows.Scan(&key, &m.FileSeason, &m.TMDBSeason, &m.EpisodeOffset); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		maps[key+"|"+itoa(m.FileSeason)] = m
+	}
+	rows.Close()
+
+	overrides := map[string][2]int{}
+	rows, err = db.mediaConn.Query(`SELECT file_path, season, episode FROM episode_overrides WHERE library_id = ?`, libraryID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var path string
+		var se [2]int
+		if err := rows.Scan(&path, &se[0], &se[1]); err != nil {
+			return nil, nil, err
+		}
+		overrides[path] = se
+	}
+	return maps, overrides, rows.Err()
+}
+
+func (db *DB) SetSeasonMap(libraryID, key string, m SeasonMap) error {
+	_, err := db.mediaConn.Exec(`INSERT OR REPLACE INTO season_maps (library_id, query_key, file_season, tmdb_season, episode_offset)
+		VALUES (?, ?, ?, ?, ?)`, libraryID, key, m.FileSeason, m.TMDBSeason, m.EpisodeOffset)
+	return err
+}
+
+func (db *DB) DeleteSeasonMap(libraryID, key string, fileSeason int) error {
+	_, err := db.mediaConn.Exec(`DELETE FROM season_maps WHERE library_id = ? AND query_key = ? AND file_season = ?`, libraryID, key, fileSeason)
+	return err
+}
+
+func (db *DB) SetEpisodeOverride(libraryID, path string, season, episode int) error {
+	_, err := db.mediaConn.Exec(`INSERT OR REPLACE INTO episode_overrides (library_id, file_path, season, episode) VALUES (?, ?, ?, ?)`,
+		libraryID, path, season, episode)
+	return err
+}
+
+func (db *DB) DeleteEpisodeOverride(libraryID, path string) error {
+	_, err := db.mediaConn.Exec(`DELETE FROM episode_overrides WHERE library_id = ? AND file_path = ?`, libraryID, path)
+	return err
+}
+
+// PruneEpisodeOverrides drops overrides for files that are gone.
+func (db *DB) PruneEpisodeOverrides(libraryID string, keep map[string]bool) error {
+	_, overrides, err := db.EpisodeMappings(libraryID)
+	if err != nil {
+		return err
+	}
+	for path := range overrides {
+		if !keep[path] {
+			if err := db.DeleteEpisodeOverride(libraryID, path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // DeleteSeasons forgets a show's fetched seasons so they're fetched again.

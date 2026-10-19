@@ -22,13 +22,26 @@ func ArtworkURL(rel string, updated time.Time) string {
 
 // describer resolves refs to metadata, caching records for the duration of one request.
 type describer struct {
-	s       *Service
-	shows   map[int]*database.Show
-	lookups map[string]*database.Lookup
+	s        *Service
+	shows    map[int]*database.Show
+	lookups  map[string]*database.Lookup
+	mappings map[string]episodeMappings // by library ID
 }
 
 func (s *Service) newDescriber() *describer {
-	return &describer{s: s, shows: map[int]*database.Show{}, lookups: map[string]*database.Lookup{}}
+	return &describer{s: s, shows: map[int]*database.Show{}, lookups: map[string]*database.Lookup{},
+		mappings: map[string]episodeMappings{}}
+}
+
+// mapped applies manual episode fixes to a TV ref (episode file or season folder).
+func (d *describer) mapped(ref Ref, path string) (season, episode int) {
+	m, ok := d.mappings[ref.LibraryID]
+	if !ok {
+		m = d.s.loadEpisodeMappings(ref.LibraryID)
+		d.mappings[ref.LibraryID] = m
+	}
+	season, episode, _ = m.apply(ref, path)
+	return season, episode
 }
 
 // Annotate attaches metadata to a browse listing of folder (an absolute path in lib), and
@@ -193,7 +206,7 @@ func (d *describer) summary(ref Ref, path string, isDir bool) *models.ItemMetada
 	case isDir && !isSeasonDir(path):
 		return show
 	case isDir:
-		season := ref.Season
+		season, _ := d.mapped(ref, path)
 		show.Kind, show.ShowTitle, show.Season = "season", sh.Name, &season
 		if s, err := d.s.db.GetSeason(sh.TMDBID, season); err == nil && s != nil && s.Status == "fetched" {
 			if s.Name != "" {
@@ -213,12 +226,12 @@ func (d *describer) summary(ref Ref, path string, isDir bool) *models.ItemMetada
 		return nil
 	}
 
-	e, err := d.s.db.GetEpisode(sh.TMDBID, ref.Season, ref.Episode)
+	season, episode := d.mapped(ref, path)
+	e, err := d.s.db.GetEpisode(sh.TMDBID, season, episode)
 	if err != nil || e == nil {
-		d.s.enqueueSeason(sh.TMDBID, ref.Season, path)
+		d.s.enqueueSeason(sh.TMDBID, season, path)
 		return nil
 	}
-	season, episode := ref.Season, ref.Episode
 	return &models.ItemMetadata{Kind: "episode", TMDBID: sh.TMDBID, Title: e.Name, Year: sh.Year,
 		Overview: e.Overview, Runtime: e.Runtime, AirDate: e.AirDate, ShowTitle: sh.Name,
 		Season: &season, Episode: &episode,

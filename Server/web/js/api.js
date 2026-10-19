@@ -217,6 +217,26 @@ class MediaAPI {
         return this.request(`/api/media/match?${this.matchTargetQuery(target)}`, { method: 'DELETE' });
     }
 
+    async matchSeasons(showId) {
+        return this.request(`/api/media/match/seasons?show=${showId}`);
+    }
+
+    async matchEpisodes(showId, season) {
+        return this.request(`/api/media/match/episodes?show=${showId}&season=${season}`);
+    }
+
+    async setEpisodeMapping(path, season, episode, wholeSeason) {
+        return this.request('/api/media/match/episode', {
+            method: 'PUT',
+            body: JSON.stringify({ path: this.encodePath(path), season, episode, whole_season: wholeSeason }),
+        });
+    }
+
+    async clearEpisodeMapping(path, wholeSeason) {
+        const whole = wholeSeason ? '&whole_season=1' : '';
+        return this.request(`/api/media/match/episode?path=${encodeURIComponent(this.encodePath(path))}${whole}`, { method: 'DELETE' });
+    }
+
     async scanMedia() {
         return this.request('/api/media/scan', {
             method: 'POST',

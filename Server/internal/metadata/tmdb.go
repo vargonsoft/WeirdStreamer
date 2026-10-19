@@ -206,6 +206,22 @@ func (c *Client) TV(ctx context.Context, id int) (*TVDetails, error) {
 	return &t, err
 }
 
+// SeasonSummary is a season as listed on a show.
+type SeasonSummary struct {
+	SeasonNumber int    `json:"season_number"`
+	Name         string `json:"name"`
+	EpisodeCount int    `json:"episode_count"`
+}
+
+// TVSeasons lists a show's seasons without fetching its full details.
+func (c *Client) TVSeasons(ctx context.Context, id int) ([]SeasonSummary, error) {
+	var t struct {
+		Seasons []SeasonSummary `json:"seasons"`
+	}
+	err := c.get(ctx, fmt.Sprintf("/tv/%d", id), nil, &t)
+	return t.Seasons, err
+}
+
 func (c *Client) Season(ctx context.Context, showID, season int) (*Season, error) {
 	var s Season
 	err := c.get(ctx, fmt.Sprintf("/tv/%d/season/%d", showID, season), nil, &s)
