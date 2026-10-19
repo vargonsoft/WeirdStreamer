@@ -18,7 +18,8 @@ var (
 	bracketGroup = regexp.MustCompile(`[(\[][^)\]]*[)\]]`)
 
 	episodeSxE  = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])s(\d{1,2})[ ._-]?e(\d{1,3})(?:-?e(\d{1,3}))?`)
-	episodeNxNN = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(\d{1,2})x(\d{2,3})(?:$|[^a-z0-9])`)
+	// An optional part letter may follow the episode: "7x58b".
+	episodeNxNN = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(\d{1,2})x(\d{2,3})[a-d]?(?:$|[^a-z0-9])`)
 	seasonDir   = regexp.MustCompile(`(?i)^(?:season|series|s)[ ._-]*(\d{1,3})$`)
 
 	nonAlnum = regexp.MustCompile(`[^\p{L}\p{N}]+`)

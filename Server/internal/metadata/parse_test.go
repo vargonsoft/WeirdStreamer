@@ -56,6 +56,7 @@ func TestParseEpisode(t *testing.T) {
 	}{
 		{"1923 - S01E02 - Nature's Empty Throne Bluray-1080p.mkv", 1, 2, true},
 		{"The Walking Dead - 4x13 - Alone.mkv", 4, 13, true},
+		{"Big Brother - 7x58b - Eviction Part 2.avi", 7, 58, true},
 		{"Star Trek - Deep Space Nine - S01E01-E02 - Emissary Bluray-720p.mkv", 1, 1, true},
 		{"Show.S10E105.720p.mkv", 10, 105, true},
 		{"Bluey - S00E03 - Special.mp4", 0, 3, true},
