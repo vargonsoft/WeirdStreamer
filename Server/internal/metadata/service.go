@@ -39,23 +39,35 @@ type Service struct {
 	clientID string          // token+language the client was built with
 	pending  map[string]bool // job IDs queued or running
 	active   map[string]bool // "movie:123"/"tv:123" being written, protected from cleanup
-	jobs     chan job
-	syncing  atomic.Bool
+	// Folders a discovery found not to be a single movie or a show with episodes, so browsing
+	// doesn't list them again on every request.
+	notTitleFolders map[string]time.Time
+	jobs            chan job
+	syncing         atomic.Bool
 
 	newClient func(token, language string) *Client // replaceable in tests
 }
 
 type job struct {
-	lookup     *database.Lookup // set for title lookups
-	seasons    []int            // tv lookups: seasons on disk to fetch once the show is matched
-	showID     int              // set for season fetches
+	lookup  *database.Lookup // set for title lookups
+	seasons []int            // tv lookups: seasons on disk to fetch once the show is matched
+	// folder lookups: a title from the video files' own names, tried when the folder name finds
+	// nothing
+	fallback   *Ref
+	showID     int // set for season fetches
 	season     int
 	notifyPath string
+	// set for folder discovery: list folder to see whether it holds one movie or a show
+	discoverLib    *config.MediaPath
+	discoverFolder string
 }
 
 func (j job) id() string {
 	if j.lookup != nil {
 		return "lookup:" + j.lookup.Kind + ":" + j.lookup.LibraryID + ":" + j.lookup.QueryKey
+	}
+	if j.discoverLib != nil {
+		return "folder:" + j.discoverLib.ID + ":" + j.discoverFolder
 	}
 	return fmt.Sprintf("season:%d:%d", j.showID, j.season)
 }
@@ -66,7 +78,9 @@ func NewService(db *database.DB, notify func(path string)) *Service {
 		notify:  notify,
 		pending: map[string]bool{},
 		active:  map[string]bool{},
-		jobs:    make(chan job, 16384),
+
+		notTitleFolders: map[string]time.Time{},
+		jobs:            make(chan job, 16384),
 
 		newClient: NewClient,
 	}
@@ -153,6 +167,8 @@ func (s *Service) run(ctx context.Context, j job) {
 	var err error
 	if j.lookup != nil {
 		err = s.runLookup(ctx, client, j)
+	} else if j.discoverLib != nil {
+		err = s.runDiscover(*j.discoverLib, j.discoverFolder)
 	} else {
 		err = s.runSeason(ctx, client, j.showID, j.season, j.notifyPath)
 	}
@@ -187,6 +203,11 @@ func (s *Service) runLookup(ctx context.Context, client *Client, j job) error {
 		tmdbID = existing.TMDBID
 	} else {
 		tmdbID, err = s.search(ctx, client, l)
+		if err == nil && tmdbID == 0 && j.fallback != nil {
+			alt := *l
+			alt.QueryTitle, alt.QueryYear = j.fallback.Title, j.fallback.Year
+			tmdbID, err = s.search(ctx, client, &alt)
+		}
 		l.AttemptedAt = time.Now()
 		switch {
 		case err != nil:
@@ -209,6 +230,11 @@ func (s *Service) runLookup(ctx context.Context, client *Client, j job) error {
 		changed, err = s.ensureMovie(ctx, client, tmdbID)
 	} else {
 		changed, err = s.ensureShow(ctx, client, tmdbID)
+	}
+	if errors.Is(err, ErrNotFound) {
+		// The search result has no details record (removed from TMDB): treat as no match.
+		l.TMDBID, l.Status, l.AttemptedAt = 0, "not_found", time.Now()
+		return s.db.SaveLookup(l)
 	}
 	if err != nil {
 		return err
@@ -617,14 +643,13 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 
 	keepKeys, keepFolders := map[string]bool{}, map[string]bool{}
 	refs := map[string]Ref{}
+	fallbacks := map[string]*Ref{}
 	seasons := map[string]map[int]bool{}
 	notifyPaths := map[string]string{}
 
 	for folder, files := range filesByFolder {
-		folderKey := ""
 		if lib.Type == config.LibraryTypeMovie && folder != root {
-			folderKey = movieFolderKey(folder, files)
-			if folderKey != "" {
+			if folderKey := movieFolderKey(lib, files); folderKey != "" {
 				keepFolders[folder] = true
 				if err := s.db.SetFolderKey(lib.ID, folder, lib.Type, folderKey); err != nil {
 					return err
@@ -632,7 +657,7 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 			}
 		}
 		for _, f := range files {
-			ref, ok := ResolveFile(lib, f, folderKey)
+			ref, ok := ResolveFile(lib, f)
 			if !ok {
 				continue
 			}
@@ -640,6 +665,9 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 			if _, seen := refs[ref.Key]; !seen {
 				refs[ref.Key] = ref
 				notifyPaths[ref.Key] = f
+				if alt, ok := fallbackFor(lib, f, ref); ok {
+					fallbacks[ref.Key] = &alt
+				}
 			}
 			if ref.IsEpisode {
 				if seasons[ref.Key] == nil {
@@ -665,7 +693,7 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 		if !s.needsWork(l, seasonList) {
 			continue
 		}
-		s.enqueue(job{lookup: l, seasons: seasonList, notifyPath: notifyPaths[key]})
+		s.enqueue(job{lookup: l, seasons: seasonList, notifyPath: notifyPaths[key], fallback: fallbacks[key]})
 		queued++
 	}
 	log.Printf("[METADATA] %s: %d titles on disk, %d queued for lookup", lib.Name, len(refs), queued)
@@ -704,25 +732,188 @@ func (s *Service) needsWork(l *database.Lookup, seasons []int) bool {
 	return false
 }
 
-// movieFolderKey decides whether a folder stands for one movie: its name has a year, or all its
-// videos are the same title (or there is only one). Collection folders return "".
-func movieFolderKey(folder string, files []string) string {
-	title, year := ParseTitleYear(filepath.Base(folder))
-	if title == "" {
-		return ""
+// rememberNotTitle is how long a folder found to hold no movie or show is skipped by
+// browse-time discovery. A sync re-checks every folder regardless.
+const rememberNotTitle = 10 * time.Minute
+
+// DiscoverFolder schedules a background check of a folder no sync has recorded (new or renamed
+// since): a movie folder holding videos of one title, or a TV show folder whose season folders
+// hold episodes. If it qualifies, it is looked up. Browsing never waits for it.
+func (s *Service) DiscoverFolder(lib config.MediaPath, folder string) {
+	s.mu.Lock()
+	checked, seen := s.notTitleFolders[folder]
+	s.mu.Unlock()
+	if seen && time.Since(checked) < rememberNotTitle {
+		return
 	}
-	if year == 0 && len(files) > 1 {
-		first := ""
-		for _, f := range files {
-			t, _ := ParseTitleYear(filepath.Base(f))
-			if n := NormalizeTitle(t); first == "" {
-				first = n
-			} else if n != first {
-				return ""
+	s.enqueue(job{discoverLib: &lib, discoverFolder: folder})
+}
+
+func (s *Service) runDiscover(lib config.MediaPath, folder string) error {
+	var jobs []job
+	var err error
+	if lib.Type == config.LibraryTypeTV {
+		jobs, err = s.discoverShow(lib, folder)
+	} else {
+		jobs, err = s.discoverMovies(lib, folder)
+	}
+	if err != nil {
+		return err
+	}
+	if len(jobs) == 0 {
+		s.mu.Lock()
+		s.notTitleFolders[folder] = time.Now()
+		s.mu.Unlock()
+	}
+	for _, j := range jobs {
+		s.enqueue(j)
+	}
+	return nil
+}
+
+// discoverMovies looks up every video directly in a movie-library folder (each by its own file
+// name), and records the folder as a movie folder when they are all the same title.
+func (s *Service) discoverMovies(lib config.MediaPath, folder string) ([]job, error) {
+	videos, err := videosIn(folder)
+	if err != nil || len(videos) == 0 {
+		return nil, err
+	}
+	if key := movieFolderKey(lib, videos); key != "" {
+		if err := s.db.SetFolderKey(lib.ID, folder, lib.Type, key); err != nil {
+			return nil, err
+		}
+	}
+	var jobs []job
+	seen := map[string]bool{}
+	for _, v := range videos {
+		ref, ok := ResolveFile(lib, v)
+		if !ok || seen[ref.Key] {
+			continue
+		}
+		seen[ref.Key] = true
+		j := lookupJob(ref, v, nil)
+		if alt, ok := fallbackFor(lib, v, ref); ok {
+			j.fallback = &alt
+		}
+		jobs = append(jobs, j)
+	}
+	return jobs, nil
+}
+
+// discoverShow checks a TV show folder, and its immediate subfolders (season folders), for
+// episode files.
+func (s *Service) discoverShow(lib config.MediaPath, folder string) ([]job, error) {
+	ref, ok := ResolveFolder(lib, folder, "")
+	if !ok {
+		return nil, nil
+	}
+	folders := []string{folder}
+	entries, err := os.ReadDir(folder)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		if e.IsDir() && !skipEntry(e) {
+			folders = append(folders, filepath.Join(folder, e.Name()))
+		}
+	}
+	seasons := map[int]bool{}
+	firstEpisode := ""
+	for _, f := range folders {
+		videos, _ := videosIn(f)
+		for _, v := range videos {
+			if season, _, ok := ParseEpisode(filepath.Base(v)); ok {
+				seasons[season] = true
+				if firstEpisode == "" {
+					firstEpisode = v
+				}
 			}
 		}
 	}
-	return LookupKey(title, year)
+	if len(seasons) == 0 {
+		return nil, nil
+	}
+	var seasonList []int
+	for n := range seasons {
+		seasonList = append(seasonList, n)
+	}
+	j := lookupJob(ref, folder, seasonList)
+	if alt, ok := fallbackFor(lib, firstEpisode, ref); ok {
+		j.fallback = &alt
+	}
+	return []job{j}, nil
+}
+
+func lookupJob(ref Ref, notifyPath string, seasons []int) job {
+	l := &database.Lookup{Kind: ref.Kind, LibraryID: ref.LibraryID, QueryKey: ref.Key,
+		QueryTitle: ref.Title, QueryYear: ref.Year, QueryCountry: ref.Country}
+	return job{lookup: l, seasons: seasons, notifyPath: notifyPath}
+}
+
+// videosIn lists the video files directly inside folder.
+func videosIn(folder string) ([]string, error) {
+	entries, err := os.ReadDir(folder)
+	if err != nil {
+		return nil, err
+	}
+	var videos []string
+	for _, e := range entries {
+		if !e.IsDir() && !skipEntry(e) && isVideo(e.Name()) {
+			videos = append(videos, filepath.Join(folder, e.Name()))
+		}
+	}
+	return videos, nil
+}
+
+// fallbackFor returns a second title to search when the primary one finds nothing:
+//   - movies: the file's folder name (files are matched by their own name first)
+//   - tv: whichever of the episode file's show name and its folder's show name the lookup
+//     didn't use
+func fallbackFor(lib config.MediaPath, file string, ref Ref) (Ref, bool) {
+	root, _ := filepath.Abs(lib.Path)
+	var alt Ref
+	switch lib.Type {
+	case config.LibraryTypeMovie:
+		parent := filepath.Dir(file)
+		if parent == root {
+			return Ref{}, false
+		}
+		title, year := ParseTitleYear(filepath.Base(parent))
+		alt = Ref{Kind: lib.Type, LibraryID: lib.ID, Key: LookupKey(title, year), Title: title, Year: year}
+	case config.LibraryTypeTV:
+		primary, fallback, ok := episodeShow(lib, root, file)
+		switch {
+		case !ok:
+			return Ref{}, false
+		case primary.Key != ref.Key:
+			// ref came from the show folder (discovery): the episode's own resolution is the fallback
+			alt = *primary
+		case fallback != nil:
+			alt = *fallback
+		default:
+			return Ref{}, false
+		}
+	default:
+		return Ref{}, false
+	}
+	if alt.Title == "" || NormalizeTitle(alt.Title) == NormalizeTitle(ref.Title) {
+		return Ref{}, false
+	}
+	return alt, true
+}
+
+// movieFolderKey returns the lookup key of a folder whose videos are all the same title (by file
+// name), so the folder can show that movie. Folders of different titles return "".
+func movieFolderKey(lib config.MediaPath, files []string) string {
+	key := ""
+	for _, f := range files {
+		ref, ok := ResolveFile(lib, f)
+		if !ok || (key != "" && ref.Key != key) {
+			return ""
+		}
+		key = ref.Key
+	}
+	return key
 }
 
 // cleanupArtwork removes artwork folders for movies and shows no file is matched to any more.

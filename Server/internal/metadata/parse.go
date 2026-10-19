@@ -24,14 +24,19 @@ var (
 	nonAlnum = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 
 	countryTag = regexp.MustCompile(`(?i)[(\[](uk|us|usa|au|ca|nz|ie)[)\]]`)
+	// A bare trailing country word: "Big Brother 7 UK", "The Office US".
+	bareCountry = regexp.MustCompile(`(?i)[ ._-]+(uk|us|usa)[ ._-]*$`)
 
 	// " - Special Edition", " - Restored International Cut": edition labels after a dash. The dash
 	// is required so titles like "The Final Cut" are left alone.
 	editionTag = regexp.MustCompile(`(?i)\s+-\s+(?:special|collector'?s|anniversary|ultimate|extended|director'?s|theatrical|unrated|uncut|remastered|restored)\b.*$`)
 	// Trailing part or disc markers: "Ice Age Disc1", "Title - pt1", "Title - a".
 	partMarker = regexp.MustCompile(`(?i)(?:[ ._-]+(?:disc|disk|cd|pt)[ ._-]*\d{1,2}|\s+-\s+[a-z])$`)
-	// A season in a show folder name: "Big Brother Sweden - Season 7".
-	showSeasonSuffix = regexp.MustCompile(`(?i)\s+-\s+season\s+\d+$`)
+	// Release-site prefixes: "www.UIndex.org - Title...", "www.SceneTime.com - Title...".
+	sitePrefix = regexp.MustCompile(`(?i)^\s*(?:www\.)?[a-z0-9-]+\.(?:org|com|net|to|se|cc|ph|in|io|me|tv)\s+-\s+`)
+	// A season in a show folder name, with anything after it: "Big Brother Sweden - Season 7",
+	// "Breaking.Bad.S01.1080p.BluRay", "The Wire Season 2", "Spaced Series 1", "Firefly Complete".
+	showSeasonSuffix = regexp.MustCompile(`(?i)(?:\s+-\s+|[ ._-]+)(?:s\d{1,2}(?:[ ._-]?e\d{1,3})?|season[ ._-]*\d{1,3}|series[ ._-]*\d{1,3}|complete)(?:[ ._-].*)?$`)
 )
 
 // countryCodes maps folder country tags to TMDB origin_country codes.
@@ -46,6 +51,10 @@ func ParseShowFolder(name string) (title string, year int, country string) {
 	}
 	name = showSeasonSuffix.ReplaceAllString(strings.TrimSpace(name), "")
 	title, year = ParseTitleYear(name)
+	if m := bareCountry.FindStringSubmatchIndex(title); m != nil && country == "" && m[0] > 0 {
+		country = countryCodes[strings.ToLower(title[m[2]:m[3]])]
+		title = strings.TrimSpace(title[:m[0]])
+	}
 	return title, year, country
 }
 
@@ -53,17 +62,18 @@ func ParseShowFolder(name string) (title string, year int, country string) {
 // as "10 Things I Hate About You (1999) - 1080p" or "I.Tonya.2017.1080p.BluRay". Year is 0 when
 // the name has none.
 func ParseTitleYear(name string) (title string, year int) {
-	name = stripVideoExt(name)
+	name = sitePrefix.ReplaceAllString(stripVideoExt(name), "")
 
 	cut := -1
 	if m := lastMatch(bracketedYear, name); m != nil && m[0] > 0 {
 		cut, year = m[0], atoi(name[m[2]:m[3]])
 	} else {
-		// Skip a year at the very start, which is part of the title ("1917.2019.1080p").
+		// Scene names put the release year last, just before the tags, so the last bare year wins
+		// ("Cherry.2000.1987.1080p" is Cherry 2000 from 1987). A year at the very start is part
+		// of the title ("1917.2019.1080p").
 		for _, m := range bareYear.FindAllStringIndex(name, -1) {
 			if m[0] > 0 && isBareYear(name, m[0], m[1]) {
 				cut, year = m[0], atoi(name[m[0]:m[1]])
-				break
 			}
 		}
 	}
@@ -76,6 +86,10 @@ func ParseTitleYear(name string) (title string, year int) {
 		name = name[:cut]
 	}
 	title = cleanTitle(name)
+	// A repeated year ("Interstellar.2014.2014.1080p") isn't part of the title.
+	if y := " " + strconv.Itoa(year); year > 0 && strings.HasSuffix(title, y) {
+		title = strings.TrimSuffix(title, y)
+	}
 	if stripped := cleanTitle(partMarker.ReplaceAllString(editionTag.ReplaceAllString(title, ""), "")); stripped != "" {
 		title = stripped
 	}
@@ -93,6 +107,21 @@ func ParseEpisode(name string) (season, episode int, ok bool) {
 		return atoi(m[1]), atoi(m[2]), true
 	}
 	return 0, 0, false
+}
+
+// ParseEpisodeShow returns the show named before the episode marker in an episode file name:
+// "1923 - S01E02 - Title.mkv" gives "1923"; "Big Brother (UK) - S01E01.mkv" gives "Big Brother"
+// with country "GB". ok is false when the name starts with the marker.
+func ParseEpisodeShow(name string) (title string, year int, country string, ok bool) {
+	loc := episodeSxE.FindStringIndex(name)
+	if loc == nil {
+		loc = episodeNxNN.FindStringIndex(name)
+	}
+	if loc == nil || loc[0] == 0 {
+		return "", 0, "", false
+	}
+	title, year, country = ParseShowFolder(name[:loc[0]])
+	return title, year, country, title != ""
 }
 
 // ParseSeasonFolder recognizes season folder names: "Season 1", "Season 01", "S01", "Specials".

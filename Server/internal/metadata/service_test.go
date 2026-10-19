@@ -153,6 +153,71 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 		t.Error("no metadata-ready notifications")
 	}
 
+	// A folder added after the sync is discovered by browsing: one video means one movie; a
+	// collection of different titles or a folder without video stays a plain folder.
+	added := filepath.Join(movies, "Knight Copy")
+	collection := filepath.Join(movies, "Collection")
+	empty := filepath.Join(movies, "Extras")
+	for _, d := range []string{added, collection, empty} {
+		os.MkdirAll(d, 0755)
+	}
+	os.WriteFile(filepath.Join(added, "A Knight's Tale (2001).mkv"), nil, 0644)
+	os.WriteFile(filepath.Join(collection, "A Knight's Tale.mkv"), nil, 0644)
+	os.WriteFile(filepath.Join(collection, "Inception.mkv"), nil, 0644)
+	os.WriteFile(filepath.Join(empty, "notes.txt"), nil, 0644)
+	browse := func() []models.Directory {
+		listing := []models.Directory{{Name: "Knight Copy"}, {Name: "Collection"}, {Name: "Extras"}}
+		s.Annotate(movieLib, movies, listing, nil)
+		return listing
+	}
+	if first := browse(); first[0].Metadata != nil {
+		t.Errorf("new folder had metadata before discovery: %+v", first[0].Metadata)
+	}
+	deadline = time.Now().Add(10 * time.Second)
+	for {
+		listing := browse()
+		if listing[0].Metadata != nil {
+			if listing[0].Metadata.TMDBID != 9476 || listing[1].Metadata != nil || listing[2].Metadata != nil {
+				t.Errorf("discovered folders = %+v / %+v / %+v", listing[0].Metadata, listing[1].Metadata, listing[2].Metadata)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("new movie folder was never discovered")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// Every movie in a collection folder is looked up by its own file name.
+	waitFor(t, func() bool {
+		l, _ := db.GetLookup("movie", "m", LookupKey("Inception", 0))
+		return l != nil
+	}, "collection file was not looked up")
+	for _, d := range []string{added, collection, empty} {
+		os.RemoveAll(d)
+	}
+
+	// A TV show folder added after the sync is looked up once it has episodes; an unhelpful folder
+	// name falls back to the show name in the episode files.
+	renamed := filepath.Join(tv, "Renamed Show", "Season 1")
+	os.MkdirAll(renamed, 0755)
+	os.WriteFile(filepath.Join(renamed, "1923 - S01E02 - Nature's Empty Throne.mkv"), nil, 0644)
+	os.MkdirAll(filepath.Join(tv, "Empty Show", "Season 1"), 0755)
+	listShows := func() []models.Directory {
+		listing := []models.Directory{{Name: "Renamed Show"}, {Name: "Empty Show"}}
+		s.Annotate(tvLib, tv, listing, nil)
+		return listing
+	}
+	listShows()
+	waitFor(t, func() bool { return listShows()[0].Metadata != nil }, "renamed show folder was never discovered")
+	if got := listShows(); got[0].Metadata.TMDBID != 157744 || got[1].Metadata != nil {
+		t.Errorf("discovered shows = %+v / %+v", got[0].Metadata, got[1].Metadata)
+	}
+	if l, _ := db.GetLookup("tv", "t", LookupKey("Empty Show", 0)); l != nil {
+		t.Errorf("show folder without episodes was looked up: %+v", l)
+	}
+	os.RemoveAll(filepath.Join(tv, "Renamed Show"))
+	os.RemoveAll(filepath.Join(tv, "Empty Show"))
+
 	// A title removed from disk loses its lookup and artwork on the next sync.
 	os.RemoveAll(knight)
 	s.SyncAll(ctx)
@@ -202,5 +267,16 @@ func TestPickResultRequiresTitleMatch(t *testing.T) {
 	shows := []SearchResult{{ID: 10, Name: "Big Brother", OriginCountry: []string{"US"}}, {ID: 11, Name: "Big Brother", OriginCountry: []string{"GB"}}}
 	if got := pickResult(shows, "Big Brother", 0, "GB", true); got != 11 {
 		t.Errorf("country hint ignored: got %d", got)
+	}
+}
+
+func waitFor(t *testing.T, cond func() bool, failure string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal(failure)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

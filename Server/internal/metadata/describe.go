@@ -49,6 +49,11 @@ func (s *Service) Annotate(lib config.MediaPath, folder string, dirs []models.Di
 	d := s.newDescriber()
 	for i := range dirs {
 		path := filepath.Join(folder, dirs[i].Name)
+		if s.needsDiscovery(lib, path, folderKeys[path], d) {
+			// New or renamed since the last sync: check its contents in the background.
+			s.DiscoverFolder(lib, path)
+			continue
+		}
 		if ref, ok := ResolveFolder(lib, path, folderKeys[path]); ok {
 			dirs[i].Metadata = d.summary(ref, path, true)
 		}
@@ -57,7 +62,7 @@ func (s *Service) Annotate(lib config.MediaPath, folder string, dirs []models.Di
 		if items[i].Type != "video" {
 			continue
 		}
-		if ref, ok := ResolveFile(lib, items[i].Path, folderKeys[filepath.Dir(items[i].Path)]); ok {
+		if ref, ok := ResolveFile(lib, items[i].Path); ok {
 			items[i].Metadata = d.summary(ref, items[i].Path, false)
 		}
 	}
@@ -74,7 +79,7 @@ func (s *Service) Details(lib config.MediaPath, path string, isDir bool) (*model
 	if isDir {
 		ref, ok = ResolveFolder(lib, path, keys[path])
 	} else {
-		ref, ok = ResolveFile(lib, path, keys[filepath.Dir(path)])
+		ref, ok = ResolveFile(lib, path)
 	}
 	if !ok {
 		return nil, nil
@@ -149,7 +154,10 @@ func (s *Service) addCredits(details *models.MediaDetails, owner string, roles .
 func (d *describer) summary(ref Ref, path string, isDir bool) *models.ItemMetadata {
 	l := d.lookup(ref)
 	if l == nil || (l.Status != "matched" && due(l.Status, l.AttemptedAt)) {
-		d.s.EnqueueRef(ref, path)
+		// Movie folders are looked up through their files (sync or discovery), which carry the title.
+		if !(isDir && ref.Kind == config.LibraryTypeMovie) {
+			d.s.EnqueueRef(ref, path)
+		}
 		return nil
 	}
 	if l.Status != "matched" {
@@ -237,6 +245,20 @@ func (d *describer) show(id int) *database.Show {
 	sh, _ := d.s.db.GetShow(id)
 	d.shows[id] = sh
 	return sh
+}
+
+// needsDiscovery reports whether a folder in a browse listing is unknown: a movie folder no sync
+// recorded, or a TV show folder that was never looked up.
+func (s *Service) needsDiscovery(lib config.MediaPath, path, folderKey string, d *describer) bool {
+	if lib.Type == config.LibraryTypeMovie {
+		return folderKey == ""
+	}
+	root, _ := filepath.Abs(lib.Path)
+	if filepath.Dir(path) != root {
+		return false // season folders belong to an already-known show
+	}
+	ref, ok := ResolveFolder(lib, path, "")
+	return ok && d.lookup(ref) == nil
 }
 
 // enqueueSeason schedules a season fetch unless one was tried recently.

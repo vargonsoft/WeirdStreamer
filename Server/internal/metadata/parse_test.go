@@ -33,6 +33,11 @@ func TestParseTitleYear(t *testing.T) {
 		{"Babylon 5", "Babylon 5", 0},
 		{"WALL-E (2008)", "WALL-E", 2008},
 		{"Plan 9 from Outer Space (1957)", "Plan 9 from Outer Space", 1957},
+		{"Cherry.2000.1987.1080p.BluRay.x264-GUACAMOLE[rarbg].mkv", "Cherry 2000", 1987},
+		{"Blade.Runner.2049.2017.1080p.mkv", "Blade Runner 2049", 2017},
+		{"Interstellar.2014.2014.1080p.BluRay.mkv", "Interstellar", 2014},
+		{"www.UIndex.org    -    The.Legend.of.Billie.Jean.1985.Repack.1080p.Blu-ray.Remux.mkv", "The Legend of Billie Jean", 1985},
+		{"www.SceneTime.com - SNL50.The.Anniversary.Special.2025.1080p.WEB.h264-EDITH.mkv", "SNL50 The Anniversary Special", 2025},
 	}
 	for _, c := range cases {
 		title, year := ParseTitleYear(c.in)
@@ -62,6 +67,20 @@ func TestParseEpisode(t *testing.T) {
 		s, e, ok := ParseEpisode(c.in)
 		if s != c.season || e != c.episode || ok != c.ok {
 			t.Errorf("ParseEpisode(%q) = (%d, %d, %v), want (%d, %d, %v)", c.in, s, e, ok, c.season, c.episode, c.ok)
+		}
+	}
+}
+
+func TestParseEpisodeShow(t *testing.T) {
+	cases := map[string]string{
+		"1923 - S01E02 - Nature's Empty Throne Bluray-1080p.mkv": "1923",
+		"The Walking Dead - 4x13 - Alone.mkv":                    "The Walking Dead",
+		"Show.Name.S02E03.720p.mkv":                              "Show Name",
+		"S01E01 - Pilot.mkv":                                     "",
+	}
+	for in, want := range cases {
+		if got, _, _, _ := ParseEpisodeShow(in); got != want {
+			t.Errorf("ParseEpisodeShow(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -108,6 +127,15 @@ func TestParseShowFolder(t *testing.T) {
 		{"The Traitors (US)", "The Traitors", 0, "US"},
 		{"1923", "1923", 0, ""},
 		{"Big Brother Sweden - Season 7", "Big Brother Sweden", 0, ""},
+		{"Breaking.Bad.S01.1080p.BluRay.x264", "Breaking Bad", 0, ""},
+		{"The Wire Season 2", "The Wire", 0, ""},
+		{"Spaced Series 1", "Spaced", 0, ""},
+		{"Firefly Complete", "Firefly", 0, ""},
+		{"Babylon 5", "Babylon 5", 0, ""},
+		{"Sex and the City", "Sex and the City", 0, ""},
+		{"Big Brother 7 UK", "Big Brother 7", 0, "GB"},
+		{"The Office US", "The Office", 0, "US"},
+		{"Big Brother US ", "Big Brother", 0, "US"},
 	}
 	for _, c := range cases {
 		title, year, country := ParseShowFolder(c.in)
