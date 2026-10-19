@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -30,7 +31,26 @@ type MediaPath struct {
 	Name   string   `json:"name"`
 	Path   string   `json:"path"`
 	ID     string   `json:"id,omitempty"`
-	Groups []string `json:"groups"` // Groups that have access to this library
+	Groups []string `json:"groups"`         // Groups that have access to this library
+	Type   string   `json:"type,omitempty"` // Optional: LibraryTypeMovie or LibraryTypeTV
+}
+
+// Library types. A library has at most one type; untyped libraries are plain folders.
+const (
+	LibraryTypeMovie = "movie"
+	LibraryTypeTV    = "tv"
+)
+
+// Validate checks values that can't be expressed by the JSON structure alone.
+func (c *Config) Validate() error {
+	for _, p := range c.Media.Paths {
+		switch p.Type {
+		case "", LibraryTypeMovie, LibraryTypeTV:
+		default:
+			return fmt.Errorf("media path %q: invalid type %q (allowed: %q, %q, or none)", p.Name, p.Type, LibraryTypeMovie, LibraryTypeTV)
+		}
+	}
+	return nil
 }
 
 type MediaConfig struct {
@@ -55,6 +75,14 @@ type StreamingConfig struct {
 }
 
 var GlobalConfig *Config
+
+// loadedPath is the file GlobalConfig was last loaded from, so saves go back to it.
+var loadedPath string
+
+// Path returns the file the current configuration was loaded from.
+func Path() string {
+	return loadedPath
+}
 
 func Load(path string) error {
 	data, err := os.ReadFile(path)
@@ -140,7 +168,12 @@ func Load(path string) error {
 		}
 	}
 
+	if err := config.Validate(); err != nil {
+		return err
+	}
+
 	GlobalConfig = config
+	loadedPath = path
 	return nil
 }
 

@@ -692,6 +692,22 @@ function updateAvailableGroups() {
     state.availableGroups = Array.from(groupsSet).sort();
 }
 
+// Library types the server accepts; keep in sync with config.LibraryType* on the server.
+const LIBRARY_TYPES = [
+    { value: '', label: 'No type' },
+    { value: 'movie', label: 'Movies' },
+    { value: 'tv', label: 'TV Shows' },
+];
+
+// Sets a media path's type, omitting the key for "no type" so the saved config stays clean.
+function setMediaPathType(mediaPath, type) {
+    if (type) {
+        mediaPath.type = type;
+    } else {
+        delete mediaPath.type;
+    }
+}
+
 function renderMediaPaths(paths) {
     const pathsList = document.getElementById('media-paths-list');
     pathsList.innerHTML = '';
@@ -721,6 +737,21 @@ function renderMediaPaths(paths) {
             updateAvailableGroups();
         };
 
+        const typeSelect = document.createElement('select');
+        typeSelect.className = 'settings-input';
+        typeSelect.style.cssText = 'margin-bottom: 5px; font-size: 12px;';
+        typeSelect.title = 'Library type';
+        LIBRARY_TYPES.forEach(({ value, label }) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            typeSelect.appendChild(option);
+        });
+        typeSelect.value = mediaPath.type || '';
+        typeSelect.onchange = (e) => {
+            setMediaPathType(state.currentConfig.media.paths[index], e.target.value);
+        };
+
         const pathDiv = document.createElement('div');
         pathDiv.style.cssText = 'display: flex; align-items: center; gap: 10px;';
         
@@ -739,6 +770,7 @@ function renderMediaPaths(paths) {
         
         div.appendChild(nameInput);
         div.appendChild(groupsInput);
+        div.appendChild(typeSelect);
         div.appendChild(pathDiv);
         pathsList.appendChild(div);
     });
@@ -758,9 +790,13 @@ function handleAddPath() {
     if (!exists) {
         const pathParts = newPath.split('/');
         const name = pathParts[pathParts.length - 1] || pathParts[pathParts.length - 2] || newPath;
-        state.currentConfig.media.paths.push({ name: name, path: newPath, groups: [] });
+        const typeSelect = document.getElementById('new-path-type');
+        const mediaPath = { name: name, path: newPath, groups: [] };
+        setMediaPathType(mediaPath, typeSelect.value);
+        state.currentConfig.media.paths.push(mediaPath);
         renderMediaPaths(state.currentConfig.media.paths);
         input.value = '';
+        typeSelect.value = '';
     } else {
         alert('Path already exists');
     }

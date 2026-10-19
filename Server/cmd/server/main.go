@@ -116,7 +116,12 @@ func main() {
 
 	webDir := "./web"
 	if _, err := os.Stat(webDir); err == nil {
-		r.PathPrefix("/").Handler(http.FileServer(http.Dir(webDir)))
+		// no-cache makes browsers revalidate (a cheap 304) instead of running a stale web UI after an update
+		fileServer := http.FileServer(http.Dir(webDir))
+		r.PathPrefix("/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-cache")
+			fileServer.ServeHTTP(w, r)
+		}))
 	}
 
 	// Start server

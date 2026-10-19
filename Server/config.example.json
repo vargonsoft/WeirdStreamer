@@ -12,12 +12,14 @@
       {
         "name": "Movies",
         "path": "/path/to/media/movies",
-        "groups": ["adults", "admins"]
+        "groups": ["adults", "admins"],
+        "type": "movie"
       },
       {
         "name": "TV Shows",
         "path": "/path/to/media/tv",
-        "groups": ["kids", "adults", "admins"]
+        "groups": ["kids", "adults", "admins"],
+        "type": "tv"
       },
       {
         "name": "Photos",

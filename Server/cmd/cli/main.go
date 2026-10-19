@@ -358,7 +358,11 @@ func handleConfigCommand(args []string) {
 	case "list-paths":
 		fmt.Println("Media directories:")
 		for i, mediaPath := range config.GlobalConfig.Media.Paths {
-			fmt.Printf("  %d. %s (%s) [Groups: %v]\n", i+1, mediaPath.Name, mediaPath.Path, mediaPath.Groups)
+			typeLabel := ""
+			if mediaPath.Type != "" {
+				typeLabel = " [Type: " + mediaPath.Type + "]"
+			}
+			fmt.Printf("  %d. %s (%s) [Groups: %v]%s\n", i+1, mediaPath.Name, mediaPath.Path, mediaPath.Groups, typeLabel)
 		}
 
 	default:

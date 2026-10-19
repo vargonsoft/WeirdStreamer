@@ -80,14 +80,19 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := newConfig.Validate(); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Save to file
-	if err := config.Save("./config.json", &newConfig); err != nil {
+	if err := config.Save(config.Path(), &newConfig); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to save configuration")
 		return
 	}
 
 	// Reload configuration so the server can generate stable IDs and normalize values
-	if err := config.Load("./config.json"); err != nil {
+	if err := config.Load(config.Path()); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to reload configuration")
 		return
 	}
