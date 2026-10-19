@@ -43,6 +43,28 @@ func tvRef(lib config.MediaPath, title string, year int, country string) (Ref, b
 	return Ref{Kind: config.LibraryTypeTV, LibraryID: lib.ID, Key: key, Title: title, Year: year, Country: country}, true
 }
 
+// ShowFolderOf returns the top-level folder of a TV library path (its show folder), or "" for
+// the library root itself.
+func ShowFolderOf(lib config.MediaPath, path string) string {
+	root, _ := filepath.Abs(lib.Path)
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return filepath.Join(root, strings.SplitN(filepath.ToSlash(rel), "/", 2)[0])
+}
+
+// mostCommonKey returns the key seen most often (ties broken by key, for stable results).
+func mostCommonKey(counts map[string]int) string {
+	best, bestN := "", 0
+	for k, n := range counts {
+		if n > bestN || (n == bestN && k < best) {
+			best, bestN = k, n
+		}
+	}
+	return best
+}
+
 // episodeShow decides which show an episode file belongs to, from the show named in the file and
 // the show its top-level folder names, and returns the other one as a fallback:
 //   - the same show: one ref, with year and country from whichever name has them (the file's win)
@@ -168,9 +190,10 @@ func ResolveFile(lib config.MediaPath, path string) (Ref, bool) {
 }
 
 // ResolveFolder maps a folder to the title it stands for: a movie folder whose videos are all one
-// title (folderKey, recorded by a sync or discovery), a TV show folder, or a season folder inside
-// one (Season is set; IsEpisode stays false). Movie folder refs carry only the key: the title
-// comes from the files.
+// title, a TV show folder, or a season folder inside one (Season is set; IsEpisode stays false).
+// folderKey is what a sync or discovery recorded from the files: for movies, the folder's own
+// key; for TV, the key of the show folder the path is in. Such refs carry only the key, since
+// the title comes from the files. A TV folder without one falls back to its folder name.
 func ResolveFolder(lib config.MediaPath, path, folderKey string) (Ref, bool) {
 	root, _ := filepath.Abs(lib.Path)
 	switch lib.Type {
@@ -183,6 +206,9 @@ func ResolveFolder(lib config.MediaPath, path, folderKey string) (Ref, bool) {
 		ref, ok := showRef(lib, root, path)
 		if !ok {
 			return Ref{}, false
+		}
+		if folderKey != "" {
+			ref = Ref{Kind: config.LibraryTypeTV, LibraryID: lib.ID, Key: folderKey}
 		}
 		if filepath.Dir(path) != root {
 			season, isSeason := ParseSeasonFolder(filepath.Base(path))

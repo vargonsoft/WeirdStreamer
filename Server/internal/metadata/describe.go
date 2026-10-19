@@ -41,6 +41,9 @@ func (s *Service) Annotate(lib config.MediaPath, folder string, dirs []models.Di
 	for _, d := range dirs {
 		folders = append(folders, filepath.Join(folder, d.Name))
 	}
+	if lib.Type == config.LibraryTypeTV {
+		folders = append(folders, ShowFolderOf(lib, folder))
+	}
 	folderKeys, err := s.db.FolderKeys(lib.ID, folders)
 	if err != nil {
 		return
@@ -49,12 +52,13 @@ func (s *Service) Annotate(lib config.MediaPath, folder string, dirs []models.Di
 	d := s.newDescriber()
 	for i := range dirs {
 		path := filepath.Join(folder, dirs[i].Name)
-		if s.needsDiscovery(lib, path, folderKeys[path], d) {
+		key := folderKeyFor(lib, path, folderKeys)
+		if s.needsDiscovery(lib, path, key) {
 			// New or renamed since the last sync: check its contents in the background.
 			s.DiscoverFolder(lib, path)
 			continue
 		}
-		if ref, ok := ResolveFolder(lib, path, folderKeys[path]); ok {
+		if ref, ok := ResolveFolder(lib, path, key); ok {
 			dirs[i].Metadata = d.summary(ref, path, true)
 		}
 	}
@@ -70,14 +74,14 @@ func (s *Service) Annotate(lib config.MediaPath, folder string, dirs []models.Di
 
 // Details returns the full metadata for a file or folder in lib, or nil if none is known.
 func (s *Service) Details(lib config.MediaPath, path string, isDir bool) (*models.MediaDetails, error) {
-	keys, err := s.db.FolderKeys(lib.ID, []string{path, filepath.Dir(path)})
+	keys, err := s.db.FolderKeys(lib.ID, []string{path, ShowFolderOf(lib, path)})
 	if err != nil {
 		return nil, err
 	}
 	var ref Ref
 	var ok bool
 	if isDir {
-		ref, ok = ResolveFolder(lib, path, keys[path])
+		ref, ok = ResolveFolder(lib, path, folderKeyFor(lib, path, keys))
 	} else {
 		ref, ok = ResolveFile(lib, path)
 	}
@@ -154,8 +158,8 @@ func (s *Service) addCredits(details *models.MediaDetails, owner string, roles .
 func (d *describer) summary(ref Ref, path string, isDir bool) *models.ItemMetadata {
 	l := d.lookup(ref)
 	if l == nil || (l.Status != "matched" && due(l.Status, l.AttemptedAt)) {
-		// Movie folders are looked up through their files (sync or discovery), which carry the title.
-		if !(isDir && ref.Kind == config.LibraryTypeMovie) {
+		// Folders are looked up through their files (sync or discovery), which name the title.
+		if !isDir {
 			d.s.EnqueueRef(ref, path)
 		}
 		return nil
@@ -247,18 +251,26 @@ func (d *describer) show(id int) *database.Show {
 	return sh
 }
 
-// needsDiscovery reports whether a folder in a browse listing is unknown: a movie folder no sync
-// recorded, or a TV show folder that was never looked up.
-func (s *Service) needsDiscovery(lib config.MediaPath, path, folderKey string, d *describer) bool {
-	if lib.Type == config.LibraryTypeMovie {
-		return folderKey == ""
+// folderKeyFor picks the recorded key that applies to a folder: its own for movie folders, its
+// show folder's for TV folders.
+func folderKeyFor(lib config.MediaPath, path string, keys map[string]string) string {
+	if lib.Type == config.LibraryTypeTV {
+		return keys[ShowFolderOf(lib, path)]
 	}
-	root, _ := filepath.Abs(lib.Path)
-	if filepath.Dir(path) != root {
-		return false // season folders belong to an already-known show
+	return keys[path]
+}
+
+// needsDiscovery reports whether a folder in a browse listing is unknown: a movie folder or TV
+// show folder no sync or discovery has recorded (new or renamed since).
+func (s *Service) needsDiscovery(lib config.MediaPath, path, folderKey string) bool {
+	if folderKey != "" {
+		return false
 	}
-	ref, ok := ResolveFolder(lib, path, "")
-	return ok && d.lookup(ref) == nil
+	if lib.Type == config.LibraryTypeTV {
+		// Season folders belong to their show folder, which is discovered as a whole.
+		return ShowFolderOf(lib, path) == path
+	}
+	return true
 }
 
 // enqueueSeason schedules a season fetch unless one was tried recently.

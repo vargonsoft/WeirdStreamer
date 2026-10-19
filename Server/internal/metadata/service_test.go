@@ -62,6 +62,12 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 	for _, d := range []string{knight, season} {
 		os.MkdirAll(d, 0755)
 	}
+	// A show folder whose name carries a season number, with recordings that aren't episodes.
+	bb := filepath.Join(tv, "Big Brother 7 UK")
+	os.MkdirAll(filepath.Join(bb, "Week 1"), 0755)
+	os.WriteFile(filepath.Join(bb, "Week 1", "Day 1.mkv"), nil, 0644)
+	os.WriteFile(filepath.Join(bb, "Big Brother - 7x57.mkv"), nil, 0644)
+	os.WriteFile(filepath.Join(bb, "Big Brother - 7x58b - Eviction Part 2.mkv"), nil, 0644)
 	moviePath := filepath.Join(knight, "A Knights Tale.m4v")
 	episodePath := filepath.Join(season, "1923 - S01E02 - Nature's Empty Throne Bluray-1080p.mkv")
 	os.WriteFile(moviePath, nil, 0644)
@@ -110,6 +116,15 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+
+	// The show folder follows its episodes; non-episode files create no lookup.
+	if l, _ := db.GetLookup("tv", "t", "big brother 7|gb"); l != nil {
+		t.Errorf("non-episode files created a lookup for the folder name: %+v", l)
+	}
+	if keys, _ := db.FolderKeys("t", []string{bb}); keys[bb] != "big brother|gb" {
+		t.Errorf("show folder key = %q, want the episodes' show", keys[bb])
+	}
+	os.RemoveAll(bb)
 
 	// Movie: right year chosen over the earlier same-titled result, English logo over French.
 	m, _ := db.GetMovie(9476)

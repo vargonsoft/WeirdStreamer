@@ -17,7 +17,7 @@ var (
 	qualityTag   = regexp.MustCompile(`(?i)(?:^|[ ._-])(2160p|1080p|720p|480p|4k|uhd|bluray|blu-ray|bdrip|brrip|web-?dl|webrip|hdtv|dvdrip|dvd|x264|x265|h\.?264|h\.?265|hevc|remux)(?:$|[ ._-])`)
 	bracketGroup = regexp.MustCompile(`[(\[][^)\]]*[)\]]`)
 
-	episodeSxE  = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])s(\d{1,2})[ ._-]?e(\d{1,3})(?:-?e(\d{1,3}))?`)
+	episodeSxE = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])s(\d{1,2})[ ._-]?e(\d{1,3})(?:-?e(\d{1,3}))?`)
 	// An optional part letter may follow the episode: "7x58b".
 	episodeNxNN = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(\d{1,2})x(\d{2,3})[a-d]?(?:$|[^a-z0-9])`)
 	seasonDir   = regexp.MustCompile(`(?i)^(?:season|series|s)[ ._-]*(\d{1,3})$`)

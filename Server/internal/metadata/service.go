@@ -647,6 +647,7 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 	seasons := map[string]map[int]bool{}
 	notifyPaths := map[string]string{}
 
+	showKeyCounts := map[string]map[string]int{} // tv: show folder -> episode key -> count
 	for folder, files := range filesByFolder {
 		if lib.Type == config.LibraryTypeMovie && folder != root {
 			if folderKey := movieFolderKey(lib, files); folderKey != "" {
@@ -658,7 +659,8 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 		}
 		for _, f := range files {
 			ref, ok := ResolveFile(lib, f)
-			if !ok {
+			// Only episodes name a show; other TV files (extras, "Week 3" recordings) don't.
+			if !ok || (lib.Type == config.LibraryTypeTV && !ref.IsEpisode) {
 				continue
 			}
 			keepKeys[ref.Key] = true
@@ -674,7 +676,20 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 					seasons[ref.Key] = map[int]bool{}
 				}
 				seasons[ref.Key][ref.Season] = true
+				if show := ShowFolderOf(lib, f); show != "" && show != f {
+					if showKeyCounts[show] == nil {
+						showKeyCounts[show] = map[string]int{}
+					}
+					showKeyCounts[show][ref.Key]++
+				}
 			}
+		}
+	}
+	// Each TV show folder stands for the show most of its episodes name.
+	for show, counts := range showKeyCounts {
+		keepFolders[show] = true
+		if err := s.db.SetFolderKey(lib.ID, show, lib.Type, mostCommonKey(counts)); err != nil {
+			return err
 		}
 	}
 
@@ -802,11 +817,9 @@ func (s *Service) discoverMovies(lib config.MediaPath, folder string) ([]job, er
 
 // discoverShow checks a TV show folder, and its immediate subfolders (season folders), for
 // episode files.
+// discoverShow looks up the shows named by the episode files in a TV show folder and its
+// immediate subfolders (season folders), and records the folder as the most common one.
 func (s *Service) discoverShow(lib config.MediaPath, folder string) ([]job, error) {
-	ref, ok := ResolveFolder(lib, folder, "")
-	if !ok {
-		return nil, nil
-	}
 	folders := []string{folder}
 	entries, err := os.ReadDir(folder)
 	if err != nil {
@@ -817,31 +830,62 @@ func (s *Service) discoverShow(lib config.MediaPath, folder string) ([]job, erro
 			folders = append(folders, filepath.Join(folder, e.Name()))
 		}
 	}
-	seasons := map[int]bool{}
-	firstEpisode := ""
+	shows := newShowCollector()
 	for _, f := range folders {
 		videos, _ := videosIn(f)
 		for _, v := range videos {
-			if season, _, ok := ParseEpisode(filepath.Base(v)); ok {
-				seasons[season] = true
-				if firstEpisode == "" {
-					firstEpisode = v
-				}
+			if ref, ok := ResolveFile(lib, v); ok && ref.IsEpisode {
+				shows.add(lib, v, ref)
 			}
 		}
 	}
-	if len(seasons) == 0 {
+	if len(shows.refs) == 0 {
 		return nil, nil
 	}
-	var seasonList []int
-	for n := range seasons {
-		seasonList = append(seasonList, n)
+	if err := s.db.SetFolderKey(lib.ID, folder, lib.Type, mostCommonKey(shows.counts)); err != nil {
+		return nil, err
 	}
-	j := lookupJob(ref, folder, seasonList)
-	if alt, ok := fallbackFor(lib, firstEpisode, ref); ok {
-		j.fallback = &alt
+	return shows.jobs(), nil
+}
+
+// showCollector gathers the shows, seasons and fallbacks seen among a folder's episodes.
+type showCollector struct {
+	refs      map[string]Ref
+	seasons   map[string]map[int]bool
+	counts    map[string]int
+	files     map[string]string
+	fallbacks map[string]*Ref
+}
+
+func newShowCollector() *showCollector {
+	return &showCollector{refs: map[string]Ref{}, seasons: map[string]map[int]bool{}, counts: map[string]int{},
+		files: map[string]string{}, fallbacks: map[string]*Ref{}}
+}
+
+func (c *showCollector) add(lib config.MediaPath, file string, ref Ref) {
+	if _, seen := c.refs[ref.Key]; !seen {
+		c.refs[ref.Key], c.files[ref.Key] = ref, file
+		c.seasons[ref.Key] = map[int]bool{}
+		if alt, ok := fallbackFor(lib, file, ref); ok {
+			c.fallbacks[ref.Key] = &alt
+		}
 	}
-	return []job{j}, nil
+	c.seasons[ref.Key][ref.Season] = true
+	c.counts[ref.Key]++
+}
+
+func (c *showCollector) jobs() []job {
+	var jobs []job
+	for key, ref := range c.refs {
+		var seasons []int
+		for n := range c.seasons[key] {
+			seasons = append(seasons, n)
+		}
+		j := lookupJob(ref, c.files[key], seasons)
+		j.fallback = c.fallbacks[key]
+		jobs = append(jobs, j)
+	}
+	return jobs
 }
 
 func lookupJob(ref Ref, notifyPath string, seasons []int) job {
