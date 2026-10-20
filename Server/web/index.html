@@ -30,7 +30,7 @@
                     <button id="regenerate-thumbnails-btn" class="btn" style="display: none;" data-icon="refresh"><span class="btn-label">Regenerate Thumbnails</span></button>
                     <button id="streams-btn" class="btn" style="display: none;" data-icon="liveTv"><span class="btn-label">Streams</span></button>
                     <button id="settings-btn" class="btn" style="display: none;" data-icon="settings"><span class="btn-label">Settings</span></button>
-                    <button id="logout-btn" class="btn">Logout</button>
+                    <button id="logout-btn" class="btn" data-icon="logout"><span class="btn-label">Logout</span></button>
                 </div>
             </header>
 
@@ -53,7 +53,7 @@
         <!-- Streams Screen (admins): what is playing right now -->
         <div id="streams-screen" class="screen">
             <div class="settings-container streams-container">
-                <h1>📡 Active streams</h1>
+                <h1 class="icon-heading" data-icon="liveTv">Active streams</h1>
                 <div class="streams-toolbar">
                     <button id="close-streams-btn" class="btn">← Back to Media</button>
                     <span id="streams-updated" class="streams-updated"></span>
@@ -65,7 +65,7 @@
         <!-- Settings Screen -->
         <div id="settings-screen" class="screen">
             <div class="settings-container">
-                <h1>⚙️ Settings</h1>
+                <h1 class="icon-heading" data-icon="settings">Settings</h1>
                 <button id="close-settings-btn" class="btn">← Back to Media</button>
                 
                 <div class="settings-tabs">
@@ -106,12 +106,15 @@
                         <h3>Metadata</h3>
                         <p style="font-size: 13px; color: var(--muted-text); margin-bottom: 10px;">Used for libraries with a Movies or TV Shows type.</p>
                         <label>TMDB API Read Access Token:<br>
-                            <input type="password" id="tmdb-token" class="settings-input" style="width: calc(100% - 20px);" autocomplete="off" placeholder="From themoviedb.org → Settings → API">
+                            <span class="secret-field" style="width: calc(100% - 20px);">
+                                <input type="password" id="tmdb-token" class="settings-input" autocomplete="off" placeholder="From themoviedb.org → Settings → API">
+                                <button type="button" class="secret-toggle" data-for="tmdb-token" title="Show token" aria-label="Show token" aria-pressed="false"></button>
+                            </span>
                         </label><br><br>
                         <label>Language: <input type="text" id="metadata-language" class="settings-input" style="width: 100px;" placeholder="en-US"></label>
                     </div>
 
-                    <button id="save-settings-btn" class="btn" style="margin-top: 20px;">💾 Save Settings</button>
+                    <button id="save-settings-btn" class="btn" style="margin-top: 20px;" data-icon="save"><span class="btn-label">Save Settings</span></button>
                     <p id="settings-message" style="margin-top: 10px; color: var(--primary-color); font-weight: bold;"></p>
                 </div>
 
@@ -136,7 +139,7 @@
                 <!-- My Account Tab -->
                 <div id="account-tab" class="settings-tab-content">
                     <div class="settings-group">
-                        <h3>🎨 Theme</h3>
+                        <h3 class="icon-heading" data-icon="palette">Theme</h3>
                         <label>
                             <input type="radio" name="theme" value="default" id="theme-default"> Default (Purple)
                         </label><br>
@@ -149,7 +152,7 @@
                         <label>
                             <input type="radio" name="theme" value="dark" id="theme-dark"> Dark
                         </label><br><br>
-                        <button id="save-theme-btn" class="btn">💾 Save Theme</button>
+                        <button id="save-theme-btn" class="btn" data-icon="save"><span class="btn-label">Save Theme</span></button>
                         <p id="theme-message" style="margin-top: 10px; font-weight: bold;"></p>
                     </div>
                     
@@ -157,7 +160,7 @@
                         <h3>Change Password</h3>
                         <input type="password" id="new-user-password" placeholder="New Password" class="settings-input" style="margin-bottom: 10px;"><br>
                         <input type="password" id="confirm-user-password" placeholder="Confirm Password" class="settings-input" style="margin-bottom: 10px;"><br>
-                        <button id="change-password-btn" class="btn">🔑 Change Password</button>
+                        <button id="change-password-btn" class="btn" data-icon="key"><span class="btn-label">Change Password</span></button>
                         <p id="account-message" style="margin-top: 10px; font-weight: bold;"></p>
                     </div>
                 </div>
@@ -169,7 +172,7 @@
             <div class="modal-content">
                 <span class="close">&times;</span>
                 <h2 id="player-title"></h2>
-                <button id="transcode-btn" class="btn" style="margin-bottom: 10px;">🔄 Transcode to MP4</button>
+                <button id="transcode-btn" class="btn" style="margin-bottom: 10px;" data-icon="refresh"><span class="btn-label">Transcode to MP4</span></button>
                 <video id="video-player" controls></video>
                 <!-- DVD disc images: what to play from the disc -->
                 <div id="disc-controls" class="disc-controls" hidden>

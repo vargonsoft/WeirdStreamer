@@ -32,6 +32,8 @@
     --border-color: #393945;
     --muted-text: #a2a2ae;
     --strong-text: #e4e4ea;
+    --danger-bg: #8f3a33;
+    --danger-hover: #7a302a;
     --button-bg: #474f99; /* darker than the accent text color */
     --button-hover: #3b4285;
 }
@@ -1635,4 +1637,86 @@ header h1 {
 
 .header-controls .btn svg {
     flex: none;
+}
+
+/* Headings with a Material icon (Settings, Active streams, Theme) */
+.icon-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
+}
+
+.icon-heading svg {
+    width: 1.1em;
+    height: 1.1em;
+    flex: none;
+}
+
+#transcode-btn,
+.settings-group .btn,
+#save-settings-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Destructive buttons (Remove a media path): red, deeper in Dark */
+.btn.btn-danger {
+    background: var(--danger-bg, #e74c3c);
+}
+
+.btn.btn-danger:hover {
+    background: var(--danger-hover, #c0392b);
+}
+
+.btn.btn-danger,
+.settings-group .btn.btn-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    align-self: center; /* not stretched to the height of a long path beside it */
+    flex: none;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.btn.btn-danger svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* A password-type field with an eye button inside it to show the value */
+.secret-field {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+}
+
+.secret-field input {
+    width: 100%;
+    padding-right: 38px;
+}
+
+.secret-toggle {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted-text);
+    cursor: pointer;
+}
+
+.secret-toggle:hover,
+.secret-toggle:focus-visible {
+    background: var(--hover-bg);
+    color: var(--text-color);
 }
