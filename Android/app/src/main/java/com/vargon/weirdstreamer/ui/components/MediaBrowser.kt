@@ -54,6 +54,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
@@ -115,6 +117,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             )
         }
         backdropTitle?.let { TitleBackdrop(viewModel, it) }
+        Clock(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 52.dp))
 
         Column(
             modifier = Modifier
@@ -601,4 +604,24 @@ private fun handleFileClick(viewModel: MediaViewModel, item: FileItem) {
             viewModel.isPdf(item.path) -> viewModel.showPdf(item.path)
         }
     }
+}
+
+/** The current time, in the device's 12/24-hour format, updated on each minute. */
+@Composable
+private fun Clock(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val format = remember(context) { android.text.format.DateFormat.getTimeFormat(context) }
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000 - System.currentTimeMillis() % 60_000)
+            now = System.currentTimeMillis()
+        }
+    }
+    Text(
+        text = format.format(java.util.Date(now)),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier
+    )
 }
