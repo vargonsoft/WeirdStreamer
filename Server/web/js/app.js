@@ -701,10 +701,16 @@ function isDiscImage(item) {
 function hideDiscControls() {
     disc = null;
     document.getElementById('disc-controls').hidden = true;
+    // Discs use their own controls (the browser's seek bar only covers the current stream).
+    videoPlayer.controls = true;
+    videoPlayer.onclick = null;
+    videoPlayer.onplay = videoPlayer.onpause = videoPlayer.onvolumechange = null;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 
 async function playDisc(item) {
     disc = { item, info: null, title: 0, angle: 1, audio: 0, subtitle: -1, offset: 0 };
+    videoPlayer.controls = false;
     playerTitle.textContent = item.name + ' — reading disc…';
     document.getElementById('transcode-btn').style.display = 'none';
     document.getElementById('disc-controls').hidden = true;
@@ -755,7 +761,13 @@ function loadDiscStream(start) {
     };
     videoPlayer.onerror = () => console.error('Disc video error:', videoPlayer.error);
     videoPlayer.ontimeupdate = updateDiscPosition;
+    videoPlayer.onclick = toggleDiscPlay;
     startPlaybackReports(disc.item);
+    // After the reports, which set onplay/onpause themselves.
+    const report = videoPlayer.onplay;
+    videoPlayer.onplay = videoPlayer.onpause = () => { if (report) report(); updateDiscButtons(); };
+    videoPlayer.onvolumechange = updateDiscButtons;
+    updateDiscButtons();
     updateDiscPosition();
 }
 
@@ -811,6 +823,25 @@ function updateDiscPosition() {
 
 let discSeekDragging = false;
 
+function toggleDiscPlay() {
+    if (videoPlayer.paused) videoPlayer.play().catch(() => {});
+    else videoPlayer.pause();
+}
+
+function updateDiscButtons() {
+    document.getElementById('disc-play').textContent = videoPlayer.paused ? '▶' : '⏸';
+    const muted = videoPlayer.muted || videoPlayer.volume === 0;
+    document.getElementById('disc-mute').textContent = muted ? '🔇' : '🔊';
+    document.getElementById('disc-volume').value = String(videoPlayer.muted ? 0 : videoPlayer.volume);
+}
+
+function toggleDiscFullscreen() {
+    // The video and the disc controls together, so the seek bar stays usable.
+    const box = playerModal.querySelector('.modal-content');
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else box.requestFullscreen().catch(() => {});
+}
+
 function setupDiscControls() {
     const seek = document.getElementById('disc-seek');
     seek.addEventListener('input', () => { discSeekDragging = true; updateDiscPosition(); });
@@ -823,6 +854,31 @@ function setupDiscControls() {
     });
     document.getElementById('disc-forward').addEventListener('click', () => {
         if (disc && disc.info) loadDiscStream(playerPosition() + 30);
+    });
+    document.getElementById('disc-play').addEventListener('click', toggleDiscPlay);
+    document.getElementById('disc-mute').addEventListener('click', () => {
+        videoPlayer.muted = !videoPlayer.muted;
+        if (!videoPlayer.muted && videoPlayer.volume === 0) videoPlayer.volume = 1;
+    });
+    document.getElementById('disc-volume').addEventListener('input', (e) => {
+        videoPlayer.volume = Number(e.target.value);
+        videoPlayer.muted = videoPlayer.volume === 0;
+    });
+    document.getElementById('disc-fullscreen').addEventListener('click', toggleDiscFullscreen);
+    document.addEventListener('keydown', (e) => {
+        if (!disc || !disc.info || !playerModal.classList.contains('active')) return;
+        // Sliders keep their arrow keys, lists and buttons their own keys (Space clicks a button).
+        const target = e.target instanceof Element ? e.target : document.body;
+        if (target.matches('input, select, textarea') && e.key !== ' ') return;
+        if (target.matches('select, textarea, button')) return;
+        const key = e.key.toLowerCase();
+        if (key === ' ' || key === 'k') toggleDiscPlay();
+        else if (key === 'arrowleft') loadDiscStream(Math.max(0, playerPosition() - 10));
+        else if (key === 'arrowright') loadDiscStream(playerPosition() + 30);
+        else if (key === 'm') videoPlayer.muted = !videoPlayer.muted;
+        else if (key === 'f') toggleDiscFullscreen();
+        else return;
+        e.preventDefault();
     });
     const on = (id, handler) => document.getElementById(id).addEventListener('change', (e) => {
         if (disc && disc.info) handler(Number(e.target.value));

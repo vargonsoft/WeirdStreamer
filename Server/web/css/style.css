@@ -1461,14 +1461,16 @@ header h1 {
 
 .disc-seek {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     flex-basis: 100%;
+    min-width: 0;
 }
 
-.disc-seek input[type="range"] {
-    flex: 1;
-    min-width: 0;
+.disc-seek #disc-seek {
+    flex: 1 1 160px;
+    min-width: 120px;
     accent-color: var(--primary-color);
 }
 
@@ -1476,4 +1478,44 @@ header h1 {
     color: #666;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+}
+
+.disc-volume {
+    width: 80px;
+    accent-color: var(--primary-color);
+}
+
+#video-player:not([controls]) {
+    cursor: pointer;
+}
+
+/* Fullscreen disc playback: the video fills the screen above the disc controls */
+#player-modal .modal-content:fullscreen {
+    max-width: none;
+    max-height: none;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    background: black;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+#player-modal .modal-content:fullscreen #video-player {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    max-height: none;
+}
+
+#player-modal .modal-content:fullscreen #player-title,
+#player-modal .modal-content:fullscreen .close,
+#player-modal .modal-content:fullscreen #transcode-btn {
+    display: none;
+}
+
+#player-modal .modal-content:fullscreen .disc-position {
+    color: #ccc;
 }
