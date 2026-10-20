@@ -23,10 +23,14 @@ func IsDiscImage(path string) bool {
 	return strings.EqualFold(filepath.Ext(path), ".iso")
 }
 
+// discInfoVersion changes when probing changes, so discs stored by older builds are probed again.
+const discInfoVersion = 2
+
 // DiscInfo describes what a DVD disc image holds.
 type DiscInfo struct {
 	Titles    []DiscTitle `json:"titles"`
 	MainTitle int         `json:"main_title"` // number of the main feature: the longest title
+	Version   int         `json:"version"`
 }
 
 // DiscTitle is one title (the feature, a bonus feature, an episode...).
@@ -150,7 +154,7 @@ func LoadDisc(path string) (*DiscInfo, error) {
 		if discStore != nil {
 			if data, err := discStore.GetDiscInfo(path, size, modTime); err == nil && data != nil {
 				var info DiscInfo
-				if json.Unmarshal(data, &info) == nil && len(info.Titles) > 0 {
+				if json.Unmarshal(data, &info) == nil && len(info.Titles) > 0 && info.Version == discInfoVersion {
 					e.info = &info
 					return
 				}
@@ -188,8 +192,18 @@ func probeDisc(path string) (*DiscInfo, error) {
 		if tablesErr == nil {
 			tt := tables[n-1]
 			t.Angles = max(tt.angles, 1)
-			if segs := tt.segments(); len(segs) > 1 && chainMatches(segs, t.Duration) {
-				t.Segments = segs
+			// The disc's own tables say what a title plays: ffmpeg's probe stops at the end of a
+			// title's first PGC, so it can report a whole feature as a few seconds.
+			// A chain whose chapters run backwards hops between PGCs out of order (short
+			// montage titles): those are left to ffmpeg.
+			if segs := tt.segments(); validChain(segs) && ascending(tt.chapters(segs)) {
+				if chapters := tt.chapters(segs); len(chapters) > 0 {
+					t.Chapters = chapters
+				}
+				if len(segs) > 1 {
+					t.Segments = segs
+					t.Duration = segs[len(segs)-1].Start + segs[len(segs)-1].Duration
+				}
 			}
 		}
 		info.Titles = append(info.Titles, *t)
@@ -201,21 +215,31 @@ func probeDisc(path string) (*DiscInfo, error) {
 		return nil, errors.New("no playable titles on the disc")
 	}
 	info.MainTitle = mainTitle(info.Titles)
+	info.Version = discInfoVersion
 	return info, nil
 }
 
-// chainMatches reports whether a title's PGC chain adds up to the title's length, so it can be
-// played piece by piece; otherwise the title is played as ffmpeg plays it.
-func chainMatches(segs []DiscSegment, duration float64) bool {
-	total := 0.0
+func ascending(times []float64) bool {
+	for i := 1; i < len(times); i++ {
+		if times[i] < times[i-1] {
+			return false
+		}
+	}
+	return true
+}
+
+// validChain reports whether a title's PGC chain from the disc's tables can be played: it has
+// PGCs, all with a length.
+func validChain(segs []DiscSegment) bool {
+	if len(segs) == 0 {
+		return false
+	}
 	for _, s := range segs {
 		if s.Duration <= 0 {
 			return false
 		}
-		total += s.Duration
 	}
-	diff := total - duration
-	return diff < 0.02*duration+2 && -diff < 0.02*duration+2
+	return true
 }
 
 // mainTitle picks the main feature: the longest title. Among titles about as long (an alternate
@@ -314,8 +338,9 @@ const sectorSize = 2048
 
 type dvdTitleTable struct {
 	angles      int
-	ptts        []ptt           // chapters: the PGC and program each starts at
-	pgcDuration map[int]float64 // by PGC number, in the title's title set
+	ptts        []ptt             // chapters: the PGC and program each starts at
+	pgcDuration map[int]float64   // by PGC number, in the title's title set
+	programs    map[int][]float64 // by PGC number: where each program (from 1) starts in it
 }
 
 type ptt struct{ pgc, pg int }
@@ -374,10 +399,10 @@ func readDVDTables(path string) ([]dvdTitleTable, error) {
 			vts, _ = fs.readFile("VIDEO_TS", fmt.Sprintf("VTS_%02d_0.IFO", vtsn))
 			vtsCache[vtsn] = vts
 		}
-		tt := dvdTitleTable{angles: angles, pgcDuration: map[int]float64{}}
+		tt := dvdTitleTable{angles: angles, pgcDuration: map[int]float64{}, programs: map[int][]float64{}}
 		if vts != nil {
 			tt.ptts = readPTTs(vts, ttn)
-			tt.pgcDuration = readPGCDurations(vts)
+			tt.pgcDuration, tt.programs = readPGCs(vts)
 		}
 		titles = append(titles, tt)
 	}
@@ -412,15 +437,16 @@ func readPTTs(vts []byte, ttn int) []ptt {
 	return ptts
 }
 
-// readPGCDurations returns the playback time of each PGC in a title set IFO.
-func readPGCDurations(vts []byte) map[int]float64 {
-	durations := map[int]float64{}
+// readPGCs returns, for each PGC in a title set IFO, its playback time and where each of its
+// programs starts. Program times add up the PGC's cells, counting each angle block once.
+func readPGCs(vts []byte) (map[int]float64, map[int][]float64) {
+	durations, programs := map[int]float64{}, map[int][]float64{}
 	if len(vts) < 0xD0 {
-		return durations
+		return durations, programs
 	}
 	off := int(be32(vts, 0xCC)) * sectorSize
 	if off+8 > len(vts) {
-		return durations
+		return durations, programs
 	}
 	n := int(be16(vts, off))
 	for i := 0; i < n; i++ {
@@ -429,12 +455,62 @@ func readPGCDurations(vts []byte) map[int]float64 {
 			break
 		}
 		pgc := off + int(be32(vts, e+4))
-		if pgc+8 > len(vts) {
+		if pgc+0xEC > len(vts) {
 			continue
 		}
 		durations[i+1] = dvdTime(vts[pgc+4 : pgc+8])
+		nPrograms, nCells := int(vts[pgc+2]), int(vts[pgc+3])
+		programMap, cellTable := pgc+int(be16(vts, pgc+0xE6)), pgc+int(be16(vts, pgc+0xE8))
+		if programMap+nPrograms > len(vts) || cellTable+24*nCells > len(vts) {
+			continue
+		}
+		// Start time of each cell on the PGC's timeline.
+		cellStart := make([]float64, nCells+1)
+		for c := 0; c < nCells; c++ {
+			cell := vts[cellTable+24*c:]
+			blockMode, blockType := cell[0]>>6, (cell[0]>>4)&3
+			length := dvdTime(cell[4:8])
+			if blockType == 1 && blockMode != 1 {
+				length = 0 // another angle of the block: same stretch of time
+			}
+			cellStart[c+1] = cellStart[c] + length
+		}
+		starts := make([]float64, nPrograms)
+		for p := 0; p < nPrograms; p++ {
+			if entry := int(vts[programMap+p]); entry >= 1 && entry <= nCells {
+				starts[p] = cellStart[entry-1]
+			}
+		}
+		programs[i+1] = starts
 	}
-	return durations
+	return durations, programs
+}
+
+// chapters returns the title's chapter start times on its timeline (its PGCs one after another).
+func (t dvdTitleTable) chapters(segs []DiscSegment) []float64 {
+	segStart := map[int]float64{}
+	for _, s := range segs {
+		segStart[s.PGC] = s.Start
+	}
+	var out []float64
+	for _, p := range t.ptts {
+		start := segStart[p.pgc]
+		if starts := t.programs[p.pgc]; p.pg >= 1 && p.pg <= len(starts) {
+			start += starts[p.pg-1] - starts[segFirstPG(segs, p.pgc)-1]
+		}
+		out = append(out, start)
+	}
+	return out
+}
+
+// segFirstPG is the program a PGC's segment starts playing at.
+func segFirstPG(segs []DiscSegment, pgc int) int {
+	for _, s := range segs {
+		if s.PGC == pgc {
+			return max(s.PG, 1)
+		}
+	}
+	return 1
 }
 
 // dvdTime decodes a DVD playback time: BCD hours, minutes, seconds, and frames with the frame

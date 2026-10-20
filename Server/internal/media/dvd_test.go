@@ -45,14 +45,15 @@ func TestTitleTables(t *testing.T) {
 	// A title of three chained PGCs; the second holds two chapters.
 	vts := vtsWith([]ptt{{1, 1}, {2, 1}, {2, 2}, {3, 1}},
 		[][4]byte{{0, 0, 0x07, 0xC0}, {0, 0x01, 0x13, 0xC0}, {0, 0x04, 0x34, 0xC0}})
-	tt := dvdTitleTable{angles: 2, ptts: readPTTs(vts, 1), pgcDuration: readPGCDurations(vts)}
+	durations, programs := readPGCs(vts)
+	tt := dvdTitleTable{angles: 2, ptts: readPTTs(vts, 1), pgcDuration: durations, programs: programs}
 	want := []DiscSegment{{PGC: 1, PG: 1, Start: 0, Duration: 7}, {PGC: 2, PG: 1, Start: 7, Duration: 73},
 		{PGC: 3, PG: 1, Start: 80, Duration: 274}}
 	if got := tt.segments(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("segments = %+v", got)
 	}
-	if !chainMatches(want, 354.5) || chainMatches(want, 7) {
-		t.Error("chainMatches should accept the title's own length and reject a short title")
+	if !validChain(want) || validChain(nil) || validChain([]DiscSegment{{PGC: 1}}) {
+		t.Error("validChain should accept PGCs with lengths only")
 	}
 
 	title := DiscTitle{Number: 1, Angles: 2, Duration: 354, Segments: want}
@@ -82,5 +83,36 @@ func TestMainTitle(t *testing.T) {
 	titles[0].Duration = 3000
 	if got := mainTitle(titles); got != 10 {
 		t.Errorf("main title = %d, want the clearly longest 10", got)
+	}
+}
+
+// A PGC whose programs start at its 1st, 2nd and 4th cells, with cells 2 and 3 the two angles of
+// one block: the block counts once, so program 3 starts after cell 1 and one angle cell.
+func TestProgramStarts(t *testing.T) {
+	b := make([]byte, 4*sectorSize)
+	copy(b, "DVDVIDEO-VTS")
+	binary.BigEndian.PutUint32(b[0xCC:], 1) // PGC table at sector 1
+	g := sectorSize
+	binary.BigEndian.PutUint16(b[g:], 1)
+	binary.BigEndian.PutUint32(b[g+12:], 16) // the PGC, 16 bytes into the table
+	pgc := g + 16
+	b[pgc+2], b[pgc+3] = 3, 4                                                               // programs, cells
+	copy(b[pgc+4:], []byte{0, 0, 0x50, 0xC0})                                               // PGC length 50s
+	binary.BigEndian.PutUint16(b[pgc+0xE6:], 0xEC)                                          // program map
+	binary.BigEndian.PutUint16(b[pgc+0xE8:], 0xF0)                                          // cell table
+	copy(b[pgc+0xEC:], []byte{1, 2, 4})                                                     // programs' first cells
+	cells := []struct{ flags, secs byte }{{0, 0x10}, {0x50, 0x15}, {0xD0, 0x15}, {0, 0x20}} // angle block: first (01) and last (11)
+	for i, c := range cells {
+		e := pgc + 0xF0 + 24*i
+		b[e] = c.flags
+		copy(b[e+4:], []byte{0, 0, c.secs, 0xC0})
+	}
+	durations, programs := readPGCs(b)
+	if durations[1] != 50 || !reflect.DeepEqual(programs[1], []float64{0, 10, 25}) {
+		t.Errorf("PGC = %v, programs %v; want 50s and starts [0 10 25]", durations[1], programs[1])
+	}
+	tt := dvdTitleTable{ptts: []ptt{{1, 1}, {1, 2}, {1, 3}}, pgcDuration: durations, programs: programs}
+	if got := tt.chapters(tt.segments()); !reflect.DeepEqual(got, []float64{0, 10, 25}) {
+		t.Errorf("chapters = %v", got)
 	}
 }
