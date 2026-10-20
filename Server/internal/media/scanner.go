@@ -196,6 +196,8 @@ func (s *Scanner) getMimeType(path string) string {
 		".mp4":  "video/mp4",
 		".mkv":  "video/x-matroska",
 		".avi":  "video/x-msvideo",
+		".divx": "video/x-msvideo", // DivX and Xvid files are AVI containers
+		".xvid": "video/x-msvideo",
 		".mov":  "video/quicktime",
 		".wmv":  "video/x-ms-wmv",
 		".asf":  "video/x-ms-asf",

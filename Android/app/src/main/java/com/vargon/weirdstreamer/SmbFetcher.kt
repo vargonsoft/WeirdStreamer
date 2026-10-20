@@ -196,7 +196,7 @@ class SmbFetcher(
             "mpg", "mpeg" -> "video/mpeg"
             "m4v" -> "video/x-m4v"
             "vob" -> "video/dvd"
-            "avi" -> "video/x-msvideo"
+            "avi", "divx", "xvid" -> "video/x-msvideo"
             "ts" -> "video/mp2t"
             "webm" -> "video/webm"
             "mov" -> "video/quicktime"

@@ -50,7 +50,7 @@ class VideoThumbnailDecoder(
 ) : Decoder {
 
     companion object {
-        private val MEDIA3_PREFERRED_EXTENSIONS = setOf("flv", "avi", "wmv", "asf")
+        private val MEDIA3_PREFERRED_EXTENSIONS = setOf("flv", "avi", "divx", "xvid", "wmv", "asf")
         private const val TAG = "VideoThumbnailDecoder"
         
         // Tracks paths refreshed in the current app session to avoid redundant network calls.
@@ -233,7 +233,7 @@ class VideoThumbnailDecoder(
                 val mimeType = when (ext) {
                     "wmv" -> "video/x-ms-wmv"
                     "asf" -> "video/x-ms-asf"
-                    "avi" -> "video/x-msvideo"
+                    "avi", "divx", "xvid" -> "video/x-msvideo"
                     "flv" -> "video/x-flv"
                     else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
                 }

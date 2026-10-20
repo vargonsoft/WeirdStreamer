@@ -66,7 +66,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 	var mediaType string
 
 	switch ext {
-	case ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp", ".3gpp", ".ts", ".mp2":
+	case ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp", ".3gpp", ".ts", ".mp2", ".divx", ".xvid":
 		mediaType = "video"
 	case ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".jfif", ".heif", ".heic":
 		mediaType = "image"

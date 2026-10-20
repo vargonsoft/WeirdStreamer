@@ -103,6 +103,7 @@ class SmbRepository(
         val ext = filename.substringAfterLast('.', "").lowercase()
         return when (ext) {
             "mp4", "mkv", "avi", "mov", "webm", "flv" -> "video/$ext"
+            "divx", "xvid" -> "video/x-msvideo"
             "jpg", "jpeg" -> "image/jpeg"
             "png" -> "image/png"
             "gif" -> "image/gif"
