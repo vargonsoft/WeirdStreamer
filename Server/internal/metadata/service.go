@@ -203,9 +203,9 @@ func (s *Service) runLookup(ctx context.Context, client *Client, j job) error {
 		return nil
 	}
 
-	tmdbID := 0
+	tmdbID, kind := 0, l.Kind
 	if existing != nil && existing.Status == "matched" {
-		tmdbID = existing.TMDBID
+		tmdbID, kind = existing.TMDBID, existing.MatchKind()
 	} else {
 		tmdbID, err = s.search(ctx, client, l)
 		if err == nil && tmdbID == 0 && j.fallback != nil {
@@ -231,7 +231,7 @@ func (s *Service) runLookup(ctx context.Context, client *Client, j job) error {
 	}
 
 	changed := false
-	if l.Kind == config.LibraryTypeMovie {
+	if kind == config.LibraryTypeMovie {
 		changed, err = s.ensureMovie(ctx, client, tmdbID)
 	} else {
 		changed, err = s.ensureShow(ctx, client, tmdbID)
@@ -711,6 +711,9 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 			ref, ok := ResolveFile(lib, f)
 			// Only episodes name a show; other TV files (extras, "Week 3" recordings) don't.
 			if !ok || (lib.Type == config.LibraryTypeTV && !ref.IsEpisode) {
+				if extra, ok := ExtraRef(lib, f); ok {
+					keepKeys[extra.Key] = true // keeps a manual fix of this file
+				}
 				if show := ShowFolderOf(lib, f); lib.Type == config.LibraryTypeTV && show != "" && show != f {
 					otherByShowFolder[show] = append(otherByShowFolder[show], f)
 				} else {
@@ -798,7 +801,7 @@ func (s *Service) needsWork(l *database.Lookup, seasons []int) bool {
 	if existing.Status != "matched" {
 		return !existing.Manual && due(existing.Status, existing.AttemptedAt)
 	}
-	if l.Kind == config.LibraryTypeMovie {
+	if existing.MatchKind() == config.LibraryTypeMovie {
 		m, err := s.db.GetMovie(existing.TMDBID)
 		return err != nil || !movieFresh(m)
 	}

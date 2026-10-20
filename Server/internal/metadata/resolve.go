@@ -189,6 +189,34 @@ func ResolveFile(lib config.MediaPath, path string) (Ref, bool) {
 	return Ref{}, false
 }
 
+// extraKeyPrefix starts the lookup keys of single TV-library files that aren't episodes (a TV
+// movie or special in a show folder). Only manual fixes create such lookups.
+const extraKeyPrefix = "file|"
+
+// IsExtraKey reports whether a lookup key stands for one non-episode TV file.
+func IsExtraKey(key string) bool {
+	return strings.HasPrefix(key, extraKeyPrefix)
+}
+
+// ExtraRef is the ref a TV-library video that isn't an episode can be fixed by: its own lookup,
+// keyed by its path in the library, searched by its file name.
+func ExtraRef(lib config.MediaPath, path string) (Ref, bool) {
+	if lib.Type != config.LibraryTypeTV {
+		return Ref{}, false
+	}
+	if ref, ok := ResolveFile(lib, path); ok && ref.IsEpisode {
+		return Ref{}, false
+	}
+	root, _ := filepath.Abs(lib.Path)
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return Ref{}, false
+	}
+	title, year := ParseTitleYear(filepath.Base(path))
+	return Ref{Kind: config.LibraryTypeTV, LibraryID: lib.ID, Key: extraKeyPrefix + filepath.ToSlash(rel),
+		Title: title, Year: year}, true
+}
+
 // ResolveFolder maps a folder to the title it stands for: a movie folder whose videos are all one
 // title, a TV show folder, or a season folder inside one (Season is set; IsEpisode stays false).
 // folderKey is what a sync or discovery recorded from the files: for movies, the folder's own

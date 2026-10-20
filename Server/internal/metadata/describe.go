@@ -80,7 +80,9 @@ func (s *Service) Annotate(lib config.MediaPath, folder string, dirs []models.Di
 		if items[i].Type != "video" {
 			continue
 		}
-		if ref, ok := ResolveFile(lib, items[i].Path); ok {
+		if md := d.extraSummary(lib, items[i].Path); md != nil {
+			items[i].Metadata = md
+		} else if ref, ok := ResolveFile(lib, items[i].Path); ok {
 			items[i].Metadata = d.summary(ref, items[i].Path, false)
 		}
 	}
@@ -98,6 +100,11 @@ func (s *Service) Details(lib config.MediaPath, path string, isDir bool) (*model
 		ref, ok = ResolveFolder(lib, path, folderKeyFor(lib, path, keys))
 	} else {
 		ref, ok = ResolveFile(lib, path)
+		if extra, isExtra := ExtraRef(lib, path); isExtra {
+			if l, err := s.db.GetLookup(extra.Kind, extra.LibraryID, extra.Key); err == nil && l != nil && l.Status == "matched" {
+				ref, ok = extra, true // a TV-library file matched by hand to a movie
+			}
+		}
 	}
 	if !ok {
 		return nil, nil
@@ -182,7 +189,7 @@ func (d *describer) summary(ref Ref, path string, isDir bool) *models.ItemMetada
 		return nil
 	}
 
-	if ref.Kind == config.LibraryTypeMovie {
+	if l.MatchKind() == config.LibraryTypeMovie {
 		m, err := d.s.db.GetMovie(l.TMDBID)
 		if err != nil || m == nil {
 			d.s.EnqueueRef(ref, path)
@@ -201,6 +208,9 @@ func (d *describer) summary(ref Ref, path string, isDir bool) *models.ItemMetada
 	show := &models.ItemMetadata{Kind: "show", TMDBID: sh.TMDBID, Title: sh.Name, Year: sh.Year,
 		Overview: sh.Overview, Runtime: sh.Runtime,
 		Poster: ArtworkURL(sh.Poster, sh.UpdatedAt), Backdrop: ArtworkURL(sh.Backdrop, sh.UpdatedAt), Logo: ArtworkURL(sh.Logo, sh.UpdatedAt)}
+	if ref.Kind == config.LibraryTypeMovie {
+		return show // a movie library's title matched to a TV show (a TV movie): the show as a whole
+	}
 
 	switch {
 	case isDir && !isSeasonDir(path):
@@ -236,6 +246,19 @@ func (d *describer) summary(ref Ref, path string, isDir bool) *models.ItemMetada
 		Overview: e.Overview, Runtime: e.Runtime, AirDate: e.AirDate, ShowTitle: sh.Name,
 		Season: &season, Episode: &episode,
 		Poster: show.Poster, Backdrop: show.Backdrop, Logo: show.Logo, Still: ArtworkURL(e.Still, e.UpdatedAt)}
+}
+
+// extraSummary returns the movie a TV-library file that isn't an episode was matched to by hand,
+// or nil.
+func (d *describer) extraSummary(lib config.MediaPath, path string) *models.ItemMetadata {
+	ref, ok := ExtraRef(lib, path)
+	if !ok {
+		return nil
+	}
+	if l := d.lookup(ref); l == nil || l.Status != "matched" {
+		return nil
+	}
+	return d.summary(ref, path, false)
 }
 
 func isSeasonDir(path string) bool {

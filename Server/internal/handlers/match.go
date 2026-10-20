@@ -18,6 +18,7 @@ type matchRequest struct {
 	Path   string `json:"path"` // base64 absolute file path
 	Dir    string `json:"dir"`  // browse path of a folder
 	TMDBID int    `json:"tmdb_id"`
+	Kind   string `json:"kind"`   // what tmdb_id is: "movie" or "tv" ("" for the library's kind)
 	Poster string `json:"poster"` // TMDB image path for SetMatchPoster; "" for the default poster
 }
 
@@ -116,9 +117,11 @@ func (h *MediaHandler) SetMatch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.meta.SetMatch(ref, req.TMDBID, t.path); err != nil {
+	if err := h.meta.SetMatch(ref, req.TMDBID, req.Kind, t.path); err != nil {
 		if errors.Is(err, metadata.ErrNoToken) {
 			respondError(w, http.StatusServiceUnavailable, err.Error())
+		} else if errors.Is(err, metadata.ErrBadMatchKind) {
+			respondError(w, http.StatusBadRequest, err.Error())
 		} else {
 			respondError(w, http.StatusInternalServerError, "Failed to save match")
 		}
@@ -140,18 +143,19 @@ func (h *MediaHandler) ResetMatch(w http.ResponseWriter, r *http.Request) {
 	h.respondMatchInfo(w, http.StatusAccepted, ref, t)
 }
 
-// matchedTitle returns the TMDB title a fix-match target is matched to.
-func (h *MediaHandler) matchedTitle(w http.ResponseWriter, ref metadata.Ref) (int, bool) {
+// matchedTitle returns the TMDB title a fix-match target is matched to: its kind ("movie" or
+// "tv") and ID.
+func (h *MediaHandler) matchedTitle(w http.ResponseWriter, ref metadata.Ref) (string, int, bool) {
 	info, err := h.meta.MatchInfo(ref)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to load match")
-		return 0, false
+		return "", 0, false
 	}
 	if info.Current == nil {
 		respondError(w, http.StatusConflict, "Match this item to a title first")
-		return 0, false
+		return "", 0, false
 	}
-	return info.Current.TMDBID, true
+	return info.MatchKind, info.Current.TMDBID, true
 }
 
 // GetMatchPosters lists every TMDB poster for the title a file or folder is matched to.
@@ -160,11 +164,11 @@ func (h *MediaHandler) GetMatchPosters(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, ok := h.matchedTitle(w, ref)
+	kind, id, ok := h.matchedTitle(w, ref)
 	if !ok {
 		return
 	}
-	list, err := h.meta.Posters(r.Context(), ref.Kind, id)
+	list, err := h.meta.Posters(r.Context(), kind, id)
 	if errors.Is(err, metadata.ErrNotFetched) {
 		respondError(w, http.StatusConflict, err.Error())
 		return
@@ -188,11 +192,11 @@ func (h *MediaHandler) SetMatchPoster(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, ok := h.matchedTitle(w, ref)
+	kind, id, ok := h.matchedTitle(w, ref)
 	if !ok {
 		return
 	}
-	err := h.meta.SetPoster(r.Context(), ref.Kind, id, req.Poster, t.path)
+	err := h.meta.SetPoster(r.Context(), kind, id, req.Poster, t.path)
 	switch {
 	case errors.Is(err, metadata.ErrBadPoster):
 		respondError(w, http.StatusBadRequest, err.Error())

@@ -15,18 +15,27 @@ import (
 // folders, non-episode TV files) and so can't be matched by hand.
 var ErrNotFixable = errors.New("this item doesn't stand for a single title; fix the files inside it instead")
 
+// ErrBadMatchKind is returned for a match of a kind the title can't use: movie library titles
+// match movies or TV shows (TV movies), TV shows match TV shows, and TV-library files that
+// aren't episodes match movies.
+var ErrBadMatchKind = errors.New("this library can't match to that kind of title")
+
 // ErrNoToken is returned when no TMDB token is configured.
 var ErrNoToken = errors.New("no TMDB access token is configured")
 
 // MatchInfo describes what a file or folder was matched against, for the fix-match dialog.
 type MatchInfo struct {
-	Kind    string               `json:"kind"`  // "movie" or "tv"
-	Query   string               `json:"query"` // the title that was (or will be) searched
-	Year    int                  `json:"year,omitempty"`
-	Status  string               `json:"status"` // "matched", "not_found", "error" or "pending"
-	Manual  bool                 `json:"manual"`
-	Current *models.ItemMetadata `json:"current,omitempty"`
-	Episode *EpisodeInfo         `json:"episode,omitempty"` // TV episode files: which TMDB episode it shows as
+	Kind string `json:"kind"` // "movie" or "tv": the library's type
+	// MatchKind is what the title is matched to ("movie" or "tv"): a movie library's title can be
+	// matched to a TV show. Kinds offers what the dialog may search.
+	MatchKind string               `json:"match_kind"`
+	Kinds     []string             `json:"kinds"`
+	Query     string               `json:"query"` // the title that was (or will be) searched
+	Year      int                  `json:"year,omitempty"`
+	Status    string               `json:"status"` // "matched", "not_found", "error" or "pending"
+	Manual    bool                 `json:"manual"`
+	Current   *models.ItemMetadata `json:"current,omitempty"`
+	Episode   *EpisodeInfo         `json:"episode,omitempty"` // TV episode files: which TMDB episode it shows as
 }
 
 // SearchHit is one TMDB search result offered in the fix-match dialog.
@@ -46,6 +55,10 @@ func (s *Service) MatchTarget(lib config.MediaPath, path string, isDir bool) (Re
 	if !isDir {
 		ref, ok := ResolveFile(lib, path)
 		if !ok || (ref.Kind == config.LibraryTypeTV && !ref.IsEpisode) {
+			// A TV-library file that isn't an episode is fixed on its own, as a movie.
+			if extra, ok := ExtraRef(lib, path); ok {
+				return extra, nil
+			}
 			return Ref{}, ErrNotFixable
 		}
 		return ref, nil
@@ -73,7 +86,9 @@ func (s *Service) MatchTarget(lib config.MediaPath, path string, isDir bool) (Re
 
 // MatchInfo reports the current match for a target ref.
 func (s *Service) MatchInfo(ref Ref) (*MatchInfo, error) {
-	info := &MatchInfo{Kind: ref.Kind, Query: ref.Title, Year: ref.Year, Status: "pending"}
+	kinds := matchKinds(ref)
+	info := &MatchInfo{Kind: ref.Kind, MatchKind: kinds[0], Kinds: kinds, Query: ref.Title,
+		Year: ref.Year, Status: "pending"}
 	l, err := s.db.GetLookup(ref.Kind, ref.LibraryID, ref.Key)
 	if err != nil || l == nil {
 		return info, err
@@ -82,7 +97,8 @@ func (s *Service) MatchInfo(ref Ref) (*MatchInfo, error) {
 	if l.Status != "matched" {
 		return info, nil
 	}
-	if ref.Kind == config.LibraryTypeMovie {
+	info.MatchKind = l.MatchKind()
+	if info.MatchKind == config.LibraryTypeMovie {
 		if m, err := s.db.GetMovie(l.TMDBID); err == nil && m != nil {
 			info.Current = &models.ItemMetadata{Kind: "movie", TMDBID: m.TMDBID, Title: m.Title, Year: m.Year,
 				Overview: m.Overview, Poster: ArtworkURL(m.Poster, m.UpdatedAt)}
@@ -128,11 +144,29 @@ func (s *Service) Search(ctx context.Context, kind, query string, year int) ([]S
 	return hits, nil
 }
 
+// matchKinds lists the kinds of title a ref can be matched to, the usual one first.
+func matchKinds(ref Ref) []string {
+	switch {
+	case ref.Kind == config.LibraryTypeMovie:
+		return []string{config.LibraryTypeMovie, config.LibraryTypeTV}
+	case IsExtraKey(ref.Key):
+		return []string{config.LibraryTypeMovie}
+	}
+	return []string{config.LibraryTypeTV}
+}
+
 // SetMatch records a manual match (tmdbID > 0) or a manual "no match" (tmdbID == 0) for ref's
-// title, then fetches its details and artwork in the background.
-func (s *Service) SetMatch(ref Ref, tmdbID int, notifyPath string) error {
+// title, then fetches its details and artwork in the background. kind is what tmdbID is ("movie"
+// or "tv"; "" for the library's own kind).
+func (s *Service) SetMatch(ref Ref, tmdbID int, kind, notifyPath string) error {
 	if s.tmdb() == nil {
 		return ErrNoToken
+	}
+	if kind == "" || tmdbID == 0 {
+		kind = matchKinds(ref)[0]
+	}
+	if !contains(matchKinds(ref), kind) {
+		return ErrBadMatchKind
 	}
 	l, err := s.db.GetLookup(ref.Kind, ref.LibraryID, ref.Key)
 	if err != nil {
@@ -143,6 +177,10 @@ func (s *Service) SetMatch(ref Ref, tmdbID int, notifyPath string) error {
 			QueryTitle: ref.Title, QueryYear: ref.Year, QueryCountry: ref.Country}
 	}
 	l.TMDBID, l.Status, l.Manual, l.AttemptedAt = tmdbID, "matched", true, time.Now()
+	l.TMDBKind = ""
+	if kind != ref.Kind {
+		l.TMDBKind = kind
+	}
 	if tmdbID == 0 {
 		l.Status = "not_found"
 	}
@@ -169,6 +207,9 @@ func (s *Service) ResetMatch(ref Ref, notifyPath string) error {
 	}
 	if err := s.db.DeleteLookup(ref.Kind, ref.LibraryID, ref.Key); err != nil {
 		return err
+	}
+	if IsExtraKey(ref.Key) {
+		return nil // single files that aren't episodes are only ever matched by hand
 	}
 	ref.Title, ref.Year, ref.Country = l.QueryTitle, l.QueryYear, l.QueryCountry
 	s.EnqueueRef(ref, notifyPath)

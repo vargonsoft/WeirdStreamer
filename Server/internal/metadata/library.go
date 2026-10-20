@@ -65,7 +65,7 @@ func (s *Service) matchedTitles(lib config.MediaPath, idx *libraryIndex) (map[ti
 			continue
 		}
 		kind := "movie"
-		if lib.Type == config.LibraryTypeTV {
+		if l.MatchKind() == config.LibraryTypeTV {
 			kind = "show"
 		}
 		tk := titleKey{kind, l.TMDBID}
@@ -133,8 +133,11 @@ func (s *Service) Library(ctx context.Context, lib config.MediaPath, info FileIn
 			listing.Unmatched = append(listing.Unmatched, info(path))
 		}
 	}
+	d := s.newDescriber()
 	for _, path := range idx.unmatched {
-		listing.Unmatched = append(listing.Unmatched, info(path))
+		f := info(path)
+		f.Match = d.extraSummary(lib, path)
+		listing.Unmatched = append(listing.Unmatched, f)
 	}
 	sort.Slice(listing.Unmatched, func(i, j int) bool {
 		return SortTitle(listing.Unmatched[i].Name) < SortTitle(listing.Unmatched[j].Name)
@@ -166,7 +169,8 @@ func (s *Service) Title(ctx context.Context, lib config.MediaPath, kind string, 
 	}
 	sort.Strings(files)
 
-	if kind == "movie" {
+	if lib.Type == config.LibraryTypeMovie {
+		// Movie libraries list files, whether the title is a movie or a TV show (a TV movie).
 		for _, path := range files {
 			detail.Files = append(detail.Files, info(path))
 		}
@@ -227,8 +231,11 @@ func (s *Service) Title(ctx context.Context, lib config.MediaPath, kind string, 
 		other = append(other, idx.other[k]...)
 	}
 	sort.Strings(other)
+	d := s.newDescriber()
 	for _, path := range other {
-		detail.OtherFiles = append(detail.OtherFiles, info(path))
+		f := info(path)
+		f.Match = d.extraSummary(lib, path) // a TV movie or special fixed by hand
+		detail.OtherFiles = append(detail.OtherFiles, f)
 	}
 	return detail, nil
 }

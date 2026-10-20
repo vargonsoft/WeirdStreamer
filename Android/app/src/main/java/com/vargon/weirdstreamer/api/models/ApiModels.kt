@@ -69,7 +69,14 @@ data class LibraryFile(
     @SerializedName("size") val size: Long = 0,
     @SerializedName("duration") val duration: Double? = null,
     @SerializedName("thumbnail_url") val thumbnailUrl: String? = null,
-    @SerializedName("count") val count: Int? = null
+    @SerializedName("count") val count: Int? = null,
+    // The movie a TV-library file that isn't an episode was matched to by hand
+    @SerializedName("match") val match: FileMatch? = null
+)
+
+data class FileMatch(
+    @SerializedName("title") val title: String,
+    @SerializedName("year") val year: Int? = null
 )
 
 data class CreditInfo(

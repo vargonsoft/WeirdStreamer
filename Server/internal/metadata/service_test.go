@@ -276,7 +276,7 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetMatch(ref, 603, moviePath); err != nil {
+	if err := s.SetMatch(ref, 603, "", moviePath); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { m, _ := db.GetMovie(603); return m != nil }, "manual match details were not fetched")
@@ -290,7 +290,46 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 	if err != nil || folderRef.Key != ref.Key {
 		t.Errorf("folder target = %+v, %v; want key %q", folderRef, err, ref.Key)
 	}
-	if err := s.SetMatch(ref, 0, moviePath); err != nil {
+	// A movie library's title can be matched to a TV show (a TV movie), but not the other way.
+	if err := s.SetMatch(ref, 157744, config.LibraryTypeTV, moviePath); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { info, _ := s.MatchInfo(ref); return info.Current != nil }, "TV match details missing")
+	info, _ = s.MatchInfo(ref)
+	if info.Kind != "movie" || info.MatchKind != "tv" || info.Current.Kind != "show" || info.Current.TMDBID != 157744 ||
+		len(info.Kinds) != 2 {
+		t.Errorf("TV match info = %+v / %+v", info, info.Current)
+	}
+	if libs, _ := db.LibrariesForTMDB(config.LibraryTypeTV, 157744); !contains(libs, "m") {
+		t.Errorf("TV-matched movie file's library can't see the show's artwork: %v", libs)
+	}
+	if ids, _ := db.MatchedTMDBIDs(config.LibraryTypeTV); !ids[157744] {
+		t.Errorf("TV-matched movie file doesn't keep the show from cleanup: %v", ids)
+	}
+	if d, _ := s.Details(movieLib, moviePath, false); d == nil || d.Kind != "show" || d.Title != "1923" {
+		t.Errorf("TV-matched movie file details = %+v", d)
+	}
+	tvMatchListing, err := s.Library(ctx, movieLib, fileInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundShow := false
+	for _, title := range tvMatchListing.Titles {
+		foundShow = foundShow || (title.Kind == "show" && title.TMDBID == 157744)
+	}
+	if !foundShow {
+		t.Errorf("movie library listing has no TV-matched title: %+v", tvMatchListing.Titles)
+	}
+	tvMoviePage, err := s.Title(ctx, movieLib, "show", 157744, fileInfo)
+	if err != nil || len(tvMoviePage.Files) != 1 || len(tvMoviePage.Seasons) != 0 {
+		t.Errorf("TV-matched movie title page = %+v, %v", tvMoviePage, err)
+	}
+	tvRef, _ := s.MatchTarget(tvLib, episodePath, false)
+	if err := s.SetMatch(tvRef, 9476, config.LibraryTypeMovie, episodePath); err != ErrBadMatchKind {
+		t.Errorf("TV library matched to a movie: err = %v, want ErrBadMatchKind", err)
+	}
+
+	if err := s.SetMatch(ref, 0, "", moviePath); err != nil {
 		t.Fatal(err)
 	}
 	s.SyncAll(ctx)

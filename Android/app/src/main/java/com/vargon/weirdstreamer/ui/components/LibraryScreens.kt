@@ -257,7 +257,8 @@ fun TitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                if (title.kind == "movie") {
+                // Movie libraries list files, also for a title matched to a TV show (a TV movie).
+                if (title.kind == "movie" || !title.files.isNullOrEmpty()) {
                     // The files sit in the hero's right column so the whole page fits on screen.
                     val files = title.files.orEmpty()
                     item(key = "hero") {
@@ -415,7 +416,10 @@ private fun FileRow(
                     viewModel.serverUrl(file.thumbnailUrl)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
                 }
                 Text(
-                    listOf(file.name, formatBytes(file.size)).filter { it.isNotEmpty() }.joinToString(" · "),
+                    listOf(
+                        file.match?.let { m -> m.title + (m.year?.let { " ($it)" } ?: "") } ?: file.name,
+                        formatBytes(file.size)
+                    ).filter { it.isNotEmpty() }.joinToString(" · "),
                     // Two lines, so files of one title (part 1, part 2...) can be told apart.
                     style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     minLines = 2

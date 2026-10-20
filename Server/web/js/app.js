@@ -232,17 +232,24 @@ function showMainScreen() {
                 if (nameDiv && nameDiv.textContent === item.name) {
                     const thumbnailDiv = element.querySelector('.media-thumbnail');
                     if (thumbnailDiv) {
+                        // Keep the Fix button, which lives in the thumbnail.
+                        const fix = thumbnailDiv.querySelector('.fix-match-btn');
+                        const replace = (content) => {
+                            thumbnailDiv.innerHTML = '';
+                            if (typeof content === 'string') thumbnailDiv.innerHTML = content;
+                            else thumbnailDiv.appendChild(content);
+                            if (fix) thumbnailDiv.appendChild(fix);
+                        };
                         thumbnailDiv.classList.remove('no-thumb');
-                        thumbnailDiv.innerHTML = '';
                         const img = document.createElement('img');
                         // Add cache buster to force reload
                         img.src = api.getThumbnailUrl(data.thumbnailURL) + '?t=' + Date.now();
                         img.alt = item.name;
                         img.onerror = () => {
                             thumbnailDiv.classList.add('no-thumb');
-                            thumbnailDiv.innerHTML = getMediaIcon(item.type);
+                            replace(getMediaIcon(item.type));
                         };
-                        thumbnailDiv.appendChild(img);
+                        replace(img);
                         console.log('[SSE] Updated thumbnail for:', item.name);
                     }
                 }
@@ -1113,7 +1120,7 @@ init();
 // ---------------------------------------------------------------------------------------------
 // Manual metadata matching
 
-const matchState = { target: null, name: '', info: null, episodePick: null, seasonsFor: null, hits: [], posters: null };
+const matchState = { target: null, name: '', info: null, episodePick: null, seasonsFor: null, hits: [], posters: null, searchKind: null };
 
 function canFixMatches() {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -1171,6 +1178,13 @@ function setupMatchDialog() {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('active')) close();
     });
+    // Movie libraries can also search TV shows (TV movies); automatic matching never does.
+    document.querySelectorAll('#match-kind button').forEach(btn => btn.addEventListener('click', () => {
+        if (matchState.searchKind === btn.dataset.kind) return;
+        matchState.searchKind = btn.dataset.kind;
+        renderKindSwitch();
+        runMatchSearch();
+    }));
     document.getElementById('match-search').addEventListener('submit', (e) => {
         e.preventDefault();
         runMatchSearch();
@@ -1181,8 +1195,9 @@ function setupMatchDialog() {
     });
     document.getElementById('match-reset').addEventListener('click', async () => {
         try {
+            const singleFile = isSingleFileMatch(matchState.info);
             matchState.info = await api.resetMatch(matchState.target);
-            setMatchMessage('Reset. Matching automatically…');
+            setMatchMessage(singleFile ? 'Match cleared.' : 'Reset. Matching automatically…');
             renderMatchCurrent();
         } catch (error) {
             setMatchMessage('Reset failed: ' + error.message, true);
@@ -1198,6 +1213,8 @@ async function openMatchDialog(target, name) {
     matchState.seasonsFor = null;
     matchState.hits = [];
     matchState.posters = null;
+    matchState.searchKind = null;
+    document.getElementById('match-kind').hidden = true;
     document.getElementById('match-episode').innerHTML = '';
     document.getElementById('match-posters').innerHTML = '';
     document.getElementById('match-target').textContent = name;
@@ -1214,9 +1231,23 @@ async function openMatchDialog(target, name) {
     }
     document.getElementById('match-query').value = matchState.info.query || '';
     document.getElementById('match-year').value = matchState.info.year || '';
+    matchState.searchKind = matchState.info.match_kind || matchState.info.kind;
+    renderKindSwitch();
     renderMatchCurrent();
     runMatchSearch();
     document.getElementById('match-query').focus();
+}
+
+// The Movies | TV shows switch, shown when the library can match either.
+function renderKindSwitch() {
+    const box = document.getElementById('match-kind');
+    const kinds = (matchState.info && matchState.info.kinds) || [];
+    box.hidden = kinds.length < 2;
+    box.querySelectorAll('button').forEach(btn => {
+        btn.hidden = !kinds.includes(btn.dataset.kind);
+        btn.classList.toggle('active', btn.dataset.kind === matchState.searchKind);
+        btn.setAttribute('aria-pressed', btn.dataset.kind === matchState.searchKind);
+    });
 }
 
 async function refreshMatchInfo() {
@@ -1228,16 +1259,23 @@ async function refreshMatchInfo() {
     }
 }
 
+function isSingleFileMatch(info) {
+    return !!info && info.kind === 'tv' && (info.kinds || []).length === 1 && info.kinds[0] === 'movie';
+}
+
 function renderMatchCurrent() {
     const info = matchState.info;
     const box = document.getElementById('match-current');
     box.innerHTML = '';
     document.getElementById('match-reset').style.display = info && info.manual ? '' : 'none';
     if (!info) return;
+    // A TV-library file that isn't an episode: matched on its own, by hand only.
+    const singleFile = isSingleFileMatch(info);
+    document.getElementById('match-reset').textContent = singleFile ? 'Clear match' : 'Reset to automatic';
 
     const status = document.createElement('div');
     status.className = 'match-status';
-    const kindLabel = info.kind === 'tv' ? 'TV show' : 'Movie';
+    const kindLabel = (info.match_kind || info.kind) === 'tv' ? 'TV show' : 'Movie';
     if (info.current) {
         if (info.current.poster) {
             const img = document.createElement('img');
@@ -1252,14 +1290,15 @@ function renderMatchCurrent() {
         status.textContent = {
             not_found: info.manual ? 'Marked as no match.' : `No ${kindLabel.toLowerCase()} match found.`,
             error: 'The last lookup failed.',
-            pending: 'Not matched yet (lookup pending).',
+            pending: singleFile ? "Not matched. Files that aren't episodes are only matched by hand." : 'Not matched yet (lookup pending).',
             matched: 'Matched; fetching details…',
         }[info.status] || info.status;
     }
     box.appendChild(status);
     const hint = document.createElement('div');
     hint.className = 'match-hint';
-    hint.textContent = 'Choosing a result applies to every file in this library with the same title.';
+    hint.textContent = singleFile ? 'Choosing a result applies to this file only.'
+        : 'Choosing a result applies to every file in this library with the same title.';
     box.appendChild(hint);
     markCurrentHit();
     renderEpisodeSection();
@@ -1435,9 +1474,11 @@ async function clearEpisodeMapping(wholeSeason) {
 
 // Highlights the result that is the current match (its details may arrive after the search).
 function markCurrentHit() {
-    const currentId = matchState.info && matchState.info.current && matchState.info.current.tmdb_id;
+    const info = matchState.info;
+    const currentId = info && info.current && info.current.tmdb_id;
+    const currentKind = info && (info.match_kind || info.kind);
     document.querySelectorAll('.match-hit').forEach(row => {
-        const isCurrent = Number(row.dataset.tmdbId) === currentId;
+        const isCurrent = Number(row.dataset.tmdbId) === currentId && row.dataset.kind === currentKind;
         row.classList.toggle('current', isCurrent);
         row.title = isCurrent ? 'Current match' : 'Use this match';
         row.querySelector('.current-tag').hidden = !isCurrent;
@@ -1449,10 +1490,13 @@ async function runMatchSearch() {
     const year = document.getElementById('match-year').value.trim();
     const results = document.getElementById('match-results');
     if (!query || !matchState.info) return;
+    const kind = matchState.searchKind || matchState.info.kind;
     results.innerHTML = '<p class="match-empty">Searching…</p>';
     let hits;
     try {
-        hits = await api.searchMatch(matchState.info.kind, query, year);
+        hits = await api.searchMatch(kind, query, year);
+        if (kind !== (matchState.searchKind || matchState.info.kind)) return; // switched meanwhile
+        hits.forEach(h => { h.kind = kind; });
     } catch (error) {
         results.innerHTML = '';
         setMatchMessage('Search failed: ' + error.message, true);
@@ -1474,6 +1518,7 @@ function createMatchHit(hit) {
     row.type = 'button';
     row.className = 'match-hit';
     row.dataset.tmdbId = hit.tmdb_id;
+    row.dataset.kind = hit.kind;
 
     const poster = document.createElement('div');
     poster.className = 'match-hit-poster';
@@ -1501,13 +1546,13 @@ function createMatchHit(hit) {
     text.appendChild(overview);
     row.appendChild(poster);
     row.appendChild(text);
-    row.onclick = () => applyMatch(hit.tmdb_id, `Matched to ${hit.title}. Fetching details…`);
+    row.onclick = () => applyMatch(hit.tmdb_id, `Matched to ${hit.title}. Fetching details…`, hit.kind);
     return row;
 }
 
-async function applyMatch(tmdbId, message) {
+async function applyMatch(tmdbId, message, kind) {
     try {
-        matchState.info = await api.setMatch(matchState.target, tmdbId);
+        matchState.info = await api.setMatch(matchState.target, tmdbId, kind);
         setMatchMessage(message);
         renderMatchCurrent();
     } catch (error) {
@@ -1571,7 +1616,7 @@ async function renderPosterSection() {
         'TMDB has no posters for this title.'));
 
     const others = matchState.hits
-        .filter(h => h.tmdb_id !== current.tmdb_id && h.poster_path)
+        .filter(h => !(h.tmdb_id === current.tmdb_id && h.kind === (matchState.info.match_kind || matchState.info.kind)) && h.poster_path)
         .map(h => ({ path: h.poster_path, url: h.poster, label: h.title + (h.year ? ` (${h.year})` : '') }));
     if (others.length) box.appendChild(createPosterStrip('From other search results', others, list.current));
 }
@@ -1823,7 +1868,7 @@ function createUnmatchedCard(f) {
 
 function libraryFileItem(f) {
     return { path: f.path, name: f.name, type: 'video', size: f.size || 0, duration: f.duration || 0,
-             thumbnail_url: f.thumbnail_url || '' };
+             thumbnail_url: f.thumbnail_url || '', metadata: f.match || null };
 }
 
 async function showTitle(libId, kind, id, push = true, keepScroll = false) {
@@ -1855,7 +1900,8 @@ async function showTitle(libId, kind, id, push = true, keepScroll = false) {
     container.innerHTML = '';
     container.appendChild(createTitleHero(t));
 
-    if (kind === 'movie') {
+    // Movie libraries list files, also for a title matched to a TV show (a TV movie).
+    if (kind === 'movie' || (t.files || []).length) {
         state.mediaItems = (t.files || []).map(libraryFileItem);
         container.appendChild(createFilesSection(t.files.length > 1 ? 'Files' : '', t.files || []));
     } else {

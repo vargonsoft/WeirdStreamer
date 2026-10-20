@@ -139,6 +139,8 @@ type LibraryFile struct {
 	Duration     float64 `json:"duration,omitempty"`
 	ThumbnailURL string  `json:"thumbnail_url,omitempty"`
 	Count        int     `json:"count,omitempty"` // unmatched TV shows: how many files
+	// Match is the movie a TV library file that isn't an episode was matched to by hand.
+	Match *ItemMetadata `json:"match,omitempty"`
 }
 
 // TitleDetail is a title page: the full metadata plus the library's files for it.

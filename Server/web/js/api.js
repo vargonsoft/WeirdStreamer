@@ -206,10 +206,11 @@ class MediaAPI {
         return this.request(`/api/media/match/search?${params}`);
     }
 
-    async setMatch(target, tmdbId) {
+    // kind is what tmdbId is ('movie' or 'tv'); a movie library can match a TV show.
+    async setMatch(target, tmdbId, kind) {
         const body = target.dir !== undefined
-            ? { dir: target.dir, tmdb_id: tmdbId }
-            : { path: this.encodePath(target.path), tmdb_id: tmdbId };
+            ? { dir: target.dir, tmdb_id: tmdbId, kind: kind || '' }
+            : { path: this.encodePath(target.path), tmdb_id: tmdbId, kind: kind || '' };
         return this.request('/api/media/match', { method: 'PUT', body: JSON.stringify(body) });
     }
 

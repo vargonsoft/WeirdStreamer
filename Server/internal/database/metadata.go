@@ -139,6 +139,17 @@ type Lookup struct {
 	Status       string
 	AttemptedAt  time.Time
 	Manual       bool // set by hand in the web UI; automatic matching never changes it
+	// TMDBKind is what TMDBID is ("movie" or "tv") when it isn't the library's own kind: a
+	// movie library's TV movie matched by hand to a TV show. "" means the same as Kind.
+	TMDBKind string
+}
+
+// MatchKind is what the lookup's TMDB ID refers to: "movie" or "tv".
+func (l *Lookup) MatchKind() string {
+	if l.TMDBKind != "" {
+		return l.TMDBKind
+	}
+	return l.Kind
 }
 
 // Movie and Show artwork fields hold paths relative to the configured artwork directory.
@@ -227,6 +238,7 @@ func (db *DB) initMetadataSchema() error {
 		return err
 	}
 	_, _ = db.mediaConn.Exec("ALTER TABLE metadata_lookups ADD COLUMN manual INTEGER NOT NULL DEFAULT 0")
+	_, _ = db.mediaConn.Exec("ALTER TABLE metadata_lookups ADD COLUMN tmdb_kind TEXT NOT NULL DEFAULT ''")
 	for _, table := range []string{"movies", "shows"} {
 		_, _ = db.mediaConn.Exec("ALTER TABLE " + table + " ADD COLUMN poster_source TEXT NOT NULL DEFAULT ''")
 		_, _ = db.mediaConn.Exec("ALTER TABLE " + table + " ADD COLUMN poster_manual INTEGER NOT NULL DEFAULT 0")
@@ -238,9 +250,9 @@ func (db *DB) initMetadataSchema() error {
 func (db *DB) GetLookup(kind, libraryID, key string) (*Lookup, error) {
 	l := &Lookup{}
 	err := db.mediaConn.QueryRow(`
-		SELECT kind, library_id, query_key, query_title, query_year, query_country, tmdb_id, status, attempted_at, manual
+		SELECT kind, library_id, query_key, query_title, query_year, query_country, tmdb_id, status, attempted_at, manual, tmdb_kind
 		FROM metadata_lookups WHERE kind = ? AND library_id = ? AND query_key = ?`, kind, libraryID, key).
-		Scan(&l.Kind, &l.LibraryID, &l.QueryKey, &l.QueryTitle, &l.QueryYear, &l.QueryCountry, &l.TMDBID, &l.Status, &l.AttemptedAt, &l.Manual)
+		Scan(&l.Kind, &l.LibraryID, &l.QueryKey, &l.QueryTitle, &l.QueryYear, &l.QueryCountry, &l.TMDBID, &l.Status, &l.AttemptedAt, &l.Manual, &l.TMDBKind)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -250,9 +262,9 @@ func (db *DB) GetLookup(kind, libraryID, key string) (*Lookup, error) {
 func (db *DB) SaveLookup(l *Lookup) error {
 	_, err := db.mediaConn.Exec(`
 		INSERT OR REPLACE INTO metadata_lookups
-		(kind, library_id, query_key, query_title, query_year, query_country, tmdb_id, status, attempted_at, manual)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.Kind, l.LibraryID, l.QueryKey, l.QueryTitle, l.QueryYear, l.QueryCountry, l.TMDBID, l.Status, l.AttemptedAt, l.Manual)
+		(kind, library_id, query_key, query_title, query_year, query_country, tmdb_id, status, attempted_at, manual, tmdb_kind)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.Kind, l.LibraryID, l.QueryKey, l.QueryTitle, l.QueryYear, l.QueryCountry, l.TMDBID, l.Status, l.AttemptedAt, l.Manual, l.TMDBKind)
 	return err
 }
 
@@ -265,7 +277,7 @@ func (db *DB) DeleteLookup(kind, libraryID, key string) error {
 // LibrariesForTMDB lists the libraries holding a file matched to the given movie or show.
 func (db *DB) LibrariesForTMDB(kind string, tmdbID int) ([]string, error) {
 	rows, err := db.mediaConn.Query(`SELECT DISTINCT library_id FROM metadata_lookups
-		WHERE kind = ? AND tmdb_id = ? AND status = 'matched'`, kind, tmdbID)
+		WHERE tmdb_id = ? AND status = 'matched' AND (CASE WHEN tmdb_kind = '' THEN kind ELSE tmdb_kind END) = ?`, tmdbID, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +295,9 @@ func (db *DB) LibrariesForTMDB(kind string, tmdbID int) ([]string, error) {
 
 // MatchedTMDBIDs returns every movie or show ID still referenced by a lookup.
 func (db *DB) MatchedTMDBIDs(kind string) (map[int]bool, error) {
-	rows, err := db.mediaConn.Query(`SELECT DISTINCT tmdb_id FROM metadata_lookups WHERE kind = ? AND status = 'matched'`, kind)
+	// A lookup's ID is a title of its own kind unless tmdb_kind says otherwise.
+	rows, err := db.mediaConn.Query(`SELECT DISTINCT tmdb_id FROM metadata_lookups WHERE status = 'matched'
+		AND (CASE WHEN tmdb_kind = '' THEN kind ELSE tmdb_kind END) = ?`, kind)
 	if err != nil {
 		return nil, err
 	}
