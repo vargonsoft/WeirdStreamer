@@ -247,6 +247,12 @@ header h1 {
 
 .directory-item .media-name {
     font-weight: 600;
+    padding: 10px 10px 0;
+    margin-bottom: 10px; /* the name is the card's last line unless a match label follows */
+}
+
+.directory-item .media-match {
+    margin-top: -6px;
 }
 
 /* Media Grid */
