@@ -1507,7 +1507,35 @@ header h1 {
     flex: 1;
     min-height: 0;
     width: 100%;
+    height: 100%;
     max-height: none;
+}
+
+/* The controls lie over the bottom of the video, and fade out with the cursor when idle */
+#player-modal .modal-content:fullscreen {
+    position: relative;
+    padding: 0;
+}
+
+#player-modal .modal-content:fullscreen .disc-controls {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    padding: 40px 24px 20px;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+    transition: opacity 0.3s;
+}
+
+#player-modal .modal-content:fullscreen.controls-hidden,
+#player-modal .modal-content:fullscreen.controls-hidden #video-player {
+    cursor: none;
+}
+
+#player-modal .modal-content:fullscreen.controls-hidden .disc-controls {
+    opacity: 0;
+    pointer-events: none;
 }
 
 #player-modal .modal-content:fullscreen #player-title,
@@ -1518,4 +1546,29 @@ header h1 {
 
 #player-modal .modal-content:fullscreen .disc-position {
     color: #ccc;
+}
+
+/* Disc control buttons: Material icons, fixed sizes so they don't shift as icons change */
+.disc-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 32px;
+    min-width: 40px;
+    padding: 0 8px;
+    line-height: 1;
+}
+
+.disc-icon-btn svg {
+    flex: none;
+}
+
+.disc-play-btn {
+    width: 56px;
+}
+
+.disc-skip-btn {
+    width: 72px;
+    font-size: 13px;
 }
