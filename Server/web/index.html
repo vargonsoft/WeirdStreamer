@@ -170,12 +170,18 @@
                 <video id="video-player" controls></video>
                 <!-- DVD disc images: what to play from the disc -->
                 <div id="disc-controls" class="disc-controls" hidden>
+                    <!-- The whole title: the video's own bar only covers the stream since its last restart -->
+                    <div class="disc-seek">
+                        <button type="button" id="disc-back" class="btn btn-small" title="Back 10 seconds">−10s</button>
+                        <input type="range" id="disc-seek" min="0" max="1" step="1" value="0" aria-label="Position in title">
+                        <button type="button" id="disc-forward" class="btn btn-small" title="Forward 30 seconds">+30s</button>
+                        <span id="disc-position" class="disc-position"></span>
+                    </div>
                     <label>Title <select id="disc-title"></select></label>
                     <label>Chapter <select id="disc-chapter"></select></label>
                     <label id="disc-angle-label">Angle <select id="disc-angle"></select></label>
                     <label>Audio <select id="disc-audio"></select></label>
                     <label>Subtitles <select id="disc-subtitle"></select></label>
-                    <span id="disc-position" class="disc-position"></span>
                 </div>
             </div>
         </div>

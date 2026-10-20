@@ -158,6 +158,7 @@ function setupEventListeners() {
             videoPlayer.onloadedmetadata = null;
             videoPlayer.onerror = null;
             videoPlayer.ontimeupdate = null;
+            videoPlayer.onseeking = null;
             hideDiscControls();
             videoPlayer.innerHTML = '';
             imageViewer.onload = null;
@@ -176,6 +177,7 @@ function setupEventListeners() {
             videoPlayer.onloadedmetadata = null;
             videoPlayer.onerror = null;
             videoPlayer.ontimeupdate = null;
+            videoPlayer.onseeking = null;
             hideDiscControls();
             videoPlayer.innerHTML = '';
         }
@@ -741,6 +743,16 @@ function loadDiscStream(start) {
     videoPlayer.appendChild(source);
     videoPlayer.load();
     videoPlayer.onloadedmetadata = () => videoPlayer.play().catch(err => console.error('Error playing disc:', err));
+    // The stream can't be seeked into beyond what has arrived: a seek there restarts it.
+    videoPlayer.onseeking = () => {
+        if (videoPlayer.readyState < 1) return; // the new stream is still opening
+        const t = videoPlayer.currentTime;
+        const b = videoPlayer.buffered;
+        for (let i = 0; i < b.length; i++) {
+            if (t >= b.start(i) && t <= b.end(i)) return;
+        }
+        loadDiscStream(disc.offset + t);
+    };
     videoPlayer.onerror = () => console.error('Disc video error:', videoPlayer.error);
     videoPlayer.ontimeupdate = updateDiscPosition;
     startPlaybackReports(disc.item);
@@ -779,13 +791,17 @@ function renderDiscControls() {
         t.audio.length ? t.audio.map(a => [a.index, trackLabel(a)]) : [[0, 'None']], disc.audio);
     fillSelect(document.getElementById('disc-subtitle'),
         [[-1, 'Off'], ...t.subtitles.map(s => [s.index, trackLabel(s)])], disc.subtitle);
+    document.getElementById('disc-seek').max = String(Math.max(1, Math.floor(t.duration)));
     document.getElementById('disc-controls').hidden = false;
 }
 
 function updateDiscPosition() {
     if (!disc || !disc.info) return;
     const t = discTitle(), pos = playerPosition();
-    document.getElementById('disc-position').textContent = `${clock(pos)} / ${clock(t.duration)}`;
+    const seek = document.getElementById('disc-seek');
+    if (!discSeekDragging) seek.value = String(Math.floor(pos));
+    document.getElementById('disc-position').textContent =
+        `${clock(discSeekDragging ? Number(seek.value) : pos)} / ${clock(t.duration)}`;
     // Keep the chapter list on the chapter playing.
     let current = 0;
     t.chapters.forEach((start, i) => { if (pos + 0.5 >= start) current = i; });
@@ -793,7 +809,21 @@ function updateDiscPosition() {
     if (document.activeElement !== select && select.value !== String(current)) select.value = String(current);
 }
 
+let discSeekDragging = false;
+
 function setupDiscControls() {
+    const seek = document.getElementById('disc-seek');
+    seek.addEventListener('input', () => { discSeekDragging = true; updateDiscPosition(); });
+    seek.addEventListener('change', () => {
+        discSeekDragging = false;
+        if (disc && disc.info) loadDiscStream(Number(seek.value));
+    });
+    document.getElementById('disc-back').addEventListener('click', () => {
+        if (disc && disc.info) loadDiscStream(Math.max(0, playerPosition() - 10));
+    });
+    document.getElementById('disc-forward').addEventListener('click', () => {
+        if (disc && disc.info) loadDiscStream(playerPosition() + 30);
+    });
     const on = (id, handler) => document.getElementById(id).addEventListener('change', (e) => {
         if (disc && disc.info) handler(Number(e.target.value));
     });

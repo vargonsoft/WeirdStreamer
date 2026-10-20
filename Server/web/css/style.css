@@ -1459,8 +1459,21 @@ header h1 {
     max-width: 220px;
 }
 
+.disc-seek {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-basis: 100%;
+}
+
+.disc-seek input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--primary-color);
+}
+
 .disc-position {
-    margin-left: auto;
     color: #666;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
