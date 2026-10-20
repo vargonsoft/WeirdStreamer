@@ -58,6 +58,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -242,6 +243,7 @@ fun TitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
     val playRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val scrollToTop: () -> Unit = { scope.launch { listState.animateScrollToItem(0) } }
     LaunchedEffect(title.kind, title.tmdbId) {
         awaitFrame()
         runCatching { playRequester.requestFocus() }
@@ -262,16 +264,15 @@ fun TitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
                     // The files sit in the hero's right column so the whole page fits on screen.
                     val files = title.files.orEmpty()
                     item(key = "hero") {
-                        TitleHero(viewModel, title) {
-                            FileRow(viewModel, files, files, playRequester, Modifier.padding(top = 16.dp), tileWidth = 160.dp)
+                        TitleHero(viewModel, title, onCastFocused = scrollToTop) {
+                            FileRow(viewModel, files, files, playRequester, Modifier.padding(top = 16.dp), thumbnailWidth = 220.dp)
                         }
                     }
                 } else {
-                    item(key = "hero") { TitleHero(viewModel, title) }
-                    // The hero can't take focus, so bring it back whenever focus reaches the season
-                    // picker; otherwise Up from there jumps to the toolbar with the hero off screen.
-                    showSections(viewModel, title, playRequester,
-                        onPickerFocused = { scope.launch { listState.animateScrollToItem(0) } })
+                    item(key = "hero") { TitleHero(viewModel, title, onCastFocused = scrollToTop) }
+                    // Bring the whole hero back whenever focus reaches the season picker or the cast,
+                    // instead of scrolling only as far as the focused row.
+                    showSections(viewModel, title, playRequester, onPickerFocused = scrollToTop)
                 }
             }
         }
@@ -304,7 +305,12 @@ private val MinimalBringIntoView = object : BringIntoViewSpec {
 }
 
 @Composable
-private fun TitleHero(viewModel: MediaViewModel, title: TitleDetail, below: @Composable () -> Unit = {}) {
+private fun TitleHero(
+    viewModel: MediaViewModel,
+    title: TitleDetail,
+    onCastFocused: () -> Unit = {},
+    below: @Composable () -> Unit = {}
+) {
     Row(modifier = Modifier.fillMaxWidth()) {
         Box(
             contentAlignment = Alignment.Center,
@@ -347,7 +353,7 @@ private fun TitleHero(viewModel: MediaViewModel, title: TitleDetail, below: @Com
                 }
                 CreditLine(label, it)
             }
-            title.cast?.takeIf { it.isNotEmpty() }?.let { CastRow(viewModel, it) }
+            title.cast?.takeIf { it.isNotEmpty() }?.let { CastRow(viewModel, it, onCastFocused) }
             below()
         }
     }
@@ -363,25 +369,42 @@ private fun CreditLine(label: String, people: List<CreditInfo>) {
 }
 
 @Composable
-private fun CastRow(viewModel: MediaViewModel, cast: List<CreditInfo>) {
-    // Not focusable: the cast is information, and D-pad focus stays on things that play.
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 10.dp)) {
-        cast.take(9).forEach { person ->
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(68.dp)) {
+private fun CastRow(viewModel: MediaViewModel, cast: List<CreditInfo>, onFocused: () -> Unit) {
+    // Focusable so the whole cast can be scrolled through with the D-pad; nothing happens on click.
+    var hadFocus by remember { mutableStateOf(false) }
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+        modifier = Modifier
+            .padding(top = 8.dp)
+            .onFocusChanged {
+                if (it.hasFocus && !hadFocus) onFocused()
+                hadFocus = it.hasFocus
+            }
+    ) {
+        itemsIndexed(cast, key = { i, person -> "$i:${person.tmdbId}" }) { _, person ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .width(120.dp)
+                    .tvClickable(shape = MaterialTheme.shapes.medium, focusedScale = 1.05f, borderWidth = 2.dp, onClick = {})
+                    .padding(6.dp)
+            ) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(72.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Text(person.name.take(1), style = MaterialTheme.typography.titleMedium)
+                    Text(person.name.take(1), style = MaterialTheme.typography.titleLarge)
                     viewModel.serverUrl(person.profile)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
                 }
-                Text(person.name, style = MaterialTheme.typography.labelSmall, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
-                person.character?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                // Names and roles wrap instead of being cut off.
+                Text(person.name, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 6.dp))
+                person.character?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -389,7 +412,10 @@ private fun CastRow(viewModel: MediaViewModel, cast: List<CreditInfo>) {
     }
 }
 
-/** The square video thumbnails with a Play button beneath each; the thumbnail plays too. */
+/**
+ * A title's files, one per row: the video thumbnail (which plays it) with the full file name, its
+ * size and a Play button to the right.
+ */
 @Composable
 private fun FileRow(
     viewModel: MediaViewModel,
@@ -397,15 +423,15 @@ private fun FileRow(
     queue: List<LibraryFile>,
     firstRequester: FocusRequester?,
     modifier: Modifier = Modifier,
-    tileWidth: Dp = 200.dp
+    thumbnailWidth: Dp = 200.dp
 ) {
-    LazyRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(20.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
-        itemsIndexed(files, key = { _, f -> f.path }) { index, file ->
-            Column(modifier = Modifier.width(tileWidth), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        files.forEachIndexed { index, file ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .width(thumbnailWidth)
                         .aspectRatio(16f / 9f)
                         .tvClickable(shape = MaterialTheme.shapes.medium, focusedScale = 1.05f, borderWidth = 3.dp,
                             onClick = { viewModel.playLibraryFile(file, queue) })
@@ -415,22 +441,23 @@ private fun FileRow(
                     Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(40.dp))
                     viewModel.serverUrl(file.thumbnailUrl)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
                 }
-                Text(
-                    listOf(
-                        file.match?.let { m -> m.title + (m.year?.let { " ($it)" } ?: "") } ?: file.name,
-                        formatBytes(file.size)
-                    ).filter { it.isNotEmpty() }.joinToString(" · "),
-                    // Two lines, so files of one title (part 1, part 2...) can be told apart.
-                    style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    minLines = 2
-                )
-                Button(
-                    onClick = { viewModel.playLibraryFile(file, queue) },
-                    modifier = if (index == 0 && firstRequester != null) Modifier.focusRequester(firstRequester) else Modifier
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Play")
+                Spacer(Modifier.width(18.dp))
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    file.match?.let { m ->
+                        Text(m.title + (m.year?.let { " ($it)" } ?: ""), style = MaterialTheme.typography.titleSmall)
+                    }
+                    Text(file.name, style = MaterialTheme.typography.bodyMedium) // the whole name, wrapped
+                    formatBytes(file.size).takeIf { it.isNotEmpty() }?.let {
+                        Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Button(
+                        onClick = { viewModel.playLibraryFile(file, queue) },
+                        modifier = if (index == 0 && firstRequester != null) Modifier.focusRequester(firstRequester) else Modifier
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Play")
+                    }
                 }
             }
         }
@@ -472,6 +499,7 @@ private fun SeasonsAndEpisodes(
     val queue = remember(season) { season.episodes.flatMap { it.files } }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val pickerRequester = remember { FocusRequester() }
         var pickerFocused by remember { mutableStateOf(false) }
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -484,6 +512,7 @@ private fun SeasonsAndEpisodes(
                 val isSelected = index == selected
                 Button(
                     onClick = { selected = index },
+                    modifier = if (isSelected) Modifier.focusRequester(pickerRequester) else Modifier,
                     colors = if (isSelected) ButtonDefaults.colors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary
@@ -494,7 +523,10 @@ private fun SeasonsAndEpisodes(
             }
         }
         season.episodes.forEachIndexed { index, episode ->
-            EpisodeRow(viewModel, episode, queue, if (index == 0) playRequester else null)
+            // Up from the first episode goes to the season picker (Compose's own search can pick the
+            // cast instead, since the full-width row lines up with it too).
+            EpisodeRow(viewModel, episode, queue, if (index == 0) playRequester else null,
+                up = if (index == 0) pickerRequester else null)
         }
     }
 }
@@ -504,7 +536,8 @@ private fun EpisodeRow(
     viewModel: MediaViewModel,
     episode: LibraryEpisode,
     queue: List<LibraryFile>,
-    requester: FocusRequester?
+    requester: FocusRequester?,
+    up: FocusRequester? = null
 ) {
     val first = episode.files.firstOrNull() ?: return
     Row(
@@ -512,6 +545,7 @@ private fun EpisodeRow(
         modifier = Modifier
             .fillMaxWidth()
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
+            .then(if (up != null) Modifier.focusProperties { this.up = up } else Modifier)
             .tvClickable(shape = MaterialTheme.shapes.medium, focusedScale = 1.02f, borderWidth = 2.dp,
                 onClick = { viewModel.playLibraryFile(first, queue) })
             .padding(8.dp)
@@ -531,6 +565,10 @@ private fun EpisodeRow(
         }
         Spacer(Modifier.width(20.dp))
         Column(modifier = Modifier.weight(1f)) {
+            // The file (or files) on disk, then a blank line, then the episode it shows as.
+            Text(episode.files.joinToString("\n") { it.name }, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(14.dp))
             Text(
                 String.format(Locale.US, "S%02dE%02d · %s", episode.season, episode.episode, episode.title),
                 style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis
