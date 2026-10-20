@@ -477,6 +477,7 @@ private fun MainAddSourceDialog(
                         onValueChange = { address = it },
                         label = { Text(provider.addressLabel) },
                         placeholder = { Text(provider.addressPlaceholder) },
+                        supportingText = provider.addressHint?.let { hint -> { Text(hint) } },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),

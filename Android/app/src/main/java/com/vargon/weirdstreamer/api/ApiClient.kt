@@ -45,6 +45,14 @@ object ApiClient {
         }
     }
     
+    /** A short-timeout client with the API client's TLS settings, for probing a server address. */
+    fun probeClient(): OkHttpClient = getUnsafeOkHttpClient(
+        OkHttpClient.Builder()
+            .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+            .followRedirects(false)
+    ).build()
+
     fun create(
         serverUrl: String,
         credentialManager: CredentialManager

@@ -81,6 +81,11 @@ interface SourceProvider {
     val displayName: String
     val addressLabel: String
     val addressPlaceholder: String
+    /** Shown under the address field, e.g. what is filled in when left out. */
+    val addressHint: String? get() = null
+
+    /** Completes a typed address (default scheme, port...); may make network requests. */
+    suspend fun normalizeAddress(address: String): String = address.trim()
     
     fun getServers(): List<String>
     fun addServer(address: String)

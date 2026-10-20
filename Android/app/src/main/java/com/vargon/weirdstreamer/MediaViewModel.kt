@@ -391,16 +391,14 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectSource(provider: SourceProvider, address: String) {
-        val cleanAddress = if (provider.typeId == "SMB") {
-            address.removePrefix("smb://").substringBefore("/").trim()
-        } else address
-        
-        val source = MediaSource(provider.typeId, cleanAddress)
-        
         viewModelScope.launch {
             isLoading = true
             errorMessage = null
             try {
+                val cleanAddress = if (provider.typeId == "SMB") {
+                    address.removePrefix("smb://").substringBefore("/").trim()
+                } else provider.normalizeAddress(address)
+                val source = MediaSource(provider.typeId, cleanAddress)
                 // Ensure repository creation (and potential BaseContext init) happens off-main-thread
                 val initialPath = withContext(Dispatchers.IO) {
                     provider.createRepository(cleanAddress).getInitialPath()

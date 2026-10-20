@@ -1,6 +1,7 @@
 package com.vargon.weirdstreamer.repository
 
 import android.util.Base64
+import okhttp3.Request
 import com.vargon.weirdstreamer.CredentialManager
 import com.vargon.weirdstreamer.api.ApiClient
 import com.vargon.weirdstreamer.api.ApiService
@@ -270,7 +271,38 @@ class ServerSourceProvider(
     override val typeId: String = "SERVER"
     override val displayName: String = "WeirdStreamer Server"
     override val addressLabel: String = "Server URL"
-    override val addressPlaceholder: String = "http://192.168.1.100:8080"
+    override val addressPlaceholder: String = "myserver or https://myserver:9000"
+    override val addressHint: String = "The default port is $DEFAULT_PORT. Without http:// or https://, the server is asked which it uses."
+
+    /**
+     * "myserver" becomes "https://myserver:9000": a missing port is the default, and a missing
+     * scheme is whichever the server answers on, https first (an https server also answers plain
+     * http, with an error, so http alone can't tell).
+     */
+    override suspend fun normalizeAddress(address: String): String = withContext(Dispatchers.IO) {
+        val typed = address.trim().trimEnd('/')
+        if (typed.contains("://")) return@withContext typed
+        val hostPort = if (hasPort(typed)) typed else "$typed:$DEFAULT_PORT"
+        val client = ApiClient.probeClient()
+        val scheme = listOf("https", "http").firstOrNull { scheme ->
+            runCatching {
+                client.newCall(Request.Builder().url("$scheme://$hostPort/").head().build()).execute().close()
+            }.isSuccess
+        } ?: "https"
+        "$scheme://$hostPort"
+    }
+
+    private fun hasPort(hostPort: String): Boolean {
+        val afterBracket = hostPort.substringAfterLast(']') // [ipv6]:port
+        val colon = afterBracket.lastIndexOf(':')
+        if (colon < 0) return false
+        if (!hostPort.startsWith("[") && hostPort.count { it == ':' } > 1) return false // bare IPv6
+        return afterBracket.substring(colon + 1).let { it.isNotEmpty() && it.all(Char::isDigit) }
+    }
+
+    companion object {
+        const val DEFAULT_PORT = 9000
+    }
     override fun getServers(): List<String> = credentialManager.getApiServers().toList()
     override fun addServer(address: String) { credentialManager.addApiServer(address) }
     override fun removeServer(address: String) { credentialManager.removeApiServer(address) }
