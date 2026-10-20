@@ -414,7 +414,7 @@ async function loadMedia(pushHistory = true) {
             );
         }
         
-        state.libraryId = state.currentPath.split('/')[0] || '';
+        state.libraryId = state.currentPath.split('/').filter(p => p)[0] || '';
         updateBreadcrumb();
         updateRegenerateThumbnailsButton();
         renderMedia();
@@ -457,7 +457,7 @@ function updateBreadcrumb() {
             }
             
             link.textContent = displayName;
-            currentPath += '/' + part;
+            currentPath = currentPath ? currentPath + '/' + part : part; // no leading slash, like browse paths
             const pathCopy = currentPath;
             link.onclick = (e) => {
                 e.preventDefault();

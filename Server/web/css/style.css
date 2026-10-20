@@ -208,8 +208,13 @@ header h1 {
 
 /* Breadcrumb */
 .breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 0;
+    min-height: 56px;
     background: var(--surface-color);
-    padding: 15px 20px;
+    padding: 10px 20px;
     border-radius: 10px;
     margin-bottom: 20px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
@@ -219,6 +224,10 @@ header h1 {
     color: var(--primary-color);
     text-decoration: none;
     margin: 0 5px;
+}
+
+.breadcrumb > span {
+    margin: 0 5px; /* the current title, spaced like the links */
 }
 
 .breadcrumb a:hover {
@@ -982,7 +991,8 @@ header h1 {
 
 /* Folders | Library switch */
 .view-toggle {
-    float: right;
+    order: 1; /* after the path, at the right end */
+    margin-left: auto;
     display: inline-flex;
     border: 1px solid var(--primary-color);
     border-radius: 999px;
