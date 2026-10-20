@@ -32,6 +32,7 @@
     --border-color: #393945;
     --muted-text: #a2a2ae;
     --strong-text: #e4e4ea;
+    --success-bg: #2f7a4b;
     --danger-bg: #8f3a33;
     --danger-hover: #7a302a;
     --button-bg: #474f99; /* darker than the accent text color */
@@ -515,7 +516,7 @@ header h1 {
 .user-item .user-badge {
     display: inline-block;
     padding: 2px 8px;
-    background: #667eea;
+    background: var(--button-bg, var(--primary-color));
     color: white;
     border-radius: 3px;
     font-size: 12px;
@@ -525,6 +526,10 @@ header h1 {
 .user-item button {
     padding: 5px 15px;
     font-size: 12px;
+}
+
+.user-item .user-badge-you {
+    background: var(--success-bg, #27ae60);
 }
 
 /* Thumbnail loading and update animations */
@@ -1719,4 +1724,17 @@ header h1 {
 .secret-toggle:focus-visible {
     background: var(--hover-bg);
     color: var(--text-color);
+}
+
+/* Material icons standing in for missing thumbnails and posters */
+.placeholder-icon {
+    width: 42%;
+    height: 42%;
+    max-width: 96px;
+    max-height: 96px;
+    opacity: 0.85;
+}
+
+.folder-thumbnail .placeholder-icon {
+    color: #f0b429; /* folders stay folder-coloured */
 }
