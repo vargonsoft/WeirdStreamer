@@ -1113,7 +1113,7 @@ init();
 // ---------------------------------------------------------------------------------------------
 // Manual metadata matching
 
-const matchState = { target: null, name: '', info: null, episodePick: null, seasonsFor: null };
+const matchState = { target: null, name: '', info: null, episodePick: null, seasonsFor: null, hits: [], posters: null };
 
 function canFixMatches() {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -1196,7 +1196,10 @@ async function openMatchDialog(target, name) {
     matchState.info = null;
     matchState.episodePick = null;
     matchState.seasonsFor = null;
+    matchState.hits = [];
+    matchState.posters = null;
     document.getElementById('match-episode').innerHTML = '';
+    document.getElementById('match-posters').innerHTML = '';
     document.getElementById('match-target').textContent = name;
     document.getElementById('match-current').innerHTML = '';
     document.getElementById('match-results').innerHTML = '';
@@ -1260,6 +1263,7 @@ function renderMatchCurrent() {
     box.appendChild(hint);
     markCurrentHit();
     renderEpisodeSection();
+    renderPosterSection();
 }
 
 const EPISODE_SOURCES = {
@@ -1455,6 +1459,8 @@ async function runMatchSearch() {
         return;
     }
     results.innerHTML = '';
+    matchState.hits = hits;
+    renderPosterSection();
     if (hits.length === 0) {
         results.innerHTML = `<p class="match-empty">No results${year ? ' (try without the year)' : ''}.</p>`;
         return;
@@ -1506,6 +1512,113 @@ async function applyMatch(tmdbId, message) {
         renderMatchCurrent();
     } catch (error) {
         setMatchMessage('Could not save: ' + error.message, true);
+    }
+}
+
+// The "Poster" section: any poster can be picked for the matched title, separately from the
+// match itself: the title's own TMDB posters (every language), or another search result's.
+async function renderPosterSection() {
+    const box = document.getElementById('match-posters');
+    const current = matchState.info && matchState.info.current;
+    if (!current) {
+        box.innerHTML = '';
+        return;
+    }
+    const target = matchState.target;
+    if (!matchState.posters || matchState.posters.tmdbId !== current.tmdb_id) {
+        matchState.posters = { tmdbId: current.tmdb_id, list: null };
+        box.innerHTML = '<h3>Poster</h3><p class="match-hint">Loading posters…</p>';
+        try {
+            const list = await api.getMatchPosters(target);
+            if (matchState.target !== target || !matchState.posters || matchState.posters.tmdbId !== current.tmdb_id) return;
+            matchState.posters.list = list;
+        } catch (error) {
+            if (matchState.target !== target) return;
+            matchState.posters = null;
+            box.innerHTML = '<h3>Poster</h3>';
+            const note = document.createElement('p');
+            note.className = 'match-hint';
+            note.textContent = 'Posters unavailable: ' + error.message;
+            box.appendChild(note);
+            return;
+        }
+    }
+    const list = matchState.posters.list;
+    if (!list) return; // still loading
+
+    box.innerHTML = '';
+    const header = document.createElement('div');
+    header.className = 'match-posters-header';
+    const heading = document.createElement('h3');
+    heading.textContent = 'Poster';
+    header.appendChild(heading);
+    const note = document.createElement('span');
+    note.className = 'match-hint';
+    note.textContent = list.manual ? 'Picked by hand.' : "TMDB's default.";
+    header.appendChild(note);
+    if (list.manual) {
+        const reset = document.createElement('button');
+        reset.type = 'button';
+        reset.className = 'btn btn-secondary btn-small';
+        reset.textContent = 'Use default';
+        reset.onclick = () => applyPoster('', 'Poster reset to the default.');
+        header.appendChild(reset);
+    }
+    box.appendChild(header);
+
+    const own = list.posters.map(p => ({ path: p.path, url: p.url, label: p.language ? p.language.toUpperCase() : 'No text' }));
+    box.appendChild(createPosterStrip(`${current.title}'s posters (${own.length})`, own, list.current,
+        'TMDB has no posters for this title.'));
+
+    const others = matchState.hits
+        .filter(h => h.tmdb_id !== current.tmdb_id && h.poster_path)
+        .map(h => ({ path: h.poster_path, url: h.poster, label: h.title + (h.year ? ` (${h.year})` : '') }));
+    if (others.length) box.appendChild(createPosterStrip('From other search results', others, list.current));
+}
+
+function createPosterStrip(title, posters, currentPath, emptyText) {
+    const section = document.createElement('div');
+    const caption = document.createElement('div');
+    caption.className = 'match-posters-caption';
+    caption.textContent = title;
+    section.appendChild(caption);
+    if (!posters.length) {
+        const empty = document.createElement('p');
+        empty.className = 'match-hint';
+        empty.textContent = emptyText || '';
+        section.appendChild(empty);
+        return section;
+    }
+    const strip = document.createElement('div');
+    strip.className = 'match-poster-strip';
+    posters.forEach(p => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'match-poster' + (p.path === currentPath ? ' current' : '');
+        btn.title = p.path === currentPath ? 'Current poster' : `Use this poster (${p.label})`;
+        const img = document.createElement('img');
+        img.src = p.url;
+        img.alt = '';
+        img.loading = 'lazy';
+        const label = document.createElement('span');
+        label.textContent = p.label;
+        btn.appendChild(img);
+        btn.appendChild(label);
+        btn.onclick = () => applyPoster(p.path, 'Poster changed.');
+        strip.appendChild(btn);
+    });
+    section.appendChild(strip);
+    return section;
+}
+
+async function applyPoster(path, message) {
+    try {
+        matchState.info = await api.setMatchPoster(matchState.target, path);
+        matchState.posters = null; // reload to show the new current poster
+        setMatchMessage(message);
+        renderMatchCurrent();
+    } catch (error) {
+        setMatchMessage('Could not change the poster: ' + error.message, true);
     }
 }
 

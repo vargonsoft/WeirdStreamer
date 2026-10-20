@@ -376,7 +376,8 @@ func (s *Service) markActive(key string, on bool) {
 
 // ensureMovie fetches and stores a movie's details and artwork unless they are fresh.
 func (s *Service) ensureMovie(ctx context.Context, client *Client, id int) (bool, error) {
-	if m, err := s.db.GetMovie(id); err != nil || movieFresh(m) {
+	existing, err := s.db.GetMovie(id)
+	if err != nil || movieFresh(existing) {
 		return false, err
 	}
 	s.markActive(fmt.Sprintf("movie:%d", id), true)
@@ -387,11 +388,16 @@ func (s *Service) ensureMovie(ctx context.Context, client *Client, id int) (bool
 		return false, err
 	}
 	dir := fmt.Sprintf("movie/%d", id)
+	posterSource, posterManual := d.PosterPath, false
+	if existing != nil && existing.PosterManual {
+		posterSource, posterManual = existing.PosterSource, true
+	}
 	m := &database.Movie{
 		TMDBID: d.ID, Title: d.Title, OriginalTitle: d.OriginalTitle, Year: yearOf(d.ReleaseDate),
 		ReleaseDate: d.ReleaseDate, Overview: d.Overview, Tagline: d.Tagline, Runtime: d.Runtime,
 		Genres: genreList(d.Genres), IMDBID: d.IMDBID,
-		Poster:    s.download(ctx, client, "w500", d.PosterPath, dir+"/poster"),
+		PosterSource: posterSource, PosterManual: posterManual,
+		Poster:    s.download(ctx, client, "w500", posterSource, dir+"/poster"),
 		Backdrop:  s.download(ctx, client, "w1280", d.BackdropPath, dir+"/backdrop"),
 		Logo:      s.download(ctx, client, "w500", pickLogo(d.Images.Logos, client.language), dir+"/logo"),
 		UpdatedAt: time.Now(),
@@ -429,6 +435,10 @@ func (s *Service) ensureShow(ctx context.Context, client *Client, id int) (bool,
 		return false, err
 	}
 	dir := fmt.Sprintf("tv/%d", id)
+	posterSource, posterManual := d.PosterPath, false
+	if sh != nil && sh.PosterManual {
+		posterSource, posterManual = sh.PosterSource, true
+	}
 	runtime := 0
 	if len(d.EpisodeRunTime) > 0 {
 		runtime = d.EpisodeRunTime[0]
@@ -437,7 +447,8 @@ func (s *Service) ensureShow(ctx context.Context, client *Client, id int) (bool,
 		TMDBID: d.ID, Name: d.Name, OriginalName: d.OriginalName, Year: yearOf(d.FirstAirDate),
 		FirstAirDate: d.FirstAirDate, Overview: d.Overview, Tagline: d.Tagline, Genres: genreList(d.Genres),
 		IMDBID: d.ExternalIDs.IMDBID, Runtime: runtime,
-		Poster:    s.download(ctx, client, "w500", d.PosterPath, dir+"/poster"),
+		PosterSource: posterSource, PosterManual: posterManual,
+		Poster:    s.download(ctx, client, "w500", posterSource, dir+"/poster"),
 		Backdrop:  s.download(ctx, client, "w1280", d.BackdropPath, dir+"/backdrop"),
 		Logo:      s.download(ctx, client, "w500", pickLogo(d.Images.Logos, client.language), dir+"/logo"),
 		UpdatedAt: time.Now(),

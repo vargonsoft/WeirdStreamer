@@ -156,6 +156,8 @@ type Movie struct {
 	Poster        string
 	Backdrop      string
 	Logo          string
+	PosterSource  string // the TMDB image path the poster was downloaded from
+	PosterManual  bool   // PosterSource was picked by hand and survives refreshes
 	UpdatedAt     time.Time
 }
 
@@ -173,6 +175,8 @@ type Show struct {
 	Poster       string
 	Backdrop     string
 	Logo         string
+	PosterSource string
+	PosterManual bool
 	UpdatedAt    time.Time
 }
 
@@ -223,6 +227,10 @@ func (db *DB) initMetadataSchema() error {
 		return err
 	}
 	_, _ = db.mediaConn.Exec("ALTER TABLE metadata_lookups ADD COLUMN manual INTEGER NOT NULL DEFAULT 0")
+	for _, table := range []string{"movies", "shows"} {
+		_, _ = db.mediaConn.Exec("ALTER TABLE " + table + " ADD COLUMN poster_source TEXT NOT NULL DEFAULT ''")
+		_, _ = db.mediaConn.Exec("ALTER TABLE " + table + " ADD COLUMN poster_manual INTEGER NOT NULL DEFAULT 0")
+	}
 	return nil
 }
 
@@ -371,9 +379,9 @@ func (db *DB) FolderKeys(libraryID string, folders []string) (map[string]string,
 func (db *DB) GetMovie(id int) (*Movie, error) {
 	m := &Movie{}
 	err := db.mediaConn.QueryRow(`SELECT tmdb_id, title, original_title, year, release_date, overview, tagline,
-		runtime, genres, imdb_id, poster, backdrop, logo, updated_at FROM movies WHERE tmdb_id = ?`, id).
+		runtime, genres, imdb_id, poster, backdrop, logo, poster_source, poster_manual, updated_at FROM movies WHERE tmdb_id = ?`, id).
 		Scan(&m.TMDBID, &m.Title, &m.OriginalTitle, &m.Year, &m.ReleaseDate, &m.Overview, &m.Tagline,
-			&m.Runtime, &m.Genres, &m.IMDBID, &m.Poster, &m.Backdrop, &m.Logo, &m.UpdatedAt)
+			&m.Runtime, &m.Genres, &m.IMDBID, &m.Poster, &m.Backdrop, &m.Logo, &m.PosterSource, &m.PosterManual, &m.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -383,9 +391,9 @@ func (db *DB) GetMovie(id int) (*Movie, error) {
 func (db *DB) GetShow(id int) (*Show, error) {
 	s := &Show{}
 	err := db.mediaConn.QueryRow(`SELECT tmdb_id, name, original_name, year, first_air_date, overview, tagline,
-		genres, imdb_id, runtime, poster, backdrop, logo, updated_at FROM shows WHERE tmdb_id = ?`, id).
+		genres, imdb_id, runtime, poster, backdrop, logo, poster_source, poster_manual, updated_at FROM shows WHERE tmdb_id = ?`, id).
 		Scan(&s.TMDBID, &s.Name, &s.OriginalName, &s.Year, &s.FirstAirDate, &s.Overview, &s.Tagline,
-			&s.Genres, &s.IMDBID, &s.Runtime, &s.Poster, &s.Backdrop, &s.Logo, &s.UpdatedAt)
+			&s.Genres, &s.IMDBID, &s.Runtime, &s.Poster, &s.Backdrop, &s.Logo, &s.PosterSource, &s.PosterManual, &s.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -424,10 +432,10 @@ func (db *DB) SaveMovie(m *Movie, credits []Credit) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`INSERT OR REPLACE INTO movies (tmdb_id, title, original_title, year, release_date,
-		overview, tagline, runtime, genres, imdb_id, poster, backdrop, logo, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		overview, tagline, runtime, genres, imdb_id, poster, backdrop, logo, poster_source, poster_manual, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.TMDBID, m.Title, m.OriginalTitle, m.Year, m.ReleaseDate, m.Overview, m.Tagline, m.Runtime,
-		m.Genres, m.IMDBID, m.Poster, m.Backdrop, m.Logo, m.UpdatedAt); err != nil {
+		m.Genres, m.IMDBID, m.Poster, m.Backdrop, m.Logo, m.PosterSource, m.PosterManual, m.UpdatedAt); err != nil {
 		return err
 	}
 	if err := replaceCredits(tx, MovieOwner(m.TMDBID), credits); err != nil {
@@ -444,16 +452,26 @@ func (db *DB) SaveShow(s *Show, credits []Credit) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`INSERT OR REPLACE INTO shows (tmdb_id, name, original_name, year, first_air_date,
-		overview, tagline, genres, imdb_id, runtime, poster, backdrop, logo, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		overview, tagline, genres, imdb_id, runtime, poster, backdrop, logo, poster_source, poster_manual, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		s.TMDBID, s.Name, s.OriginalName, s.Year, s.FirstAirDate, s.Overview, s.Tagline, s.Genres,
-		s.IMDBID, s.Runtime, s.Poster, s.Backdrop, s.Logo, s.UpdatedAt); err != nil {
+		s.IMDBID, s.Runtime, s.Poster, s.Backdrop, s.Logo, s.PosterSource, s.PosterManual, s.UpdatedAt); err != nil {
 		return err
 	}
 	if err := replaceCredits(tx, ShowOwner(s.TMDBID), credits); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// SetTitlePoster replaces a movie's or show's poster (table "movies" or "shows").
+func (db *DB) SetTitlePoster(table string, id int, poster, source string, manual bool, updated time.Time) error {
+	if table != "movies" && table != "shows" {
+		return errors.New("unknown title table " + table)
+	}
+	_, err := db.mediaConn.Exec(`UPDATE `+table+` SET poster = ?, poster_source = ?, poster_manual = ?, updated_at = ?
+		WHERE tmdb_id = ?`, poster, source, manual, updated, id)
+	return err
 }
 
 // SaveSeason stores a season with its episodes and their credits (keyed by episode number).

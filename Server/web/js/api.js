@@ -213,6 +213,19 @@ class MediaAPI {
         return this.request('/api/media/match', { method: 'PUT', body: JSON.stringify(body) });
     }
 
+    // Every TMDB poster for the title a target is matched to: { current, manual, posters: [...] }
+    async getMatchPosters(target) {
+        return this.request(`/api/media/match/posters?${this.matchTargetQuery(target)}`);
+    }
+
+    // Use a TMDB image path (any title's) as the matched title's poster; '' for its default.
+    async setMatchPoster(target, poster) {
+        const body = target.dir !== undefined
+            ? { dir: target.dir, poster }
+            : { path: this.encodePath(target.path), poster };
+        return this.request('/api/media/match/poster', { method: 'PUT', body: JSON.stringify(body) });
+    }
+
     async resetMatch(target) {
         return this.request(`/api/media/match?${this.matchTargetQuery(target)}`, { method: 'DELETE' });
     }

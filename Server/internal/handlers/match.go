@@ -18,6 +18,7 @@ type matchRequest struct {
 	Path   string `json:"path"` // base64 absolute file path
 	Dir    string `json:"dir"`  // browse path of a folder
 	TMDBID int    `json:"tmdb_id"`
+	Poster string `json:"poster"` // TMDB image path for SetMatchPoster; "" for the default poster
 }
 
 // matchTarget resolves a match request's file or folder to the title lookup it fixes.
@@ -137,6 +138,73 @@ func (h *MediaHandler) ResetMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.respondMatchInfo(w, http.StatusAccepted, ref, t)
+}
+
+// matchedTitle returns the TMDB title a fix-match target is matched to.
+func (h *MediaHandler) matchedTitle(w http.ResponseWriter, ref metadata.Ref) (int, bool) {
+	info, err := h.meta.MatchInfo(ref)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load match")
+		return 0, false
+	}
+	if info.Current == nil {
+		respondError(w, http.StatusConflict, "Match this item to a title first")
+		return 0, false
+	}
+	return info.Current.TMDBID, true
+}
+
+// GetMatchPosters lists every TMDB poster for the title a file or folder is matched to.
+func (h *MediaHandler) GetMatchPosters(w http.ResponseWriter, r *http.Request) {
+	ref, _, ok := h.matchTarget(w, r, r.URL.Query().Get("path"), r.URL.Query().Get("dir"))
+	if !ok {
+		return
+	}
+	id, ok := h.matchedTitle(w, ref)
+	if !ok {
+		return
+	}
+	list, err := h.meta.Posters(r.Context(), ref.Kind, id)
+	if errors.Is(err, metadata.ErrNotFetched) {
+		respondError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if err != nil {
+		respondTMDBError(w, err)
+		return
+	}
+	respondJSON(w, http.StatusOK, list)
+}
+
+// SetMatchPoster sets the poster of the title a file or folder is matched to: any TMDB image
+// path (one of its own posters, or another title's), or "" for its default poster.
+func (h *MediaHandler) SetMatchPoster(w http.ResponseWriter, r *http.Request) {
+	var req matchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	ref, t, ok := h.matchTarget(w, r, req.Path, req.Dir)
+	if !ok {
+		return
+	}
+	id, ok := h.matchedTitle(w, ref)
+	if !ok {
+		return
+	}
+	err := h.meta.SetPoster(r.Context(), ref.Kind, id, req.Poster, t.path)
+	switch {
+	case errors.Is(err, metadata.ErrBadPoster):
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	case errors.Is(err, metadata.ErrNotFetched):
+		respondError(w, http.StatusConflict, err.Error())
+		return
+	case err != nil:
+		respondTMDBError(w, err)
+		return
+	}
+	h.respondMatchInfo(w, http.StatusOK, ref, t)
 }
 
 // requireAdminMeta checks the caller is an admin and metadata is enabled.

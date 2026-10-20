@@ -36,6 +36,8 @@ type SearchHit struct {
 	Year     int    `json:"year,omitempty"`
 	Overview string `json:"overview,omitempty"`
 	Poster   string `json:"poster,omitempty"` // TMDB image URL
+	// TMDB image path of the poster, which SetPoster takes to use it for another title.
+	PosterPath string `json:"poster_path,omitempty"`
 }
 
 // MatchTarget resolves a file or folder to the title lookup a manual fix applies to. Fixing a
@@ -119,7 +121,7 @@ func (s *Service) Search(ctx context.Context, kind, query string, year int) ([]S
 		}
 		hit := SearchHit{TMDBID: r.ID, Title: title, Year: yearOf(date), Overview: truncate(r.Overview, 300)}
 		if r.PosterPath != "" {
-			hit.Poster = client.imageBase + "w154" + r.PosterPath
+			hit.Poster, hit.PosterPath = client.imageBase+"w154"+r.PosterPath, r.PosterPath
 		}
 		hits = append(hits, hit)
 	}

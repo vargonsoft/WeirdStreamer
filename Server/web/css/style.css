@@ -729,6 +729,93 @@ header h1 {
     background: #888;
 }
 
+/* Poster section of the fix match dialog */
+.match-posters:empty {
+    display: none;
+}
+
+.match-posters {
+    border: 1px solid #e3e3e8;
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.match-posters h3 {
+    font-size: 15px;
+}
+
+.match-posters-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.match-posters-header .match-hint {
+    flex: 1;
+    flex-basis: auto;
+}
+
+.btn-small {
+    padding: 4px 10px;
+    font-size: 13px;
+}
+
+.match-posters-caption {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.match-poster-strip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+}
+
+.match-poster {
+    flex: 0 0 auto;
+    width: 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 3px;
+    background: white;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+    color: #555;
+}
+
+.match-poster img {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #ddd;
+}
+
+.match-poster span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.match-poster:hover,
+.match-poster:focus-visible {
+    border-color: #c9c9e8;
+}
+
+.match-poster.current {
+    border-color: var(--primary-color);
+}
+
 /* Episode section of the fix match dialog */
 .match-episode:empty {
     display: none;

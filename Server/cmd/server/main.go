@@ -115,6 +115,8 @@ func main() {
 	api.HandleFunc("/media/match", mediaHandler.SetMatch).Methods("PUT")
 	api.HandleFunc("/media/match", mediaHandler.ResetMatch).Methods("DELETE")
 	api.HandleFunc("/media/match/search", mediaHandler.SearchMatch).Methods("GET")
+	api.HandleFunc("/media/match/posters", mediaHandler.GetMatchPosters).Methods("GET")
+	api.HandleFunc("/media/match/poster", mediaHandler.SetMatchPoster).Methods("PUT")
 	api.HandleFunc("/media/match/seasons", mediaHandler.MatchSeasons).Methods("GET")
 	api.HandleFunc("/media/match/episodes", mediaHandler.MatchEpisodes).Methods("GET")
 	api.HandleFunc("/media/match/episode", mediaHandler.SetEpisodeMapping).Methods("PUT")

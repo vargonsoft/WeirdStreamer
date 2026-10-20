@@ -92,6 +92,15 @@ type Images struct {
 	Logos []Image `json:"logos"`
 }
 
+// PosterImage is one poster in a title's TMDB image list.
+type PosterImage struct {
+	FilePath    string  `json:"file_path"`
+	Language    *string `json:"iso_639_1"`
+	VoteAverage float64 `json:"vote_average"`
+	Width       int     `json:"width"`
+	Height      int     `json:"height"`
+}
+
 type MovieDetails struct {
 	ID            int     `json:"id"`
 	Title         string  `json:"title"`
@@ -204,6 +213,24 @@ func (c *Client) TV(ctx context.Context, id int) (*TVDetails, error) {
 		"include_image_language": {c.imageLanguages()},
 	}, &t)
 	return &t, err
+}
+
+// Posters lists every poster TMDB has for a movie (kind "movie") or show ("tv"), in all languages.
+func (c *Client) Posters(ctx context.Context, kind string, id int) ([]PosterImage, error) {
+	var resp struct {
+		Posters []PosterImage `json:"posters"`
+	}
+	// No language parameter: with one, TMDB leaves out the other languages' posters.
+	u := fmt.Sprintf("%s/%s/%d/images", c.apiBase, kind, id)
+	httpResp, err := c.do(ctx, c.apiPace, u, true)
+	if err != nil {
+		return nil, err
+	}
+	defer httpResp.Body.Close()
+	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+		return nil, err
+	}
+	return resp.Posters, nil
 }
 
 // SeasonSummary is a season as listed on a show.
