@@ -4,6 +4,7 @@ import android.util.Base64
 import com.vargon.weirdstreamer.CredentialManager
 import com.vargon.weirdstreamer.api.ApiClient
 import com.vargon.weirdstreamer.api.ApiService
+import com.vargon.weirdstreamer.api.models.StreamProgress
 import com.vargon.weirdstreamer.api.models.LibraryFile
 import com.vargon.weirdstreamer.api.models.LibraryListing
 import com.vargon.weirdstreamer.api.models.LoginRequest
@@ -52,6 +53,14 @@ class ServerRepository(
         originalPath = file.path,
         id = file.id
     )
+
+    /** Tells the server where the player is in [originalPath], for its admin Streams page. */
+    suspend fun reportPlayback(originalPath: String, positionSeconds: Double, paused: Boolean) = withContext(Dispatchers.IO) {
+        runCatching {
+            val encoded = Base64.encodeToString(originalPath.toByteArray(), Base64.NO_WRAP)
+            apiService.reportStreamProgress(StreamProgress(encoded, positionSeconds, paused))
+        }
+    }
 
     suspend fun library(libraryId: String): Result<LibraryListing> = withContext(Dispatchers.IO) {
         try {

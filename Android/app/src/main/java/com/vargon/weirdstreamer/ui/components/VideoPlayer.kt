@@ -316,6 +316,17 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         }
     }
 
+    // Where the player is, for the server's admin Streams page: every few seconds, and on
+    // play/pause (isPlaying restarts the effect).
+    val isPlayingNow = isPlaying
+    LaunchedEffect(exoPlayer, path, isPlayingNow) {
+        if (isSmbSource) return@LaunchedEffect
+        while (true) {
+            viewModel.reportPlayback(path, playbackPosition, !exoPlayer.isPlaying)
+            delay(5000)
+        }
+    }
+
     LaunchedEffect(showControls, lastInteractionTime, isZoomMode) {
         if (showControls && !isZoomMode) {
             val wait = 3000L - (System.currentTimeMillis() - lastInteractionTime)

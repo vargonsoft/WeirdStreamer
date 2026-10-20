@@ -42,6 +42,7 @@ class MediaAPI {
             const error = await response.json();
             throw new Error(error.message || 'Request failed');
         }
+        if (response.status === 204) return null;
 
         return response.json();
     }
@@ -212,6 +213,18 @@ class MediaAPI {
             ? { dir: target.dir, tmdb_id: tmdbId, kind: kind || '' }
             : { path: this.encodePath(target.path), tmdb_id: tmdbId, kind: kind || '' };
         return this.request('/api/media/match', { method: 'PUT', body: JSON.stringify(body) });
+    }
+
+    // Active streams (admin), and the player's position for them
+    async getStreams() {
+        return this.request('/api/admin/streams');
+    }
+
+    async reportPlayback(path, position, paused) {
+        return this.request('/api/streams/progress', {
+            method: 'POST',
+            body: JSON.stringify({ path: this.encodePath(path), position, paused }),
+        });
     }
 
     // Every TMDB poster for the title a target is matched to: { current, manual, posters: [...] }

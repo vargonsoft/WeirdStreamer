@@ -122,6 +122,8 @@ header h1 {
 
 .header-controls {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 10px;
 }
 
@@ -1289,4 +1291,142 @@ header h1 {
 /* Elements toggled with the hidden attribute stay hidden whatever their display rule */
 [hidden] {
     display: none !important;
+}
+
+/* Streams page */
+.streams-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.streams-updated {
+    color: #888;
+    font-size: 13px;
+}
+
+.streams-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.streams-empty {
+    color: #888;
+    padding: 30px 0;
+    text-align: center;
+}
+
+.stream-card {
+    border: 1px solid #e3e3e8;
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.stream-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.stream-title {
+    font-weight: 600;
+    font-size: 17px;
+    flex: 1;
+    min-width: 200px;
+    overflow-wrap: anywhere;
+}
+
+.stream-badge {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #eee;
+    color: #555;
+}
+
+.stream-badge.state-playing { background: #e3f6e8; color: #1e7b3a; }
+.stream-badge.state-paused { background: #fff4d6; color: #8a6200; }
+.stream-badge.state-streaming { background: #e6ecff; color: #3346a8; }
+.stream-badge.mode-transcode { background: #fde8e6; color: #a8322a; }
+
+.stream-who,
+.stream-progress-label,
+.stream-ua {
+    font-size: 13px;
+    color: #666;
+}
+
+.stream-ua {
+    color: #999;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.stream-bar {
+    position: relative;
+    height: 8px;
+    border-radius: 4px;
+    background: #ececf2;
+    overflow: hidden;
+}
+
+.stream-bar-sent,
+.stream-bar-pos {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+}
+
+.stream-bar-sent {
+    background: #c9cff3;
+}
+
+.stream-bar-pos {
+    background: var(--primary-color);
+}
+
+.stream-progress-label {
+    margin-top: 4px;
+}
+
+.stream-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 3px 14px;
+    font-size: 13px;
+}
+
+.stream-facts dt {
+    color: #888;
+}
+
+.stream-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.stream-args summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: #666;
+}
+
+.stream-args code {
+    display: block;
+    margin-top: 6px;
+    padding: 8px;
+    background: #f4f4f8;
+    border-radius: 6px;
+    font-size: 12px;
+    overflow-wrap: anywhere;
 }

@@ -75,6 +75,8 @@ function setupEventListeners() {
     if (settingsBtn) {
         settingsBtn.addEventListener('click', showSettings);
     }
+    document.getElementById('streams-btn').addEventListener('click', showStreams);
+    document.getElementById('close-streams-btn').addEventListener('click', hideStreams);
     if (closeSettingsBtn) {
         closeSettingsBtn.addEventListener('click', () => {
             settingsScreen.classList.remove('active');
@@ -201,6 +203,7 @@ function showMainScreen() {
     if (scanBtn) {
         scanBtn.style.display = user.is_admin ? 'inline-block' : 'none';
     }
+    document.getElementById('streams-btn').style.display = user.is_admin ? 'inline-block' : 'none';
     
     // Update regenerate thumbnails button visibility
     updateRegenerateThumbnailsButton();
@@ -635,6 +638,8 @@ function playVideo(item, forceTranscode = false) {
         };
     }
     
+    startPlaybackReports(item);
+
     // Wait for video to be ready before playing
     videoPlayer.onloadedmetadata = () => {
         console.log('Video loaded, playing...');
@@ -646,6 +651,24 @@ function playVideo(item, forceTranscode = false) {
     videoPlayer.onerror = (e) => {
         console.error('Video error:', e, videoPlayer.error);
     };
+}
+
+// The player tells the server where it is, for the admin Streams page: every few seconds while
+// playing, and right away on play and pause.
+let playbackReportTimer = null;
+
+function startPlaybackReports(item) {
+    clearInterval(playbackReportTimer);
+    const send = () => {
+        if (!playerModal.classList.contains('active')) {
+            clearInterval(playbackReportTimer);
+            return;
+        }
+        api.reportPlayback(item.path, videoPlayer.currentTime || 0, videoPlayer.paused).catch(() => {});
+    };
+    playbackReportTimer = setInterval(send, 5000);
+    videoPlayer.onplay = send;
+    videoPlayer.onpause = send;
 }
 
 function viewImage(item) {
@@ -2122,4 +2145,148 @@ function createEpisodeRow(ep) {
     });
     row.append(still, text, actions);
     return row;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Streams page (admins): every stream playing now, refreshed every few seconds
+
+let streamsTimer = null;
+
+function showStreams() {
+    mainScreen.classList.remove('active');
+    document.getElementById('streams-screen').classList.add('active');
+    refreshStreams();
+    clearInterval(streamsTimer);
+    streamsTimer = setInterval(refreshStreams, 2000);
+}
+
+function hideStreams() {
+    clearInterval(streamsTimer);
+    streamsTimer = null;
+    document.getElementById('streams-screen').classList.remove('active');
+    mainScreen.classList.add('active');
+}
+
+async function refreshStreams() {
+    const list = document.getElementById('streams-list');
+    const updated = document.getElementById('streams-updated');
+    let streams;
+    try {
+        streams = await api.getStreams();
+    } catch (error) {
+        updated.textContent = 'Could not load streams: ' + error.message;
+        return;
+    }
+    updated.textContent = `Updated ${new Date().toLocaleTimeString()} · refreshes every 2 seconds`;
+    list.innerHTML = '';
+    if (!streams.length) {
+        list.appendChild(el('p', 'streams-empty', 'Nothing is playing.'));
+        return;
+    }
+    streams.forEach(s => list.appendChild(createStreamCard(s)));
+}
+
+function el(tag, className, text) {
+    const e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+}
+
+const STREAM_STATES = {
+    playing: 'Playing',
+    paused: 'Paused',
+    streaming: 'Streaming',
+    idle: 'Idle',
+};
+
+function clock(seconds) {
+    if (!(seconds >= 0)) return '–';
+    const s = Math.floor(seconds);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    const mm = String(m).padStart(h ? 2 : 1, '0'), ss = String(sec).padStart(2, '0');
+    return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function ago(iso) {
+    const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    if (secs < 60) return `${secs}s ago`;
+    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+    return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m ago`;
+}
+
+function createStreamCard(s) {
+    const card = el('div', 'stream-card');
+
+    const head = el('div', 'stream-head');
+    head.appendChild(el('div', 'stream-title', s.title || s.name));
+    head.appendChild(el('span', `stream-badge state-${s.state}`, STREAM_STATES[s.state] || s.state));
+    head.appendChild(el('span', `stream-badge mode-${s.mode}`, s.mode === 'transcode' ? 'Transcoding' : 'Direct play'));
+    card.appendChild(head);
+
+    card.appendChild(el('div', 'stream-who',
+        `${s.user} · ${s.client} · ${s.client_ip} · started ${ago(s.started_at)}`));
+
+    // Progress: the player's own position when it reports one; otherwise how far has been sent.
+    const reported = s.position !== undefined && s.position !== null;
+    const position = reported ? s.position : s.served_to;
+    const duration = s.duration || 0;
+    const progress = el('div', 'stream-progress');
+    const bar = el('div', 'stream-bar');
+    if (duration > 0) {
+        const sent = el('div', 'stream-bar-sent');
+        sent.style.width = `${Math.min(100, (s.served_to / duration) * 100)}%`;
+        bar.appendChild(sent);
+        const pos = el('div', 'stream-bar-pos');
+        pos.style.width = `${Math.min(100, (position / duration) * 100)}%`;
+        bar.appendChild(pos);
+    }
+    progress.appendChild(bar);
+    let label = `${clock(position)} / ${clock(duration)}`;
+    if (duration > 0) label += ` (${Math.round((position / duration) * 100)}%)`;
+    label += reported ? ` · player position, reported ${ago(s.position_at)}` : ' · estimated from what has been sent';
+    if (reported && s.served_to > position) label += ` · sent up to ${clock(s.served_to)}`;
+    progress.appendChild(el('div', 'stream-progress-label', label));
+    card.appendChild(progress);
+
+    const facts = [
+        ['File', s.name],
+        ['Size', formatSize(s.size || 0)],
+        ['Source resolution', s.width && s.height ? `${s.width}×${s.height}` : '–'],
+        ['Sent', `${formatSize(s.bytes_sent || 0)} in ${s.requests} request${s.requests === 1 ? '' : 's'}` +
+            (s.active_requests > 0 ? ` (${s.active_requests} open)` : '')],
+        ['Last activity', ago(s.last_activity)],
+    ];
+    const t = s.transcode;
+    if (t) {
+        facts.push(
+            ['Why transcoding', t.reason || '–'],
+            ['Output video', t.video],
+            ['Output audio', t.audio],
+            ['Container', t.container],
+            ['Source video', t.source_video || '–'],
+            ['Source audio', t.source_audio || '–'],
+            ['Started at', t.start > 0 ? `${clock(t.start)} into the file` : 'the beginning'],
+            ['Transcoded to', `${clock(t.start + t.out_time)} (frame ${t.frame || 0})`],
+            ['Transcoder', t.stalled ? 'Waiting for the player (paused, or far enough ahead)'
+                : `${t.speed ? t.speed.toFixed(2) + '× realtime' : '–'} · ${t.fps ? Math.round(t.fps) + ' fps' : '–'} · ` +
+                  `${t.out_bitrate ? Math.round(t.out_bitrate) + ' kb/s' : '–'}`],
+        );
+    }
+    const grid = el('dl', 'stream-facts');
+    facts.forEach(([k, v]) => {
+        grid.appendChild(el('dt', null, k));
+        grid.appendChild(el('dd', null, v));
+    });
+    card.appendChild(grid);
+
+    if (t && t.args) {
+        const details = el('details', 'stream-args');
+        details.appendChild(el('summary', null, 'ffmpeg command'));
+        details.appendChild(el('code', null, 'ffmpeg ' + t.args.join(' ')));
+        card.appendChild(details);
+    }
+    const ua = el('div', 'stream-ua', s.user_agent);
+    card.appendChild(ua);
+    return card;
 }

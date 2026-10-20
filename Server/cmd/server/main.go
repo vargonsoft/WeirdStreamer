@@ -101,6 +101,9 @@ func main() {
 	}).Methods("GET")
 
 	// Protected API routes
+	// Active stream count for tools on this machine (loopback only; no login, no file names)
+	r.HandleFunc("/local/streams", mediaHandler.LocalStreamSummary).Methods("GET")
+
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(authHandler.AuthMiddleware)
 
@@ -114,6 +117,8 @@ func main() {
 	api.HandleFunc("/media/match", mediaHandler.GetMatch).Methods("GET")
 	api.HandleFunc("/media/match", mediaHandler.SetMatch).Methods("PUT")
 	api.HandleFunc("/media/match", mediaHandler.ResetMatch).Methods("DELETE")
+	api.HandleFunc("/streams/progress", mediaHandler.ReportStreamProgress).Methods("POST")
+	api.HandleFunc("/admin/streams", mediaHandler.ListStreams).Methods("GET")
 	api.HandleFunc("/media/match/search", mediaHandler.SearchMatch).Methods("GET")
 	api.HandleFunc("/media/match/posters", mediaHandler.GetMatchPosters).Methods("GET")
 	api.HandleFunc("/media/match/poster", mediaHandler.SetMatchPoster).Methods("PUT")

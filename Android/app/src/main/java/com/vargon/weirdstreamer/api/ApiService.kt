@@ -6,6 +6,7 @@ import com.vargon.weirdstreamer.api.models.TitleDetail
 import com.vargon.weirdstreamer.api.models.LoginRequest
 import com.vargon.weirdstreamer.api.models.LoginResponse
 import com.vargon.weirdstreamer.api.models.MediaItem
+import com.vargon.weirdstreamer.api.models.StreamProgress
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import okhttp3.ResponseBody
 import retrofit2.Response
@@ -42,6 +43,9 @@ interface ApiService {
 
     @GET("/api/media/trickplay/{id}")
     suspend fun getTrickplayInfo(@Path("id") id: Long): Response<TrickplayInfo>
+
+    @POST("/api/streams/progress")
+    suspend fun reportStreamProgress(@Body progress: StreamProgress): Response<Unit>
 
     @GET("/api/library")
     suspend fun getLibrary(@Query("lib") libraryId: String): Response<LibraryListing>

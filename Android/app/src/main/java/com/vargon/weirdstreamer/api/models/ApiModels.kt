@@ -74,6 +74,13 @@ data class LibraryFile(
     @SerializedName("match") val match: FileMatch? = null
 )
 
+/** The player's position, reported for the server's admin Streams page. */
+data class StreamProgress(
+    @SerializedName("path") val path: String, // base64 server path
+    @SerializedName("position") val position: Double, // seconds
+    @SerializedName("paused") val paused: Boolean
+)
+
 data class FileMatch(
     @SerializedName("title") val title: String,
     @SerializedName("year") val year: Int? = null

@@ -338,6 +338,13 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun serverUrl(url: String?): String? = serverRepository?.absoluteUrl(url)
 
     /** Plays a Library-view file; [queue] (the title's files) becomes the player's previous/next list. */
+    /** Reports the player's position in a server file (by its player path) to the server. */
+    fun reportPlayback(path: String, positionMs: Long, paused: Boolean) {
+        val repo = serverRepository ?: return
+        val originalPath = getFileItemForPath(path)?.originalPath ?: return
+        viewModelScope.launch { repo.reportPlayback(originalPath, positionMs / 1000.0, paused) }
+    }
+
     fun playLibraryFile(file: LibraryFile, queue: List<LibraryFile>) {
         val repo = serverRepository ?: return
         playbackQueue = queue.map { repo.fileItemFor(it) }

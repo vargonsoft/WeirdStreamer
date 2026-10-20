@@ -18,8 +18,9 @@ func NewStreamer() *Streamer {
 	return &Streamer{}
 }
 
-// ServeContent handles HTTP range requests for efficient streaming
-func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool, startTime string, autoConvertImages bool, bitrate string, resolution string) error {
+// ServeContent handles HTTP range requests for efficient streaming. sess, if not nil, is the
+// tracked stream the request belongs to.
+func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool, startTime string, autoConvertImages bool, bitrate string, resolution string, sess *StreamSession) error {
 	// Check if file is HEIC/HEIF and auto-conversion is enabled
 	ext := strings.ToLower(filepath.Ext(filePath))
 	if autoConvertImages && (ext == ".heic" || ext == ".heif") {
@@ -30,8 +31,16 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 	// 1. Explicitly requested via ?transcode=1 or bitrate/resolution provided
 	// 2. Auto-transcoding enabled (default) and file needs transcoding
 	shouldTranscode := forceTranscode || bitrate != "" || resolution != ""
+	reason := ""
+	switch {
+	case bitrate != "" || resolution != "":
+		reason = "The player asked for a lower quality"
+	case forceTranscode:
+		reason = "The player asked for a transcode (it couldn't play the original)"
+	}
 	if !shouldTranscode && autoTranscode && s.needsTranscoding(filePath) {
 		shouldTranscode = true
+		reason = fmt.Sprintf("Browsers can't play %s files", ext)
 		fmt.Printf("Auto-transcoding %s for browser compatibility\n", filePath)
 	}
 
@@ -39,7 +48,7 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 		if forceTranscode || bitrate != "" || resolution != "" {
 			fmt.Printf("Transcoding %s (requested: bitrate=%s, res=%s)\n", filePath, bitrate, resolution)
 		}
-		return s.transcodeAndServe(w, r, filePath, startTime, bitrate, resolution)
+		return s.transcodeAndServe(w, r, filePath, startTime, bitrate, resolution, reason, sess)
 	}
 
 	// Serve original file
@@ -67,7 +76,7 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 		// No range request, serve entire file
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		w.WriteHeader(http.StatusOK)
-		io.Copy(w, file)
+		io.Copy(&trackedWriter{w: w, sess: sess}, file)
 		return nil
 	}
 
@@ -92,8 +101,24 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 	w.WriteHeader(http.StatusPartialContent)
 
 	// Stream the requested range
-	io.CopyN(w, file, ra.end-ra.start+1)
+	io.CopyN(&trackedWriter{w: w, sess: sess, offset: ra.start}, file, ra.end-ra.start+1)
 	return nil
+}
+
+// trackedWriter counts what is sent for a tracked stream, and how far into the file it reaches.
+type trackedWriter struct {
+	w      io.Writer
+	sess   *StreamSession
+	offset int64 // file offset of the next byte; -1 when the output isn't the file itself
+}
+
+func (t *trackedWriter) Write(p []byte) (int, error) {
+	n, err := t.w.Write(p)
+	if t.offset >= 0 {
+		t.offset += int64(n)
+	}
+	t.sess.Sent(n, t.offset)
+	return n, err
 }
 
 type httpRange struct {
@@ -283,7 +308,7 @@ func (s *Streamer) needsTranscoding(filePath string) bool {
 }
 
 // transcodeAndServe transcodes video on-the-fly and streams to client
-func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, filePath string, startTime string, bitrate string, resolution string) error {
+func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, filePath string, startTime string, bitrate string, resolution string, reason string, sess *StreamSession) error {
 	if startTime != "" {
 		fmt.Printf("Starting transcoding from %s seconds for: %s\n", startTime, filePath)
 	} else {
@@ -337,6 +362,7 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 		"-f", "mp4",
 		"pipe:1",
 	)
+	sess.StartTranscode(describeTranscode(args, startTime, bitrate, resolution, reason))
 
 	cmd := exec.CommandContext(r.Context(), "ffmpeg", args...)
 
@@ -375,6 +401,7 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 			n, err := stderr.Read(buf)
 			if n > 0 {
 				fmt.Printf("FFmpeg: %s", string(buf[:n]))
+				sess.FFmpegOutput(string(buf[:n]))
 			}
 			if err != nil {
 				break
@@ -387,7 +414,7 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	w.WriteHeader(http.StatusOK)
 
 	// Stream the transcoded output
-	_, copyErr := io.Copy(w, stdout)
+	_, copyErr := io.Copy(&trackedWriter{w: w, sess: sess, offset: -1}, stdout)
 
 	// Wait for ffmpeg to finish
 	cmdErr := cmd.Wait()
@@ -407,6 +434,35 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	}
 
 	return nil
+}
+
+// describeTranscode summarizes ffmpeg arguments for the Streams page.
+func describeTranscode(args []string, startTime, bitrate, resolution, reason string) TranscodeInfo {
+	info := TranscodeInfo{Reason: reason, Bitrate: bitrate, Resolution: resolution, Args: args,
+		Container: "Fragmented MP4", Audio: "AAC 128 kb/s"}
+	info.Start, _ = strconv.ParseFloat(startTime, 64)
+	opt := map[string]string{}
+	for i := 0; i+1 < len(args); i++ {
+		if strings.HasPrefix(args[i], "-") {
+			opt[args[i]] = args[i+1]
+		}
+	}
+	video := "H.264 (libx264, preset " + opt["-preset"]
+	if crf, ok := opt["-crf"]; ok {
+		video += ", CRF " + crf
+	}
+	if b, ok := opt["-b:v"]; ok {
+		if n, err := strconv.ParseInt(b, 10, 64); err == nil {
+			video += fmt.Sprintf(", %d kb/s", n/1000)
+		} else {
+			video += ", " + b
+		}
+	}
+	if vf, ok := opt["-vf"]; ok {
+		video += ", " + vf
+	}
+	info.Video = video + ")"
+	return info
 }
 
 func (s *Streamer) getBitrate(filePath string) int64 {

@@ -33,6 +33,7 @@ type MediaHandler struct {
 	thumbnailHub       *thumbnailHub
 	authService        *auth.Service
 	meta               *metadata.Service // nil until SetMetadata
+	streams            *media.StreamTracker
 }
 
 // SetMetadata enables TMDB metadata for movie and tv libraries.
@@ -57,6 +58,7 @@ func NewMediaHandler(db *database.DB, authService *auth.Service) *MediaHandler {
 		thumbnailGenerator: media.NewThumbnailGenerator(),
 		thumbnailHub:       newThumbnailHub(),
 		authService:        authService,
+		streams:            media.NewStreamTracker(),
 	}
 }
 
@@ -271,7 +273,10 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages, bitrate, resolution); err != nil {
+	sess := h.beginStream(r, item)
+	defer sess.End()
+
+	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages, bitrate, resolution, sess); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to stream media")
 		return
 	}
