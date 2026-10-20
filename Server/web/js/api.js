@@ -215,6 +215,11 @@ class MediaAPI {
         return this.request('/api/media/match', { method: 'PUT', body: JSON.stringify(body) });
     }
 
+    // A DVD disc image's titles, chapters, angles and tracks
+    async getDisc(path) {
+        return this.request(`/api/media/disc?path=${encodeURIComponent(this.encodePath(path))}`);
+    }
+
     // Active streams (admin), and the player's position for them
     async getStreams() {
         return this.request('/api/admin/streams');

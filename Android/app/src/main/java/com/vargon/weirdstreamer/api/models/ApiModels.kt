@@ -74,6 +74,38 @@ data class LibraryFile(
     @SerializedName("match") val match: FileMatch? = null
 )
 
+/** A DVD disc image's titles, for the player's disc controls. */
+data class DiscInfo(
+    @SerializedName("titles") val titles: List<DiscTitle> = emptyList(),
+    @SerializedName("main_title") val mainTitle: Int = 1
+) {
+    fun title(number: Int): DiscTitle? =
+        titles.firstOrNull { it.number == (if (number <= 0) mainTitle else number) } ?: titles.firstOrNull()
+}
+
+data class DiscTitle(
+    @SerializedName("number") val number: Int,
+    @SerializedName("duration") val duration: Double, // seconds
+    @SerializedName("angles") val angles: Int = 1,
+    @SerializedName("chapters") val chapters: List<Double> = emptyList(), // start times, seconds
+    @SerializedName("audio") val audio: List<DiscTrack> = emptyList(),
+    @SerializedName("subtitles") val subtitles: List<DiscTrack> = emptyList()
+)
+
+data class DiscTrack(
+    @SerializedName("index") val index: Int,
+    @SerializedName("language") val language: String? = null,
+    @SerializedName("codec") val codec: String = "",
+    @SerializedName("channels") val channels: Int = 0
+) {
+    val label: String
+        get() = listOfNotNull(
+            language?.takeIf { it.isNotBlank() } ?: "Unknown",
+            codec.takeIf { it.isNotBlank() },
+            when (channels) { 0 -> null; 2 -> "Stereo"; 6 -> "5.1"; else -> "$channels ch" }
+        ).joinToString(" · ")
+}
+
 /** The player's position, reported for the server's admin Streams page. */
 data class StreamProgress(
     @SerializedName("path") val path: String, // base64 server path

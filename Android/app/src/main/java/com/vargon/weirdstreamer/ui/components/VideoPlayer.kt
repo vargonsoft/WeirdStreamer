@@ -33,6 +33,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.tv.material3.*
+import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.SmbDataSourceFactory
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.OpenSubtitlesClient
@@ -56,8 +57,23 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     // Determine if this is an SMB or Server source
     val isSmbSource = remember(path) { path.startsWith("smb://") }
 
+    // DVD disc images (.iso) are always transcoded by the server, one title at a time, with the
+    // chosen angle and tracks; the disc dialog changes them.
+    val isDisc = remember(path) {
+        viewModel.getFileItemForPath(path)?.let { item ->
+            item.name.endsWith(".iso", ignoreCase = true) || (item.originalPath ?: "").endsWith(".iso", ignoreCase = true)
+        } ?: false
+    }
+    var discInfo by remember { mutableStateOf<DiscInfo?>(null) }
+    var discTitle by remember { mutableIntStateOf(0) } // 0: the main title
+    var discAngle by remember { mutableIntStateOf(1) }
+    var discAudio by remember { mutableIntStateOf(0) }
+    var discSubtitle by remember { mutableIntStateOf(-1) }
+    var showDiscDialog by remember { mutableStateOf(false) }
+    val discQuery = if (isDisc) "&title=$discTitle&angle=$discAngle&audio=$discAudio&subtitle=$discSubtitle" else ""
+
     // Transcode state
-    var selectedTranscodeModeIndex by remember { mutableIntStateOf(0) }
+    var selectedTranscodeModeIndex by remember { mutableIntStateOf(if (isDisc) 1 else 0) }
     val currentTranscodeMode = transcodeModes[selectedTranscodeModeIndex]
 
     // Track the start offset for transcoded streams
@@ -67,11 +83,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var fullDuration by remember { mutableLongStateOf(0L) }
 
     // Build the actual video URL with transcode parameters
-    val videoUrl = remember(path, selectedTranscodeModeIndex) {
+    val videoUrl = remember(path, selectedTranscodeModeIndex, discQuery) {
         if (!isSmbSource && !currentTranscodeMode.isOriginal) {
             var url = if (path.contains("?")) "$path&transcode=1" else "$path?transcode=1"
             currentTranscodeMode.bitrate?.let { url += "&bitrate=$it" }
             currentTranscodeMode.resolution?.let { url += "&resolution=$it" }
+            url += discQuery
             if (transcodeStartOffset > 0) {
                 url += "&start=${transcodeStartOffset / 1000f}"
             }
@@ -235,6 +252,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 if (response.isSuccessful) {
                     response.body()?.let { metadata ->
                         metadata.duration?.let { fullDuration = (it * 1000).toLong() }
+                        if (isDisc) {
+                            api.getDisc(encodedPath).body()?.let { disc ->
+                                discInfo = disc
+                                disc.title(discTitle)?.let { fullDuration = (it.duration * 1000).toLong() }
+                            }
+                        }
                         viewModel.getFileItemForPath(path)?.let { viewModel.fetchTrickplayInfo(it) }?.let { trickplayInfo = it }
                     }
                 }
@@ -384,6 +407,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                          else "$path?transcode=1"
             currentTranscodeMode.bitrate?.let { newUrl += "&bitrate=$it" }
             currentTranscodeMode.resolution?.let { newUrl += "&resolution=$it" }
+            newUrl += discQuery
             newUrl += "&start=$startTime"
             transcodeStartOffset = finalTarget
             exoPlayer.setMediaItem(MediaItem.fromUri(newUrl))
@@ -409,6 +433,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             }
             currentTranscodeMode.bitrate?.let { newUrl += "&bitrate=$it" }
             currentTranscodeMode.resolution?.let { newUrl += "&resolution=$it" }
+            newUrl += discQuery
             newUrl += "&start=$startTime"
             transcodeStartOffset = target
             exoPlayer.setMediaItem(MediaItem.fromUri(newUrl))
@@ -525,6 +550,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                     }
                                     6 -> showSubtitleDialog = true
                                     7 -> rotation = (rotation + 90f) % 360f
+                                    8 -> showDiscDialog = true
                                 }
                                 true
                             } else if (isZoomMode) {
@@ -576,7 +602,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             }
                         }
                         Key.DirectionRight -> {
-                            if (showZoomToolbar && !isZoomMode) { toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(7); true }
+                            if (showZoomToolbar && !isZoomMode) { toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(if (isDisc) 8 else 7); true }
                             else if (isZoomMode && zoomLevel > 1f) {
                                 val (maxPX, _) = calculatePanLimits(1920f, 1080f)
                                 panX = (panX - 100f).coerceIn(-maxPX, maxPX); updateInteraction(); true
@@ -678,6 +704,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             currentTranscodeModeName = currentTranscodeMode.name,
             currentAspectRatioName = aspectRatios[currentAspectRatioIndex],
             isSmbSource = isSmbSource,
+            isDisc = isDisc,
             onButtonFocused = { toolbarFocusedButton = it },
             onButtonClicked = { id ->
                 when (id) {
@@ -689,13 +716,37 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     5 -> { currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size; currentAspectRatio = aspectRatioValues[currentAspectRatioIndex] }
                     6 -> showSubtitleDialog = true
                     7 -> rotation = (rotation + 90f) % 360f
+                    8 -> showDiscDialog = true
                 }
             },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 
         SpeedDialog(show = showSpeedDialog, currentSpeedIndex = currentSpeedIndex, speedIntervals = speedIntervals, onDismiss = { showSpeedDialog = false }, onSpeedSelected = { idx, speed -> exoPlayer.playbackParameters = PlaybackParameters(speed); speedFeedback = speed; currentSpeedIndex = idx; showSpeedDialog = false })
-        TranscodeDialog(show = showTranscodeDialog, selectedModeIndex = selectedTranscodeModeIndex, transcodeModes = transcodeModes, onDismiss = { showTranscodeDialog = false }, onModeSelected = { idx -> if (selectedTranscodeModeIndex != idx) { transcodeStartOffset = playbackPosition; selectedTranscodeModeIndex = idx }; showTranscodeDialog = false })
+        TranscodeDialog(show = showTranscodeDialog, selectedModeIndex = selectedTranscodeModeIndex, transcodeModes = transcodeModes, onDismiss = { showTranscodeDialog = false }, onModeSelected = { idx -> if (selectedTranscodeModeIndex != idx && !(isDisc && transcodeModes[idx].isOriginal)) { transcodeStartOffset = playbackPosition; selectedTranscodeModeIndex = idx }; showTranscodeDialog = false })
+        DiscDialog(
+            show = showDiscDialog,
+            info = discInfo,
+            titleNumber = discTitle,
+            angle = discAngle,
+            audio = discAudio,
+            subtitle = discSubtitle,
+            positionMs = playbackPosition,
+            onTitle = { n ->
+                showDiscDialog = false
+                if (n != (discInfo?.title(discTitle)?.number ?: n)) {
+                    transcodeStartOffset = 0
+                    discInfo?.title(n)?.let { fullDuration = (it.duration * 1000).toLong(); duration = fullDuration }
+                    discAngle = 1; discAudio = 0; discSubtitle = -1
+                    discTitle = n
+                }
+            },
+            onChapter = { ms -> showDiscDialog = false; seekToTrickplayTarget(ms) },
+            onAngle = { a -> showDiscDialog = false; if (a != discAngle) { transcodeStartOffset = playbackPosition; discAngle = a } },
+            onAudio = { a -> showDiscDialog = false; if (a != discAudio) { transcodeStartOffset = playbackPosition; discAudio = a } },
+            onSubtitle = { s -> showDiscDialog = false; if (s != discSubtitle) { transcodeStartOffset = playbackPosition; discSubtitle = s } },
+            onDismiss = { showDiscDialog = false }
+        )
         SubtitleDialog(show = showSubtitleDialog, availableSubtitles = availableSubtitles, selectedSubtitleIndex = selectedSubtitleIndex, onDismiss = { showSubtitleDialog = false }, onSubtitleSelected = { selectSubtitleTrack(it) }, onDownloadRequested = { showDownloadDialog = true; searchAndDownloadSubtitles() })
         DownloadSubtitlesDialog(show = showDownloadDialog, isSearching = isSearchingSubtitles, downloadStatus = downloadStatus, downloadingSubtitles = downloadingSubtitles, onDismiss = { showDownloadDialog = false; downloadingSubtitles = emptyList(); downloadStatus = null }, onSubtitleSelected = { downloadAndApplySubtitle(it) })
     }

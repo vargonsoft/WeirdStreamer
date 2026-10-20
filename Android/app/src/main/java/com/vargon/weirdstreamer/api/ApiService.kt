@@ -1,6 +1,7 @@
 package com.vargon.weirdstreamer.api
 
 import com.vargon.weirdstreamer.api.models.Directory
+import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.api.models.LibraryListing
 import com.vargon.weirdstreamer.api.models.TitleDetail
 import com.vargon.weirdstreamer.api.models.LoginRequest
@@ -43,6 +44,9 @@ interface ApiService {
 
     @GET("/api/media/trickplay/{id}")
     suspend fun getTrickplayInfo(@Path("id") id: Long): Response<TrickplayInfo>
+
+    @GET("/api/media/disc")
+    suspend fun getDisc(@Query("path") path: String): Response<DiscInfo>
 
     @POST("/api/streams/progress")
     suspend fun reportStreamProgress(@Body progress: StreamProgress): Response<Unit>

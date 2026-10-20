@@ -144,6 +144,7 @@ function setupEventListeners() {
     });
     
     setupMatchDialog();
+    setupDiscControls();
 
     // Modal close buttons
     document.querySelectorAll('.close').forEach(closeBtn => {
@@ -156,6 +157,8 @@ function setupEventListeners() {
             videoPlayer.load(); // This aborts the current HTTP request
             videoPlayer.onloadedmetadata = null;
             videoPlayer.onerror = null;
+            videoPlayer.ontimeupdate = null;
+            hideDiscControls();
             videoPlayer.innerHTML = '';
             imageViewer.onload = null;
             imageViewer.onerror = null;
@@ -172,6 +175,8 @@ function setupEventListeners() {
             videoPlayer.load(); // This aborts the current HTTP request
             videoPlayer.onloadedmetadata = null;
             videoPlayer.onerror = null;
+            videoPlayer.ontimeupdate = null;
+            hideDiscControls();
             videoPlayer.innerHTML = '';
         }
         if (e.target === imageModal) {
@@ -596,6 +601,11 @@ function needsTranscoding(filename) {
 }
 
 function playVideo(item, forceTranscode = false) {
+    if (isDiscImage(item)) {
+        playDisc(item);
+        return;
+    }
+    hideDiscControls();
     console.log('Playing video:', item, 'Force transcode:', forceTranscode);
     console.log('API token exists:', !!api.token);
     const streamUrl = api.getStreamUrl(item.path, forceTranscode);
@@ -664,11 +674,141 @@ function startPlaybackReports(item) {
             clearInterval(playbackReportTimer);
             return;
         }
-        api.reportPlayback(item.path, videoPlayer.currentTime || 0, videoPlayer.paused).catch(() => {});
+        api.reportPlayback(item.path, playerPosition(), videoPlayer.paused).catch(() => {});
     };
     playbackReportTimer = setInterval(send, 5000);
     videoPlayer.onplay = send;
     videoPlayer.onpause = send;
+}
+
+// Where playback is in the file: discs restart their stream at an offset when seeking.
+function playerPosition() {
+    return (disc && disc.item ? disc.offset : 0) + (videoPlayer.currentTime || 0);
+}
+
+// ---------------------------------------------------------------------------------------------
+// DVD disc images: always transcoded by the server, which plays one title of the disc at a time.
+// Choosing a title, chapter, angle or track restarts the stream at the right place.
+
+let disc = null; // { item, info, title, angle, audio, subtitle, offset }
+
+function isDiscImage(item) {
+    return /\.iso$/i.test(item.path || item.name || '');
+}
+
+function hideDiscControls() {
+    disc = null;
+    document.getElementById('disc-controls').hidden = true;
+}
+
+async function playDisc(item) {
+    disc = { item, info: null, title: 0, angle: 1, audio: 0, subtitle: -1, offset: 0 };
+    playerTitle.textContent = item.name + ' — reading disc…';
+    document.getElementById('transcode-btn').style.display = 'none';
+    document.getElementById('disc-controls').hidden = true;
+    playerModal.classList.add('active');
+    let info;
+    try {
+        info = await api.getDisc(item.path);
+    } catch (error) {
+        playerTitle.textContent = `${item.name} — ${error.message}`;
+        return;
+    }
+    if (!disc || disc.item !== item) return; // closed or replaced meanwhile
+    disc.info = info;
+    disc.title = info.main_title;
+    playerTitle.textContent = item.name;
+    renderDiscControls();
+    loadDiscStream(0);
+}
+
+function discTitle() {
+    return disc.info.titles.find(t => t.number === disc.title) || disc.info.titles[0];
+}
+
+function loadDiscStream(start) {
+    const t = discTitle();
+    disc.offset = Math.max(0, Math.min(start, Math.max(t.duration - 1, 0)));
+    let url = api.getStreamUrl(disc.item.path, true) +
+        `&title=${t.number}&angle=${disc.angle}&audio=${disc.audio}&subtitle=${disc.subtitle}`;
+    if (disc.offset > 0) url += `&start=${disc.offset.toFixed(2)}`;
+    videoPlayer.pause();
+    videoPlayer.removeAttribute('src');
+    videoPlayer.innerHTML = '';
+    const source = document.createElement('source');
+    source.src = url;
+    source.type = 'video/mp4';
+    videoPlayer.appendChild(source);
+    videoPlayer.load();
+    videoPlayer.onloadedmetadata = () => videoPlayer.play().catch(err => console.error('Error playing disc:', err));
+    videoPlayer.onerror = () => console.error('Disc video error:', videoPlayer.error);
+    videoPlayer.ontimeupdate = updateDiscPosition;
+    startPlaybackReports(disc.item);
+    updateDiscPosition();
+}
+
+function fillSelect(select, options, selected) {
+    select.innerHTML = '';
+    options.forEach(([value, label]) => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = label;
+        select.appendChild(opt);
+    });
+    select.value = String(selected);
+}
+
+function trackLabel(track) {
+    const parts = [track.language || 'unknown', track.codec];
+    if (track.channels) parts.push(track.channels === 6 ? '5.1' : track.channels === 2 ? 'stereo' : `${track.channels} ch`);
+    return `${track.index + 1}: ${parts.join(' · ')}`;
+}
+
+function renderDiscControls() {
+    const info = disc.info, t = discTitle();
+    const titles = [...info.titles].sort((a, b) => a.number - b.number);
+    fillSelect(document.getElementById('disc-title'), titles.map(x =>
+        [x.number, `${x.number}: ${clock(x.duration)}${x.number === info.main_title ? ' (main)' : ''}`]), t.number);
+    const chapters = t.chapters.length ? t.chapters : [0];
+    fillSelect(document.getElementById('disc-chapter'), chapters.map((start, i) =>
+        [i, `${i + 1}: ${clock(start)}`]), 0);
+    document.getElementById('disc-angle-label').hidden = t.angles <= 1;
+    fillSelect(document.getElementById('disc-angle'),
+        Array.from({ length: t.angles }, (_, i) => [i + 1, `${i + 1} of ${t.angles}`]), disc.angle);
+    fillSelect(document.getElementById('disc-audio'),
+        t.audio.length ? t.audio.map(a => [a.index, trackLabel(a)]) : [[0, 'None']], disc.audio);
+    fillSelect(document.getElementById('disc-subtitle'),
+        [[-1, 'Off'], ...t.subtitles.map(s => [s.index, trackLabel(s)])], disc.subtitle);
+    document.getElementById('disc-controls').hidden = false;
+}
+
+function updateDiscPosition() {
+    if (!disc || !disc.info) return;
+    const t = discTitle(), pos = playerPosition();
+    document.getElementById('disc-position').textContent = `${clock(pos)} / ${clock(t.duration)}`;
+    // Keep the chapter list on the chapter playing.
+    let current = 0;
+    t.chapters.forEach((start, i) => { if (pos + 0.5 >= start) current = i; });
+    const select = document.getElementById('disc-chapter');
+    if (document.activeElement !== select && select.value !== String(current)) select.value = String(current);
+}
+
+function setupDiscControls() {
+    const on = (id, handler) => document.getElementById(id).addEventListener('change', (e) => {
+        if (disc && disc.info) handler(Number(e.target.value));
+    });
+    on('disc-title', (n) => {
+        disc.title = n;
+        disc.angle = 1;
+        disc.audio = 0;
+        disc.subtitle = -1;
+        renderDiscControls();
+        loadDiscStream(0);
+    });
+    on('disc-chapter', (i) => loadDiscStream(discTitle().chapters[i] || 0));
+    on('disc-angle', (a) => { disc.angle = a; loadDiscStream(playerPosition()); });
+    on('disc-audio', (a) => { disc.audio = a; loadDiscStream(playerPosition()); });
+    on('disc-subtitle', (s) => { disc.subtitle = s; loadDiscStream(playerPosition()); });
 }
 
 function viewImage(item) {

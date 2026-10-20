@@ -144,7 +144,14 @@ func (s *Scanner) GetFileMetadata(path string) (*models.MediaItem, error) {
 	}
 
 	// Get metadata based on type
-	if item.Type == "video" {
+	if item.Type == "video" && IsDiscImage(path) {
+		// A disc image's length is its main feature's
+		if info, err := LoadDisc(path); err == nil {
+			if t := info.Title(0); t != nil {
+				item.Duration, item.Width, item.Height = t.Duration, t.Width, t.Height
+			}
+		}
+	} else if item.Type == "video" {
 		// Get duration using ffprobe
 		cmd := exec.Command("ffprobe",
 			"-v", "error",
@@ -198,6 +205,7 @@ func (s *Scanner) getMimeType(path string) string {
 		".avi":  "video/x-msvideo",
 		".divx": "video/x-msvideo", // DivX and Xvid files are AVI containers
 		".xvid": "video/x-msvideo",
+		".iso":  "application/x-iso9660-image", // DVD images, played transcoded
 		".mov":  "video/quicktime",
 		".wmv":  "video/x-ms-wmv",
 		".asf":  "video/x-ms-asf",

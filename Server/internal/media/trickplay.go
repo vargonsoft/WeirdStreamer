@@ -131,6 +131,9 @@ func (tg *TrickplayGenerator) Clean() error {
 }
 
 func isSupportedVideo(path string) bool {
+	if IsDiscImage(path) {
+		return false // disc images have no single video stream to sample frames from
+	}
 	ext := strings.ToLower(filepath.Ext(path))
 	for _, videoExt := range config.GlobalConfig.Media.SupportedVideoFormats {
 		if ext == videoExt {

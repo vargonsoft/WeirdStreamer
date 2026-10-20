@@ -168,6 +168,15 @@
                 <h2 id="player-title"></h2>
                 <button id="transcode-btn" class="btn" style="margin-bottom: 10px;">🔄 Transcode to MP4</button>
                 <video id="video-player" controls></video>
+                <!-- DVD disc images: what to play from the disc -->
+                <div id="disc-controls" class="disc-controls" hidden>
+                    <label>Title <select id="disc-title"></select></label>
+                    <label>Chapter <select id="disc-chapter"></select></label>
+                    <label id="disc-angle-label">Angle <select id="disc-angle"></select></label>
+                    <label>Audio <select id="disc-audio"></select></label>
+                    <label>Subtitles <select id="disc-subtitle"></select></label>
+                    <span id="disc-position" class="disc-position"></span>
+                </div>
             </div>
         </div>
 

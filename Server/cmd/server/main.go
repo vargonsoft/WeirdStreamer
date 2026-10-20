@@ -13,6 +13,7 @@ import (
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/handlers"
+	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/metadata"
 )
 
@@ -64,6 +65,7 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer db.Close()
+	media.SetDiscStore(db)
 
 	// Initialize services
 	authService := auth.NewService(db)
@@ -118,6 +120,7 @@ func main() {
 	api.HandleFunc("/media/match", mediaHandler.SetMatch).Methods("PUT")
 	api.HandleFunc("/media/match", mediaHandler.ResetMatch).Methods("DELETE")
 	api.HandleFunc("/streams/progress", mediaHandler.ReportStreamProgress).Methods("POST")
+	api.HandleFunc("/media/disc", mediaHandler.GetDisc).Methods("GET")
 	api.HandleFunc("/admin/streams", mediaHandler.ListStreams).Methods("GET")
 	api.HandleFunc("/media/match/search", mediaHandler.SearchMatch).Methods("GET")
 	api.HandleFunc("/media/match/posters", mediaHandler.GetMatchPosters).Methods("GET")

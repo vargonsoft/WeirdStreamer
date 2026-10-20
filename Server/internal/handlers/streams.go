@@ -39,6 +39,15 @@ func (h *MediaHandler) beginStream(r *http.Request, item *models.MediaItem) *med
 		return nil
 	}
 	sess := h.streams.Begin(streamKey(r, item.Path), h.streamDescriber(r, item))
+	if media.IsDiscImage(item.Path) {
+		// A disc's stream plays one of its titles: show that title's length.
+		if info, err := media.LoadDisc(item.Path); err == nil {
+			if t := info.Title(media.ParseDiscOptions(r).Title); t != nil {
+				sess.FillIn(func(s *media.StreamInfo) { s.Duration, s.Width, s.Height = t.Duration, t.Width, t.Height })
+			}
+		}
+		return sess
+	}
 	h.probeStream(sess, item.Path)
 	return sess
 }
@@ -163,4 +172,29 @@ func (h *MediaHandler) LocalStreamSummary(w http.ResponseWriter, r *http.Request
 			SecondsAgo: int(time.Since(s.LastActivity).Seconds())})
 	}
 	respondJSON(w, http.StatusOK, summary)
+}
+
+// GetDisc describes a DVD disc image's titles (chapters, angles, audio and subtitle tracks), for
+// the players' disc controls: ?path=<base64 path>
+func (h *MediaHandler) GetDisc(w http.ResponseWriter, r *http.Request) {
+	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
+	if err != nil || len(decoded) == 0 {
+		respondError(w, http.StatusBadRequest, "Invalid path encoding")
+		return
+	}
+	path := string(decoded)
+	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+	if !media.IsDiscImage(path) {
+		respondError(w, http.StatusBadRequest, "Not a disc image")
+		return
+	}
+	info, err := media.LoadDisc(path)
+	if err != nil {
+		respondError(w, http.StatusUnprocessableEntity, "Could not read the disc: "+err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, info)
 }

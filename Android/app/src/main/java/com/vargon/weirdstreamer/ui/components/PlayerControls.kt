@@ -155,6 +155,7 @@ fun PlayerZoomToolbar(
     currentTranscodeModeName: String,
     currentAspectRatioName: String,
     isSmbSource: Boolean,
+    isDisc: Boolean = false,
     onButtonFocused: (Int) -> Unit,
     onButtonClicked: (Int) -> Unit,
     modifier: Modifier = Modifier
@@ -176,6 +177,7 @@ fun PlayerZoomToolbar(
             val buttons = mutableListOf<Int>()
             if (!isSmbSource) buttons.add(0) // Transcode
             buttons.addAll(listOf(1, 2, 3, 4, 5, 6, 7))
+            if (isDisc) buttons.add(8) // Disc: chapters, angles, tracks, titles
 
             buttons.forEach { id ->
                 val isFocused = toolbarFocusedButton == id
@@ -187,7 +189,7 @@ fun PlayerZoomToolbar(
                     onFocused = { onButtonFocused(id) },
                     onClick = { onButtonClicked(id) }
                 )
-                if (id != buttons.last()) Spacer(modifier = Modifier.width(12.dp))
+                if (id != buttons.last()) Spacer(modifier = Modifier.width(8.dp))
             }
         }
     }
@@ -204,7 +206,7 @@ fun ToolbarButton(
 ) {
     Column(
         modifier = Modifier
-            .width(100.dp)
+            .width(92.dp) // nine buttons (with Disc) fit across a TV screen
             .clip(RoundedCornerShape(8.dp))
             .background(
                 if (isFocused) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.3f)
@@ -223,6 +225,7 @@ fun ToolbarButton(
             5 -> Icons.Default.AspectRatio
             6 -> Icons.Default.Subtitles
             7 -> Icons.AutoMirrored.Filled.RotateRight
+            8 -> Icons.Default.Album
             else -> Icons.Default.QuestionMark
         }
 
@@ -235,6 +238,7 @@ fun ToolbarButton(
             5 -> currentAspectRatioName
             6 -> "Subtitles"
             7 -> "Rotate"
+            8 -> "Disc"
             else -> ""
         }
 

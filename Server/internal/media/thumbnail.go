@@ -66,7 +66,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 	var mediaType string
 
 	switch ext {
-	case ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp", ".3gpp", ".ts", ".mp2", ".divx", ".xvid":
+	case ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp", ".3gpp", ".ts", ".mp2", ".divx", ".xvid", ".iso":
 		mediaType = "video"
 	case ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".jfif", ".heif", ".heic":
 		mediaType = "image"
@@ -113,12 +113,25 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 
 		log.Printf("[THUMBNAIL] Generating video thumbnail for %s -> %s", filePath, thumbnailPath)
 
-		// Get codec info for conditional BSF
-		codec := tg.getVideoCodec(filePath)
-
 		// Try different seek positions: 1 minute, 30 seconds, 1 second
 		seekTimes := []string{"00:01:00.000", "00:00:30.000", "00:00:01.000"}
 		var success bool
+		codec := ""
+		if IsDiscImage(filePath) {
+			// Disc images: a frame a tenth of the way into the main title
+			seekTimes = nil
+			if args, err := DiscFrameArgs(filePath, 0.1); err == nil {
+				args = append(args, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", thumbnailPath)
+				if err := exec.Command("ffmpeg", args...).Run(); err == nil {
+					if info, statErr := os.Stat(thumbnailPath); statErr == nil && info.Size() > 1024 {
+						success = true
+					}
+				}
+			}
+		} else {
+			// Get codec info for conditional BSF
+			codec = tg.getVideoCodec(filePath)
+		}
 
 		for _, seekTime := range seekTimes {
 			// format=yuvj420p is the critical fix for MJPEG compliance in FFmpeg 7.1.1.

@@ -1,0 +1,86 @@
+package media
+
+import (
+	"encoding/binary"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func TestDVDTime(t *testing.T) {
+	// 1:02:03 and 15 frames at 30 fps (rate bits 11), and 25 frames at 25 fps (01).
+	if got := dvdTime([]byte{0x01, 0x02, 0x03, 0xC0 | 0x15}); got < 3723.49 || got > 3723.51 {
+		t.Errorf("30 fps time = %v", got)
+	}
+	if got := dvdTime([]byte{0x00, 0x00, 0x10, 0x40 | 0x20}); got != 10.8 {
+		t.Errorf("25 fps time = %v", got)
+	}
+}
+
+// vtsWith builds a title set IFO holding one title's chapters and its PGCs' lengths.
+func vtsWith(ptts []ptt, pgcTimes [][4]byte) []byte {
+	b := make([]byte, 4*sectorSize)
+	copy(b, "DVDVIDEO-VTS")
+	binary.BigEndian.PutUint32(b[0xC8:], 1) // PTT table at sector 1
+	binary.BigEndian.PutUint32(b[0xCC:], 2) // PGC table at sector 2
+	p := sectorSize
+	binary.BigEndian.PutUint16(b[p:], 1)
+	binary.BigEndian.PutUint32(b[p+4:], uint32(8+4+4*len(ptts)-1))
+	binary.BigEndian.PutUint32(b[p+8:], 12)
+	for i, e := range ptts {
+		binary.BigEndian.PutUint16(b[p+12+4*i:], uint16(e.pgc))
+		binary.BigEndian.PutUint16(b[p+14+4*i:], uint16(e.pg))
+	}
+	g := 2 * sectorSize
+	binary.BigEndian.PutUint16(b[g:], uint16(len(pgcTimes)))
+	for i, tm := range pgcTimes {
+		start := 8 + 8*len(pgcTimes) + 16*i
+		binary.BigEndian.PutUint32(b[g+8+8*i+4:], uint32(start))
+		copy(b[g+start+4:], tm[:])
+	}
+	return b
+}
+
+func TestTitleTables(t *testing.T) {
+	// A title of three chained PGCs; the second holds two chapters.
+	vts := vtsWith([]ptt{{1, 1}, {2, 1}, {2, 2}, {3, 1}},
+		[][4]byte{{0, 0, 0x07, 0xC0}, {0, 0x01, 0x13, 0xC0}, {0, 0x04, 0x34, 0xC0}})
+	tt := dvdTitleTable{angles: 2, ptts: readPTTs(vts, 1), pgcDuration: readPGCDurations(vts)}
+	want := []DiscSegment{{PGC: 1, PG: 1, Start: 0, Duration: 7}, {PGC: 2, PG: 1, Start: 7, Duration: 73},
+		{PGC: 3, PG: 1, Start: 80, Duration: 274}}
+	if got := tt.segments(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("segments = %+v", got)
+	}
+	if !chainMatches(want, 354.5) || chainMatches(want, 7) {
+		t.Error("chainMatches should accept the title's own length and reject a short title")
+	}
+
+	title := DiscTitle{Number: 1, Angles: 2, Duration: 354, Segments: want}
+	if i, off := title.SegmentAt(100); i != 2 || off != 20 {
+		t.Errorf("SegmentAt(100) = %d, %v", i, off)
+	}
+	args, trim := title.InputArgs("/d.iso", 2, 2, 20)
+	if strings.Join(args, " ") != "-f dvdvideo -title 1 -pgc 3 -pg 1 -angle 2 -i /d.iso" || trim != 20 {
+		t.Errorf("chained input = %v, trim %v", args, trim)
+	}
+	whole := DiscTitle{Number: 4, Angles: 1, Duration: 600, Segments: []DiscSegment{{Duration: 600}}}
+	args, trim = whole.InputArgs("/d.iso", 0, 3, 90)
+	if strings.Join(args, " ") != "-f dvdvideo -title 4 -ss 90.000 -i /d.iso" || trim != 0 {
+		t.Errorf("whole-title input = %v, trim %v (angle beyond the title's must be dropped)", args, trim)
+	}
+}
+
+func TestMainTitle(t *testing.T) {
+	titles := []DiscTitle{
+		{Number: 1, Duration: 5524.93, Audio: make([]DiscTrack, 3), Chapters: make([]float64, 33)},
+		{Number: 3, Duration: 37},
+		{Number: 10, Duration: 5524.97, Audio: make([]DiscTrack, 1), Chapters: make([]float64, 33)}, // commentary cut
+	}
+	if got := mainTitle(titles); got != 1 {
+		t.Errorf("main title = %d, want the full-audio feature 1", got)
+	}
+	titles[0].Duration = 3000
+	if got := mainTitle(titles); got != 10 {
+		t.Errorf("main title = %d, want the clearly longest 10", got)
+	}
+}

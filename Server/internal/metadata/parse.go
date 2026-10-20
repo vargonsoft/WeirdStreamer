@@ -202,7 +202,7 @@ func cleanTitle(name string) string {
 var videoExts = map[string]bool{
 	".mkv": true, ".mp4": true, ".m4v": true, ".avi": true, ".mov": true, ".wmv": true, ".flv": true,
 	".webm": true, ".ts": true, ".mpg": true, ".mpeg": true, ".3gp": true, ".3gpp": true, ".mp2": true,
-	".divx": true, ".xvid": true,
+	".divx": true, ".xvid": true, ".iso": true,
 }
 
 func stripVideoExt(name string) string {

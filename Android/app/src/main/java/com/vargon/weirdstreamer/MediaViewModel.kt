@@ -781,7 +781,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private val NATURAL_TOKEN_REGEX = Regex("(\\d+)|(\\D+)")
         private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
-        private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2", "divx", "xvid")
+        private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2", "divx", "xvid", "iso")
         private const val METADATA_BATCH_SIZE = 12
         private const val METADATA_FLUSH_INTERVAL_MS = 500L
         private const val METADATA_CONCURRENCY = 4

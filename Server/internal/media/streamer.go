@@ -26,6 +26,10 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 	if autoConvertImages && (ext == ".heic" || ext == ".heif") {
 		return s.convertAndServeImage(w, r, filePath)
 	}
+	if IsDiscImage(filePath) {
+		// Disc images can't be played as files: always transcoded, from the disc's titles.
+		return s.serveDisc(w, r, filePath, startTime, bitrate, resolution, sess)
+	}
 
 	// Check if transcoding is needed
 	// 1. Explicitly requested via ?transcode=1 or bitrate/resolution provided
@@ -298,7 +302,7 @@ func (s *Streamer) serveOriginalFile(w http.ResponseWriter, r *http.Request, fil
 func (s *Streamer) needsTranscoding(filePath string) bool {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	// Formats that need transcoding for browser compatibility
-	incompatibleFormats := []string{".3gp", ".3gpp", ".avi", ".divx", ".xvid", ".wmv", ".asf", ".flv", ".mkv"}
+	incompatibleFormats := []string{".3gp", ".3gpp", ".avi", ".divx", ".xvid", ".iso", ".wmv", ".asf", ".flv", ".mkv"}
 	for _, fmt := range incompatibleFormats {
 		if ext == fmt {
 			return true
@@ -363,7 +367,11 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 		"pipe:1",
 	)
 	sess.StartTranscode(describeTranscode(args, startTime, bitrate, resolution, reason))
+	return s.runTranscode(w, r, filePath, args, sess)
+}
 
+// runTranscode runs ffmpeg with args (writing fragmented MP4 to stdout) and streams its output.
+func (s *Streamer) runTranscode(w http.ResponseWriter, r *http.Request, filePath string, args []string, sess *StreamSession) error {
 	cmd := exec.CommandContext(r.Context(), "ffmpeg", args...)
 
 	// Get stdout and stderr pipes

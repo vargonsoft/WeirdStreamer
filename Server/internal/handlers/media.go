@@ -807,6 +807,7 @@ func (h *MediaHandler) getMimeTypeFromExtension(ext string) string {
 		".avi":  "video/x-msvideo",
 		".divx": "video/x-msvideo", // DivX and Xvid files are AVI containers
 		".xvid": "video/x-msvideo",
+		".iso":  "application/x-iso9660-image", // DVD images, played transcoded
 		".mov":  "video/quicktime",
 		".wmv":  "video/x-ms-wmv",
 		".flv":  "video/x-flv",
