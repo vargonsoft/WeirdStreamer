@@ -26,10 +26,10 @@
             <header>
                 <h1>Media Library</h1>
                 <div class="header-controls">
-                    <button id="scan-btn" class="btn">Scan Media</button>
-                    <button id="regenerate-thumbnails-btn" class="btn" style="display: none;">🔄 Regenerate Thumbnails</button>
-                    <button id="streams-btn" class="btn" style="display: none;">📡 Streams</button>
-                    <button id="settings-btn" class="btn" style="display: none;">⚙️ Settings</button>
+                    <button id="scan-btn" class="btn" data-icon="search"><span class="btn-label">Scan Media</span></button>
+                    <button id="regenerate-thumbnails-btn" class="btn" style="display: none;" data-icon="refresh"><span class="btn-label">Regenerate Thumbnails</span></button>
+                    <button id="streams-btn" class="btn" style="display: none;" data-icon="liveTv"><span class="btn-label">Streams</span></button>
+                    <button id="settings-btn" class="btn" style="display: none;" data-icon="settings"><span class="btn-label">Settings</span></button>
                     <button id="logout-btn" class="btn">Logout</button>
                 </div>
             </header>
@@ -104,7 +104,7 @@
 
                     <div class="settings-group">
                         <h3>Metadata</h3>
-                        <p style="font-size: 13px; color: #666; margin-bottom: 10px;">Used for libraries with a Movies or TV Shows type.</p>
+                        <p style="font-size: 13px; color: var(--muted-text); margin-bottom: 10px;">Used for libraries with a Movies or TV Shows type.</p>
                         <label>TMDB API Read Access Token:<br>
                             <input type="password" id="tmdb-token" class="settings-input" style="width: calc(100% - 20px);" autocomplete="off" placeholder="From themoviedb.org → Settings → API">
                         </label><br><br>
@@ -112,7 +112,7 @@
                     </div>
 
                     <button id="save-settings-btn" class="btn" style="margin-top: 20px;">💾 Save Settings</button>
-                    <p id="settings-message" style="margin-top: 10px; color: #667eea; font-weight: bold;"></p>
+                    <p id="settings-message" style="margin-top: 10px; color: var(--primary-color); font-weight: bold;"></p>
                 </div>
 
                 <!-- User Management Tab (Admin Only) -->
@@ -130,7 +130,7 @@
                         <h3>Existing Users</h3>
                         <div id="users-list"></div>
                     </div>
-                    <p id="users-message" style="margin-top: 10px; color: #667eea; font-weight: bold;"></p>
+                    <p id="users-message" style="margin-top: 10px; color: var(--primary-color); font-weight: bold;"></p>
                 </div>
 
                 <!-- My Account Tab -->
@@ -145,6 +145,9 @@
                         </label><br>
                         <label>
                             <input type="radio" name="theme" value="cinema-red" id="theme-cinema-red"> Cinema Red (Gold & Red)
+                        </label><br>
+                        <label>
+                            <input type="radio" name="theme" value="dark" id="theme-dark"> Dark
                         </label><br><br>
                         <button id="save-theme-btn" class="btn">💾 Save Theme</button>
                         <p id="theme-message" style="margin-top: 10px; font-weight: bold;"></p>

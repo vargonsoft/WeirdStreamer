@@ -5,6 +5,37 @@
 }
 
 /* Theme Variables */
+/* Colors of cards, panels and secondary text: the light look unless a theme sets them */
+:root {
+    --card-bg: white;
+    --panel-bg: #f4f4f8;
+    --placeholder-bg: #ddd;
+    --hover-bg: #f7f7fd;
+    --border-color: #e3e3e8;
+    --muted-text: #666;
+    --strong-text: #333;
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark; /* inputs, menus and scrollbars drawn dark too */
+    --primary-color: #6c7ae0;
+    --primary-dark: #5867cf;
+    --secondary-color: #8b7bd8;
+    --background-gradient: linear-gradient(180deg, #121217 0%, #16161d 100%);
+    --text-color: #e4e4ea;
+    --surface-color: #1d1d25;
+    --surface-hover: #2a2a34;
+    --card-bg: #1d1d25;
+    --panel-bg: #25252e;
+    --placeholder-bg: #2e2e38;
+    --hover-bg: #2a2a35;
+    --border-color: #393945;
+    --muted-text: #a2a2ae;
+    --strong-text: #e4e4ea;
+    --button-bg: #474f99; /* darker than the accent text color */
+    --button-hover: #3b4285;
+}
+
 :root[data-theme="default"] {
     --primary-color: #667eea;
     --primary-dark: #5568d3;
@@ -70,7 +101,7 @@ body {
     width: 100%;
     padding: 12px;
     margin-bottom: 15px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-color);
     border-radius: 5px;
     font-size: 14px;
 }
@@ -78,7 +109,7 @@ body {
 #login-form button {
     width: 100%;
     padding: 12px;
-    background: var(--primary-color);
+    background: var(--button-bg, var(--primary-color));
     color: white;
     border: none;
     border-radius: 5px;
@@ -88,7 +119,7 @@ body {
 }
 
 #login-form button:hover {
-    background: var(--primary-dark);
+    background: var(--button-hover, var(--primary-dark));
 }
 
 .error {
@@ -127,9 +158,10 @@ header h1 {
     gap: 10px;
 }
 
+/* Buttons use the theme's accent, unless a theme sets --button-bg (Dark) */
 .btn {
     padding: 10px 20px;
-    background: var(--primary-color);
+    background: var(--button-bg, var(--primary-color));
     color: white;
     border: none;
     border-radius: 5px;
@@ -138,7 +170,7 @@ header h1 {
 }
 
 .btn:hover {
-    background: var(--primary-dark);
+    background: var(--button-hover, var(--primary-dark));
 }
 
 /* Tabs */
@@ -167,7 +199,7 @@ header h1 {
 }
 
 .tab.active {
-    background: var(--primary-color);
+    background: var(--button-bg, var(--primary-color));
     color: white;
 }
 
@@ -222,7 +254,7 @@ header h1 {
 }
 
 .media-item {
-    background: #f9f9f9;
+    background: var(--panel-bg);
     border-radius: 8px;
     overflow: hidden;
     cursor: pointer;
@@ -237,7 +269,7 @@ header h1 {
 .media-thumbnail {
     width: 100%;
     height: 200px;
-    background: #ddd;
+    background: var(--placeholder-bg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -283,7 +315,7 @@ header h1 {
 }
 
 .transcode-btn:hover {
-    background: var(--primary-color);
+    background: var(--button-bg, var(--primary-color));
     border-color: white;
     transform: scale(1.1);
 }
@@ -310,7 +342,7 @@ header h1 {
 
 .media-size {
     font-size: 12px;
-    color: #666;
+    color: var(--muted-text);
 }
 
 /* Modal */
@@ -332,7 +364,7 @@ header h1 {
 }
 
 .modal-content {
-    background: white;
+    background: var(--card-bg);
     padding: 20px;
     border-radius: 10px;
     max-width: 90%;
@@ -349,12 +381,12 @@ header h1 {
     top: 10px;
     font-size: 30px;
     cursor: pointer;
-    color: #666;
+    color: var(--muted-text);
     z-index: 10;
 }
 
 .close:hover {
-    color: #333;
+    color: var(--strong-text);
 }
 
 #video-player {
@@ -384,7 +416,7 @@ header h1 {
 }
 
 .settings-container {
-    background: white;
+    background: var(--card-bg);
     padding: 30px;
     border-radius: 10px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
@@ -398,7 +430,7 @@ header h1 {
 .settings-group {
     margin-top: 30px;
     padding: 20px;
-    background: #f9f9f9;
+    background: var(--panel-bg);
     border-radius: 5px;
 }
 
@@ -410,12 +442,12 @@ header h1 {
 .settings-group label {
     display: block;
     margin-bottom: 10px;
-    color: #333;
+    color: var(--strong-text);
 }
 
 .settings-input {
     padding: 8px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-color);
     border-radius: 5px;
     font-size: 14px;
 }
@@ -428,7 +460,7 @@ header h1 {
     display: flex;
     gap: 10px;
     margin: 20px 0;
-    border-bottom: 2px solid #e0e0e0;
+    border-bottom: 2px solid var(--border-color);
 }
 
 .settings-tab {
@@ -436,7 +468,7 @@ header h1 {
     background: none;
     border: none;
     cursor: pointer;
-    color: #666;
+    color: var(--muted-text);
     font-size: 14px;
     font-weight: 500;
     border-bottom: 3px solid transparent;
@@ -469,7 +501,7 @@ header h1 {
     justify-content: space-between;
     align-items: center;
     padding: 10px;
-    background: white;
+    background: var(--card-bg);
     border-radius: 5px;
     margin-bottom: 10px;
 }
@@ -578,7 +610,7 @@ header h1 {
 
 .fix-match-btn:hover,
 .fix-match-btn:focus-visible {
-    background: var(--primary-color);
+    background: var(--button-bg, var(--primary-color));
     color: white;
     outline: 2px solid white;
 }
@@ -595,11 +627,11 @@ header h1 {
     top: 10px;
     font-size: 30px;
     cursor: pointer;
-    color: #666;
+    color: var(--muted-text);
 }
 
 .match-target {
-    color: #666;
+    color: var(--muted-text);
     font-size: 13px;
     word-break: break-all;
     margin-top: -6px;
@@ -610,7 +642,7 @@ header h1 {
     flex-wrap: wrap;
     align-items: center;
     gap: 6px 12px;
-    background: #f4f4f8;
+    background: var(--panel-bg);
     border-radius: 8px;
     padding: 10px;
 }
@@ -630,7 +662,7 @@ header h1 {
 .match-hint {
     flex-basis: 100%;
     font-size: 12px;
-    color: #888;
+    color: var(--muted-text);
 }
 
 .match-search {
@@ -658,8 +690,8 @@ header h1 {
     display: flex;
     gap: 12px;
     text-align: left;
-    background: white;
-    border: 1px solid #e3e3e8;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 8px;
     cursor: pointer;
@@ -670,7 +702,7 @@ header h1 {
 .match-hit:hover,
 .match-hit:focus-visible {
     border-color: var(--primary-color);
-    background: #f7f7fd;
+    background: var(--hover-bg);
 }
 
 .match-hit.current {
@@ -681,7 +713,7 @@ header h1 {
 .match-hit-poster {
     flex: 0 0 60px;
     height: 90px;
-    background: #ddd;
+    background: var(--placeholder-bg);
     border-radius: 4px;
     overflow: hidden;
 }
@@ -699,7 +731,7 @@ header h1 {
 
 .match-hit-overview {
     font-size: 13px;
-    color: #555;
+    color: var(--muted-text);
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
@@ -707,7 +739,7 @@ header h1 {
 }
 
 .match-empty {
-    color: #888;
+    color: var(--muted-text);
     padding: 8px;
 }
 
@@ -737,7 +769,7 @@ header h1 {
     align-items: center;
     gap: 6px;
     font-size: 13px;
-    color: #666;
+    color: var(--muted-text);
 }
 
 .match-kind[hidden] {
@@ -746,16 +778,16 @@ header h1 {
 
 .match-kind button {
     padding: 5px 12px;
-    border: 1px solid #c9c9d6;
+    border: 1px solid var(--border-color);
     border-radius: 999px;
-    background: white;
-    color: #333;
+    background: var(--card-bg);
+    color: var(--strong-text);
     font: inherit;
     cursor: pointer;
 }
 
 .match-kind button.active {
-    background: var(--primary-color);
+    background: var(--button-bg, var(--primary-color));
     border-color: var(--primary-color);
     color: white;
 }
@@ -766,7 +798,7 @@ header h1 {
 }
 
 .match-posters {
-    border: 1px solid #e3e3e8;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 10px;
     display: flex;
@@ -815,13 +847,13 @@ header h1 {
     flex-direction: column;
     gap: 3px;
     padding: 3px;
-    background: white;
+    background: var(--card-bg);
     border: 2px solid transparent;
     border-radius: 6px;
     cursor: pointer;
     font: inherit;
     font-size: 11px;
-    color: #555;
+    color: var(--muted-text);
 }
 
 .match-poster img {
@@ -829,7 +861,7 @@ header h1 {
     aspect-ratio: 2 / 3;
     object-fit: cover;
     border-radius: 4px;
-    background: #ddd;
+    background: var(--placeholder-bg);
 }
 
 .match-poster span {
@@ -840,7 +872,7 @@ header h1 {
 
 .match-poster:hover,
 .match-poster:focus-visible {
-    border-color: #c9c9e8;
+    border-color: var(--border-color);
 }
 
 .match-poster.current {
@@ -853,7 +885,7 @@ header h1 {
 }
 
 .match-episode {
-    border: 1px solid #e3e3e8;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 10px;
 }
@@ -890,7 +922,7 @@ header h1 {
     max-height: 200px;
     overflow-y: auto;
     margin-top: 8px;
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--border-color);
 }
 
 .match-episode-row {
@@ -910,7 +942,7 @@ header h1 {
 
 .match-episode-row:hover,
 .match-episode-row:focus-visible {
-    background: #f7f7fd;
+    background: var(--hover-bg);
 }
 
 .match-episode-row .code {
@@ -919,7 +951,7 @@ header h1 {
 }
 
 .match-episode-row .date {
-    color: #888;
+    color: var(--muted-text);
 }
 
 .match-episode-row.current {
@@ -927,7 +959,7 @@ header h1 {
 }
 
 .match-episode-row.picked {
-    background: var(--primary-color);
+    background: var(--button-bg, var(--primary-color));
     color: white;
 }
 
@@ -954,7 +986,7 @@ header h1 {
 }
 
 .view-toggle button.active {
-    background: var(--primary-color);
+    background: var(--button-bg, var(--primary-color));
     color: white;
 }
 
@@ -964,7 +996,7 @@ header h1 {
 }
 
 .library-empty {
-    color: #888;
+    color: var(--muted-text);
     padding: 20px 0;
 }
 
@@ -996,7 +1028,7 @@ header h1 {
     aspect-ratio: 2 / 3;
     border-radius: 8px;
     overflow: hidden;
-    background: #ddd;
+    background: var(--placeholder-bg);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     transition: transform 0.2s, box-shadow 0.2s;
 }
@@ -1049,7 +1081,7 @@ header h1 {
 
 .poster-year {
     font-size: 13px;
-    color: #777;
+    color: var(--muted-text);
 }
 
 /* Title page */
@@ -1060,7 +1092,7 @@ header h1 {
     gap: 28px;
     padding: 24px;
     border-radius: 12px;
-    background: #f4f4f8;
+    background: var(--panel-bg);
     overflow: hidden;
     isolation: isolate;
 }
@@ -1208,7 +1240,7 @@ header h1 {
 }
 
 .season-picker button.active {
-    background: var(--primary-color);
+    background: var(--button-bg, var(--primary-color));
     color: white;
 }
 
@@ -1223,7 +1255,7 @@ header h1 {
     grid-template-columns: 200px 1fr auto;
     gap: 16px;
     align-items: center;
-    background: #f9f9f9;
+    background: var(--panel-bg);
     border-radius: 8px;
     padding: 10px;
 }
@@ -1234,7 +1266,7 @@ header h1 {
     padding: 0;
     border-radius: 6px;
     overflow: hidden;
-    background: #ddd;
+    background: var(--placeholder-bg);
     cursor: pointer;
 }
 
@@ -1251,13 +1283,13 @@ header h1 {
 
 .episode-meta {
     font-size: 12px;
-    color: #777;
+    color: var(--muted-text);
     margin: 2px 0 4px;
 }
 
 .episode-overview {
     font-size: 13px;
-    color: #444;
+    color: var(--muted-text);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -1276,7 +1308,7 @@ header h1 {
     opacity: 1;
     justify-content: center;
     box-shadow: none;
-    border: 1px solid #ccc;
+    border: 1px solid var(--border-color);
 }
 
 @media (max-width: 640px) {
@@ -1303,7 +1335,7 @@ header h1 {
 }
 
 .streams-updated {
-    color: #888;
+    color: var(--muted-text);
     font-size: 13px;
 }
 
@@ -1314,13 +1346,13 @@ header h1 {
 }
 
 .streams-empty {
-    color: #888;
+    color: var(--muted-text);
     padding: 30px 0;
     text-align: center;
 }
 
 .stream-card {
-    border: 1px solid #e3e3e8;
+    border: 1px solid var(--border-color);
     border-radius: 10px;
     padding: 14px 16px;
     display: flex;
@@ -1349,8 +1381,8 @@ header h1 {
     font-weight: 600;
     padding: 3px 10px;
     border-radius: 999px;
-    background: #eee;
-    color: #555;
+    background: var(--panel-bg);
+    color: var(--muted-text);
 }
 
 .stream-badge.state-playing { background: #e3f6e8; color: #1e7b3a; }
@@ -1362,11 +1394,11 @@ header h1 {
 .stream-progress-label,
 .stream-ua {
     font-size: 13px;
-    color: #666;
+    color: var(--muted-text);
 }
 
 .stream-ua {
-    color: #999;
+    color: var(--muted-text);
     font-size: 12px;
     overflow-wrap: anywhere;
 }
@@ -1375,7 +1407,7 @@ header h1 {
     position: relative;
     height: 8px;
     border-radius: 4px;
-    background: #ececf2;
+    background: var(--panel-bg);
     overflow: hidden;
 }
 
@@ -1407,7 +1439,7 @@ header h1 {
 }
 
 .stream-facts dt {
-    color: #888;
+    color: var(--muted-text);
 }
 
 .stream-facts dd {
@@ -1418,14 +1450,14 @@ header h1 {
 .stream-args summary {
     cursor: pointer;
     font-size: 13px;
-    color: #666;
+    color: var(--muted-text);
 }
 
 .stream-args code {
     display: block;
     margin-top: 6px;
     padding: 8px;
-    background: #f4f4f8;
+    background: var(--panel-bg);
     border-radius: 6px;
     font-size: 12px;
     overflow-wrap: anywhere;
@@ -1455,7 +1487,7 @@ header h1 {
 .disc-controls select {
     padding: 4px 6px;
     border-radius: 6px;
-    border: 1px solid #ccd;
+    border: 1px solid var(--border-color);
     max-width: 220px;
 }
 
@@ -1475,7 +1507,7 @@ header h1 {
 }
 
 .disc-position {
-    color: #666;
+    color: var(--muted-text);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
@@ -1571,4 +1603,36 @@ header h1 {
 .disc-skip-btn {
     width: 72px;
     font-size: 13px;
+}
+
+/* Dark theme: pieces whose light colors aren't theme variables */
+:root[data-theme="dark"] .stream-badge.state-playing { background: #1d3a26; color: #7ee2a0; }
+:root[data-theme="dark"] .stream-badge.state-paused { background: #3d3216; color: #f2cf6b; }
+:root[data-theme="dark"] .stream-badge.state-streaming { background: #232c52; color: #a9b6ff; }
+:root[data-theme="dark"] .stream-badge.mode-transcode { background: #4a2220; color: #ff9c92; }
+:root[data-theme="dark"] .stream-bar-sent { background: #3b416b; }
+:root[data-theme="dark"] .modal-content,
+:root[data-theme="dark"] .settings-container,
+:root[data-theme="dark"] .user-item,
+:root[data-theme="dark"] .match-hit,
+:root[data-theme="dark"] .match-poster,
+:root[data-theme="dark"] .stream-card {
+    color: var(--text-color);
+}
+:root[data-theme="dark"] .settings-input,
+:root[data-theme="dark"] #login-form input,
+:root[data-theme="dark"] .disc-controls select {
+    background: var(--panel-bg);
+    color: var(--text-color);
+}
+
+/* Header buttons: Material icon and label */
+.header-controls .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.header-controls .btn svg {
+    flex: none;
 }
