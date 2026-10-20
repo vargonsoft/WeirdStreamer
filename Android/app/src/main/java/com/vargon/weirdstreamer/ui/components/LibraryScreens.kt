@@ -248,15 +248,6 @@ fun TitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        viewModel.serverUrl(title.backdrop)?.let { backdrop ->
-            RemoteImage(backdrop, Modifier.fillMaxSize(), alpha = 0.22f)
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)))
-            )
-        }
-
         // Scroll only as far as needed to show the focused item, so the hero stays on screen
         // instead of the TV default of pinning focus a third of the way down.
         CompositionLocalProvider(LocalBringIntoViewSpec provides MinimalBringIntoView) {
@@ -284,6 +275,18 @@ fun TitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
             }
         }
     }
+}
+
+/** A title's dimmed backdrop, drawn by the browser behind the whole screen, header included. */
+@Composable
+fun TitleBackdrop(viewModel: MediaViewModel, title: TitleDetail) {
+    val backdrop = viewModel.serverUrl(title.backdrop) ?: return
+    RemoteImage(backdrop, Modifier.fillMaxSize(), alpha = 0.22f)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)))
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

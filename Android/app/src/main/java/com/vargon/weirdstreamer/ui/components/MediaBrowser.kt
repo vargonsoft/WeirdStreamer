@@ -99,7 +99,8 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize()) {
         // Background image from theme spec
         val themeSpec = WeirdStreamerTheme.spec
-        themeSpec.backgroundImage?.let { bgRes ->
+        val backdropTitle = viewModel.openTitle?.takeIf { viewModel.isLibraryView && it.backdrop != null }
+        if (backdropTitle == null) themeSpec.backgroundImage?.let { bgRes ->
             Image(
                 painter = painterResource(id = bgRes),
                 contentDescription = null,
@@ -113,6 +114,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 alignment = Alignment.CenterEnd
             )
         }
+        backdropTitle?.let { TitleBackdrop(viewModel, it) }
 
         Column(
             modifier = Modifier
