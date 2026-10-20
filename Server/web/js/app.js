@@ -108,8 +108,17 @@ function setupEventListeners() {
     document.getElementById('save-theme-btn')?.addEventListener('click', handleSaveTheme);
     
     // Browser back/forward buttons
+    // Each history entry remembers how far down its page was, for Back and Forward. The page
+    // restores it itself, after re-rendering, since content arrives asynchronously.
+    history.scrollRestoration = 'manual';
+    window.addEventListener('scroll', () => {
+        clearTimeout(scrollSaveTimer);
+        scrollSaveTimer = setTimeout(rememberScroll, 150);
+    }, { passive: true });
+
     window.addEventListener('popstate', (e) => {
         if (e.state && api.isAuthenticated()) {
+            pendingScroll = typeof e.state.scrollY === 'number' ? e.state.scrollY : null;
             if (e.state.view === 'library') {
                 showLibrary(e.state.lib, false);
                 return;
@@ -289,6 +298,17 @@ function showMainScreen() {
     const urlType = url.searchParams.get('type');
     
     const urlView = url.searchParams.get('view');
+    if (history.state && typeof history.state.scrollY === 'number') {
+        pendingScroll = history.state.scrollY; // a reload: back where it was
+    }
+    if (!history.state) {
+        // So Back to this first page has a state to restore it from.
+        const initial = urlView === 'library' || urlView === 'title'
+            ? Object.fromEntries(['view', 'lib', 'kind', 'id'].filter(k => url.searchParams.has(k)).map(k => [k, url.searchParams.get(k)]))
+            : { path: urlPath || '', type: urlType || 'all' };
+        if (initial.id !== undefined) initial.id = Number(initial.id);
+        history.replaceState(initial, '');
+    }
     if (urlView === 'library' || urlView === 'title') {
         const lib = url.searchParams.get('lib');
         if (urlView === 'title') {
@@ -403,6 +423,7 @@ async function loadMedia(pushHistory = true) {
         
         // Update browser history
         if (pushHistory) {
+            rememberScroll();
             const url = new URL(window.location);
             ['view', 'lib', 'kind', 'id'].forEach(k => url.searchParams.delete(k));
             url.searchParams.set('path', state.currentPath);
@@ -418,6 +439,8 @@ async function loadMedia(pushHistory = true) {
         updateBreadcrumb();
         updateRegenerateThumbnailsButton();
         renderMedia();
+        if (pushHistory) window.scrollTo(0, 0);
+        restorePendingScroll();
     } catch (error) {
         console.error('Failed to load media:', error);
     }
@@ -2062,10 +2085,27 @@ function refreshCurrentView() {
     else loadMedia(false);
 }
 
+// Scroll restoration for Back/Forward (see the popstate handler).
+let scrollSaveTimer = null;
+let pendingScroll = null;
+
+function rememberScroll() {
+    clearTimeout(scrollSaveTimer);
+    if (history.state) history.replaceState({ ...history.state, scrollY: window.scrollY }, '');
+}
+
+function restorePendingScroll() {
+    if (pendingScroll === null) return;
+    const y = pendingScroll;
+    pendingScroll = null;
+    requestAnimationFrame(() => window.scrollTo(0, y));
+}
+
 function pushLibraryHistory(params) {
     const url = new URL(window.location);
     url.search = '';
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    rememberScroll();
     window.history.pushState(params, '', url);
 }
 
@@ -2167,6 +2207,7 @@ async function showLibrary(libId, push = true, keepScroll = false) {
         container.appendChild(unmatched);
     }
     if (keepScroll) window.scrollTo(0, scroll);
+    restorePendingScroll();
 }
 
 function createPosterCard(t) {
@@ -2270,6 +2311,7 @@ async function showTitle(libId, kind, id, push = true, keepScroll = false) {
         }
     }
     if (keepScroll) window.scrollTo(0, scroll);
+    restorePendingScroll();
 }
 
 // Poster on the left; title, details, synopsis and credits on the right; backdrop behind.
