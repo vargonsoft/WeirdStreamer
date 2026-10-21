@@ -97,7 +97,17 @@ body {
 .login-container h1 {
     text-align: center;
     margin-bottom: 30px;
-    color: var(--primary-color);
+}
+
+.brand-logo {
+    display: block;
+    width: clamp(180px, 24vw, 260px);
+    height: auto;
+}
+
+.login-container .brand-logo {
+    width: min(100%, 320px);
+    margin: 0 auto;
 }
 
 #login-form input {
@@ -151,7 +161,7 @@ header {
 }
 
 header h1 {
-    color: var(--primary-color);
+    flex: 0 0 auto;
 }
 
 .header-controls {

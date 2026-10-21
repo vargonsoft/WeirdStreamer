@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#FFF1D8"/>
+  <path d="M42 217v78l67-39z" fill="#FF665E"/>
+  <text x="126" y="333" font-family="Comic Sans MS, Arial Rounded MT Bold, sans-serif" font-size="190" font-weight="900" letter-spacing="-18" fill="#31264B">WS</text>
+</svg>

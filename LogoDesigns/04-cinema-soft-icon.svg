@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#191D25"/>
+  <text x="55" y="330" font-family="Roboto Black, Roboto, Arial, sans-serif" font-size="190" font-weight="900" letter-spacing="-10" fill="#F4EFE4">WS</text>
+  <path d="M385 226v70l62-35z" fill="#FFAA4D"/>
+</svg>

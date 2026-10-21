@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#251044"/>
+  <rect x="34" y="34" width="444" height="444" rx="90" fill="none" stroke="#A77BFF" stroke-width="8" opacity=".7"/>
+  <g transform="translate(26 0)">
+    <text x="61" y="344" font-family="Impact, Haettenschweiler, sans-serif" font-size="268" font-weight="900" letter-spacing="-10" fill="#F7F2FF">WS</text>
+    <path d="M64 256H405" stroke="#251044" stroke-width="8"/>
+    <g transform="translate(37 0)">
+      <path d="M420 106Q413 101 413 109V171Q413 179 420 174L471 145Q480 140 471 135Z" transform="translate(78.5 256) scale(1.5) translate(-78.5 -256) translate(-368 115)" fill="#50E6C0" stroke="#50E6C0" stroke-width="12" stroke-linejoin="round"/>
+    </g>
+    <circle cx="373" cy="256" r="28" fill="#251044"/>
+    <circle cx="373" cy="256" r="22" fill="#50E6C0"/>
+  </g>
+</svg>
