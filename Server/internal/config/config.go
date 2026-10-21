@@ -40,6 +40,8 @@ type MediaPath struct {
 	ID     string   `json:"id,omitempty"`
 	Groups []string `json:"groups"`         // Groups that have access to this library
 	Type   string   `json:"type,omitempty"` // Optional: LibraryTypeMovie or LibraryTypeTV
+	// Leaves this library's videos off Continue Watching (their progress is still kept and shown).
+	ExcludeFromContinueWatching bool `json:"excludeFromContinueWatching,omitempty"`
 }
 
 // Library types. A library has at most one type; untyped libraries are plain folders.

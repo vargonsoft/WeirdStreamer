@@ -305,7 +305,7 @@ func (h *MediaHandler) ContinueWatching(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		lib, found := libraryForPath(path)
-		if !found || (only != "" && lib.ID != only) || !h.canAccessLibrary(r, lib) {
+		if !found || lib.ExcludeFromContinueWatching || (only != "" && lib.ID != only) || !h.canAccessLibrary(r, lib) {
 			continue
 		}
 		item, err := h.db.GetMediaItem(path)
