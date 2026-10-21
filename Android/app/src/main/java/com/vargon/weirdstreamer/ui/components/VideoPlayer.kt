@@ -185,6 +185,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     val openSubtitlesClient = remember { OpenSubtitlesClient(context) }
 
+    // This video's remembered subtitle choice is applied once per player (a transcode switch
+    // makes a new player, whose tracks arrive again).
+    val subtitleVideo = remember(path) { viewModel.getFileItemForPath(path)?.originalPath ?: path.substringBefore("&") }
+    var subtitlesRestoredFor by remember { mutableStateOf<Any?>(null) }
+
     fun selectSubtitleTrack(index: Int) {
         selectedSubtitleIndex = index
         val tracks = exoPlayer.currentTracks
@@ -357,6 +362,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 }
                 val subtitleTracks = subtitleLabels(formats)
                 availableSubtitles = subtitleTracks
+                if (subtitleTracks.isNotEmpty() && subtitlesRestoredFor !== exoPlayer && !isDisc) {
+                    subtitlesRestoredFor = exoPlayer
+                    val choice = SubtitleMemory.get(context, subtitleVideo)
+                    val index = choice?.let { SubtitleMemory.resolve(it, subtitleTracks) } ?: -1
+                    if (index >= 0) selectSubtitleTrack(index) else selectedSubtitleIndex = -1
+                }
                 if (subtitleTracks.isEmpty()) selectedSubtitleIndex = -1
             }
         }
@@ -788,7 +799,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             onSubtitle = { s -> showDiscDialog = false; if (s != discSubtitle) { transcodeStartOffset = playbackPosition; discSubtitle = s } },
             onDismiss = { showDiscDialog = false }
         )
-        SubtitleDialog(show = showSubtitleDialog, availableSubtitles = availableSubtitles, selectedSubtitleIndex = selectedSubtitleIndex, onDismiss = { showSubtitleDialog = false }, onSubtitleSelected = { selectSubtitleTrack(it) }, onDownloadRequested = { showDownloadDialog = true; searchAndDownloadSubtitles() })
+        SubtitleDialog(show = showSubtitleDialog, availableSubtitles = availableSubtitles, selectedSubtitleIndex = selectedSubtitleIndex, onDismiss = { showSubtitleDialog = false }, onSubtitleSelected = {
+            selectSubtitleTrack(it)
+            if (!isDisc) SubtitleMemory.set(context, subtitleVideo, it, availableSubtitles.getOrNull(it))
+        }, onDownloadRequested = { showDownloadDialog = true; searchAndDownloadSubtitles() })
         DownloadSubtitlesDialog(show = showDownloadDialog, isSearching = isSearchingSubtitles, downloadStatus = downloadStatus, downloadingSubtitles = downloadingSubtitles, onDismiss = { showDownloadDialog = false; downloadingSubtitles = emptyList(); downloadStatus = null }, onSubtitleSelected = { downloadAndApplySubtitle(it) })
     }
 }

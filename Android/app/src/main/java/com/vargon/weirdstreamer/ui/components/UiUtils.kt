@@ -42,6 +42,36 @@ fun subtitlesOffByDefault(params: androidx.media3.common.TrackSelectionParameter
         .build()
 
 /**
+ * The subtitle chosen for each video on this device, so it plays the same way next time: off, or
+ * a track, remembered by its label (and its position, for a file whose tracks were renamed).
+ */
+object SubtitleMemory {
+    data class Choice(val index: Int, val label: String?) // index -1: off
+
+    private fun prefs(context: android.content.Context) =
+        context.getSharedPreferences("subtitle_choices", android.content.Context.MODE_PRIVATE)
+
+    fun get(context: android.content.Context, video: String): Choice? {
+        val stored = prefs(context).getString(video, null) ?: return null
+        if (stored == "off") return Choice(-1, null)
+        val index = stored.substringBefore('|').toIntOrNull() ?: return null
+        return Choice(index, stored.substringAfter('|', "").ifEmpty { null })
+    }
+
+    fun set(context: android.content.Context, video: String, index: Int, label: String?) {
+        prefs(context).edit().putString(video, if (index < 0) "off" else "$index|${label.orEmpty()}").apply()
+    }
+
+    /** Where [choice] is in [labels] now: the same label, else the same position, else none. */
+    fun resolve(choice: Choice, labels: List<String>): Int = when {
+        choice.index < 0 -> -1
+        choice.label != null && labels.indexOf(choice.label) >= 0 -> labels.indexOf(choice.label)
+        choice.index < labels.size -> choice.index
+        else -> -1
+    }
+}
+
+/**
  * Names subtitle tracks so ones in the same language can be told apart: "English · SDH · Image",
  * with the file's title for the track, whether it's text or images (Blu-ray PGS, DVD), forced and
  * hearing-impaired marks, and a number for tracks that still read the same.
