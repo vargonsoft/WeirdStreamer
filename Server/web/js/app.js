@@ -746,6 +746,76 @@ function browserVideo(codecs) {
     return !!v && v.codec === 'h264' && (v.pix_fmt === 'yuv420p' || v.pix_fmt === 'yuvj420p');
 }
 
+// The video's codec as browsers name it in a media type (RFC 6381), from the server's report:
+// avc1.PPCCLL, hvc1…, av01…, vp09…. null for codecs with no such name (MPEG-4 Part 2, MPEG-2…).
+function videoCodecString(v) {
+    const depth = bitDepth(v);
+    const hex = n => n.toString(16).padStart(2, '0');
+    switch (v.codec) {
+    case 'h264': {
+        const profiles = {
+            'Constrained Baseline': '4240', 'Baseline': '4200', 'Main': '4d00', 'Extended': '5800',
+            'High': '6400', 'High 10': '6e00', 'High 10 Intra': '6e10', 'High 4:2:2': '7a00',
+            'High 4:2:2 Intra': '7a10', 'High 4:4:4 Predictive': 'f400', 'High 4:4:4 Intra': 'f410',
+        };
+        return `avc1.${profiles[v.profile] || '6400'}${hex(v.level || 40)}`;
+    }
+    case 'hevc': {
+        const profiles = { 'Main': '1.6', 'Main 10': '2.4', 'Main Still Picture': '3.E', 'Rext': '4.10' };
+        return `hvc1.${profiles[v.profile] || '1.6'}.L${v.level || 120}.B0`;
+    }
+    case 'av1': {
+        const profile = { 'Main': 0, 'High': 1, 'Professional': 2 }[v.profile] || 0;
+        return `av01.${profile}.${String(v.level >= 0 ? v.level : 8).padStart(2, '0')}M.${String(depth).padStart(2, '0')}`;
+    }
+    case 'vp9': {
+        const profile = Number((v.profile || '').replace(/\D/g, '')) || 0;
+        const level = v.level > 0 ? v.level : 41;
+        return `vp09.0${profile}.${level}.${String(depth).padStart(2, '0')}`;
+    }
+    case 'vp8':
+        return 'vp8';
+    }
+    return null;
+}
+
+function bitDepth(v) {
+    return /12[lb]e$/.test(v.pix_fmt || '') ? 12 : /10[lb]e$|p010/.test(v.pix_fmt || '') ? 10 : 8;
+}
+
+// Containers browsers don't open (ffprobe's format names); the video in them may still play
+// once Compatibility (Auto) copies it into MP4.
+const UNPLAYABLE_CONTAINERS = {
+    mpegts: 'MPEG-TS', avi: 'AVI', asf: 'WMV', flv: 'FLV', mpeg: 'MPEG-PS', rm: 'RealMedia', nut: 'NUT',
+};
+// Video codecs no browser decodes.
+const UNPLAYABLE_VIDEO = {
+    mpeg4: 'MPEG-4', msmpeg4v3: 'DivX 3', msmpeg4v2: 'MS MPEG-4', mpeg2video: 'MPEG-2',
+    mpeg1video: 'MPEG-1', vc1: 'VC-1', wmv3: 'WMV 9', wmv2: 'WMV 8', wmv1: 'WMV 7', h263: 'H.263',
+    rv40: 'RealVideo', rv30: 'RealVideo', prores: 'ProRes', dvvideo: 'DV',
+};
+
+// Why the browser can't play the file as it is, before trying: "HEVC video", "MPEG-TS files", or
+// '' (as far as can be told: other problems show up as a playback error).
+function originalProblem(codecs) {
+    const v = codecs && codecs.video;
+    if (!v) return '';
+    if (UNPLAYABLE_VIDEO[v.codec]) return `${UNPLAYABLE_VIDEO[v.codec]} video`;
+    const codec = videoCodecString(v);
+    if (codec) {
+        const type = `video/${codec === 'vp8' ? 'webm' : 'mp4'}; codecs="${codec}"`;
+        const supported = (window.MediaSource && MediaSource.isTypeSupported(type)) || videoPlayer.canPlayType(type) !== '';
+        if (!supported) {
+            const names = { h264: 'H.264', hevc: 'HEVC', av1: 'AV1', vp9: 'VP9', vp8: 'VP8' };
+            const depth = bitDepth(v) > 8 ? ` ${bitDepth(v)}-bit` : '';
+            const chroma = (v.profile || '').match(/4:[24]:[24]/);
+            return `${names[v.codec]}${depth}${chroma ? ' ' + chroma[0] : ''} video`;
+        }
+    }
+    const container = (codecs.container || '').split(',').find(name => UNPLAYABLE_CONTAINERS[name]);
+    return container ? `${UNPLAYABLE_CONTAINERS[container]} files` : '';
+}
+
 // The audio has to come from the server: the browser can't decode the track, or it isn't the
 // default one (the only one a browser plays from a file).
 function audioNeedsConverting(p) {
@@ -771,7 +841,8 @@ function playsOriginalFile(p) {
 
 // Original won't play the chosen tracks: Compatibility (Auto) converts them.
 function chooseCompatibility(p) {
-    if (p.mode === 'original' && (audioNeedsConverting(p) || burnsInSubtitles(p))) p.mode = 'auto';
+    if (p.mode !== 'original') return;
+    if (audioNeedsConverting(p) || burnsInSubtitles(p) || originalProblem(p.codecs)) p.mode = 'auto';
 }
 
 // What the server does to the file, for the line under the controls.
@@ -783,16 +854,20 @@ function streamNote(p) {
         if (audioNeedsConverting(p)) return 'The original plays its default audio track.';
         return '';
     }
-    const failed = p.failed ? 'This browser couldn’t play the original, so it switched to Compatibility (Auto). ' : '';
+    const problem = originalProblem(p.codecs);
+    const why = p.failed ? 'This browser couldn’t play the original. '
+        : problem ? `This browser can’t play ${problem}. ` : '';
     if (copiesVideo(p)) {
         const audio = unplayable ? `the audio is converted (this browser can’t play ${unplayable})`
             : audioNeedsConverting(p) ? 'the audio is converted to play this track'
             : 'the audio is converted to AAC';
-        return `${failed}The video plays as it is; ${audio}.`;
+        const video = problem.endsWith(' files') ? 'The video is copied into MP4 as it is' : 'The video plays as it is';
+        return `${why}${video}; ${audio}.`;
     }
-    const from = video && video.codec !== 'h264' ? ` (from ${video.codec.toUpperCase()})` : '';
     const subs = burnsInSubtitles(p) ? ', with the subtitles burned in' : '';
-    return `${failed}Transcoding to H.264${from} and AAC${subs}.`;
+    if (problem.endsWith(' video') && !p.failed) return `This browser can’t play ${problem}, so it’s transcoded to H.264 and AAC${subs}.`;
+    const from = video && video.codec !== 'h264' ? ` (from ${video.codec.toUpperCase()})` : '';
+    return `${why}Transcoding to H.264${from} and AAC${subs}.`;
 }
 
 function fileStreamUrl(p, start) {

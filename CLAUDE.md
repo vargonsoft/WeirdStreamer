@@ -86,6 +86,9 @@ for each TODO item are at the end of this file.
   - `Movies/EAC3 Test/EAC3 Test.mkv`: 2 minutes of H.264 with two audio tracks (E-AC-3 5.1
     default, AAC "commentary" at 880 Hz) and English and Spanish subtitles every 4 seconds that
     name the second they're at. Has trickplay frames.
+  - `Movies/HEVC Test`, `Hi10 Test` (10-bit H.264), `AVI Test` (MPEG-4 Part 2 and MP3),
+    `VP9 Test` (WebM) and `AV1 Test`: 30-second clips for the browser codec checks. New files
+    only stream once a scan has added them (`api.scanMedia()`, or Scan Media in the web UI).
   - `TV Shows/Example Show/Season 1/`: two episodes. S01E01 is a 60-second clip; S01E02 is empty.
 - Emulators: `emulator-5554` is Android TV (AVD `Television_1080p_API_34`) and `emulator-5556`
   is a phone (AVD `Medium_Phone_API_35`). `Android/tools/start-emulators.sh` starts whichever
@@ -162,6 +165,11 @@ aborting on a crash. It then installs on the connected allowed devices: Moto G
     the browser can't decode, a non-default audio track or picture subtitles, and after a
     `<video>` error on Original; a copied video that errors gets a full transcode. Original
     picked by hand plays the file untouched, even if it's silent.
+  - Video and container are checked before playing too (`originalProblem`): the codecs report
+    becomes an RFC 6381 codec string (`videoCodecString`: `avc1…`, `hvc1…`, `av01…`, `vp09…`)
+    for `MediaSource.isTypeSupported` / `canPlayType`, codecs no browser decodes (MPEG-4 Part 2,
+    MPEG-2, VC-1…) are known, and so are containers browsers don't open (MPEG-TS, AVI, WMV…),
+    whose H.264 Compatibility (Auto) copies into MP4.
   - A copied video starts at the keyframe ffmpeg's seek lands on (`-noaccurate_seek`, so the audio
     starts there too instead of after seconds of silence). `GET /api/media/seekpoint` (ffprobe's
     seek, which lands on the same keyframe) tells the player that start, for its offset.
@@ -202,10 +210,6 @@ aborting on a crash. It then installs on the connected allowed devices: Moto G
 
 ## Notes on the TODO items
 
-- **Automatic web transcoding:** done for audio (the codecs check) and as a fallback on a
-  `<video>` error. Still open: checking the video codec and container up front with
-  `MediaSource.isTypeSupported` / `canPlayType` (HEVC, AV1, 10-bit H.264), so the first
-  failed load is skipped.
 - **Audio track selection on TV, phone and web:**
   - Android: ExoPlayer exposes audio tracks like text tracks (see the TV subtitle pattern above).
   - Web: done (the player's Audio menu, `audio=N`).

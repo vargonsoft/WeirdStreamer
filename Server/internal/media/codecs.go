@@ -22,6 +22,7 @@ type Codecs struct {
 type VideoCodec struct {
 	Codec   string `json:"codec"` // ffprobe's codec name: h264, hevc, mpeg2video…
 	Profile string `json:"profile,omitempty"`
+	Level   int    `json:"level,omitempty"` // as ffprobe gives it: 51 for H.264 5.1, 153 for HEVC 5.1
 	PixFmt  string `json:"pix_fmt,omitempty"`
 }
 
@@ -59,7 +60,7 @@ func IsTextSubtitle(codec string) bool {
 // ProbeCodecs reads the codecs of a file's first video stream and of all its audio streams.
 func ProbeCodecs(path string) (*Codecs, error) {
 	out, err := exec.Command("ffprobe", "-v", "error",
-		"-show_entries", "format=format_name,duration:stream=codec_type,codec_name,profile,pix_fmt,channels:stream_tags=language,title:stream_disposition=default,forced,attached_pic",
+		"-show_entries", "format=format_name,duration:stream=codec_type,codec_name,profile,level,pix_fmt,channels:stream_tags=language,title:stream_disposition=default,forced,attached_pic",
 		"-of", "json", path).Output()
 	if err != nil {
 		return nil, err
@@ -73,6 +74,7 @@ func ProbeCodecs(path string) (*Codecs, error) {
 			CodecType   string            `json:"codec_type"`
 			CodecName   string            `json:"codec_name"`
 			Profile     string            `json:"profile"`
+			Level       int               `json:"level"`
 			PixFmt      string            `json:"pix_fmt"`
 			Channels    int               `json:"channels"`
 			Tags        map[string]string `json:"tags"`
@@ -88,7 +90,7 @@ func ProbeCodecs(path string) (*Codecs, error) {
 		switch s.CodecType {
 		case "video":
 			if c.Video == nil && s.Disposition["attached_pic"] == 0 { // not cover art
-				c.Video = &VideoCodec{Codec: s.CodecName, Profile: s.Profile, PixFmt: s.PixFmt}
+				c.Video = &VideoCodec{Codec: s.CodecName, Profile: s.Profile, Level: max(s.Level, 0), PixFmt: s.PixFmt}
 			}
 		case "audio":
 			c.Audio = append(c.Audio, AudioCodec{Index: len(c.Audio), Codec: s.CodecName, Channels: s.Channels,
