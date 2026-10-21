@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 280">
-  <rect width="1100" height="280" rx="36" fill="#FFF1D8"/>
-  <text x="102" y="177" font-family="Comic Sans MS, Arial Rounded MT Bold, sans-serif" font-size="110" font-weight="900" letter-spacing="-2" fill="#31264B">Weir</text>
-  <rect x="426" y="57" width="17" height="127" rx="8.5" fill="#FF665E"/>
-  <circle cx="402" cy="142" r="41" fill="#FF665E"/>
-  <circle cx="402" cy="142" r="24" fill="#FFF1D8"/>
-  <path d="M394 128v28l25-14z" fill="#31264B"/>
-  <text x="455" y="177" font-family="Comic Sans MS, Arial Rounded MT Bold, sans-serif" font-size="110" font-weight="900" letter-spacing="-2" fill="#31264B">Streamer</text>
-</svg>

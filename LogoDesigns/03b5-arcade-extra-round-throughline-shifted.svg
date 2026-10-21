@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 280">
-  <rect width="1100" height="280" rx="36" fill="#251044"/>
-  <path d="M60 215h980" stroke="#A77BFF" stroke-width="5" stroke-linecap="round" opacity=".55"/>
-  <text x="183" y="177" font-family="Impact, Haettenschweiler, sans-serif" font-size="110" font-weight="900" letter-spacing="1" fill="#F7F2FF">Weir</text>
-  <path d="M456 86h21q5 0 5 5v86h-26z" fill="#F7F2FF"/>
-  <path d="M422 106Q415 101 415 109V171Q415 179 422 174L473 145Q482 140 473 135Z" fill="#CEFF48" stroke="#CEFF48" stroke-width="12" stroke-linejoin="round"/>
-  <text x="514" y="177" font-family="Impact, Haettenschweiler, sans-serif" font-size="110" font-weight="900" letter-spacing="1" fill="#F7F2FF">Streamer</text>
-  <path d="M514 140H968" stroke="#251044" stroke-width="8"/>
-</svg>
