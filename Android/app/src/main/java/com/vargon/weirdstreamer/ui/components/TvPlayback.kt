@@ -126,8 +126,18 @@ fun TvResumeDialog(viewModel: MediaViewModel) {
     val item = viewModel.resumeChoice ?: return
     val resumeAt = viewModel.resumeSeconds(item.path)
     val resumeRequester = androidx.compose.runtime.remember { FocusRequester() }
+    // Opened by holding OK, the button is still down: its repeats and its release would press
+    // Resume. OK counts only after a fresh press (a new key down that isn't a repeat).
+    var armed by androidx.compose.runtime.remember(item.path) { androidx.compose.runtime.mutableStateOf(false) }
     androidx.compose.ui.window.Dialog(onDismissRequest = { viewModel.chooseResume(null) }) {
-        androidx.tv.material3.Surface(shape = MaterialTheme.shapes.large) {
+        androidx.tv.material3.Surface(shape = MaterialTheme.shapes.large, modifier = Modifier.onPreviewKeyEvent { e ->
+            val select = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+            if (!select || armed) return@onPreviewKeyEvent false
+            if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
+                armed = true
+                false
+            } else true // a held key's repeat or release: swallowed
+        }) {
             Column(modifier = Modifier.padding(28.dp).width(420.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 // From Continue Watching: its title ("Example Show" and the episode); else the file name.
