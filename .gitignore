@@ -17,3 +17,6 @@
 local.properties
 /Server/run
 
+
+# Local test server (its own config, accounts and sample media)
+/Server/e2e

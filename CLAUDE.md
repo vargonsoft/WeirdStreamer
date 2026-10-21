@@ -1,0 +1,180 @@
+# WeirdStreamer
+
+A self-hosted media server (Go) with a web UI (vanilla JS) and an Android app (Kotlin/Compose)
+that runs as both an Android TV app and a phone app. Pending work is in [TODO.md](TODO.md); notes
+for each TODO item are at the end of this file.
+
+## Rules (from the user)
+
+- **Off limits:** the `k` and `p` libraries (`/home/USER/.personal/...`) and `p2`
+  (`/home/USER/.personal2/...`). Don't browse, list, play or screenshot them. The one exception
+  so far: reading codec/format details (ffprobe, no frames) of a file the user names.
+- **Secrets:** the TMDB token is in `Server/config.json` and the test password is in
+  `Server/e2e/pw`. Never print or repeat either.
+- **Live server restarts:** first run `curl -sk https://127.0.0.1:9000/local/streams`. If
+  `active` > 0, say who's watching and ask before restarting. Restart only when asked.
+- **Onn TV box:** no testing or installing on it during the day. Use the emulators.
+- **Deploying the Android app:** only through `Android/deploy-release.sh` (below), never manual
+  `adb install` of a debug build on real devices. Leave out `--onn` unless the user asks.
+- **Commits:** only when asked. End messages with
+  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. `origin` is a local bare repo
+  (`../repos/WeirdStreamer`); push only when asked. There's also a `github` remote.
+- Never `pkill -f` (it can match the live server or other processes). Stop processes by PID or
+  through the tool that started them.
+
+## Layout
+
+- `Server/`: Go, gorilla/mux, SQLite (`mattn/go-sqlite3`, needs CGO). Entry point
+  `cmd/server/main.go` (routes). Code is in `internal/`:
+  - `handlers/`: HTTP API. `media.go` (browse, stream, thumbnails), `library.go` (Library view,
+    title pages), `playback.go` (per-user progress, Continue Watching), `streams.go` (admin
+    Streams page, player progress reports), `downloads.go` (offline-download encodes), `match.go`
+    (Fix dialog), `users.go`, `config.go`, `access.go` (library/group access checks).
+  - `media/`: `streamer.go` (direct serving and ffmpeg transcoding), `dvd.go` and
+    `dvdstream.go` (ISO playback: a pure-Go ISO9660/IFO parser and ffmpeg dvdvideo),
+    `downloads.go`, `streams.go` (active-stream tracker), thumbnails, trickplay.
+  - `metadata/`: TMDB matching and the library index. `database/`: SQLite (users DB has
+    `users` and `playback`; media DB has items, TMDB data, discs).
+  - `web/`: the web UI, `index.html` plus `js/app.js` (about 2,900 lines, no framework),
+    `js/api.js` and `css/style.css`. The live server serves `Server/web` straight from disk, so
+    web changes need no restart, only a page reload.
+- `Android/`: one app for TV and phone (`MainActivity` picks which). Under
+  `app/src/main/java/com/vargon/weirdstreamer/`:
+  - `MediaViewModel.kt` (state, navigation, playback progress, resume),
+    `repository/ServerRepository.kt` (server API), `api/` (Retrofit `ApiService`, Gson models).
+  - TV UI: `ui/components/MediaBrowser.kt`, `BrowserGrid.kt`, `LibraryScreens.kt`,
+    `VideoPlayer.kt` (TV player), `PlayerDialogs.kt` (TV transcode/subtitle/speed dialogs),
+    `PlayerControls.kt`, `PlayerOverlays.kt`, `TvPlayback.kt` (Continue Watching row and its
+    menu), `TvFocus.kt` (`tvClickable`).
+  - Phone UI: `Phone*.kt` (`PhoneVideoPlayer.kt` is the phone player), `PlaybackUi.kt` (shared
+    progress overlays and the phone Continue row), `PhoneDownloads.kt`.
+  - `downloads/`: offline downloads (WorkManager worker, `DownloadStore`, `LocalProgress` for
+    progress played offline).
+  - `ui/components/UiUtils.kt`: transcode modes, `VideoDecoders` (hardware decoder limits),
+    `subtitlesOffByDefault`, `subtitleLabels`, `SubtitleMemory`.
+- Root `*.md` files other than this one and TODO.md are old notes from earlier work. They may
+  be out of date.
+
+## Live server
+
+- Runs from `Server/` as `./server` (via `~/bin/ws`) in the user's "WeirdStreamer live"
+  terminal tab. It logs to `Server/server.log`. Port 9000, HTTPS. Config is `Server/config.json`
+  (git-ignored). Data is in `Server/run/` (databases, thumbnails, trickplay, artwork, download
+  encodes).
+- To deploy server code: `cd Server && go build -o server.new ./cmd/server`, check streams (see
+  Rules), stop the live tab with Ctrl-C, `mv server.new server`, then rerun
+  `~/bin/ws 2>&1 | tee -a ~/Documents/Source/clones/WeirdStreamer/Server/server.log` in that tab.
+- Server tests: `cd Server && go vet ./internal/... ./cmd/... && go test ./internal/...`.
+  Don't use `./...`: stray `main` files in `Server/` (`test_auth.go`, `verify_pw.go`,
+  `test_login.go`) break it.
+
+## Test environment
+
+- `Server/run-e2e.sh` builds the server and runs a test server from `Server/e2e/` (git-ignored)
+  on **http://localhost:9100**. Android emulators reach it at `http://10.0.2.2:9100`. It has its
+  own config, databases and accounts (`e2e_admin`, `e2e_adult`, `e2e_normal`; password in
+  `Server/e2e/pw`), and serves `Server/web` through a symlink.
+- Sample library in `Server/e2e/sample/`: Movies and TV Shows (typed libraries with TMDB
+  matches). Most files are short ffmpeg test patterns named after real titles. Notable ones:
+  - `Movies/Example Film/…ts`: a 5-minute MPEG-2 file.
+  - `Movies/Subtitle Test/Subtitle Test.mkv`: 16 subtitle tracks, several per language, the
+    first marked default.
+  - `Movies/Example Movie/Example Movie.iso`: a symlink to a real DVD image on the share.
+  - `TV Shows/Example Show/Season 1/`: two episodes. S01E01 is a 60-second clip; S01E02 is empty.
+- Emulators: `emulator-5554` is Android TV and `emulator-5556` is a phone. The adb binary is
+  `~/Android/Sdk/platform-tools/adb` (not on PATH).
+  - Drive the TV with `adb -s emulator-5554 shell input keyevent DPAD_*`. Hold a key with
+    `adb emu event send EV_KEY:KEY_ENTER:1` then `:0`; `input keyevent --longpress` is too short.
+  - On the phone, use `input tap` with coordinates from `uiautomator dump`.
+  - Check screens with `adb exec-out screencap -p`.
+  - Use the browser pane at http://localhost:9100 for the web UI.
+- Android debug build: `cd Android && ./gradlew :app:assembleDebug`. Install debug builds on
+  emulators only.
+
+## Deploying the Android app
+
+`Android/deploy-release.sh` builds the R8 release APK and launches it on every running emulator,
+aborting on a crash. It then installs on the connected allowed devices: Moto G
+(`moto g power - 2025`) and Galaxy Fold 7 (`SM-F966U1`) always, and the Onn
+(`onn. 4K Plus Streaming`) only with `--onn`. Options: `--no-build`, `--no-install`.
+
+- Real devices must get release builds. Debug builds are visibly sluggish on the Onn.
+- R8 needs keep rules (`Android/app/proguard-rules.pro`) for anything Gson stores by field name
+  or created by reflection. Missing ones once crashed release builds at startup (WorkManager's
+  Room database) and would have scrambled the saved downloads list.
+
+## How things work (where it matters for the TODOs)
+
+- **Streaming:** `GET /api/media/stream?path=<base64 path>`. Query options:
+  - `transcode=1` forces an ffmpeg transcode: libx264 ultrafast, AAC 128k, fragmented MP4,
+    8-bit 4:2:0.
+  - `start=<s>`, `bitrate=` (for example `80%`) and `resolution=` (a height, never upscaled)
+    also apply.
+  - `auto-transcode=0` turns off the server's extension-based auto-transcode (`needsTranscoding`
+    in `streamer.go`: `.mkv`, `.avi`, `.wmv` and similar). The web UI always sends it, so the
+    browser gets originals unless the user presses "Transcode to MP4".
+  - Discs (`.iso`) are always transcoded, per title (`title`, `angle`, `audio`, `subtitle`
+    params).
+- **Web player** (`app.js`): `playVideo(item, forceTranscode, startAt)` uses the native
+  `<video id="video-player" controls>` in `#player-modal`.
+  - Discs use custom controls instead (`#disc-controls`, `setupDiscControls`,
+    `renderDiscControls`, `updateDiscPosition`): Material icons, −10s/+30s, a fixed-size
+    play/pause button, volume first, and auto-hiding controls and cursor in fullscreen. That
+    disc UI is the natural starting point for a custom player for all videos.
+  - A transcoded stream restarts at an offset when seeking (`streamOffset`, `disc.offset`), so
+    the player tracks the absolute position itself.
+  - `startPlaybackReports` sends progress to `POST /api/streams/progress`. Resume and
+    "Play from start" go through `playVideo`'s `startAt`.
+  - Icons come from `MATERIAL_ICONS`, `iconSvg(name)` and `decorateIconButtons`.
+- **TV player** (`VideoPlayer.kt`, ExoPlayer):
+  - Transcode modes come from `transcodeModes` in `UiUtils.kt`, picked in a D-pad dialog in
+    `PlayerDialogs.kt`. `transcodeQuery()` caps the height at what the hardware decodes.
+  - A decoder error on the original switches to Compatibility (Auto).
+  - Subtitles: `onTracksChanged` collects `C.TRACK_TYPE_TEXT` formats and labels them
+    (`subtitleLabels`). `selectSubtitleTrack(index)` sets a `TrackSelectionOverride`, and
+    `SubtitleMemory` remembers the choice per video. **Audio track selection should copy this
+    pattern** with `C.TRACK_TYPE_AUDIO`, and get its own dialog row in the player toolbar
+    (`PlayerZoomToolbar` buttons 0–8).
+- **Phone player** (`PhoneVideoPlayer.kt`, ExoPlayer):
+  - Same transcode menu (a dropdown) and decoder fallback as the TV.
+  - Touch handling today: the root `Box` has `pointerInput { detectTransformGestures }` for
+    pinch-zoom and pan, and `clickable` to show or hide the controls. Swipe gestures (seek,
+    brightness, volume) must not break pinch-zoom: handle single-finger drags separately.
+    Brightness can go through `window.attributes.screenBrightness`, volume through
+    `AudioManager`.
+  - It has no subtitle or audio track UI yet.
+- **Progress and resume:** players report position every 5s, on pause and at the end. The
+  server decides "watched" (the last 2 minutes of videos 20 minutes or longer; the end of shorter
+  ones). `MediaViewModel.playVideo(path, fromStart)` sets `playbackStartMs`.
+
+## Notes on the TODO items
+
+- **Web: no audio on a 4K film.** The file is
+  `/smb/basestar/Video/1/Movies/a 4K film/a 4K film Bluray-2160p.mkv`: 4K H.264 with one
+  audio track, **E-AC-3 5.1** (`eac3`), plus 37 subtitle tracks. Browsers don't decode E-AC-3
+  (nor AC-3, DTS or TrueHD on most platforms), so the original plays silent. A transcode (AAC)
+  has audio. A cheaper fix is an audio-only transcode: `-c:v copy -c:a aac` when the video is
+  already browser-friendly H.264.
+- **Automatic web transcoding:** the server can probe codecs (ffprobe is already used:
+  `ProbeVideo`, `getBitrate`). Options:
+  - The server reports a file's video and audio codecs and container, and the web UI decides
+    with `MediaSource.isTypeSupported` / `canPlayType`, then requests a transcode or an
+    audio-only transcode.
+  - Fall back on a `<video>` error or on silence (harder to detect).
+
+  Android already does the equivalent: `VideoDecoders.canPlay` plus the decoder-error fallback.
+- **Audio track selection on TV, phone and web:**
+  - Android: ExoPlayer exposes audio tracks like text tracks (see the TV subtitle pattern above).
+  - Web: the native `<video>` element only exposes `audioTracks` in some browsers. For MKVs with
+    several tracks, the server needs to transcode or remux with `-map 0:a:N`. Disc streams
+    already take an `audio=` param (`DiscOptions`); a similar `audio=` param for normal files in
+    `transcodeAndServe` would cover the web.
+- **Custom web player:** generalize the disc controls (above) to all videos: hide native
+  `controls`, add seek bar, time, play/pause, ±10/30s, volume, fullscreen, transcode, and the
+  subtitle and audio pickers. Keep `streamOffset` handling for transcoded seeks.
+- **Phone gestures:** see Phone player above. Typical behaviour:
+  - A horizontal drag seeks, with a "+0:30 / 12:34" overlay, applied on release. For transcoded
+    streams, seek through `seekPlayer`.
+  - A vertical drag on the left half changes brightness; on the right half, volume. Each shows a
+    level indicator.
+  - Double-tapping the sides for ±10s is common too.
