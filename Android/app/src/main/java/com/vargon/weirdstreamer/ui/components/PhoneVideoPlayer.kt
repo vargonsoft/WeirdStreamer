@@ -260,6 +260,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                 }
             }
             .build()
+            .apply { trackSelectionParameters = subtitlesOffByDefault(trackSelectionParameters) }
     }
 
     // Handle MediaItem updates when path or transcode mode changes

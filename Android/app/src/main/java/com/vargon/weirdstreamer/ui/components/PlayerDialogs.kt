@@ -3,6 +3,9 @@ package com.vargon.weirdstreamer.ui.components
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -10,6 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
@@ -214,6 +219,9 @@ fun SubtitleDialog(
                     color = Color.White
                 )
 
+                // The row the remote is on fills white; the subtitle in use has a check.
+                val currentRequester = remember { FocusRequester() }
+                LaunchedEffect(Unit) { runCatching { currentRequester.requestFocus() } }
                 if (availableSubtitles.isNotEmpty()) {
                     Text(
                         text = "Available Subtitles",
@@ -227,66 +235,11 @@ fun SubtitleDialog(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (selectedSubtitleIndex == -1) Color.White.copy(alpha = 0.2f)
-                                    else Color.Gray.copy(alpha = 0.2f)
-                                )
-                                .clickable {
-                                    onSubtitleSelected(-1)
-                                }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (selectedSubtitleIndex == -1) {
-                                Icon(
-                                    Icons.Default.PlayArrow,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                            }
-                            Text(
-                                text = "None",
-                                color = Color.White,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-
+                        SubtitleRow("None", selected = selectedSubtitleIndex == -1,
+                            requester = if (selectedSubtitleIndex == -1) currentRequester else null) { onSubtitleSelected(-1) }
                         availableSubtitles.forEachIndexed { index, subtitle ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
-                                        if (selectedSubtitleIndex == index) Color.White.copy(
-                                            alpha = 0.2f
-                                        )
-                                        else Color.Gray.copy(alpha = 0.2f)
-                                    )
-                                    .clickable { onSubtitleSelected(index) }
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (selectedSubtitleIndex == index) {
-                                    Icon(
-                                        Icons.Default.PlayArrow,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                }
-                                Text(
-                                    text = subtitle,
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
+                            SubtitleRow(subtitle, selected = selectedSubtitleIndex == index,
+                                requester = if (selectedSubtitleIndex == index) currentRequester else null) { onSubtitleSelected(index) }
                         }
                     }
 
@@ -298,31 +251,8 @@ fun SubtitleDialog(
                     style = MaterialTheme.typography.bodyLarge,
                     color = Color.White.copy(alpha = 0.8f)
                 )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.Blue.copy(alpha = 0.3f))
-                        .clickable {
-                            onDownloadRequested()
-                        }
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                        )
-                    Text(
-                        text = "OpenSubtitles.org / .com",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+                SubtitleRow("OpenSubtitles.org / .com", selected = false, icon = Icons.Default.Download,
+                    requester = if (availableSubtitles.isEmpty()) currentRequester else null) { onDownloadRequested() }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -461,6 +391,50 @@ fun DownloadSubtitlesDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+
+/**
+ * A subtitle choice: solid white with dark text while the remote is on it, a check when it's the
+ * one in use, so both read at a glance on a TV.
+ */
+@Composable
+private fun SubtitleRow(
+    label: String,
+    selected: Boolean,
+    requester: FocusRequester?,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val content = if (focused) Color.Black else Color.White
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                when {
+                    focused -> Color.White
+                    selected -> Color.White.copy(alpha = 0.25f)
+                    else -> Color.Gray.copy(alpha = 0.2f)
+                }
+            )
+            .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
+            .onFocusChanged { focused = it.hasFocus }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        icon?.let {
+            Icon(it, contentDescription = null, tint = content, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
+        }
+        Text(label, color = content, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f),
+            fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else null)
+        if (selected) {
+            Icon(Icons.Default.Check, contentDescription = "In use", tint = content, modifier = Modifier.size(24.dp))
         }
     }
 }

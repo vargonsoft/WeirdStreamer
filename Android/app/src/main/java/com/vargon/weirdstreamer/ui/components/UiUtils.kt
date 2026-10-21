@@ -29,6 +29,19 @@ fun formatTime(ms: Long): String {
 }
 
 /**
+ * Subtitles start off: a track the file marks "default" isn't turned on by itself (many MKVs mark
+ * one), only forced ones are (translations of foreign-language lines). The player's subtitle
+ * menu turns one on.
+ */
+fun subtitlesOffByDefault(params: androidx.media3.common.TrackSelectionParameters): androidx.media3.common.TrackSelectionParameters =
+    params.buildUpon()
+        .setIgnoredTextSelectionFlags(androidx.media3.common.C.SELECTION_FLAG_DEFAULT)
+        .setPreferredTextLanguage(null)
+        .setPreferredTextRoleFlags(0)
+        .setSelectUndeterminedTextLanguage(false)
+        .build()
+
+/**
  * What this device's hardware H.264 decoders can play, so videos beyond them (4K on many phones)
  * are transcoded down to a size they handle instead of failing. Software decoders don't count:
  * they "support" 4K but can't keep up.

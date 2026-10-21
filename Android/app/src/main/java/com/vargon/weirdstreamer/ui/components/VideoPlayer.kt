@@ -130,6 +130,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             .build()
 
         player.apply {
+            trackSelectionParameters = subtitlesOffByDefault(trackSelectionParameters)
             val mediaItem = MediaItem.fromUri(videoUrl)
             // A direct stream seeks to the resume point; a transcoded one starts there.
             if (resumePending && currentTranscodeMode.isOriginal) setMediaItem(mediaItem, startAtMs) else setMediaItem(mediaItem)
@@ -192,7 +193,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         for (group in tracks.groups) {
             if (group.type == C.TRACK_TYPE_TEXT) {
                 if (index == -1) {
-                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon().clearOverrides().build()
+                    // Off: back to no subtitles (forced ones aside), not the file's default track.
+                    exoPlayer.trackSelectionParameters = subtitlesOffByDefault(
+                        exoPlayer.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT).build())
                     return
                 }
 

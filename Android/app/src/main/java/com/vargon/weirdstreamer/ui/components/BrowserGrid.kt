@@ -165,14 +165,12 @@ fun BrowserGrid(
     LaunchedEffect(folderKey) {
         if (takeFocus) initialPath?.let { focusItem(it) }
     }
-    // The header (Continue Watching) usually arrives just after the items. While focus is still
-    // in the top row, show it whole above them instead of scrolled half away.
+    // The header (Continue Watching) usually arrives just after the items: while focus is in the
+    // top row, show it whole above them.
     LaunchedEffect(folderKey, headerCount) {
         if (headerCount == 0) return@LaunchedEffect
         withFrameNanos { }
-        val inTopRow = focusedIndex[0] in 0 until columns ||
-            (focusedIndex[0] < 0 && items.indexOfFirst { it.path == initialPath } in 0 until columns)
-        if (inTopRow && gridState.firstVisibleItemIndex <= headerCount) gridState.scrollToItem(0)
+        if (focusedIndex[0] in 0 until columns) gridState.scrollToItem(0)
     }
 
     LaunchedEffect(gridState, columns) {
@@ -270,7 +268,15 @@ fun BrowserGrid(
                 }
                 var itemModifier: Modifier = Modifier
                     .focusRequester(requester)
-                    .onFocusChanged { if (it.hasFocus) focusedIndex[0] = index }
+                    .onFocusChanged {
+                        if (!it.hasFocus) return@onFocusChanged
+                        focusedIndex[0] = index
+                        // In the top row, show the header above it whole (after the scroll that
+                        // brings the item itself into view).
+                        if (headerCount > 0 && index < columns) {
+                            scope.launch { withFrameNanos { }; gridState.animateScrollToItem(0) }
+                        }
+                    }
                 val isFirstColumn = index % columns == 0
                 val isFirstRow = index < columns
                 val isRowEnd = isGridView && (index % columns == columns - 1 || index == items.lastIndex)
