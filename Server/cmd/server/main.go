@@ -131,6 +131,7 @@ func main() {
 	api.HandleFunc("/streams/progress", mediaHandler.ReportStreamProgress).Methods("POST")
 	api.HandleFunc("/media/disc", mediaHandler.GetDisc).Methods("GET")
 	api.HandleFunc("/media/codecs", mediaHandler.GetCodecs).Methods("GET")
+	api.HandleFunc("/media/seekpoint", mediaHandler.GetSeekPoint).Methods("GET")
 	api.HandleFunc("/media/subtitles", mediaHandler.GetSubtitles).Methods("GET")
 	api.HandleFunc("/downloads/options", mediaHandler.DownloadOptions).Methods("GET")
 	api.HandleFunc("/downloads", mediaHandler.CreateDownload).Methods("POST")

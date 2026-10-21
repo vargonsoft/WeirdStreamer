@@ -674,10 +674,11 @@ function defaultAudioTrack(codecs) {
     return tracks.find(t => t.default) || tracks[0] || null;
 }
 
-// The transcode modes, as on Android (transcodeModes in UiUtils.kt). Original plays the video as
-// it is, Compatibility (Auto) converts only what the browser can't play (just the audio when the
-// video is browser-friendly H.264), and the others transcode all of it. Every mode converts the
-// audio when the browser can't play the track.
+// The transcode modes, as on Android (transcodeModes in UiUtils.kt). Original plays the file as it
+// is, Compatibility (Auto) converts only what the browser can't play (just the audio when the video
+// is browser-friendly H.264), and the others transcode all of it. The player picks Compatibility
+// (Auto) by itself when the original wouldn't play right (audio it can't decode, another audio
+// track, picture subtitles, a playback error).
 const TRANSCODE_MODES = [
     { id: 'original', name: 'Original' },
     { id: 'auto', name: 'Compatibility (Auto)' },
@@ -765,18 +766,30 @@ function copiesVideo(p) {
 
 // The file itself, seeked by the browser; anything else is a stream from an offset.
 function playsOriginalFile(p) {
-    return p.mode === 'original' && !audioNeedsConverting(p);
+    return p.mode === 'original';
+}
+
+// Original won't play the chosen tracks: Compatibility (Auto) converts them.
+function chooseCompatibility(p) {
+    if (p.mode === 'original' && (audioNeedsConverting(p) || burnsInSubtitles(p))) p.mode = 'auto';
 }
 
 // What the server does to the file, for the line under the controls.
 function streamNote(p) {
     const track = audioTrack(p), video = p.codecs && p.codecs.video;
-    const audio = !track ? '' : browserPlaysAudio(track)
-        ? 'the audio is converted to play this track'
-        : `the audio is converted (this browser can’t play ${track.codec.toUpperCase()})`;
+    const unplayable = track && !browserPlaysAudio(track) ? track.codec.toUpperCase() : '';
+    if (p.mode === 'original') {
+        if (unplayable) return `This browser can’t play ${unplayable} audio, so the original plays without sound.`;
+        if (audioNeedsConverting(p)) return 'The original plays its default audio track.';
+        return '';
+    }
     const failed = p.failed ? 'This browser couldn’t play the original, so it switched to Compatibility (Auto). ' : '';
-    if (p.mode === 'original') return audioNeedsConverting(p) ? `The video plays as it is; ${audio}.` : '';
-    if (copiesVideo(p)) return `${failed}The video plays as it is; the audio is converted to AAC.`;
+    if (copiesVideo(p)) {
+        const audio = unplayable ? `the audio is converted (this browser can’t play ${unplayable})`
+            : audioNeedsConverting(p) ? 'the audio is converted to play this track'
+            : 'the audio is converted to AAC';
+        return `${failed}The video plays as it is; ${audio}.`;
+    }
     const from = video && video.codec !== 'h264' ? ` (from ${video.codec.toUpperCase()})` : '';
     const subs = burnsInSubtitles(p) ? ', with the subtitles burned in' : '';
     return `${failed}Transcoding to H.264${from} and AAC${subs}.`;
@@ -786,21 +799,36 @@ function fileStreamUrl(p, start) {
     const mode = TRANSCODE_MODES.find(m => m.id === p.mode) || TRANSCODE_MODES[0];
     if (playsOriginalFile(p)) return api.getStreamUrl(p.item.path);
     // transcode=audio: the server copies the video if it can, and converts the audio.
-    let url = api.getStreamUrl(p.item.path, p.mode === 'original' || copiesVideo(p) ? 'audio' : true);
+    let url = api.getStreamUrl(p.item.path, copiesVideo(p) ? 'audio' : true);
     if (mode.bitrate) url += `&bitrate=${mode.bitrate}`;
     if (mode.resolution) url += `&resolution=${mode.resolution}`;
     if (p.audio >= 0) url += `&audio=${p.audio}`;
-    if (burnsInSubtitles(p) && p.mode !== 'original') url += `&subtitle=${p.subtitle}`;
+    if (burnsInSubtitles(p)) url += `&subtitle=${p.subtitle}`;
     if (start > 0) url += `&start=${start.toFixed(2)}`;
     return url;
 }
 
-function loadFileStream(start) {
+// Where a stream asked to start at start (seconds into the file) begins: a copied video starts at
+// the keyframe the server's seek lands on, up to several seconds earlier.
+async function streamStart(p, start) {
+    if (!(start > 0) || !copiesVideo(p)) return start;
+    try {
+        return (await api.getSeekPoint(p.item.path, start.toFixed(2))).start;
+    } catch (error) {
+        console.warn('Could not find where the stream starts:', error);
+        return start;
+    }
+}
+
+async function loadFileStream(start) {
     const p = player;
     if (p.duration) start = Math.min(start, Math.max(p.duration - 1, 0));
     start = Math.max(0, start);
     const original = playsOriginalFile(p);
-    p.offset = original ? 0 : start;
+    const load = p.load = (p.load || 0) + 1;
+    const begins = original ? 0 : await streamStart(p, start);
+    if (player !== p || p.load !== load) return; // closed, or another seek meanwhile
+    p.offset = begins;
     p.start = start;
     p.key = fileStreamUrl(p, 0); // the stream, wherever it starts: a change of it restarts it
     attachStream(fileStreamUrl(p, start), p.item, original ? start : 0);
@@ -940,7 +968,7 @@ function restoreTracks(p) {
         const forced = codecs.subtitles.find(s => s.forced && s.text);
         p.subtitle = forced ? forced.index : -1;
     }
-    if (burnsInSubtitles(p) && p.mode === 'original') p.mode = 'auto'; // burned in by a transcode
+    chooseCompatibility(p);
 }
 
 function saveTracks(p) {
@@ -965,6 +993,7 @@ async function loadTrickplay(p) {
 // gets there. A transcoded stream's time counts from its offset, and the cues are shifted to match.
 
 const SUBTITLE_WINDOW = 120; // seconds of cues per request
+const SUBTITLE_LINE = 90; // where cues end, in percent of the picture's height from the top
 let subs = null; // { track, index, offset, from, until, loading, abort }
 
 function subtitleTextTrack() {
@@ -1001,7 +1030,7 @@ function loadSubtitleWindow(s) {
     s.loading = true;
     const url = `${API_BASE}/api/media/subtitles?path=${encodeURIComponent(api.encodePath(player.item.path))}` +
         `&track=${s.index}&start=${from.toFixed(2)}&duration=${SUBTITLE_WINDOW}`;
-    streamSubtitles(s, url, from)
+    streamSubtitles(s, url)
         .catch(err => { if (err.name !== 'AbortError') console.warn('Subtitles failed:', err); })
         .finally(() => { s.loading = false; });
 }
@@ -1020,7 +1049,7 @@ function seekSubtitles(position) {
     if (subs && (position < subs.from || position > subs.until)) restartSubtitles(position);
 }
 
-async function streamSubtitles(s, url, from) {
+async function streamSubtitles(s, url) {
     const headers = api.token ? { Authorization: `Bearer ${api.token}` } : {};
     const res = await fetch(url, { signal: s.abort.signal, credentials: 'same-origin', headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1033,27 +1062,32 @@ async function streamSubtitles(s, url, from) {
         buf = (buf + decoder.decode(value, { stream: true })).replace(/\r/g, '');
         let end;
         while ((end = buf.indexOf('\n\n')) >= 0) {
-            addSubtitleCue(s, buf.slice(0, end), from);
+            addSubtitleCue(s, buf.slice(0, end));
             buf = buf.slice(end + 2);
         }
     }
-    addSubtitleCue(s, buf, from);
+    addSubtitleCue(s, buf);
 }
 
-// One WebVTT block: "[id]\nstart --> end [settings]\ntext…", from a window starting at from.
-function addSubtitleCue(s, block, from) {
+// One WebVTT block: "[id]\nstart --> end [settings]\ntext…".
+function addSubtitleCue(s, block) {
     if (subs !== s) return;
     const lines = block.split('\n');
     const at = lines.findIndex(line => line.includes('-->'));
     if (at < 0) return;
     const [a, b] = lines[at].split('-->');
     const text = lines.slice(at + 1).join('\n').trim();
-    const shift = from - s.offset; // cue time 0 is from in the file; stream time 0 is s.offset
-    const start = vttSeconds(a) + shift, end = vttSeconds(b.trim().split(/\s+/)[0]) + shift;
+    // Cue times are the file's; the stream's time 0 is s.offset in the file.
+    const start = vttSeconds(a) - s.offset, end = vttSeconds(b.trim().split(/\s+/)[0]) - s.offset;
     if (!text || !(end > 0)) return;
-    // A cue on screen as a window starts also came with the window before.
-    if (vttSeconds(a) < 0.05 && [...(s.track.cues || [])].some(c => c.text === text && c.endTime >= start)) return;
-    s.track.addCue(new VTTCue(Math.max(0, start), end, text));
+    // A window starts at a keyframe before from: cues there came with the window before too.
+    if ([...(s.track.cues || [])].some(c => c.text === text && Math.abs(c.startTime - start) < 0.05)) return;
+    const cue = new VTTCue(Math.max(0, start), end, text);
+    // Up off the bottom edge: the cue's last line ends 10% of the picture's height above it.
+    cue.snapToLines = false;
+    cue.line = SUBTITLE_LINE;
+    cue.lineAlign = 'end';
+    s.track.addCue(cue);
 }
 
 function vttSeconds(text) {
@@ -1421,19 +1455,20 @@ function setupPlayerControls() {
     on('player-stream', (mode) => changeFileStream(p => {
         p.mode = mode;
         p.encode = p.failed = false;
-        if (mode === 'original' && burnsInSubtitles(p)) p.subtitle = -1; // the original can't have them
+        // The original as it is: no burned-in subtitles (its audio is the browser's to play).
+        if (mode === 'original' && burnsInSubtitles(p)) p.subtitle = -1;
     }));
     on('player-audio', (value) => {
         const a = Number(value);
         if (disc && disc.info) { disc.audio = a; loadDiscStream(playerPosition()); return; }
-        changeFileStream(p => { p.audio = a; });
+        changeFileStream(p => { p.audio = a; chooseCompatibility(p); });
     });
     on('player-subtitle', (value) => {
         const s = Number(value);
         if (disc && disc.info) { disc.subtitle = s; loadDiscStream(playerPosition()); return; }
         changeFileStream(p => {
             p.subtitle = s;
-            if (burnsInSubtitles(p) && p.mode === 'original') p.mode = 'auto'; // burned in by a transcode
+            chooseCompatibility(p);
         });
     });
     const onDisc = (id, handler) => on(id, (value) => { if (disc && disc.info) handler(Number(value)); });

@@ -48,14 +48,24 @@ func TestCodecsChoices(t *testing.T) {
 	}
 }
 
+func TestParseFrameTime(t *testing.T) {
+	out := "#tb 0: 1/1000\n#media_type 0: video\n#codec_id 0: h264\n0,    1202081,    1202164,       41,    81374, 0xf88fd388\n"
+	if got, err := parseFrameTime(out); err != nil || got != 1202.164 {
+		t.Errorf("got %v, %v; want the pts, 1202.164", got, err)
+	}
+	if _, err := parseFrameTime("#tb 0: 1/1000\n"); err == nil {
+		t.Error("no frame: want an error")
+	}
+}
+
 func TestSubtitleArgs(t *testing.T) {
 	got := strings.Join(SubtitleArgs("/m/a.mkv", 2, 90.5, 120), " ")
-	want := "-v error -ss 90.500 -i /m/a.mkv -t 120.000 -map 0:s:2 -c:s webvtt -f webvtt pipe:1"
+	want := "-v error -ss 90.500 -i /m/a.mkv -copyts -start_at_zero -to 210.500 -map 0:s:2 -c:s webvtt -f webvtt pipe:1"
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 	got = strings.Join(SubtitleArgs("/m/a.mkv", 0, 0, 0), " ")
-	if want := "-v error -i /m/a.mkv -map 0:s:0 -c:s webvtt -f webvtt pipe:1"; got != want {
+	if want := "-v error -i /m/a.mkv -copyts -start_at_zero -map 0:s:0 -c:s webvtt -f webvtt pipe:1"; got != want {
 		t.Errorf("from the start, to the end: got %s", got)
 	}
 }

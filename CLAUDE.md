@@ -156,11 +156,15 @@ aborting on a crash. It then installs on the connected allowed devices: Moto G
   use the same controls plus title, chapter and angle.
   - Before playing, it reads `GET /api/media/codecs` (container, duration, video codec, audio and
     subtitle tracks). The Transcode menu has Android's modes (`TRANSCODE_MODES`): Original (the
-    video as it is), Compatibility (Auto) (`transcode=audio`: the server copies browser-friendly
+    file as it is), Compatibility (Auto) (`transcode=audio`: the server copies browser-friendly
     H.264 and converts only the audio, else transcodes), and the quality and size ones (full
-    transcodes). Every mode converts audio the browser can't decode (or a non-default track).
-    Picture subtitles switch Original to Compatibility (Auto) to burn them in. A `<video>` error
-    on Original switches to Compatibility (Auto), and on a copied video, to a full transcode.
+    transcodes). The player picks Compatibility (Auto) itself (`chooseCompatibility`) for audio
+    the browser can't decode, a non-default audio track or picture subtitles, and after a
+    `<video>` error on Original; a copied video that errors gets a full transcode. Original
+    picked by hand plays the file untouched, even if it's silent.
+  - A copied video starts at the keyframe ffmpeg's seek lands on (`-noaccurate_seek`, so the audio
+    starts there too instead of after seconds of silence). `GET /api/media/seekpoint` (ffprobe's
+    seek, which lands on the same keyframe) tells the player that start, for its offset.
   - A transcoded stream restarts at an offset when seeking past what has arrived (`seekTo`,
     `player.offset`, `disc.offset`), as on Android, so the player tracks the absolute position
     itself (`playerPosition`). Seeks within the buffer don't restart it.

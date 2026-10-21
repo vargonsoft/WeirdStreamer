@@ -172,6 +172,41 @@ func (t TrackOptions) mapArgs(filePath, vf string) []string {
 	return args
 }
 
+// SeekPoint is where a stream that copies the video starts when asked to start at start (seconds,
+// as given to ffmpeg's -ss): the keyframe ffmpeg's seek lands on, up to several seconds earlier,
+// as the file's index (an MKV's cues) goes. ffmpeg itself finds it, seeking as the stream does
+// (ffprobe's seek differs near keyframes), and prints that first frame's time.
+func SeekPoint(filePath, start string) (float64, error) {
+	out, err := exec.Command("ffmpeg", "-v", "error", "-noaccurate_seek", "-ss", start, "-i", filePath,
+		"-map", "0:v:0", "-c", "copy", "-copyts", "-start_at_zero", "-frames:v", "1", "-f", "framecrc", "-").Output()
+	if err != nil {
+		return 0, err
+	}
+	return parseFrameTime(string(out))
+}
+
+// parseFrameTime reads the first frame's time from ffmpeg's framecrc output: a "#tb 0: 1/1000"
+// time base line, then "stream, dts, pts, duration, size, crc" lines.
+func parseFrameTime(out string) (float64, error) {
+	num, den := 0.0, 0.0
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "#tb 0:") {
+			fmt.Sscanf(strings.TrimSpace(strings.TrimPrefix(line, "#tb 0:")), "%g/%g", &num, &den)
+			continue
+		}
+		fields := strings.Split(line, ",")
+		if strings.HasPrefix(line, "#") || len(fields) < 3 || den == 0 {
+			continue
+		}
+		pts, err := strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
+		if err != nil {
+			return 0, err
+		}
+		return pts * num / den, nil
+	}
+	return 0, fmt.Errorf("no frame in ffmpeg's output")
+}
+
 // transcodeAudioAndServe streams the file with its video copied and its default audio track
 // encoded to AAC, for players that can decode the video but not the audio (browsers and E-AC-3,
 // AC-3, DTS or TrueHD). Video that can't simply be copied gets a full transcode instead.
@@ -183,7 +218,9 @@ func (s *Streamer) transcodeAudioAndServe(w http.ResponseWriter, r *http.Request
 	}
 	args := []string{}
 	if startTime != "" {
-		args = append(args, "-ss", startTime)
+		// The copied video starts at the keyframe the seek lands on (SeekPoint). Without
+		// -noaccurate_seek the audio would start at startTime exactly, after seconds of silence.
+		args = append(args, "-noaccurate_seek", "-ss", startTime)
 	}
 	args = append(args, "-i", filePath, "-map", "0:v:0")
 	reason := "The player can't play the audio"
@@ -213,17 +250,18 @@ func (s *Streamer) transcodeAudioAndServe(w http.ResponseWriter, r *http.Request
 	return s.runTranscode(w, r, filePath, args, sess)
 }
 
-// SubtitleArgs are the ffmpeg arguments for ServeSubtitles: the cues from start for duration
-// seconds (0: to the end), their times counted from start. Subtitles are spread through the whole
-// file, so a player asks for them a few minutes at a time rather than have all of it read at once.
+// SubtitleArgs are the ffmpeg arguments for ServeSubtitles: the cues from about start (where the
+// seek lands) to start+duration (duration 0: to the end), at their times in the file. Subtitles
+// are spread through the whole file, so a player asks for them a few minutes at a time rather
+// than have all of it read at once.
 func SubtitleArgs(filePath string, track int, start, duration float64) []string {
 	args := []string{"-v", "error"}
 	if start > 0 {
 		args = append(args, "-ss", strconv.FormatFloat(start, 'f', 3, 64))
 	}
-	args = append(args, "-i", filePath)
+	args = append(args, "-i", filePath, "-copyts", "-start_at_zero")
 	if duration > 0 {
-		args = append(args, "-t", strconv.FormatFloat(duration, 'f', 3, 64))
+		args = append(args, "-to", strconv.FormatFloat(start+duration, 'f', 3, 64))
 	}
 	return append(args, "-map", "0:s:"+strconv.Itoa(track), "-c:s", "webvtt", "-f", "webvtt", "pipe:1")
 }

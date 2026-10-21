@@ -229,6 +229,33 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	media.ServeSubtitles(w, r, path, track, max(start, 0), max(duration, 0))
 }
 
+// GetSeekPoint reports where a stream that copies the video (transcode=audio) starts when asked to
+// start at start: {"start": seconds} (GET /api/media/seekpoint?path=<base64 path>&start=<s>, with
+// start as in the stream request).
+func (h *MediaHandler) GetSeekPoint(w http.ResponseWriter, r *http.Request) {
+	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
+	if err != nil || len(decoded) == 0 {
+		respondError(w, http.StatusBadRequest, "Invalid path encoding")
+		return
+	}
+	path := string(decoded)
+	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+	start := r.URL.Query().Get("start")
+	if t, err := strconv.ParseFloat(start, 64); err != nil || t < 0 {
+		respondError(w, http.StatusBadRequest, "Invalid start")
+		return
+	}
+	point, err := media.SeekPoint(path, start)
+	if err != nil {
+		respondError(w, http.StatusUnprocessableEntity, "Could not read the file")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]float64{"start": point})
+}
+
 // GetCodecs reports a file's container and its video and audio codecs, for players that check
 // what they can play (GET /api/media/codecs?path=<base64 path>).
 func (h *MediaHandler) GetCodecs(w http.ResponseWriter, r *http.Request) {
