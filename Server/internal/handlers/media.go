@@ -244,6 +244,8 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 
 	// Check if user wants to force transcoding
 	forceTranscode := r.URL.Query().Get("transcode") == "1"
+	// transcode=audio: copy the video, encode the audio to AAC (the browser can't play the audio)
+	audioTranscode := r.URL.Query().Get("transcode") == "audio"
 
 	// Check if client wants to disable auto-transcoding (enabled by default)
 	// WebUI can set auto-transcode=0 to let browser attempt native playback first
@@ -277,7 +279,7 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 	sess := h.beginStream(r, item)
 	defer sess.End()
 
-	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages, bitrate, resolution, sess); err != nil {
+	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, audioTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages, bitrate, resolution, sess); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to stream media")
 		return
 	}

@@ -30,7 +30,8 @@ for each TODO item are at the end of this file.
     title pages), `playback.go` (per-user progress, Continue Watching), `streams.go` (admin
     Streams page, player progress reports), `downloads.go` (offline-download encodes), `match.go`
     (Fix dialog), `users.go`, `config.go`, `access.go` (library/group access checks).
-  - `media/`: `streamer.go` (direct serving and ffmpeg transcoding), `dvd.go` and
+  - `media/`: `streamer.go` (direct serving and ffmpeg transcoding), `codecs.go` (codec probe,
+    audio-only transcodes, track options, WebVTT subtitles), `dvd.go` and
     `dvdstream.go` (ISO playback: a pure-Go ISO9660/IFO parser and ffmpeg dvdvideo),
     `downloads.go`, `streams.go` (active-stream tracker), thumbnails, trickplay.
   - `metadata/`: TMDB matching and the library index. `database/`: SQLite (users DB has
@@ -78,6 +79,10 @@ for each TODO item are at the end of this file.
   - `Movies/Subtitle Test/Subtitle Test.mkv`: 16 subtitle tracks, several per language, the
     first marked default.
   - `Movies/Example Movie/Example Movie.iso`: a symlink to a real DVD image on the share.
+  - `Movies/a 4K film/`: a symlink to the real 4K file (E-AC-3 audio, text and PGS subtitles).
+  - `Movies/EAC3 Test/EAC3 Test.mkv`: 2 minutes of H.264 with two audio tracks (E-AC-3 5.1
+    default, AAC "commentary" at 880 Hz) and English and Spanish subtitles every 4 seconds that
+    name the second they're at. Has trickplay frames.
   - `TV Shows/Example Show/Season 1/`: two episodes. S01E01 is a 60-second clip; S01E02 is empty.
 - Emulators: `emulator-5554` is Android TV (AVD `Television_1080p_API_34`) and `emulator-5556`
   is a phone (AVD `Medium_Phone_API_35`). `Android/tools/start-emulators.sh` starts whichever
@@ -142,17 +147,29 @@ aborting on a crash. It then installs on the connected allowed devices: Moto G
     browser gets originals unless the user presses "Transcode to MP4".
   - Discs (`.iso`) are always transcoded, per title (`title`, `angle`, `audio`, `subtitle`
     params).
-- **Web player** (`app.js`): `playVideo(item, forceTranscode, startAt)` uses the native
-  `<video id="video-player" controls>` in `#player-modal`.
-  - Discs use custom controls instead (`#disc-controls`, `setupDiscControls`,
-    `renderDiscControls`, `updateDiscPosition`): Material icons, −10s/+30s, a fixed-size
-    play/pause button, volume first, and auto-hiding controls and cursor in fullscreen. That
-    disc UI is the natural starting point for a custom player for all videos.
-  - A transcoded stream restarts at an offset when seeking (`streamOffset`, `disc.offset`), so
-    the player tracks the absolute position itself.
+- **Web player** (`app.js`): `playVideo(item, forceTranscode, startAt)` plays in the
+  `<video id="video-player">` of `#player-modal`, with the player's own controls
+  (`#player-controls`, `setupPlayerControls`; the native `controls` are off). Discs (`playDisc`)
+  use the same controls plus title, chapter and angle.
+  - Before playing, it reads `GET /api/media/codecs` (container, duration, video codec, audio and
+    subtitle tracks). `streamMode(player)` picks the stream: `original` (the file as it is),
+    `audio` (`transcode=audio`: video copied, audio to AAC, for audio the browser can't decode or
+    a non-default track) or `transcode` (full; also for burning in picture subtitles, or after a
+    `<video>` error on the original). The Stream menu overrides it.
+  - A transcoded stream restarts at an offset when seeking past what has arrived (`seekTo`,
+    `player.offset`, `disc.offset`), as on Android, so the player tracks the absolute position
+    itself (`playerPosition`). Seeks within the buffer don't restart it.
+  - Text subtitles come from `GET /api/media/subtitles` (WebVTT, 2-minute windows, fetched ahead
+    by `keepSubtitlesAhead`) as cues on a `TextTrack`; picture subtitles (PGS, DVD) are burned in
+    with `subtitle=N`. Track choices are kept per video in `localStorage`. Subtitles are off unless
+    the file has forced ones, as on Android.
+  - The seek bar shows trickplay frames (made by `cmd/cli trickplay`) on hover.
   - `startPlaybackReports` sends progress to `POST /api/streams/progress`. Resume and
     "Play from start" go through `playVideo`'s `startAt`.
   - Icons come from `MATERIAL_ICONS`, `iconSvg(name)` and `decorateIconButtons`.
+- **Streams with track options:** file transcodes take `audio=N` (index among the audio tracks)
+  and `subtitle=N` (burn in that subtitle track, scaled to the video), in `TrackOptions`
+  (`media/codecs.go`).
 - **TV player** (`VideoPlayer.kt`, ExoPlayer):
   - Transcode modes come from `transcodeModes` in `UiUtils.kt`, picked in a D-pad dialog in
     `PlayerDialogs.kt`. `transcodeQuery()` caps the height at what the hardware decodes.
@@ -176,29 +193,13 @@ aborting on a crash. It then installs on the connected allowed devices: Moto G
 
 ## Notes on the TODO items
 
-- **Web: no audio on a 4K film.** The file is
-  `/smb/basestar/Video/1/Movies/a 4K film/a 4K film Bluray-2160p.mkv`: 4K H.264 with one
-  audio track, **E-AC-3 5.1** (`eac3`), plus 37 subtitle tracks. Browsers don't decode E-AC-3
-  (nor AC-3, DTS or TrueHD on most platforms), so the original plays silent. A transcode (AAC)
-  has audio. A cheaper fix is an audio-only transcode: `-c:v copy -c:a aac` when the video is
-  already browser-friendly H.264.
-- **Automatic web transcoding:** the server can probe codecs (ffprobe is already used:
-  `ProbeVideo`, `getBitrate`). Options:
-  - The server reports a file's video and audio codecs and container, and the web UI decides
-    with `MediaSource.isTypeSupported` / `canPlayType`, then requests a transcode or an
-    audio-only transcode.
-  - Fall back on a `<video>` error or on silence (harder to detect).
-
-  Android already does the equivalent: `VideoDecoders.canPlay` plus the decoder-error fallback.
+- **Automatic web transcoding:** done for audio (the codecs check) and as a fallback on a
+  `<video>` error. Still open: checking the video codec and container up front with
+  `MediaSource.isTypeSupported` / `canPlayType` (HEVC, AV1, 10-bit H.264), so the first
+  failed load is skipped.
 - **Audio track selection on TV, phone and web:**
   - Android: ExoPlayer exposes audio tracks like text tracks (see the TV subtitle pattern above).
-  - Web: the native `<video>` element only exposes `audioTracks` in some browsers. For MKVs with
-    several tracks, the server needs to transcode or remux with `-map 0:a:N`. Disc streams
-    already take an `audio=` param (`DiscOptions`); a similar `audio=` param for normal files in
-    `transcodeAndServe` would cover the web.
-- **Custom web player:** generalize the disc controls (above) to all videos: hide native
-  `controls`, add seek bar, time, play/pause, ±10/30s, volume, fullscreen, transcode, and the
-  subtitle and audio pickers. Keep `streamOffset` handling for transcoded seeks.
+  - Web: done (the player's Audio menu, `audio=N`).
 - **Phone gestures:** see Phone player above. Typical behaviour:
   - A horizontal drag seeks, with a "+0:30 / 12:34" overlay, applied on release. For transcoded
     streams, seek through `seekPlayer`.

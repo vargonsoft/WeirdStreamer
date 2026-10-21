@@ -204,3 +204,48 @@ func (h *MediaHandler) GetDisc(w http.ResponseWriter, r *http.Request) {
 	}
 	respondJSON(w, http.StatusOK, info)
 }
+
+// GetSubtitles streams a text subtitle track of a file as WebVTT (GET /api/media/subtitles?
+// path=<base64 path>&track=<index among its subtitles>&start=<s>&duration=<s>). Cue times count
+// from start; without a duration the cues go to the end of the file.
+func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
+	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
+	if err != nil || len(decoded) == 0 {
+		respondError(w, http.StatusBadRequest, "Invalid path encoding")
+		return
+	}
+	path := string(decoded)
+	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+	track, err := strconv.Atoi(r.URL.Query().Get("track"))
+	if err != nil || track < 0 {
+		respondError(w, http.StatusBadRequest, "Invalid track")
+		return
+	}
+	start, _ := strconv.ParseFloat(r.URL.Query().Get("start"), 64)
+	duration, _ := strconv.ParseFloat(r.URL.Query().Get("duration"), 64)
+	media.ServeSubtitles(w, r, path, track, max(start, 0), max(duration, 0))
+}
+
+// GetCodecs reports a file's container and its video and audio codecs, for players that check
+// what they can play (GET /api/media/codecs?path=<base64 path>).
+func (h *MediaHandler) GetCodecs(w http.ResponseWriter, r *http.Request) {
+	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
+	if err != nil || len(decoded) == 0 {
+		respondError(w, http.StatusBadRequest, "Invalid path encoding")
+		return
+	}
+	path := string(decoded)
+	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
+		respondError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+	codecs, err := media.ProbeCodecs(path)
+	if err != nil {
+		respondError(w, http.StatusUnprocessableEntity, "Could not read the file's codecs")
+		return
+	}
+	respondJSON(w, http.StatusOK, codecs)
+}

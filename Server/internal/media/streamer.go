@@ -19,8 +19,9 @@ func NewStreamer() *Streamer {
 }
 
 // ServeContent handles HTTP range requests for efficient streaming. sess, if not nil, is the
-// tracked stream the request belongs to.
-func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, autoTranscode bool, startTime string, autoConvertImages bool, bitrate string, resolution string, sess *StreamSession) error {
+// tracked stream the request belongs to. audioTranscode asks for the video as it is with the audio
+// encoded to AAC (see transcodeAudioAndServe).
+func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath string, contentType string, forceTranscode bool, audioTranscode bool, autoTranscode bool, startTime string, autoConvertImages bool, bitrate string, resolution string, sess *StreamSession) error {
 	// Check if file is HEIC/HEIF and auto-conversion is enabled
 	ext := strings.ToLower(filepath.Ext(filePath))
 	if autoConvertImages && (ext == ".heic" || ext == ".heif") {
@@ -29,6 +30,10 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 	if IsDiscImage(filePath) {
 		// Disc images can't be played as files: always transcoded, from the disc's titles.
 		return s.serveDisc(w, r, filePath, startTime, bitrate, resolution, sess)
+	}
+	tracks := ParseTrackOptions(r)
+	if audioTranscode && !forceTranscode && bitrate == "" && resolution == "" && tracks.Subtitle < 0 {
+		return s.transcodeAudioAndServe(w, r, filePath, startTime, tracks, sess)
 	}
 
 	// Check if transcoding is needed
@@ -41,6 +46,9 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 		reason = "The player asked for a lower quality"
 	case forceTranscode:
 		reason = "The player asked for a transcode (it couldn't play the original)"
+	case tracks.Subtitle >= 0:
+		shouldTranscode = true
+		reason = "The player asked for subtitles burned in"
 	}
 	if !shouldTranscode && autoTranscode && s.needsTranscoding(filePath) {
 		shouldTranscode = true
@@ -52,7 +60,7 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 		if forceTranscode || bitrate != "" || resolution != "" {
 			fmt.Printf("Transcoding %s (requested: bitrate=%s, res=%s)\n", filePath, bitrate, resolution)
 		}
-		return s.transcodeAndServe(w, r, filePath, startTime, bitrate, resolution, reason, sess)
+		return s.transcodeAndServe(w, r, filePath, startTime, bitrate, resolution, reason, tracks, sess)
 	}
 
 	// Serve original file
@@ -312,7 +320,7 @@ func (s *Streamer) needsTranscoding(filePath string) bool {
 }
 
 // transcodeAndServe transcodes video on-the-fly and streams to client
-func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, filePath string, startTime string, bitrate string, resolution string, reason string, sess *StreamSession) error {
+func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, filePath string, startTime string, bitrate string, resolution string, reason string, tracks TrackOptions, sess *StreamSession) error {
 	if startTime != "" {
 		fmt.Printf("Starting transcoding from %s seconds for: %s\n", startTime, filePath)
 	} else {
@@ -326,6 +334,17 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 		args = append(args, "-ss", startTime)
 	}
 	args = append(args, "-i", filePath)
+
+	// Down to that height, never up: a smaller source keeps its size.
+	scale := ""
+	if resolution != "" {
+		scale = fmt.Sprintf("scale=-2:'min(%s,ih)'", resolution)
+	}
+	// A chosen audio track or burned-in subtitles need the streams mapped; otherwise ffmpeg picks.
+	if tracks.Audio >= 0 || tracks.Subtitle >= 0 {
+		args = append(args, tracks.mapArgs(filePath, scale)...)
+		scale = "" // in the filter graph
+	}
 
 	// Video transcoding options
 	args = append(args, "-c:v", "libx264", "-preset", "ultrafast")
@@ -353,11 +372,8 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 		args = append(args, "-crf", "23")
 	}
 
-	// Handle resolution reduction
-	if resolution != "" {
-		// Expect resolution like "720", "480", etc.
-		// Down to that height, never up: a smaller source keeps its size.
-		args = append(args, "-vf", fmt.Sprintf("scale=-2:'min(%s,ih)'", resolution))
+	if scale != "" {
+		args = append(args, "-vf", scale)
 	}
 
 	args = append(args,

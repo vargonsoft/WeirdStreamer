@@ -168,6 +168,8 @@ class MediaAPI {
         return this.request(`/api/media/${encodeURIComponent(path)}`);
     }
 
+    // forceTranscode: true for a full transcode, 'audio' to copy the video and transcode only
+    // the audio (for audio the browser can't decode).
     getStreamUrl(path, forceTranscode = false) {
         // Base64 encode the path to avoid special character issues in URLs
         const encodedPath = encodeURIComponent(this.encodePath(path));
@@ -178,7 +180,7 @@ class MediaAPI {
         url += '&auto-transcode=0';
 
         if (forceTranscode) {
-            url += '&transcode=1';
+            url += forceTranscode === 'audio' ? '&transcode=audio' : '&transcode=1';
         }
         // Authenticated by the session cookie
         return url;
@@ -216,6 +218,11 @@ class MediaAPI {
     }
 
     // A DVD disc image's titles, chapters, angles and tracks
+    // A file's container and its video and audio codecs: { container, video, audio: [...] }
+    async getCodecs(path) {
+        return this.request(`/api/media/codecs?path=${encodeURIComponent(this.encodePath(path))}`);
+    }
+
     async getDisc(path) {
         return this.request(`/api/media/disc?path=${encodeURIComponent(this.encodePath(path))}`);
     }

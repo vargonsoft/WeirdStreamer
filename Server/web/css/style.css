@@ -1486,8 +1486,8 @@ header h1 {
     overflow-wrap: anywhere;
 }
 
-/* DVD disc controls under the video */
-.disc-controls {
+/* The player's controls under the video */
+.player-controls {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -1496,46 +1496,61 @@ header h1 {
     font-size: 14px;
 }
 
-.disc-controls[hidden],
-.disc-controls label[hidden] {
+.player-controls[hidden],
+.player-controls label[hidden] {
     display: none;
 }
 
-.disc-controls label {
+.player-controls label {
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
-.disc-controls select {
+.player-controls select {
     padding: 4px 6px;
     border-radius: 6px;
     border: 1px solid var(--border-color);
     max-width: 220px;
 }
 
-.disc-seek {
+.player-bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     flex-basis: 100%;
     min-width: 0;
+    position: relative;
 }
 
-.disc-seek #disc-seek {
-    flex: 1 1 160px;
+/* The seek bar and the time on a row of their own above the buttons */
+.player-bar #player-seek {
+    order: -2;
+    flex: 1 1 calc(100% - 140px);
     min-width: 120px;
+    margin: 0;
     accent-color: var(--primary-color);
 }
 
-.disc-position {
+.player-bar .player-position {
+    order: -1;
+    min-width: 120px;
+    text-align: right;
+}
+
+/* The fullscreen button at the right end of the buttons */
+.player-bar #player-fullscreen {
+    margin-left: auto;
+}
+
+.player-position {
     color: var(--muted-text);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
 
-.disc-volume {
+.player-volume {
     width: 80px;
     accent-color: var(--primary-color);
 }
@@ -1544,7 +1559,7 @@ header h1 {
     cursor: pointer;
 }
 
-/* Fullscreen disc playback: the video fills the screen above the disc controls */
+/* Fullscreen playback: the video fills the screen, the controls over its bottom */
 #player-modal .modal-content:fullscreen {
     max-width: none;
     max-height: none;
@@ -1572,7 +1587,7 @@ header h1 {
     padding: 0;
 }
 
-#player-modal .modal-content:fullscreen .disc-controls {
+#player-modal .modal-content:fullscreen .player-controls {
     position: absolute;
     left: 0;
     right: 0;
@@ -1588,23 +1603,65 @@ header h1 {
     cursor: none;
 }
 
-#player-modal .modal-content:fullscreen.controls-hidden .disc-controls {
+#player-modal .modal-content:fullscreen.controls-hidden .player-controls {
     opacity: 0;
     pointer-events: none;
 }
 
 #player-modal .modal-content:fullscreen #player-title,
-#player-modal .modal-content:fullscreen .close,
-#player-modal .modal-content:fullscreen #transcode-btn {
+#player-modal .modal-content:fullscreen .close {
     display: none;
 }
 
-#player-modal .modal-content:fullscreen .disc-position {
+#player-modal .modal-content:fullscreen .player-position {
     color: #ccc;
 }
 
-/* Disc control buttons: Material icons, fixed sizes so they don't shift as icons change */
-.disc-icon-btn {
+/* What's at a point of the seek bar: a trickplay frame and the time */
+.player-preview {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.85);
+    color: white;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.player-preview[hidden],
+.player-preview img[hidden] {
+    display: none;
+}
+
+.player-preview img {
+    width: 192px;
+    height: auto;
+    border-radius: 3px;
+}
+
+.player-status {
+    flex-basis: 100%;
+    color: var(--muted-text);
+    font-size: 13px;
+}
+
+.player-status:empty {
+    display: none;
+}
+
+#player-modal .modal-content:fullscreen .player-status {
+    color: #ccc;
+}
+
+/* Player buttons: Material icons, fixed sizes so they don't shift as icons change */
+.player-icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1615,15 +1672,15 @@ header h1 {
     line-height: 1;
 }
 
-.disc-icon-btn svg {
+.player-icon-btn svg {
     flex: none;
 }
 
-.disc-play-btn {
+.player-play-btn {
     width: 56px;
 }
 
-.disc-skip-btn {
+.player-skip-btn {
     width: 72px;
     font-size: 13px;
 }
@@ -1644,7 +1701,7 @@ header h1 {
 }
 :root[data-theme="dark"] .settings-input,
 :root[data-theme="dark"] #login-form input,
-:root[data-theme="dark"] .disc-controls select {
+:root[data-theme="dark"] .player-controls select {
     background: var(--panel-bg);
     color: var(--text-color);
 }

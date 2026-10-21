@@ -1,0 +1,263 @@
+package media
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os/exec"
+	"strconv"
+	"strings"
+)
+
+// Codecs describes a file's container and streams, for players that decide for themselves what
+// they can play (the web UI asks its browser).
+type Codecs struct {
+	Container string          `json:"container"` // ffprobe's format name, such as "matroska,webm"
+	Duration  float64         `json:"duration"`  // seconds
+	Video     *VideoCodec     `json:"video,omitempty"`
+	Audio     []AudioCodec    `json:"audio"`
+	Subtitles []SubtitleCodec `json:"subtitles"`
+}
+
+type VideoCodec struct {
+	Codec   string `json:"codec"` // ffprobe's codec name: h264, hevc, mpeg2video…
+	Profile string `json:"profile,omitempty"`
+	PixFmt  string `json:"pix_fmt,omitempty"`
+}
+
+type AudioCodec struct {
+	Index    int    `json:"index"` // among the file's audio tracks: the stream's audio= param
+	Codec    string `json:"codec"` // aac, ac3, eac3, dts, truehd, opus…
+	Channels int    `json:"channels"`
+	Language string `json:"language,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Default  bool   `json:"default"`
+}
+
+type SubtitleCodec struct {
+	Index    int    `json:"index"` // among the file's subtitle tracks
+	Codec    string `json:"codec"` // subrip, ass, mov_text, hdmv_pgs_subtitle, dvd_subtitle…
+	Language string `json:"language,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Default  bool   `json:"default"`
+	Forced   bool   `json:"forced"`
+	// Text tracks are sent to players as WebVTT (ServeSubtitles); picture ones (PGS, DVD, DVB)
+	// can only be burned into a transcode.
+	Text bool `json:"text"`
+}
+
+// IsTextSubtitle reports whether ffmpeg can turn a subtitle codec into WebVTT.
+func IsTextSubtitle(codec string) bool {
+	switch codec {
+	case "subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text", "microdvd", "subviewer",
+		"subviewer1", "sami", "realtext", "jacosub", "mpl2", "pjs", "vplayer", "stl":
+		return true
+	}
+	return false
+}
+
+// ProbeCodecs reads the codecs of a file's first video stream and of all its audio streams.
+func ProbeCodecs(path string) (*Codecs, error) {
+	out, err := exec.Command("ffprobe", "-v", "error",
+		"-show_entries", "format=format_name,duration:stream=codec_type,codec_name,profile,pix_fmt,channels:stream_tags=language,title:stream_disposition=default,forced,attached_pic",
+		"-of", "json", path).Output()
+	if err != nil {
+		return nil, err
+	}
+	var probe struct {
+		Format struct {
+			FormatName string `json:"format_name"`
+			Duration   string `json:"duration"`
+		} `json:"format"`
+		Streams []struct {
+			CodecType   string            `json:"codec_type"`
+			CodecName   string            `json:"codec_name"`
+			Profile     string            `json:"profile"`
+			PixFmt      string            `json:"pix_fmt"`
+			Channels    int               `json:"channels"`
+			Tags        map[string]string `json:"tags"`
+			Disposition map[string]int    `json:"disposition"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal(out, &probe); err != nil {
+		return nil, err
+	}
+	c := &Codecs{Container: probe.Format.FormatName, Audio: []AudioCodec{}, Subtitles: []SubtitleCodec{}}
+	c.Duration, _ = strconv.ParseFloat(probe.Format.Duration, 64)
+	for _, s := range probe.Streams {
+		switch s.CodecType {
+		case "video":
+			if c.Video == nil && s.Disposition["attached_pic"] == 0 { // not cover art
+				c.Video = &VideoCodec{Codec: s.CodecName, Profile: s.Profile, PixFmt: s.PixFmt}
+			}
+		case "audio":
+			c.Audio = append(c.Audio, AudioCodec{Index: len(c.Audio), Codec: s.CodecName, Channels: s.Channels,
+				Language: s.Tags["language"], Title: s.Tags["title"], Default: s.Disposition["default"] == 1})
+		case "subtitle":
+			c.Subtitles = append(c.Subtitles, SubtitleCodec{Index: len(c.Subtitles), Codec: s.CodecName,
+				Language: s.Tags["language"], Title: s.Tags["title"], Default: s.Disposition["default"] == 1,
+				Forced: s.Disposition["forced"] == 1, Text: IsTextSubtitle(s.CodecName)})
+		}
+	}
+	return c, nil
+}
+
+// DefaultAudio is the audio track a player picks on its own: the first one marked default, or
+// else the first one.
+func (c *Codecs) DefaultAudio() int {
+	for i, a := range c.Audio {
+		if a.Default {
+			return i
+		}
+	}
+	return 0
+}
+
+// BrowserVideo reports whether browsers decode the video as it is: 8-bit 4:2:0 H.264.
+func (c *Codecs) BrowserVideo() bool {
+	return c.Video != nil && c.Video.Codec == "h264" &&
+		(c.Video.PixFmt == "yuv420p" || c.Video.PixFmt == "yuvj420p")
+}
+
+// TrackOptions picks a file's tracks for a transcode: Audio is an index among its audio tracks
+// (-1: the default one), Subtitle one among its subtitle tracks to burn in (-1: none).
+type TrackOptions struct {
+	Audio, Subtitle int
+}
+
+// ParseTrackOptions reads the audio= and subtitle= params of a stream request.
+func ParseTrackOptions(r *http.Request) TrackOptions {
+	q := r.URL.Query()
+	num := func(key string) int {
+		if n, err := strconv.Atoi(q.Get(key)); err == nil && n >= 0 {
+			return n
+		}
+		return -1
+	}
+	return TrackOptions{Audio: num("audio"), Subtitle: num("subtitle")}
+}
+
+// audioIndex is the audio track to play: the chosen one if the file has it, else the default.
+func (t TrackOptions) audioIndex(c *Codecs) int {
+	if t.Audio >= 0 && t.Audio < len(c.Audio) {
+		return t.Audio
+	}
+	return c.DefaultAudio()
+}
+
+// mapArgs maps the first video stream (with the chosen subtitles burned in, then the video
+// filter vf, if any) and the chosen audio track.
+func (t TrackOptions) mapArgs(filePath, vf string) []string {
+	c, err := ProbeCodecs(filePath)
+	if err != nil {
+		c = &Codecs{}
+	}
+	var args []string
+	if t.Subtitle >= 0 && t.Subtitle < len(c.Subtitles) {
+		// Subtitle pictures are drawn for their own canvas (1080p on 4K discs): scaled to the video.
+		graph := fmt.Sprintf("[0:v:0]split[v][ref];[0:s:%d][ref]scale=rw:rh[s];[v][s]overlay", t.Subtitle)
+		if vf != "" {
+			graph += "," + vf
+		}
+		args = append(args, "-filter_complex", graph+"[vout]", "-map", "[vout]")
+	} else {
+		args = append(args, "-map", "0:v:0")
+		if vf != "" {
+			args = append(args, "-vf", vf)
+		}
+	}
+	if len(c.Audio) > 0 {
+		args = append(args, "-map", "0:a:"+strconv.Itoa(t.audioIndex(c)))
+	}
+	return args
+}
+
+// transcodeAudioAndServe streams the file with its video copied and its default audio track
+// encoded to AAC, for players that can decode the video but not the audio (browsers and E-AC-3,
+// AC-3, DTS or TrueHD). Video that can't simply be copied gets a full transcode instead.
+func (s *Streamer) transcodeAudioAndServe(w http.ResponseWriter, r *http.Request, filePath string, startTime string, tracks TrackOptions, sess *StreamSession) error {
+	codecs, err := ProbeCodecs(filePath)
+	if err != nil || !codecs.BrowserVideo() {
+		return s.transcodeAndServe(w, r, filePath, startTime, "", "",
+			"The player can't play the audio (and the video can't be copied as it is)", tracks, sess)
+	}
+	args := []string{}
+	if startTime != "" {
+		args = append(args, "-ss", startTime)
+	}
+	args = append(args, "-i", filePath, "-map", "0:v:0")
+	reason := "The player can't play the audio"
+	if len(codecs.Audio) > 0 {
+		n := tracks.audioIndex(codecs)
+		args = append(args, "-map", "0:a:"+strconv.Itoa(n))
+		reason = fmt.Sprintf("The player can't play %s audio", strings.ToUpper(codecs.Audio[n].Codec))
+		if tracks.Audio >= 0 {
+			reason = fmt.Sprintf("The player asked for audio track %d (%s)", n+1, codecs.Audio[n].Codec)
+		}
+	}
+	args = append(args,
+		"-c:v", "copy",
+		"-c:a", "aac",
+		"-ac", "2", // browsers play surround as stereo anyway
+		"-b:a", "192k",
+		"-avoid_negative_ts", "make_zero",
+		"-movflags", "frag_keyframe+empty_moov",
+		"-f", "mp4",
+		"pipe:1",
+	)
+	fmt.Printf("Transcoding audio only for: %s\n", filePath)
+	info := TranscodeInfo{Reason: reason, Args: args, Container: "Fragmented MP4",
+		Video: "Copied (H.264)", Audio: "AAC 192 kb/s stereo"}
+	info.Start, _ = strconv.ParseFloat(startTime, 64)
+	sess.StartTranscode(info)
+	return s.runTranscode(w, r, filePath, args, sess)
+}
+
+// SubtitleArgs are the ffmpeg arguments for ServeSubtitles: the cues from start for duration
+// seconds (0: to the end), their times counted from start. Subtitles are spread through the whole
+// file, so a player asks for them a few minutes at a time rather than have all of it read at once.
+func SubtitleArgs(filePath string, track int, start, duration float64) []string {
+	args := []string{"-v", "error"}
+	if start > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(start, 'f', 3, 64))
+	}
+	args = append(args, "-i", filePath)
+	if duration > 0 {
+		args = append(args, "-t", strconv.FormatFloat(duration, 'f', 3, 64))
+	}
+	return append(args, "-map", "0:s:"+strconv.Itoa(track), "-c:s", "webvtt", "-f", "webvtt", "pipe:1")
+}
+
+// ServeSubtitles streams a text subtitle track as WebVTT (see SubtitleArgs), cue by cue as ffmpeg
+// reads them.
+func ServeSubtitles(w http.ResponseWriter, r *http.Request, filePath string, track int, start, duration float64) error {
+	cmd := exec.CommandContext(r.Context(), "ffmpeg", SubtitleArgs(filePath, track, start, duration)...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	buf := make([]byte, 16*1024)
+	for {
+		n, err := stdout.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				break
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
+	cmd.Wait()
+	return nil
+}

@@ -153,7 +153,7 @@ function setupEventListeners() {
     });
     
     setupMatchDialog();
-    setupDiscControls();
+    setupPlayerControls();
     decorateIconButtons();
     setupSecretToggles();
 
@@ -171,7 +171,7 @@ function setupEventListeners() {
             videoPlayer.onerror = null;
             videoPlayer.ontimeupdate = null;
             videoPlayer.onseeking = null;
-            hideDiscControls();
+            resetPlayer();
             videoPlayer.innerHTML = '';
             imageViewer.onload = null;
             imageViewer.onerror = null;
@@ -191,7 +191,7 @@ function setupEventListeners() {
             videoPlayer.onerror = null;
             videoPlayer.ontimeupdate = null;
             videoPlayer.onseeking = null;
-            hideDiscControls();
+            resetPlayer();
             videoPlayer.innerHTML = '';
         }
         if (e.target === imageModal) {
@@ -643,89 +643,399 @@ function handleMediaClick(item) {
     }
 }
 
-// Check if video needs transcoding (will be converted to MP4 by server)
-function needsTranscoding(filename) {
-    return false; // Disable transcoding for now to let browser handle it natively if possible
-    const ext = filename.toLowerCase().split('.').pop();
-    const incompatibleFormats = ['3gp', 'avi', 'divx', 'xvid', 'wmv', 'asf', 'flv', 'mkv'];
-    return incompatibleFormats.includes(ext);
+// ---------------------------------------------------------------------------------------------
+// The video player: its own controls for every video (the browser's are hidden). A file plays as
+// it is where the browser can play it, seeking natively. Otherwise the server transcodes it (all
+// of it, or only its audio), and a transcoded stream can't be seeked past what has arrived: a
+// seek there restarts it at the new place, as the TV and phone apps do. `offset` is where in the
+// file the stream's time 0 is.
+
+// Audio codecs (ffprobe's names) and the types to ask the browser about. Anything else (DTS,
+// TrueHD, PCM…) is taken as unplayable.
+const AUDIO_TYPES = {
+    aac: 'audio/mp4; codecs="mp4a.40.2"',
+    mp3: 'audio/mpeg',
+    opus: 'audio/webm; codecs="opus"',
+    vorbis: 'audio/webm; codecs="vorbis"',
+    flac: 'audio/flac',
+    alac: 'audio/mp4; codecs="alac"',
+    ac3: 'audio/mp4; codecs="ac-3"',
+    eac3: 'audio/mp4; codecs="ec-3"',
+};
+
+function browserPlaysAudio(track) {
+    const type = AUDIO_TYPES[track.codec];
+    return !!type && videoPlayer.canPlayType(type) !== '';
 }
 
-// startAt: where to start, in seconds (resuming).
-function playVideo(item, forceTranscode = false, startAt = 0) {
+// The audio track a browser plays from a file on its own: the default one, else the first.
+function defaultAudioTrack(codecs) {
+    const tracks = codecs.audio || [];
+    return tracks.find(t => t.default) || tracks[0] || null;
+}
+
+// The file playing: { item, codecs, duration, offset, audio, subtitle, userMode, failed, start }.
+// audio and subtitle are track indexes (-1: the default audio, no subtitles). userMode is the
+// stream the user picked ('original', 'audio', 'transcode'), or null to choose by itself.
+let player = null;
+let playRequest = 0; // the latest playVideo call: an older one still checking codecs gives up
+
+// startAt: where to start, in seconds (resuming). forceTranscode: start with a full transcode.
+async function playVideo(item, forceTranscode = false, startAt = 0) {
+    const request = ++playRequest;
+    resetPlayer();
     if (isDiscImage(item)) {
         playDisc(item, startAt);
         return;
     }
-    hideDiscControls();
-    console.log('Playing video:', item, 'Force transcode:', forceTranscode);
-    console.log('API token exists:', !!api.token);
-    let streamUrl = api.getStreamUrl(item.path, forceTranscode);
-    // A transcoded stream starts at the resume point and its time counts from there; a direct
-    // one seeks once it's loaded.
-    streamOffset = forceTranscode && startAt > 0 ? startAt : 0;
-    if (streamOffset > 0) streamUrl += `&start=${streamOffset.toFixed(2)}`;
-    console.log('Final stream URL:', streamUrl);
-    
-    playerTitle.textContent = item.name;
-    
-    // Properly reset the video element
-    videoPlayer.pause();
-    videoPlayer.removeAttribute('src');
-    videoPlayer.innerHTML = '';
-    videoPlayer.load(); // Clear any existing source
-    
-    const source = document.createElement('source');
-    source.src = streamUrl;
-    
-    // If file needs transcoding or forced, server will send MP4
-    if (forceTranscode || needsTranscoding(item.name)) {
-        console.log('File will be transcoded to MP4');
-        source.type = 'video/mp4';
-    } else {
-        source.type = item.mime_type || 'video/mp4';
+    const p = { item, codecs: null, duration: item.duration || 0, offset: 0, audio: -1, subtitle: -1,
+        userMode: forceTranscode ? 'transcode' : null, failed: false, start: startAt };
+    player = p;
+    openPlayer(item.name);
+    try {
+        p.codecs = await api.getCodecs(item.path);
+    } catch (error) {
+        console.warn('Could not read the codecs:', error);
     }
-    
-    console.log('Video source type:', source.type);
-    videoPlayer.appendChild(source);
-    playerModal.classList.add('active');
-    videoPlayer.load();
-    
-    // Show/hide transcode button based on whether we're already transcoding
-    const transcodeBtn = document.getElementById('transcode-btn');
-    if (forceTranscode || needsTranscoding(item.name)) {
-        transcodeBtn.style.display = 'none';
-    } else {
-        transcodeBtn.style.display = '';
-        transcodeBtn.onclick = () => {
-            const at = playerPosition();
-            playerModal.classList.remove('active');
-            videoPlayer.pause();
-            playVideo(item, true, at);
-        };
+    if (request !== playRequest || player !== p) return; // closed or replaced meanwhile
+    if (p.codecs) {
+        if (p.codecs.duration) p.duration = p.codecs.duration;
+        restoreTracks(p);
     }
-    
-    startPlaybackReports(item);
+    renderFileControls();
+    loadFileStream(startAt);
+    loadTrickplay(p);
+}
 
-    // Wait for video to be ready before playing
+function openPlayer(title) {
+    playerTitle.textContent = title;
+    videoPlayer.controls = false;
+    document.getElementById('player-controls').hidden = false;
+    playerModal.classList.add('active');
+    updatePlayerButtons();
+}
+
+function audioTrack(p) {
+    if (!p.codecs) return null;
+    return p.codecs.audio[p.audio] || defaultAudioTrack(p.codecs);
+}
+
+function subtitleTrack(p) {
+    return p.codecs && p.subtitle >= 0 ? p.codecs.subtitles[p.subtitle] || null : null;
+}
+
+// How the file streams: as it is, with its audio converted, or transcoded. Picture subtitles are
+// burned in by a transcode; another audio track than the default, or one the browser can't
+// decode, comes from the server.
+function streamMode(p) {
+    if (p.userMode) return p.userMode;
+    const sub = subtitleTrack(p);
+    if (p.failed || (sub && !sub.text)) return 'transcode';
+    const track = audioTrack(p);
+    if (track && (track !== defaultAudioTrack(p.codecs) || !browserPlaysAudio(track))) return 'audio';
+    return 'original';
+}
+
+// Why the file is transcoded, for the line under the controls.
+function streamNote(p) {
+    const mode = streamMode(p), track = audioTrack(p);
+    if (p.userMode) return '';
+    if (p.failed) return 'This browser couldn’t play the original, so the server transcodes it.';
+    if (mode === 'transcode') return 'Transcoding to burn in the picture subtitles.';
+    if (mode === 'audio') {
+        return browserPlaysAudio(track)
+            ? 'The server converts the audio to play this track.'
+            : `Converting the audio: this browser can’t play ${track.codec.toUpperCase()}.`;
+    }
+    return '';
+}
+
+// The stream that plays the file now; a change of it restarts the stream.
+function streamKey(p) {
+    const mode = streamMode(p), sub = subtitleTrack(p);
+    if (mode === 'original') return mode;
+    return `${mode}|${p.audio}|${sub && !sub.text && mode === 'transcode' ? sub.index : -1}`;
+}
+
+function fileStreamUrl(p, start) {
+    const mode = streamMode(p);
+    let url = api.getStreamUrl(p.item.path, mode === 'original' ? false : mode === 'audio' ? 'audio' : true);
+    if (mode === 'original') return url;
+    if (p.audio >= 0) url += `&audio=${p.audio}`;
+    const sub = subtitleTrack(p);
+    if (sub && !sub.text && mode === 'transcode') url += `&subtitle=${sub.index}`;
+    if (start > 0) url += `&start=${start.toFixed(2)}`;
+    return url;
+}
+
+function loadFileStream(start) {
+    const p = player;
+    if (p.duration) start = Math.min(start, Math.max(p.duration - 1, 0));
+    start = Math.max(0, start);
+    const original = streamMode(p) === 'original';
+    p.offset = original ? 0 : start;
+    p.start = start;
+    p.key = streamKey(p);
+    attachStream(fileStreamUrl(p, start), p.item, original ? start : 0);
+    restartSubtitles(start);
+    updatePlayerPosition();
+}
+
+// Plays url in the player. seekOnLoad: where to seek once it's loaded (an original file).
+function attachStream(url, item, seekOnLoad = 0) {
+    videoPlayer.pause();
+    videoPlayer.innerHTML = '';
+    videoPlayer.src = url;
+    videoPlayer.load();
     videoPlayer.onloadedmetadata = () => {
-        console.log('Video loaded, playing...');
-        if (startAt > 0 && streamOffset === 0) videoPlayer.currentTime = startAt;
-        videoPlayer.play().catch(err => {
-            console.error('Error playing video:', err);
-        });
+        if (seekOnLoad > 0) videoPlayer.currentTime = seekOnLoad;
+        videoPlayer.play().catch(err => console.error('Error playing video:', err));
     };
-    
-    videoPlayer.onerror = (e) => {
-        console.error('Video error:', e, videoPlayer.error);
+    videoPlayer.onerror = onPlayerError;
+    videoPlayer.ontimeupdate = () => {
+        updatePlayerPosition();
+        keepSubtitlesAhead(playerPosition());
     };
+    videoPlayer.onclick = togglePlay;
+    videoPlayer.ondblclick = togglePlayerFullscreen;
+    startPlaybackReports(item);
+    // After the reports, which set onplay/onpause themselves.
+    const onPlay = videoPlayer.onplay, onPause = videoPlayer.onpause;
+    videoPlayer.onplay = () => { if (onPlay) onPlay(); updatePlayerButtons(); };
+    videoPlayer.onpause = () => { if (onPause) onPause(); updatePlayerButtons(); };
+    videoPlayer.onvolumechange = updatePlayerButtons;
+    updatePlayerButtons();
+}
+
+// The browser can't play the original (its video codec, its container): the server transcodes.
+function onPlayerError() {
+    const err = videoPlayer.error;
+    if (!err || !videoPlayer.getAttribute('src')) return; // closed
+    console.error('Video error:', err);
+    const p = player;
+    if (!p || streamMode(p) !== 'original') {
+        document.getElementById('player-status').textContent = `Playback failed: ${err.message || 'error ' + err.code}`;
+        return;
+    }
+    const at = videoPlayer.currentTime > 0 ? playerPosition() : p.start;
+    p.failed = true;
+    renderFileControls();
+    loadFileStream(at);
+}
+
+// Moves playback to t seconds into the file (the disc title): within what has arrived, the
+// stream seeks; elsewhere a transcoded stream restarts there.
+function seekTo(t) {
+    const duration = playerDuration();
+    if (duration) t = Math.min(t, Math.max(duration - 1, 0));
+    t = Math.max(0, t);
+    if (disc && disc.info) {
+        if (inBuffer(t - disc.offset)) videoPlayer.currentTime = t - disc.offset;
+        else loadDiscStream(t);
+        return;
+    }
+    if (!player) return;
+    const original = streamMode(player) === 'original';
+    if (original || inBuffer(t - player.offset)) {
+        videoPlayer.currentTime = t - player.offset;
+        seekSubtitles(t);
+        updatePlayerPosition();
+    } else {
+        loadFileStream(t);
+    }
+}
+
+function inBuffer(t) {
+    const b = videoPlayer.buffered;
+    for (let i = 0; i < b.length; i++) {
+        if (t >= b.start(i) && t <= b.end(i) - 0.5) return true;
+    }
+    return false;
+}
+
+function playerDuration() {
+    if (disc && disc.info) return discTitle().duration;
+    if (!player) return 0;
+    if (player.duration) return player.duration;
+    return streamMode(player) === 'original' && isFinite(videoPlayer.duration) ? videoPlayer.duration : 0;
+}
+
+function trackDescription(track) {
+    const parts = [];
+    if (track.language && track.language !== 'und') parts.push(track.language);
+    if (track.title) parts.push(track.title);
+    parts.push(track.codec);
+    if (track.channels) parts.push(track.channels === 6 ? '5.1' : track.channels === 8 ? '7.1' : track.channels === 2 ? 'stereo' : track.channels === 1 ? 'mono' : `${track.channels} ch`);
+    if (track.forced) parts.push('forced');
+    return `${track.index + 1}: ${parts.join(' · ')}`;
+}
+
+function renderFileControls() {
+    const p = player, codecs = p.codecs || { audio: [], subtitles: [] };
+    document.getElementById('player-stream-label').hidden = false;
+    document.querySelectorAll('.disc-only').forEach(el => { el.hidden = true; });
+    const mode = streamMode(p);
+    fillSelect(document.getElementById('player-stream'), [
+        ['original', 'Original'], ['audio', 'Convert audio'], ['transcode', 'Transcode'],
+    ], mode);
+    const track = audioTrack(p);
+    document.getElementById('player-audio-label').hidden = codecs.audio.length < 2 && !(track && !browserPlaysAudio(track));
+    fillSelect(document.getElementById('player-audio'),
+        codecs.audio.length ? codecs.audio.map(a => [a.index, trackDescription(a) + (a.default ? ' (default)' : '')]) : [[-1, 'None']],
+        track ? track.index : -1);
+    document.getElementById('player-subtitle-label').hidden = !codecs.subtitles.length;
+    fillSelect(document.getElementById('player-subtitle'), [[-1, 'Off'], ...codecs.subtitles.map(s =>
+        [s.index, trackDescription(s) + (s.text ? '' : ' (burned in)')])], p.subtitle);
+    document.getElementById('player-status').textContent = streamNote(p);
+}
+
+// Applies a change to the file's stream or tracks: restarts the stream if it changed.
+function changeFileStream(change) {
+    const p = player;
+    if (!p) return;
+    const at = playerPosition();
+    change(p);
+    saveTracks(p);
+    renderFileControls();
+    if (streamKey(p) !== p.key) loadFileStream(at);
+    else restartSubtitles(at);
+}
+
+// The tracks chosen for each video, kept in this browser so it plays the same way next time.
+function restoreTracks(p) {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('tracks:' + p.item.path) || 'null'); } catch (e) { /* none */ }
+    const codecs = p.codecs;
+    if (saved && saved.audio >= 0 && saved.audio < codecs.audio.length) p.audio = saved.audio;
+    if (saved && saved.subtitle < codecs.subtitles.length) p.subtitle = saved.subtitle;
+    else {
+        // Off unless the file has forced subtitles (translations of foreign-language lines).
+        const forced = codecs.subtitles.find(s => s.forced && s.text);
+        p.subtitle = forced ? forced.index : -1;
+    }
+}
+
+function saveTracks(p) {
+    try {
+        localStorage.setItem('tracks:' + p.item.path, JSON.stringify({ audio: p.audio, subtitle: p.subtitle }));
+    } catch (e) { /* not kept */ }
+}
+
+// Trickplay frames, for the picture over the seek bar: [{ time, url }] by time.
+async function loadTrickplay(p) {
+    if (!p.item.id) return;
+    try {
+        const info = await api.request(`/api/media/trickplay/${p.item.id}`);
+        if (player === p) p.frames = info.frames || [];
+    } catch (e) { /* none yet */ }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Text subtitles: the server sends a track as WebVTT a couple of minutes at a time (subtitles are
+// spread through the whole file, and reading all of it at once would be slow on a big file), and
+// the player adds the cues to a text track of the video, asking for the next minutes before it
+// gets there. A transcoded stream's time counts from its offset, and the cues are shifted to match.
+
+const SUBTITLE_WINDOW = 120; // seconds of cues per request
+let subs = null; // { track, index, offset, from, until, loading, abort }
+
+function subtitleTextTrack() {
+    if (!videoPlayer.subtitleTrack) {
+        videoPlayer.subtitleTrack = videoPlayer.addTextTrack('subtitles', 'Subtitles');
+    }
+    return videoPlayer.subtitleTrack;
+}
+
+function stopSubtitles() {
+    if (subs && subs.abort) subs.abort.abort();
+    subs = null;
+    const track = subtitleTextTrack();
+    while (track.cues && track.cues.length) track.removeCue(track.cues[0]);
+    track.mode = 'disabled';
+}
+
+// Starts the chosen text subtitles from position (seconds into the file), or turns them off.
+function restartSubtitles(position) {
+    stopSubtitles();
+    const p = player, sub = p && subtitleTrack(p);
+    if (!sub || !sub.text) return;
+    const track = subtitleTextTrack();
+    track.mode = 'showing';
+    // A little earlier, for the cue already on screen there.
+    const from = Math.max(0, position - 10);
+    subs = { track, index: sub.index, offset: p.offset, from, until: from, loading: false, abort: new AbortController() };
+    loadSubtitleWindow(subs);
+}
+
+function loadSubtitleWindow(s) {
+    const from = s.until;
+    s.until = from + SUBTITLE_WINDOW;
+    s.loading = true;
+    const url = `${API_BASE}/api/media/subtitles?path=${encodeURIComponent(api.encodePath(player.item.path))}` +
+        `&track=${s.index}&start=${from.toFixed(2)}&duration=${SUBTITLE_WINDOW}`;
+    streamSubtitles(s, url, from)
+        .catch(err => { if (err.name !== 'AbortError') console.warn('Subtitles failed:', err); })
+        .finally(() => { s.loading = false; });
+}
+
+// As playback goes on: the next minutes of cues before they're needed.
+function keepSubtitlesAhead(position) {
+    const s = subs;
+    if (!s || s.loading || position < s.until - 40) return;
+    const duration = playerDuration();
+    if (duration && s.until >= duration) return;
+    loadSubtitleWindow(s);
+}
+
+// After a seek within the stream: restarts the subtitles if the seek left the cues loaded.
+function seekSubtitles(position) {
+    if (subs && (position < subs.from || position > subs.until)) restartSubtitles(position);
+}
+
+async function streamSubtitles(s, url, from) {
+    const headers = api.token ? { Authorization: `Bearer ${api.token}` } : {};
+    const res = await fetch(url, { signal: s.abort.signal, credentials: 'same-origin', headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf = (buf + decoder.decode(value, { stream: true })).replace(/\r/g, '');
+        let end;
+        while ((end = buf.indexOf('\n\n')) >= 0) {
+            addSubtitleCue(s, buf.slice(0, end), from);
+            buf = buf.slice(end + 2);
+        }
+    }
+    addSubtitleCue(s, buf, from);
+}
+
+// One WebVTT block: "[id]\nstart --> end [settings]\ntext…", from a window starting at from.
+function addSubtitleCue(s, block, from) {
+    if (subs !== s) return;
+    const lines = block.split('\n');
+    const at = lines.findIndex(line => line.includes('-->'));
+    if (at < 0) return;
+    const [a, b] = lines[at].split('-->');
+    const text = lines.slice(at + 1).join('\n').trim();
+    const shift = from - s.offset; // cue time 0 is from in the file; stream time 0 is s.offset
+    const start = vttSeconds(a) + shift, end = vttSeconds(b.trim().split(/\s+/)[0]) + shift;
+    if (!text || !(end > 0)) return;
+    // A cue on screen as a window starts also came with the window before.
+    if (vttSeconds(a) < 0.05 && [...(s.track.cues || [])].some(c => c.text === text && c.endTime >= start)) return;
+    s.track.addCue(new VTTCue(Math.max(0, start), end, text));
+}
+
+function vttSeconds(text) {
+    return text.trim().split(':').reduce((total, part) => total * 60 + Number(part), 0);
 }
 
 // The player tells the server where it is, for the admin Streams page and the user's progress:
 // every few seconds while playing, right away on play, pause and the end, and on closing.
 let playbackReportTimer = null;
 let playbackReport = null; // sends the current position: (ended) => void
-let streamOffset = 0; // a transcoded stream started partway in: where its time 0 is
 
 function startPlaybackReports(item) {
     clearInterval(playbackReportTimer);
@@ -756,9 +1066,10 @@ function finishPlaybackReports() {
     setTimeout(refreshCurrentView, 300);
 }
 
-// Where playback is in the file: discs and resumed transcodes start their stream at an offset.
+// Where playback is in the file: discs and transcodes start their stream at an offset.
 function playerPosition() {
-    return (disc && disc.item ? disc.offset : streamOffset) + (videoPlayer.currentTime || 0);
+    const offset = disc && disc.item ? disc.offset : player ? player.offset : 0;
+    return offset + (videoPlayer.currentTime || 0);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -771,23 +1082,25 @@ function isDiscImage(item) {
     return /\.iso$/i.test(item.path || item.name || '');
 }
 
-function hideDiscControls() {
+// Stops what's playing and its subtitles, and leaves fullscreen.
+function resetPlayer() {
+    videoPlayer.pause();
     disc = null;
-    document.getElementById('disc-controls').hidden = true;
-    // Discs use their own controls (the browser's seek bar only covers the current stream).
-    videoPlayer.controls = true;
-    videoPlayer.onclick = null;
+    player = null;
+    stopSubtitles();
+    hidePreview();
+    document.getElementById('player-controls').hidden = true;
+    document.getElementById('player-status').textContent = '';
+    videoPlayer.onclick = videoPlayer.ondblclick = null;
     videoPlayer.onplay = videoPlayer.onpause = videoPlayer.onvolumechange = null;
+    videoPlayer.ontimeupdate = videoPlayer.onerror = videoPlayer.onloadedmetadata = null;
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 
 async function playDisc(item, startAt = 0) {
     disc = { item, info: null, title: 0, angle: 1, audio: 0, subtitle: -1, offset: 0 };
-    videoPlayer.controls = false;
-    playerTitle.textContent = item.name + ' — reading disc…';
-    document.getElementById('transcode-btn').style.display = 'none';
-    document.getElementById('disc-controls').hidden = true;
-    playerModal.classList.add('active');
+    openPlayer(item.name + ' — reading disc…');
+    document.getElementById('player-controls').hidden = true;
     let info;
     try {
         info = await api.getDisc(item.path);
@@ -813,35 +1126,8 @@ function loadDiscStream(start) {
     let url = api.getStreamUrl(disc.item.path, true) +
         `&title=${t.number}&angle=${disc.angle}&audio=${disc.audio}&subtitle=${disc.subtitle}`;
     if (disc.offset > 0) url += `&start=${disc.offset.toFixed(2)}`;
-    videoPlayer.pause();
-    videoPlayer.removeAttribute('src');
-    videoPlayer.innerHTML = '';
-    const source = document.createElement('source');
-    source.src = url;
-    source.type = 'video/mp4';
-    videoPlayer.appendChild(source);
-    videoPlayer.load();
-    videoPlayer.onloadedmetadata = () => videoPlayer.play().catch(err => console.error('Error playing disc:', err));
-    // The stream can't be seeked into beyond what has arrived: a seek there restarts it.
-    videoPlayer.onseeking = () => {
-        if (videoPlayer.readyState < 1) return; // the new stream is still opening
-        const t = videoPlayer.currentTime;
-        const b = videoPlayer.buffered;
-        for (let i = 0; i < b.length; i++) {
-            if (t >= b.start(i) && t <= b.end(i)) return;
-        }
-        loadDiscStream(disc.offset + t);
-    };
-    videoPlayer.onerror = () => console.error('Disc video error:', videoPlayer.error);
-    videoPlayer.ontimeupdate = updateDiscPosition;
-    videoPlayer.onclick = toggleDiscPlay;
-    startPlaybackReports(disc.item);
-    // After the reports, which set onplay/onpause themselves.
-    const report = videoPlayer.onplay;
-    videoPlayer.onplay = videoPlayer.onpause = () => { if (report) report(); updateDiscButtons(); };
-    videoPlayer.onvolumechange = updateDiscButtons;
-    updateDiscButtons();
-    updateDiscPosition();
+    attachStream(url, disc.item);
+    updatePlayerPosition();
 }
 
 function fillSelect(select, options, selected) {
@@ -863,6 +1149,8 @@ function trackLabel(track) {
 
 function renderDiscControls() {
     const info = disc.info, t = discTitle();
+    document.getElementById('player-stream-label').hidden = true;
+    document.querySelectorAll('.disc-only').forEach(el => { el.hidden = false; });
     const titles = [...info.titles].sort((a, b) => a.number - b.number);
     fillSelect(document.getElementById('disc-title'), titles.map(x =>
         [x.number, `${x.number}: ${clock(x.duration)}${x.number === info.main_title ? ' (main)' : ''}`]), t.number);
@@ -872,29 +1160,33 @@ function renderDiscControls() {
     document.getElementById('disc-angle-label').hidden = t.angles <= 1;
     fillSelect(document.getElementById('disc-angle'),
         Array.from({ length: t.angles }, (_, i) => [i + 1, `${i + 1} of ${t.angles}`]), disc.angle);
-    fillSelect(document.getElementById('disc-audio'),
+    document.getElementById('player-audio-label').hidden = false;
+    fillSelect(document.getElementById('player-audio'),
         t.audio.length ? t.audio.map(a => [a.index, trackLabel(a)]) : [[0, 'None']], disc.audio);
-    fillSelect(document.getElementById('disc-subtitle'),
+    document.getElementById('player-subtitle-label').hidden = false;
+    fillSelect(document.getElementById('player-subtitle'),
         [[-1, 'Off'], ...t.subtitles.map(s => [s.index, trackLabel(s)])], disc.subtitle);
-    document.getElementById('disc-seek').max = String(Math.max(1, Math.floor(t.duration)));
-    document.getElementById('disc-controls').hidden = false;
+    document.getElementById('player-controls').hidden = false;
 }
 
-function updateDiscPosition() {
-    if (!disc || !disc.info) return;
-    const t = discTitle(), pos = playerPosition();
-    const seek = document.getElementById('disc-seek');
-    if (!discSeekDragging) seek.value = String(Math.floor(pos));
-    document.getElementById('disc-position').textContent =
-        `${clock(discSeekDragging ? Number(seek.value) : pos)} / ${clock(t.duration)}`;
+function updatePlayerPosition() {
+    if (!disc && !player) return;
+    if (disc && !disc.info) return;
+    const pos = playerPosition(), duration = playerDuration();
+    const seek = document.getElementById('player-seek');
+    seek.max = String(Math.max(1, Math.floor(duration)));
+    if (!seekDragging) seek.value = String(Math.floor(pos));
+    document.getElementById('player-position').textContent =
+        `${clock(seekDragging ? Number(seek.value) : pos)} / ${clock(duration)}`;
+    if (!disc) return;
     // Keep the chapter list on the chapter playing.
     let current = 0;
-    t.chapters.forEach((start, i) => { if (pos + 0.5 >= start) current = i; });
+    discTitle().chapters.forEach((start, i) => { if (pos + 0.5 >= start) current = i; });
     const select = document.getElementById('disc-chapter');
     if (document.activeElement !== select && select.value !== String(current)) select.value = String(current);
 }
 
-let discSeekDragging = false;
+let seekDragging = false;
 
 // Material icons (Apache License 2.0), inlined so the page loads no icon font.
 const MATERIAL_ICONS = {
@@ -972,94 +1264,159 @@ function setIcon(id, name, label) {
     btn.innerHTML = iconSvg(name) + (label ? `<span>${label}</span>` : '');
 }
 
-function toggleDiscPlay() {
+function togglePlay() {
     if (videoPlayer.paused) videoPlayer.play().catch(() => {});
     else videoPlayer.pause();
 }
 
-function updateDiscButtons() {
-    setIcon('disc-play', videoPlayer.paused ? 'play' : 'pause');
-    setIcon('disc-mute', videoPlayer.muted || videoPlayer.volume === 0 ? 'volumeOff' : 'volumeUp');
-    setIcon('disc-fullscreen', document.fullscreenElement ? 'fullscreenExit' : 'fullscreen');
-    document.getElementById('disc-volume').value = String(videoPlayer.muted ? 0 : videoPlayer.volume);
+function updatePlayerButtons() {
+    setIcon('player-play', videoPlayer.paused ? 'play' : 'pause');
+    setIcon('player-mute', videoPlayer.muted || videoPlayer.volume === 0 ? 'volumeOff' : 'volumeUp');
+    setIcon('player-fullscreen', document.fullscreenElement ? 'fullscreenExit' : 'fullscreen');
+    document.getElementById('player-volume').value = String(videoPlayer.muted ? 0 : videoPlayer.volume);
 }
 
 // In fullscreen the controls and cursor hide after a moment without mouse or keyboard use.
-const DISC_IDLE_MS = 2500;
-let discIdleTimer = null;
+const PLAYER_IDLE_MS = 2500;
+let playerIdleTimer = null;
 
-function discActivity() {
+function playerActivity() {
     const box = playerModal.querySelector('.modal-content');
     box.classList.remove('controls-hidden');
-    clearTimeout(discIdleTimer);
-    if (!disc || document.fullscreenElement !== box) return;
-    discIdleTimer = setTimeout(function hide() {
-        if (discSeekDragging) { discIdleTimer = setTimeout(hide, DISC_IDLE_MS); return; }
+    clearTimeout(playerIdleTimer);
+    if (!(disc || player) || document.fullscreenElement !== box) return;
+    playerIdleTimer = setTimeout(function hide() {
+        if (seekDragging) { playerIdleTimer = setTimeout(hide, PLAYER_IDLE_MS); return; }
         box.classList.add('controls-hidden');
-    }, DISC_IDLE_MS);
+    }, PLAYER_IDLE_MS);
 }
 
-function toggleDiscFullscreen() {
-    // The video and the disc controls together, so the seek bar stays usable.
+function togglePlayerFullscreen() {
+    // The video and the controls together, so the seek bar stays usable.
     const box = playerModal.querySelector('.modal-content');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else box.requestFullscreen().catch(() => {});
 }
 
-function setupDiscControls() {
+// The trickplay frame nearest t seconds, for the picture over the seek bar.
+function trickplayFrame(t) {
+    const frames = player && player.frames;
+    if (!frames || !frames.length) return null;
+    let best = frames[0];
+    for (const f of frames) {
+        if (f.time > t) break;
+        best = f;
+    }
+    return best;
+}
+
+// Shows what's at t over the seek bar at x (pixels from its left): a trickplay frame, and the time.
+function showPreview(t, x) {
+    const preview = document.getElementById('player-preview');
+    const img = preview.querySelector('img');
+    const frame = trickplayFrame(t);
+    img.hidden = !frame;
+    if (frame) {
+        const src = `${API_BASE}${frame.url}`;
+        if (img.getAttribute('src') !== src) img.src = src;
+    }
+    preview.querySelector('span').textContent = clock(t);
+    preview.hidden = false;
+    const bar = document.getElementById('player-seek');
+    const half = preview.offsetWidth / 2;
+    preview.style.left = `${bar.offsetLeft + Math.min(Math.max(x, half), bar.offsetWidth - half) - half}px`;
+}
+
+function hidePreview() {
+    document.getElementById('player-preview').hidden = true;
+}
+
+function setupPlayerControls() {
     // Circular arrows: back (counterclockwise) for -10s, mirrored forward for +30s.
-    document.getElementById('disc-back').innerHTML = iconSvg('replay') + '<span>−10s</span>';
-    document.getElementById('disc-forward').innerHTML = iconSvg('replay', { mirrored: true }) + '<span>+30s</span>';
+    document.getElementById('player-back').innerHTML = iconSvg('replay') + '<span>−10s</span>';
+    document.getElementById('player-forward').innerHTML = iconSvg('replay', { mirrored: true }) + '<span>+30s</span>';
     document.addEventListener('fullscreenchange', () => {
-        if (disc) updateDiscButtons();
-        discActivity();
+        if (disc || player) updatePlayerButtons();
+        playerActivity();
     });
     const box = playerModal.querySelector('.modal-content');
     ['mousemove', 'mousedown', 'wheel', 'touchstart'].forEach(type =>
-        box.addEventListener(type, discActivity, { passive: true }));
-    document.addEventListener('keydown', () => { if (document.fullscreenElement === box) discActivity(); }, true);
-    updateDiscButtons();
-    const seek = document.getElementById('disc-seek');
-    seek.addEventListener('input', () => { discSeekDragging = true; updateDiscPosition(); });
+        box.addEventListener(type, playerActivity, { passive: true }));
+    document.addEventListener('keydown', () => { if (document.fullscreenElement === box) playerActivity(); }, true);
+    updatePlayerButtons();
+    const seek = document.getElementById('player-seek');
+    const seekX = () => (Number(seek.value) / Math.max(1, Number(seek.max))) * seek.offsetWidth;
+    seek.addEventListener('input', () => {
+        seekDragging = true;
+        updatePlayerPosition();
+        showPreview(Number(seek.value), seekX());
+    });
     seek.addEventListener('change', () => {
-        discSeekDragging = false;
-        if (disc && disc.info) loadDiscStream(Number(seek.value));
+        seekDragging = false;
+        hidePreview();
+        seekTo(Number(seek.value));
     });
-    document.getElementById('disc-back').addEventListener('click', () => {
-        if (disc && disc.info) loadDiscStream(Math.max(0, playerPosition() - 10));
+    seek.addEventListener('mousemove', (e) => {
+        if (seekDragging) return;
+        const x = e.clientX - seek.getBoundingClientRect().left;
+        showPreview(Math.max(0, x / seek.offsetWidth) * playerDuration(), x);
     });
-    document.getElementById('disc-forward').addEventListener('click', () => {
-        if (disc && disc.info) loadDiscStream(playerPosition() + 30);
-    });
-    document.getElementById('disc-play').addEventListener('click', toggleDiscPlay);
-    document.getElementById('disc-mute').addEventListener('click', () => {
+    seek.addEventListener('mouseleave', () => { if (!seekDragging) hidePreview(); });
+    document.getElementById('player-back').addEventListener('click', () => seekTo(playerPosition() - 10));
+    document.getElementById('player-forward').addEventListener('click', () => seekTo(playerPosition() + 30));
+    document.getElementById('player-play').addEventListener('click', togglePlay);
+    document.getElementById('player-mute').addEventListener('click', () => {
         videoPlayer.muted = !videoPlayer.muted;
         if (!videoPlayer.muted && videoPlayer.volume === 0) videoPlayer.volume = 1;
     });
-    document.getElementById('disc-volume').addEventListener('input', (e) => {
+    document.getElementById('player-volume').addEventListener('input', (e) => {
         videoPlayer.volume = Number(e.target.value);
         videoPlayer.muted = videoPlayer.volume === 0;
     });
-    document.getElementById('disc-fullscreen').addEventListener('click', toggleDiscFullscreen);
+    document.getElementById('player-fullscreen').addEventListener('click', togglePlayerFullscreen);
     document.addEventListener('keydown', (e) => {
-        if (!disc || !disc.info || !playerModal.classList.contains('active')) return;
+        if (!(player || (disc && disc.info)) || !playerModal.classList.contains('active')) return;
         // Sliders keep their arrow keys, lists and buttons their own keys (Space clicks a button).
         const target = e.target instanceof Element ? e.target : document.body;
         if (target.matches('input, select, textarea') && e.key !== ' ') return;
         if (target.matches('select, textarea, button')) return;
         const key = e.key.toLowerCase();
-        if (key === ' ' || key === 'k') toggleDiscPlay();
-        else if (key === 'arrowleft') loadDiscStream(Math.max(0, playerPosition() - 10));
-        else if (key === 'arrowright') loadDiscStream(playerPosition() + 30);
+        if (key === ' ' || key === 'k') togglePlay();
+        else if (key === 'arrowleft') seekTo(playerPosition() - 10);
+        else if (key === 'arrowright') seekTo(playerPosition() + 30);
         else if (key === 'm') videoPlayer.muted = !videoPlayer.muted;
-        else if (key === 'f') toggleDiscFullscreen();
+        else if (key === 'f') togglePlayerFullscreen();
         else return;
         e.preventDefault();
     });
-    const on = (id, handler) => document.getElementById(id).addEventListener('change', (e) => {
-        if (disc && disc.info) handler(Number(e.target.value));
+    const on = (id, handler) => document.getElementById(id).addEventListener('change', (e) => handler(e.target.value));
+    on('player-stream', (mode) => changeFileStream(p => {
+        p.userMode = mode;
+        p.failed = false;
+        // What that stream can't do: another audio track (the original), picture subtitles.
+        if (mode === 'original') p.audio = -1;
+        const sub = subtitleTrack(p);
+        if (mode !== 'transcode' && sub && !sub.text) p.subtitle = -1;
+    }));
+    on('player-audio', (value) => {
+        const a = Number(value);
+        if (disc && disc.info) { disc.audio = a; loadDiscStream(playerPosition()); return; }
+        changeFileStream(p => {
+            p.audio = a;
+            if (p.userMode === 'original') p.userMode = null; // another track comes from the server
+        });
     });
-    on('disc-title', (n) => {
+    on('player-subtitle', (value) => {
+        const s = Number(value);
+        if (disc && disc.info) { disc.subtitle = s; loadDiscStream(playerPosition()); return; }
+        changeFileStream(p => {
+            p.subtitle = s;
+            const sub = subtitleTrack(p);
+            if (sub && !sub.text && p.userMode && p.userMode !== 'transcode') p.userMode = null; // burned in
+        });
+    });
+    const onDisc = (id, handler) => on(id, (value) => { if (disc && disc.info) handler(Number(value)); });
+    onDisc('disc-title', (n) => {
         disc.title = n;
         disc.angle = 1;
         disc.audio = 0;
@@ -1067,10 +1424,8 @@ function setupDiscControls() {
         renderDiscControls();
         loadDiscStream(0);
     });
-    on('disc-chapter', (i) => loadDiscStream(discTitle().chapters[i] || 0));
-    on('disc-angle', (a) => { disc.angle = a; loadDiscStream(playerPosition()); });
-    on('disc-audio', (a) => { disc.audio = a; loadDiscStream(playerPosition()); });
-    on('disc-subtitle', (s) => { disc.subtitle = s; loadDiscStream(playerPosition()); });
+    onDisc('disc-chapter', (i) => seekTo(discTitle().chapters[i] || 0));
+    onDisc('disc-angle', (a) => { disc.angle = a; loadDiscStream(playerPosition()); });
 }
 
 function viewImage(item) {

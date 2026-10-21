@@ -130,6 +130,8 @@ func main() {
 	api.HandleFunc("/media/match", mediaHandler.ResetMatch).Methods("DELETE")
 	api.HandleFunc("/streams/progress", mediaHandler.ReportStreamProgress).Methods("POST")
 	api.HandleFunc("/media/disc", mediaHandler.GetDisc).Methods("GET")
+	api.HandleFunc("/media/codecs", mediaHandler.GetCodecs).Methods("GET")
+	api.HandleFunc("/media/subtitles", mediaHandler.GetSubtitles).Methods("GET")
 	api.HandleFunc("/downloads/options", mediaHandler.DownloadOptions).Methods("GET")
 	api.HandleFunc("/downloads", mediaHandler.CreateDownload).Methods("POST")
 	api.HandleFunc("/downloads/{id}", mediaHandler.GetDownload).Methods("GET")
