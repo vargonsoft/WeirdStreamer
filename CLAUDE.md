@@ -77,7 +77,8 @@ for each TODO item are at the end of this file.
   `Server/e2e/pw`), and serves `Server/web` through a symlink.
 - Sample library in `Server/e2e/sample/`: Movies and TV Shows (typed libraries with TMDB
   matches). Most files are short ffmpeg test patterns named after real titles. Notable ones:
-  - `Movies/Example Film/…ts`: a 5-minute MPEG-2 file.
+  - `Movies/Example Film/…ts`: 5 minutes of H.264 and AAC in MPEG-TS (despite its name), which
+    Chrome can't open: Compatibility (Auto) copies it into MP4.
   - `Movies/Subtitle Test/Subtitle Test.mkv`: 16 subtitle tracks, several per language, the
     first marked default.
   - `Movies/Example Movie/Example Movie.iso`: a symlink to a real DVD image on the share.
@@ -154,10 +155,12 @@ aborting on a crash. It then installs on the connected allowed devices: Moto G
   (`#player-controls`, `setupPlayerControls`; the native `controls` are off). Discs (`playDisc`)
   use the same controls plus title, chapter and angle.
   - Before playing, it reads `GET /api/media/codecs` (container, duration, video codec, audio and
-    subtitle tracks). `streamMode(player)` picks the stream: `original` (the file as it is),
-    `audio` (`transcode=audio`: video copied, audio to AAC, for audio the browser can't decode or
-    a non-default track) or `transcode` (full; also for burning in picture subtitles, or after a
-    `<video>` error on the original). The Stream menu overrides it.
+    subtitle tracks). The Transcode menu has Android's modes (`TRANSCODE_MODES`): Original (the
+    video as it is), Compatibility (Auto) (`transcode=audio`: the server copies browser-friendly
+    H.264 and converts only the audio, else transcodes), and the quality and size ones (full
+    transcodes). Every mode converts audio the browser can't decode (or a non-default track).
+    Picture subtitles switch Original to Compatibility (Auto) to burn them in. A `<video>` error
+    on Original switches to Compatibility (Auto), and on a copied video, to a full transcode.
   - A transcoded stream restarts at an offset when seeking past what has arrived (`seekTo`,
     `player.offset`, `disc.offset`), as on Android, so the player tracks the absolute position
     itself (`playerPosition`). Seeks within the buffer don't restart it.
