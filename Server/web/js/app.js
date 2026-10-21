@@ -1432,11 +1432,12 @@ async function deleteUser(username) {
 
 async function handleChangePassword() {
     const messageEl = document.getElementById('account-message');
+    const currentPassword = document.getElementById('current-user-password').value;
     const newPassword = document.getElementById('new-user-password').value;
     const confirmPassword = document.getElementById('confirm-user-password').value;
     
-    if (!newPassword || !confirmPassword) {
-        messageEl.textContent = 'Please fill in both password fields';
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        messageEl.textContent = 'Please fill in all three password fields';
         messageEl.style.color = '#e74c3c';
         return;
     }
@@ -1448,10 +1449,11 @@ async function handleChangePassword() {
     }
     
     try {
-        await api.changePassword('', newPassword);
+        await api.changePassword(currentPassword, newPassword);
         messageEl.textContent = 'Password changed successfully';
         messageEl.style.color = '#27ae60';
         
+        document.getElementById('current-user-password').value = '';
         document.getElementById('new-user-password').value = '';
         document.getElementById('confirm-user-password').value = '';
         

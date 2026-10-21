@@ -7,6 +7,7 @@ import (
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/models"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserHandler struct {
@@ -173,10 +174,19 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify old password
+	// The current password must be given and right, so a session left signed in (or a stolen
+	// token) can't be used to take over the account. 403, not 401: a 401 signs the web UI out.
 	user, err := h.db.GetUserByUsername(claims.Username)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to get user")
+		return
+	}
+	if req.OldPassword == "" {
+		respondError(w, http.StatusBadRequest, "Current password is required")
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)) != nil {
+		respondError(w, http.StatusForbidden, "Current password is incorrect")
 		return
 	}
 

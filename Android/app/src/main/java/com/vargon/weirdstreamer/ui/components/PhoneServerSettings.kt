@@ -485,6 +485,7 @@ private fun GroupMenu(group: String, groups: List<String>, modifier: Modifier, o
 fun AccountTab(server: ServerRepository) {
     val scope = rememberCoroutineScope()
     val (me, isAdmin) = remember(server.address) { server.signedInAs() }
+    var current by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
@@ -497,6 +498,8 @@ fun AccountTab(server: ServerRepository) {
         item { SectionTitle("Change password") }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(current, { current = it }, label = { Text("Current password") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(password, { password = it }, label = { Text("New password") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(confirm, { confirm = it }, label = { Text("Confirm password") }, singleLine = true,
@@ -504,12 +507,13 @@ fun AccountTab(server: ServerRepository) {
                 Message(message?.first, message?.second ?: false)
                 Button(onClick = {
                     when {
+                        current.isEmpty() -> message = "Enter your current password" to true
                         password.isEmpty() -> message = "Enter a new password" to true
                         password != confirm -> message = "The passwords don't match" to true
                         else -> scope.launch {
-                            val (_, err) = attempt { server.api.changePassword(ChangePasswordRequest("", password)) }
+                            val (_, err) = attempt { server.api.changePassword(ChangePasswordRequest(current, password)) }
                             message = (err ?: "Password changed.") to (err != null)
-                            if (err == null) { password = ""; confirm = "" }
+                            if (err == null) { current = ""; password = ""; confirm = "" }
                         }
                     }
                 }) { Text("Change password") }
