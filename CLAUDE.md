@@ -52,8 +52,6 @@ for each TODO item are at the end of this file.
     progress played offline).
   - `ui/components/UiUtils.kt`: transcode modes, `VideoDecoders` (hardware decoder limits),
     `subtitlesOffByDefault`, `subtitleLabels`, `SubtitleMemory`.
-- Root `*.md` files other than this one and TODO.md are old notes from earlier work. They may
-  be out of date.
 
 ## Live server
 
