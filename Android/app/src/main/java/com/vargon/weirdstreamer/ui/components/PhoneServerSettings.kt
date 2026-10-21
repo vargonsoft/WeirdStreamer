@@ -58,6 +58,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -99,6 +104,12 @@ private fun Message(text: String?, isError: Boolean) {
     if (text == null) return
     Text(text, color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 8.dp))
+}
+
+/** A button label that wraps with tight line spacing, centred. */
+@Composable
+private fun ButtonLabel(text: String) {
+    Text(text, textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge.copy(lineHeight = 16.sp))
 }
 
 @Composable
@@ -279,8 +290,12 @@ fun ServerSettingsTab(server: ServerRepository) {
             }
             item {
                 Message(message?.first, message?.second ?: false)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    Button(enabled = !saving, onClick = {
+                // Same width and height, whether or not a label wraps.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(top = 8.dp).fillMaxWidth().height(IntrinsicSize.Min)
+                ) {
+                    Button(enabled = !saving, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = {
                         val body = buildConfig() ?: return@Button
                         saving = true
                         scope.launch {
@@ -295,16 +310,16 @@ fun ServerSettingsTab(server: ServerRepository) {
                         }
                     }) {
                         Icon(Icons.Default.Save, contentDescription = null)
-                        Spacer(Modifier.width(6.dp)); Text(if (saving) "Saving…" else "Save settings")
+                        Spacer(Modifier.width(6.dp)); ButtonLabel(if (saving) "Saving…" else "Save settings")
                     }
-                    OutlinedButton(onClick = {
+                    OutlinedButton(modifier = Modifier.weight(1f).fillMaxHeight(), onClick = {
                         scope.launch {
                             val (_, err) = attempt { server.api.scanMedia() }
                             message = (err ?: "Scan started.") to (err != null)
                         }
                     }) {
                         Icon(Icons.Default.Search, contentDescription = null)
-                        Spacer(Modifier.width(6.dp)); Text("Scan media")
+                        Spacer(Modifier.width(6.dp)); ButtonLabel("Scan media")
                     }
                 }
             }
