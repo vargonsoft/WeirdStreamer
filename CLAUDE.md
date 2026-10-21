@@ -81,15 +81,44 @@ for each TODO item are at the end of this file.
     first marked default.
   - `Movies/Example Movie/Example Movie.iso`: a symlink to a real DVD image on the share.
   - `TV Shows/Example Show/Season 1/`: two episodes. S01E01 is a 60-second clip; S01E02 is empty.
-- Emulators: `emulator-5554` is Android TV and `emulator-5556` is a phone. The adb binary is
-  `~/Android/Sdk/platform-tools/adb` (not on PATH).
-  - Drive the TV with `adb -s emulator-5554 shell input keyevent DPAD_*`. Hold a key with
-    `adb emu event send EV_KEY:KEY_ENTER:1` then `:0`; `input keyevent --longpress` is too short.
-  - On the phone, use `input tap` with coordinates from `uiautomator dump`.
-  - Check screens with `adb exec-out screencap -p`.
-  - Use the browser pane at http://localhost:9100 for the web UI.
-- Android debug build: `cd Android && ./gradlew :app:assembleDebug`. Install debug builds on
-  emulators only.
+- Emulators: `emulator-5554` is Android TV (AVD `Television_1080p_API_34`) and `emulator-5556`
+  is a phone (AVD `Medium_Phone_API_35`). `Android/tools/start-emulators.sh` starts whichever
+  isn't running and waits for boot. The adb binary is `~/Android/Sdk/platform-tools/adb` (not
+  on PATH). Both emulators already have the app signed in to the test server as `e2e_admin`.
+- Helper scripts in `Android/tools/` (save screenshots in your scratchpad, then view them with
+  Read):
+  - `tv-keys.sh OUT.png DPAD_DOWN DPAD_CENTER …` presses keys on the TV, then screenshots.
+    `HOLD_CENTER` is a real 1.5s hold of OK (`input keyevent --longpress` is too short).
+  - `phone.sh texts` lists what's on the phone screen. `phone.sh tapt "Settings"` taps an
+    element by its text or content description. `phone.sh tap X Y`, `phone.sh swipe …` and
+    `phone.sh shot OUT.png` do the rest.
+- Typical Android test loop:
+  1. `cd Android && ./gradlew :app:assembleDebug`.
+  2. `adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk` (and 5556).
+  3. `adb shell am force-stop com.vargon.weirdstreamer`, then
+     `am start -n com.vargon.weirdstreamer/.MainActivity`.
+  4. Navigate and screenshot.
+
+  Install debug builds on emulators only.
+- Navigation tips:
+  - The app opens on "Select Media Source". On the TV, the test server is the second tile
+    under WeirdStreamer Server (`http://10.0.2.2:9100`). From the top: DPAD_DOWN, DPAD_RIGHT,
+    DPAD_CENTER. On the phone, `phone.sh tapt "http://10.0.2.2:9100"`.
+  - In the TV player, DPAD_DOWN (with controls hidden) opens the toolbar. Its buttons are
+    Transcode, Zoom, Speed, Fill+, Fill−, Aspect, Subtitles, Rotate (and Disc), and it remembers
+    the last button focused, so press DPAD_LEFT several times before counting.
+  - If a screenshot shows a Google TV "Set up" screen or the launcher, the app isn't in front.
+    Press BACK and `am start` again, and check
+    `adb shell dumpsys activity activities | grep topResumedActivity`.
+  - Long chains of key presses without screenshots go wrong easily. Screenshot after each few
+    steps.
+- Web UI: use the browser pane at http://localhost:9100 and sign in as `e2e_admin` (password in
+  `Server/e2e/pw`; type it yourself, don't print it). `window.api` and the app.js functions are
+  available from the page's JavaScript for setting up state, such as
+  `api.reportPlayback(path, seconds, true)` to create a resume point.
+- To create test media, use ffmpeg test patterns. For example, `testsrc` plus `sine` with extra
+  `-i subs.srt` inputs and `-metadata:s:s:N language=…` builds an MKV with many subtitle tracks.
+  Put new files under `Server/e2e/sample/Movies/<Folder>/`.
 
 ## Deploying the Android app
 
