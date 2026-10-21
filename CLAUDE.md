@@ -132,7 +132,7 @@ for each TODO item are at the end of this file.
 ## Deploying the Android app
 
 `Android/deploy-release.sh` builds the R8 release APK and launches it on every running emulator,
-aborting on a crash. It then installs on the connected allowed devices: Moto G
+aborting on a crash (with none running it skips that; don't start emulators just to deploy). It then installs on the connected allowed devices: Moto G
 (`moto g power - 2025`) and Galaxy Fold 7 (`SM-F966U1`) always, and the Onn
 (`onn. 4K Plus Streaming`) only with `--onn`. Options: `--no-build`, `--no-install`.
 

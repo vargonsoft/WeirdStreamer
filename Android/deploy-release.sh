@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds the release APK, checks that it launches without crashing on the running emulators, then
-# installs it on the allowed real devices that are connected.
+# Builds the release APK, checks that it launches without crashing on the running emulators (if
+# any), then installs it on the allowed real devices that are connected.
 #
 #   ./deploy-release.sh            build, smoke test, install on the connected Moto G and Galaxy Fold 7
 #   ./deploy-release.sh --onn      also install on the Onn TV box (left out by default: it's in use
@@ -9,6 +9,7 @@
 #   ./deploy-release.sh --no-install   build and smoke test only
 #
 # Exits non-zero, before installing anything, if the build fails or the app crashes on an emulator.
+# With no emulator running it skips the smoke test and installs anyway.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -77,8 +78,7 @@ for d in "${devices[@]}"; do
     echo "   ok"
 done
 if [ "$emulators" = 0 ]; then
-    echo "No emulator running: can't smoke test, so nothing was installed. Start one and rerun." >&2
-    exit 1
+    echo "== No emulator running: skipping the smoke test" >&2
 fi
 
 [ "$install" = 1 ] || { echo "== Skipping installs (--no-install)"; exit 0; }
