@@ -407,7 +407,8 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
             }
         }
         var downloading by remember { mutableStateOf<List<DownloadRequest>?>(null) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 16.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 16.dp)) {
             FilledTonalButton(onClick = { downloading = episodeDownloads(viewModel, title, listOf(season)) }) {
                 Icon(Icons.Default.Download, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
@@ -418,16 +419,9 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
                     Text("Whole show")
                 }
             }
+            WatchedButton(viewModel, season.episodes.flatMap { it.files }) // the season
         }
         downloading?.let { DownloadQualityDialog(viewModel, it) { downloading = null } }
-        val seasonFiles = season.episodes.flatMap { it.files }
-        val seasonWatched = seasonFiles.isNotEmpty() && seasonFiles.all { it.playback?.watched == true }
-        TextButton(onClick = { viewModel.setWatched(seasonFiles.map { it.path }, !seasonWatched) },
-            modifier = Modifier.padding(horizontal = 8.dp)) {
-            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(if (seasonWatched) "Mark season unwatched" else "Mark season watched")
-        }
         season.episodes.forEach { PhoneEpisodeRow(viewModel, it, queue, title.title) }
     }
 }
@@ -476,18 +470,19 @@ private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, 
                 Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp))
             }
-            // Tapping the row resumes; this starts over.
+            // Tapping the row resumes from here; the button beside it starts over.
             val resumeAt = first.playback?.resumeAt ?: 0.0
             if (resumeAt > 0) {
-                TextButton(onClick = { viewModel.playLibraryFile(first, queue, fromStart = true) },
-                    contentPadding = PaddingValues(horizontal = 0.dp)) {
-                    Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Play from start · resumes at ${clockText(resumeAt)}", style = MaterialTheme.typography.labelMedium)
-                }
+                Text("Resumes at ${clockText(resumeAt)}", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         }
         Column {
+            if ((first.playback?.resumeAt ?: 0.0) > 0) {
+                IconButton(onClick = { viewModel.playLibraryFile(first, queue, fromStart = true) }) {
+                    Icon(Icons.Default.Replay, contentDescription = "Play from start")
+                }
+            }
             WatchedButton(viewModel, episode.files)
             episode.files.forEach { f -> DownloadButton(viewModel, DownloadRequest.of(viewModel, f, episodeLabel(showTitle, episode), episode.still)) }
         }
@@ -529,11 +524,10 @@ private fun PhoneTitleWatched(viewModel: MediaViewModel, title: TitleDetail) {
         else title.seasons.orEmpty().flatMap { s -> s.episodes.flatMap { it.files } }
     if (files.isEmpty()) return
     val watched = files.all { it.playback?.watched == true }
-    TextButton(onClick = { viewModel.setWatched(files.map { it.path }, !watched) },
-        modifier = Modifier.padding(horizontal = 8.dp)) {
-        Icon(if (watched) Icons.Default.CheckCircle else Icons.Outlined.CheckCircle, contentDescription = null,
-            modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(if (watched) "Mark unwatched" else "Mark watched")
+    IconButton(onClick = { viewModel.setWatched(files.map { it.path }, !watched) },
+        modifier = Modifier.padding(horizontal = 4.dp)) {
+        Icon(if (watched) Icons.Default.CheckCircle else Icons.Outlined.CheckCircle,
+            contentDescription = if (watched) "Mark unwatched" else "Mark watched",
+            tint = if (watched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

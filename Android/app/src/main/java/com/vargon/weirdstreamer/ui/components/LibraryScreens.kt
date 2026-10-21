@@ -502,22 +502,22 @@ private fun FileRow(
                     timeLeftText(file.playback, file.duration)?.let {
                         Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
                     }
-                    // Play, or Resume with Play from start beside it; then Mark watched.
+                    // Play (an icon), or Resume with where it picks up; Play from start; Mark watched.
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         val resumeAt = file.playback?.resumeAt ?: 0.0
                         Button(
                             onClick = { viewModel.playLibraryFile(file, queue) },
                             modifier = if (index == 0 && firstRequester != null) Modifier.focusRequester(firstRequester) else Modifier
                         ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (resumeAt > 0) "Resume ${clockText(resumeAt)}" else "Play")
+                            Icon(Icons.Default.PlayArrow, contentDescription = if (resumeAt > 0) null else "Play")
+                            if (resumeAt > 0) {
+                                Spacer(Modifier.width(6.dp))
+                                Text("Resume ${clockText(resumeAt)}")
+                            }
                         }
                         if (resumeAt > 0) {
                             Button(onClick = { viewModel.playLibraryFile(file, queue, fromStart = true) }) {
-                                Icon(Icons.Default.Replay, contentDescription = null)
-                                Spacer(Modifier.width(6.dp))
-                                Text("Play from start")
+                                Icon(Icons.Default.Replay, contentDescription = "Play from start")
                             }
                         }
                         TvWatchedButton(viewModel, listOf(file))
@@ -592,10 +592,10 @@ private fun SeasonsAndEpisodes(
                 }
             }
             item(key = "season-watched") {
-                TvWatchedButton(viewModel, season.episodes.flatMap { it.files }, label = "season")
+                TvWatchedButton(viewModel, season.episodes.flatMap { it.files }, label = "Season")
             }
             item(key = "show-watched") {
-                TvWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, label = "show")
+                TvWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, label = "Show")
             }
         }
         season.episodes.forEachIndexed { index, episode ->
@@ -685,8 +685,8 @@ private fun EpisodeRow(
 }
 
 /**
- * Marks [files] watched, or unwatched when they all are: an icon, or "Mark season watched" style
- * text for a [label]led group.
+ * Marks [files] watched, or unwatched when they all are: an icon, with a [label] ("Season",
+ * "Show") where buttons for different groups sit side by side.
  */
 @Composable
 private fun TvWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>, label: String? = null, iconOnly: Boolean = false) {
@@ -696,10 +696,9 @@ private fun TvWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>,
     Button(onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
         Icon(if (watched) Icons.Default.CheckCircle else Icons.Outlined.Circle,
             contentDescription = if (watched) "Mark unwatched" else "Mark watched")
-        if (!iconOnly) {
+        if (!iconOnly && label != null) {
             Spacer(Modifier.width(6.dp))
-            val what = label?.let { " $it" } ?: ""
-            Text(if (watched) "Mark$what unwatched" else "Mark$what watched")
+            Text(label)
         }
     }
 }

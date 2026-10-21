@@ -2376,7 +2376,7 @@ async function showTitle(libId, kind, id, push = true, keepScroll = false) {
     const titleItems = kind === 'movie' || (t.files || []).length ? state.mediaItems
         : state.mediaItems.filter(i => !(t.other_files || []).some(f => f.path === i.path));
     if (titleItems.length) {
-        const mark = createWatchedToggle(titleItems, 'btn secondary watched-btn', { label: true });
+        const mark = createWatchedToggle(titleItems, 'btn secondary icon-btn watched-btn');
         hero.querySelector('.title-info').appendChild(mark);
     }
     if (keepScroll) window.scrollTo(0, scroll);
@@ -2523,9 +2523,9 @@ function createSeasonsSection(t) {
         list.innerHTML = '';
         seasons[index].episodes.forEach(ep => list.appendChild(createEpisodeRow(ep)));
         seasonActions.innerHTML = '';
-        seasonActions.appendChild(createWatchedToggle(seasonItems(seasons[index]), 'btn secondary watched-btn',
-            { label: true }));
-        seasonActions.querySelector('span').textContent += ' (season)';
+        const toggle = createWatchedToggle(seasonItems(seasons[index]), 'btn secondary icon-btn watched-btn');
+        toggle.title = toggle.title.replace('Mark', 'Mark season');
+        seasonActions.appendChild(toggle);
     };
     seasons.forEach((se, i) => {
         const btn = document.createElement('button');
@@ -2584,7 +2584,7 @@ function createEpisodeRow(ep) {
     ep.files.forEach(f => {
         const item = libraryFileItem(f);
         const ext = f.name.split('.').pop().toUpperCase();
-        actions.appendChild(createPlayButtons(item, ep.files.length > 1 ? ext : 'Play'));
+        actions.appendChild(createPlayButtons(item, ep.files.length > 1 ? ext : ''));
         if (canFixMatches()) {
             const fix = createFixMatchButton({ path: f.path }, f.name);
             fix.classList.add('inline');
@@ -2669,6 +2669,7 @@ function createWatchedToggle(items, className, { label = false } = {}) {
     const watched = isWatched(items);
     const text = watched ? 'Mark unwatched' : 'Mark watched';
     btn.title = text;
+    btn.setAttribute('aria-label', text);
     btn.classList.toggle('is-watched', watched);
     btn.innerHTML = iconSvg('check') + (label ? `<span>${text}</span>` : '');
     btn.onclick = async (e) => {
@@ -2684,19 +2685,25 @@ function createWatchedToggle(items, className, { label = false } = {}) {
 }
 
 // Play (or Resume, with a Play from start beside it) buttons for a file.
-function createPlayButtons(item, label = 'Play') {
+// Icons alone, except Resume, which says where it picks up. [label] tells several files apart.
+function createPlayButtons(item, label = '') {
     const group = el('div', 'play-buttons');
     const at = resumePosition(item);
     const play = el('button', 'btn play-btn');
     play.type = 'button';
-    play.innerHTML = iconSvg('play') + `<span>${at ? `Resume ${clock(at)}` : label}</span>`;
-    play.title = item.name;
+    const text = at ? `Resume ${clock(at)}` : label;
+    play.innerHTML = iconSvg('play') + (text ? `<span>${text}</span>` : '');
+    if (!text) play.classList.add('icon-btn');
+    play.title = at ? `Resume ${item.name}` : `Play ${item.name}`;
+    play.setAttribute('aria-label', play.title);
     play.onclick = () => playVideo(item, false, at);
     group.appendChild(play);
     if (at) {
-        const restart = el('button', 'btn play-btn secondary');
+        const restart = el('button', 'btn play-btn secondary icon-btn');
         restart.type = 'button';
-        restart.innerHTML = iconSvg('replay') + '<span>Play from start</span>';
+        restart.innerHTML = iconSvg('replay');
+        restart.title = 'Play from start';
+        restart.setAttribute('aria-label', 'Play from start');
         restart.onclick = () => playVideo(item, false, 0);
         group.appendChild(restart);
     }
