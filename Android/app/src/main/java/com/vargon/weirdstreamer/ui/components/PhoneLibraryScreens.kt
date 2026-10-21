@@ -1,0 +1,410 @@
+package com.vargon.weirdstreamer.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Theaters
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.vargon.weirdstreamer.LibraryReturn
+import com.vargon.weirdstreamer.MediaViewModel
+import com.vargon.weirdstreamer.api.models.CreditInfo
+import com.vargon.weirdstreamer.api.models.LibraryEpisode
+import com.vargon.weirdstreamer.api.models.LibraryFile
+import com.vargon.weirdstreamer.api.models.TitleDetail
+import java.util.Locale
+
+/** Phone Library view: a movie or TV library as posters, with unmatched files at the end. */
+@Composable
+fun PhoneLibraryScreen(viewModel: MediaViewModel) {
+    val listing = viewModel.libraryListing
+    when {
+        listing == null && viewModel.libraryError != null -> PhoneMessage("Error: ${viewModel.libraryError}")
+        listing == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        listing.titles.isEmpty() && listing.unmatched.isEmpty() ->
+            PhoneMessage("Nothing matched yet. Titles appear here as they are looked up.")
+        else -> {
+            // Back from a title page returns to where the grid was.
+            val returnTo = remember(listing.libraryId) {
+                viewModel.libraryReturn?.takeIf { it.libraryId == listing.libraryId }
+            }
+            val gridState = rememberLazyGridState(returnTo?.index ?: 0, returnTo?.offset ?: 0)
+            val isTv = listing.libraryType == "tv"
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(108.dp),
+                state = gridState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                itemsIndexed(listing.titles, key = { _, t -> "${t.kind}:${t.tmdbId}" }) { _, t ->
+                    PhonePosterTile(
+                        title = t.title,
+                        subtitle = t.year?.toString(),
+                        posterUrl = viewModel.serverUrl(t.poster),
+                        placeholder = if (t.kind == "show") Icons.Default.Tv else Icons.Default.Movie
+                    ) {
+                        viewModel.libraryReturn = LibraryReturn(listing.libraryId, "${t.kind}:${t.tmdbId}",
+                            gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset)
+                        viewModel.openLibraryTitle(t.kind, t.tmdbId)
+                    }
+                }
+                if (listing.unmatched.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "unmatched-header") {
+                        Text("Unmatched (${listing.unmatched.size})", style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(top = 16.dp))
+                    }
+                    itemsIndexed(listing.unmatched, key = { _, f -> "file:${f.path}" }) { _, f ->
+                        val playable = f.count == null
+                        PhonePosterTile(
+                            title = f.name,
+                            subtitle = if (playable) formatBytes(f.size) else "${f.count} files",
+                            posterUrl = null,
+                            placeholder = if (isTv) Icons.Default.Tv else Icons.Default.Theaters
+                        ) { if (playable) viewModel.playLibraryFile(f, listOf(f)) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhonePosterTile(
+    title: String,
+    subtitle: String?,
+    posterUrl: String?,
+    placeholder: ImageVector,
+    onClick: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(2f / 3f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Icon(placeholder, contentDescription = null, modifier = Modifier.size(40.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            posterUrl?.let { RemoteImage(it, Modifier.fillMaxSize()) }
+        }
+        Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 6.dp))
+        if (!subtitle.isNullOrEmpty()) {
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * Phone title page: backdrop with poster and title, then details, cast, and the files (movies)
+ * or seasons and episodes (TV), each playable.
+ */
+@Composable
+fun PhoneTitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item(key = "header") { PhoneTitleHeader(viewModel, title) }
+        item(key = "details") { PhoneTitleDetails(title) }
+        title.cast?.takeIf { it.isNotEmpty() }?.let { cast ->
+            item(key = "cast") { PhoneCastRow(viewModel, cast) }
+        }
+        // Movie libraries list files, also for a title matched to a TV show (a TV movie).
+        if (title.kind == "movie" || !title.files.isNullOrEmpty()) {
+            val files = title.files.orEmpty()
+            item(key = "files-header") { PhoneSectionHeader(if (files.size > 1) "Files" else "File") }
+            items(files, key = { "file:" + it.path }) { PhoneFileRow(viewModel, it, files) }
+        } else {
+            phoneShowSections(viewModel, title)
+        }
+    }
+}
+
+@Composable
+private fun PhoneTitleHeader(viewModel: MediaViewModel, title: TitleDetail) {
+    val background = MaterialTheme.colorScheme.background
+    Box(modifier = Modifier.fillMaxWidth()) {
+        viewModel.serverUrl(title.backdrop)?.let { backdrop ->
+            RemoteImage(backdrop, Modifier.matchParentSize(), alpha = 0.35f)
+            Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, background))))
+        }
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.Bottom) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .width(112.dp)
+                    .aspectRatio(2f / 3f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Icon(if (title.kind == "show") Icons.Default.Tv else Icons.Default.Movie, contentDescription = null,
+                    modifier = Modifier.size(40.dp))
+                viewModel.serverUrl(title.poster)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                val facts = listOfNotNull(
+                    title.year?.toString(),
+                    title.runtime?.takeIf { it > 0 }?.let { "$it min" },
+                )
+                if (facts.isNotEmpty()) {
+                    Text(facts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                }
+                title.genres?.takeIf { it.isNotEmpty() }?.let {
+                    Text(it.joinToString(", "), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhoneTitleDetails(title: TitleDetail) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        title.tagline?.takeIf { it.isNotEmpty() }?.let {
+            Text(it, style = MaterialTheme.typography.bodyLarge, fontStyle = FontStyle.Italic)
+        }
+        title.overview?.takeIf { it.isNotEmpty() }?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium)
+        }
+        val people = if (title.kind == "show") title.creators else title.directors
+        people?.takeIf { it.isNotEmpty() }?.let {
+            val label = when {
+                title.kind == "show" -> "Created by"
+                it.size > 1 -> "Directors"
+                else -> "Director"
+            }
+            PhoneCreditLine(label, it)
+        }
+        if (title.kind == "movie") title.writers?.takeIf { it.isNotEmpty() }?.let { PhoneCreditLine("Writers", it) }
+    }
+}
+
+@Composable
+private fun PhoneCreditLine(label: String, people: List<CreditInfo>) {
+    Text(
+        androidx.compose.ui.text.buildAnnotatedString {
+            pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold))
+            append("$label ")
+            pop()
+            append(people.joinToString(", ") { it.name })
+        },
+        style = MaterialTheme.typography.bodyMedium
+    )
+}
+
+@Composable
+private fun PhoneCastRow(viewModel: MediaViewModel, cast: List<CreditInfo>) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        itemsIndexed(cast, key = { i, person -> "$i:${person.tmdbId}" }) { _, person ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(84.dp)) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Text(person.name.take(1), style = MaterialTheme.typography.titleLarge)
+                    viewModel.serverUrl(person.profile)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
+                }
+                // Names and roles wrap instead of being cut off.
+                Text(person.name, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 6.dp))
+                person.character?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhoneSectionHeader(text: String) {
+    Text(text, style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp))
+}
+
+/** A file: its thumbnail (tap to play) with the full name, size and a Play button beside it. */
+@Composable
+private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: List<LibraryFile>) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .width(140.dp)
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable { viewModel.playLibraryFile(file, queue) }
+        ) {
+            Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(32.dp))
+            viewModel.serverUrl(file.thumbnailUrl)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            file.match?.let { m ->
+                Text(m.title + (m.year?.let { " ($it)" } ?: ""), style = MaterialTheme.typography.titleSmall)
+            }
+            Text(file.name, style = MaterialTheme.typography.bodySmall) // the whole name, wrapped
+            formatBytes(file.size).takeIf { it.isNotEmpty() }?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            FilledTonalButton(onClick = { viewModel.playLibraryFile(file, queue) }) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("Play")
+            }
+        }
+    }
+}
+
+/** TV: a season picker, the chosen season's episodes, and the show's other files. */
+private fun androidx.compose.foundation.lazy.LazyListScope.phoneShowSections(viewModel: MediaViewModel, title: TitleDetail) {
+    val seasons = title.seasons.orEmpty()
+    if (seasons.isEmpty()) {
+        item(key = "no-episodes") { PhoneMessage("No episodes found.") }
+    } else {
+        item(key = "seasons") { PhoneSeasons(viewModel, title) }
+    }
+    val other = title.otherFiles.orEmpty()
+    if (other.isNotEmpty()) {
+        item(key = "other-header") { PhoneSectionHeader("Other files") }
+        items(other, key = { "other:" + it.path }) { PhoneFileRow(viewModel, it, other) }
+    }
+}
+
+@Composable
+private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
+    val seasons = title.seasons.orEmpty()
+    var selected by rememberSaveable(title.tmdbId) { mutableIntStateOf(0) }
+    val season = seasons[selected.coerceIn(seasons.indices)]
+    val queue = remember(season) { season.episodes.flatMap { it.files } }
+    Column {
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            itemsIndexed(seasons, key = { _, s -> s.season }) { index, s ->
+                FilterChip(selected = index == selected, onClick = { selected = index },
+                    label = { Text("${s.name} (${s.episodes.size})") })
+            }
+        }
+        season.episodes.forEach { PhoneEpisodeRow(viewModel, it, queue) }
+    }
+}
+
+@Composable
+private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, queue: List<LibraryFile>) {
+    val first = episode.files.firstOrNull() ?: return
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { viewModel.playLibraryFile(first, queue) }
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .width(128.dp)
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(28.dp))
+            (viewModel.serverUrl(episode.still) ?: viewModel.serverUrl(first.thumbnailUrl))?.let {
+                RemoteImage(it, Modifier.fillMaxSize())
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            // The file (or files) on disk, then a blank line, then the episode it shows as.
+            Text(episode.files.joinToString("\n") { it.name }, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                String.format(Locale.US, "S%02dE%02d · %s", episode.season, episode.episode, episode.title),
+                style = MaterialTheme.typography.titleSmall
+            )
+            val meta = listOfNotNull(episode.airDate, episode.runtime?.takeIf { it > 0 }?.let { "$it min" },
+                episode.files.takeIf { it.size > 1 }?.let { "${it.size} files" })
+            if (meta.isNotEmpty()) {
+                Text(meta.joinToString(" · "), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            episode.overview?.takeIf { it.isNotEmpty() }?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhoneMessage(text: String) {
+    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center)
+    }
+}

@@ -40,8 +40,13 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     var showAuthDialog by remember { mutableStateOf(false) }
     val currentSource = viewModel.currentSource
 
+    // Back closes a title page, then leaves Library view for the server's libraries, else goes up.
     BackHandler(enabled = currentSource != null) {
-        viewModel.navigateUp()
+        when {
+            viewModel.openTitle != null -> viewModel.closeLibraryTitle()
+            viewModel.isLibraryView -> viewModel.leaveLibrary()
+            else -> viewModel.navigateUp()
+        }
     }
 
     Scaffold(
@@ -55,7 +60,11 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.secondary
                             )
-                            val display = viewModel.currentPathDisplayName ?: if (viewModel.currentPath.isNotEmpty()) viewModel.currentPath else "/"
+                            val display = when {
+                                viewModel.openTitle != null -> viewModel.openTitle!!.title
+                                viewModel.isLibraryView -> viewModel.libraryListing?.libraryName ?: "Library"
+                                else -> viewModel.currentPathDisplayName ?: if (viewModel.currentPath.isNotEmpty()) viewModel.currentPath else "/"
+                            }
                             Text(
                                 text = display,
                                 style = MaterialTheme.typography.titleMedium,
@@ -81,12 +90,18 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         }
                     }
                     IconButton(onClick = { viewModel.toggleViewMode() }) {
+                        // Shows the mode it switches to: list -> grid -> library (movie/tv libraries) -> list
                         Icon(
-                            if (viewModel.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
-                            contentDescription = "Toggle View"
+                            when {
+                                viewModel.isLibraryView -> Icons.AutoMirrored.Filled.ViewList
+                                !viewModel.isGridView -> Icons.Default.GridView
+                                viewModel.libraryType != null -> Icons.Default.VideoLibrary
+                                else -> Icons.AutoMirrored.Filled.ViewList
+                            },
+                            contentDescription = "Switch View"
                         )
                     }
-                    if (currentSource != null) {
+                    if (currentSource != null && !viewModel.isLibraryView) {
                         IconButton(onClick = { viewModel.toggleContentFilter() }) {
                             Icon(
                                 when (viewModel.contentFilter) {
@@ -147,6 +162,10 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 }
                 currentSource == null -> {
                     PhoneSourceSelectionScreen(viewModel)
+                }
+                viewModel.isLibraryView -> {
+                    val title = viewModel.openTitle
+                    if (title != null) PhoneTitleScreen(viewModel, title) else PhoneLibraryScreen(viewModel)
                 }
                 else -> {
                     PhoneFileBrowserScreen(viewModel)

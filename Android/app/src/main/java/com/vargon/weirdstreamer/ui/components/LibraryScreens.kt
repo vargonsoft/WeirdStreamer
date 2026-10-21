@@ -588,7 +588,7 @@ private fun EpisodeRow(
 }
 
 @Composable
-private fun RemoteImage(url: String, modifier: Modifier, alpha: Float = 1f) {
+internal fun RemoteImage(url: String, modifier: Modifier, alpha: Float = 1f) {
     val context = LocalContext.current
     val request = remember(url) { ImageRequest.Builder(context).data(url).crossfade(false).build() }
     AsyncImage(model = request, contentDescription = null, contentScale = ContentScale.Crop, alpha = alpha, modifier = modifier)
@@ -601,7 +601,7 @@ private fun CenteredMessage(text: String) {
     }
 }
 
-private fun formatBytes(size: Long): String {
+internal fun formatBytes(size: Long): String {
     if (size <= 0) return ""
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
     val group = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
