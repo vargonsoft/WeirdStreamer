@@ -32,7 +32,7 @@ done
 allowed_device() {
     case "$1" in
         "moto g power"*) echo "Moto G" ;;
-        SM-F966*|SM-F9660*) echo "Galaxy Fold 7" ;;   # Galaxy Z Fold7 model numbers
+        SM-F966*) echo "Galaxy Fold 7" ;;   # Galaxy Z Fold7 (the user's reports SM-F966U1)
         "onn. 4K Plus"*) [ "$with_onn" = 1 ] && echo "Onn" ;;
     esac
     return 0
