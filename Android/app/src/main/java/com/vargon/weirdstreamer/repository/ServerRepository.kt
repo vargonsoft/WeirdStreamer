@@ -6,6 +6,10 @@ import com.vargon.weirdstreamer.CredentialManager
 import com.vargon.weirdstreamer.api.ApiClient
 import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.api.models.StreamProgress
+import com.vargon.weirdstreamer.api.models.ContinueItem
+import com.vargon.weirdstreamer.api.models.PlaybackSync
+import com.vargon.weirdstreamer.api.models.SyncedPlayback
+import com.vargon.weirdstreamer.api.models.WatchedRequest
 import com.vargon.weirdstreamer.api.models.LibraryFile
 import com.vargon.weirdstreamer.api.models.LibraryListing
 import com.vargon.weirdstreamer.api.models.LoginRequest
@@ -96,16 +100,64 @@ class ServerRepository(
         thumbnailUrl = absoluteUrl(file.thumbnailUrl),
         duration = file.duration,
         originalPath = file.path,
-        id = file.id
+        id = file.id,
+        playback = file.playback
     )
 
-    /** Tells the server where the player is in [originalPath], for its admin Streams page. */
-    suspend fun reportPlayback(originalPath: String, positionSeconds: Double, paused: Boolean) = withContext(Dispatchers.IO) {
+    private fun encode(path: String) = Base64.encodeToString(path.toByteArray(), Base64.NO_WRAP)
+
+    /**
+     * Tells the server where the player is in [originalPath], for its admin Streams page and the
+     * user's progress; [ended] when it played to the end, [discTitle] for discs (0: main title).
+     */
+    suspend fun reportPlayback(originalPath: String, positionSeconds: Double, paused: Boolean, ended: Boolean = false,
+                               discTitle: Int = 0) = withContext(Dispatchers.IO) {
         runCatching {
-            val encoded = Base64.encodeToString(originalPath.toByteArray(), Base64.NO_WRAP)
-            apiService.reportStreamProgress(StreamProgress(encoded, positionSeconds, paused))
+            apiService.reportStreamProgress(StreamProgress(encode(originalPath), positionSeconds, paused, ended, discTitle))
         }
     }
+
+    /** Marks server files watched or unwatched, or a whole title by [library], [kind] and [tmdbId]. */
+    suspend fun setWatched(originalPaths: List<String>, watched: Boolean, library: String? = null, kind: String? = null,
+                           tmdbId: Int? = null): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.setWatched(WatchedRequest(originalPaths.map(::encode), watched, library, kind, tmdbId))
+            if (!r.isSuccessful) throw Exception("Server error: ${r.code()}")
+        }
+    }
+
+    /** Videos in progress, most recent first, in [libraryId] or every library. */
+    suspend fun continueWatching(libraryId: String? = null): Result<List<ContinueItem>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.continueWatching(libraryId)
+            r.body()?.takeIf { r.isSuccessful } ?: throw Exception("Server error: ${r.code()}")
+        }
+    }
+
+    suspend fun removeFromContinue(originalPath: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching { apiService.removeFromContinue(encode(originalPath)); Unit }
+    }
+
+    /** Sends progress recorded offline; the server keeps whichever report is newer. */
+    suspend fun syncPlayback(items: List<SyncedPlayback>): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.syncPlayback(PlaybackSync(items))
+            if (!r.isSuccessful) throw Exception("Server error: ${r.code()}")
+        }
+    }
+
+    /** A continue-watching entry as a playable [FileItem]. */
+    fun fileItemFor(item: ContinueItem): FileItem = FileItem(
+        name = item.name,
+        path = getStreamUrl(item.path),
+        isDirectory = false,
+        size = item.size,
+        thumbnailUrl = absoluteUrl(item.thumbnailUrl),
+        duration = item.duration,
+        originalPath = item.path,
+        id = item.id,
+        playback = item.playback
+    )
 
     suspend fun library(libraryId: String): Result<LibraryListing> = withContext(Dispatchers.IO) {
         try {
@@ -164,7 +216,8 @@ class ServerRepository(
                                 width = mediaItem.width,
                                 height = mediaItem.height,
                                 originalPath = mediaItem.path,
-                                id = mediaItem.id
+                                id = mediaItem.id,
+                                playback = mediaItem.playback
                             )
                         )
                     }

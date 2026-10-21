@@ -126,7 +126,8 @@ fun FileTileItem(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -
 
 // Overload for new FileItem from repository
 @Composable
-fun FileTileItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun FileTileItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modifier,
+                 playback: com.vargon.weirdstreamer.api.models.Playback? = null, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
     val subtitle = remember(item.isDirectory, isParent, item.size, item.duration) {
         if (!item.isDirectory && !isParent) fileInfoText(item.size, item.duration) else null
@@ -143,7 +144,9 @@ fun FileTileItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Mod
         modifier = modifier,
         onClick = onClick,
         thumbnailUrl = thumbnailUrl,
-        rotateIcon = if (isParent) 90f else 0f
+        rotateIcon = if (isParent) 90f else 0f,
+        progress = playback?.fraction(item.duration) ?: 0f,
+        watched = playback?.watched == true
     )
 }
 
@@ -155,6 +158,8 @@ fun TileItem(
     subtitle: String? = null,
     thumbnailUrl: String? = null,
     rotateIcon: Float = 0f,
+    progress: Float = 0f,
+    watched: Boolean = false,
     onClick: () -> Unit
 ) {
     Column(
@@ -192,6 +197,8 @@ fun TileItem(
                     modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.small)
                 )
             }
+            WatchProgressOverlay(progress, watched, barHeight = 5.dp, badgeSize = 28.dp,
+                accent = TvAccent, onAccent = TvOnAccent)
         }
         Spacer(modifier = Modifier.height(12.dp))
         Column(
@@ -340,7 +347,8 @@ fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () ->
 
 // Overload for new FileItem from repository
 @Composable
-fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modifier,
+                playback: com.vargon.weirdstreamer.api.models.Playback? = null, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
     val infoText = remember(item.isDirectory, isParent, item.size, item.duration) {
         if (!item.isDirectory && !isParent) fileInfoText(item.size, item.duration) else null
@@ -373,12 +381,15 @@ fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modi
                     modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall)
                 )
             }
+            PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 16.dp,
+                accent = TvAccent, onAccent = TvOnAccent)
         }
         Spacer(modifier = Modifier.width(16.dp))
         Column {
             Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
             if (infoText != null) {
-                Text(text = infoText, style = MaterialTheme.typography.bodySmall)
+                val left = timeLeftText(playback, item.duration)
+                Text(text = if (left != null) "$infoText · $left" else infoText, style = MaterialTheme.typography.bodySmall)
             }
         }
     }

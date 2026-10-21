@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -38,6 +39,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -527,22 +529,52 @@ private fun FileBrowserScreen(
     // TV has an Up button on the toolbar instead of a ".." entry.
     val allItems = viewModel.getFilteredFileList()
     val items = remember(allItems) { allItems.filter { it.path != "UP" } }
-    BrowserGrid(
-        folderKey = currentPath,
-        items = items,
-        isGridView = isGridView,
-        initialSelection = viewModel.getSelection(currentPath),
-        toolbarFocusRequester = toolbarFocusRequester,
-        contentEntry = contentEntry,
-        takeFocus = !viewModel.toolbarKeepsFocus,
-        onDialogFocusChanged = onDialogFocusChanged,
-        onVisibleItemsChanged = onVisibleItemsChanged
-    ) { item, modifier ->
-        val thumbnailUrl = remember(item.path, item.thumbnailUrl) { viewModel.thumbnailSourceFor(item) }
-        if (isGridView) {
-            FileTileItem(item, thumbnailUrl, modifier = modifier) { onItemClick(item) }
-        } else {
-            FileRowItem(item, thumbnailUrl, modifier = modifier) { onItemClick(item) }
+    // The server's front page leads with what's in progress. The row sits above the grid: Down
+    // from the toolbar lands on it, and Down from it on the grid.
+    val showContinue = viewModel.continueItems.isNotEmpty()
+    val continueRequester = remember { FocusRequester() }
+    val gridEntry = remember { ContentEntry() }
+    DisposableEffect(contentEntry, showContinue) {
+        val focusTop: () -> Boolean = {
+            if (showContinue) runCatching { continueRequester.requestFocus() }.isSuccess
+            else gridEntry.focusTop?.invoke() ?: false
+        }
+        contentEntry.focusTop = focusTop
+        onDispose { if (contentEntry.focusTop === focusTop) contentEntry.focusTop = null }
+    }
+    TvResumeDialog(viewModel)
+    // A card removed from Continue Watching took focus with it: onto the row's first card, or
+    // the folder when the row is gone.
+    LaunchedEffect(viewModel.continueRemovals) {
+        if (viewModel.continueRemovals == 0) return@LaunchedEffect
+        withFrameNanos { }
+        if (!(showContinue && runCatching { continueRequester.requestFocus() }.isSuccess)) gridEntry.focusTop?.invoke()
+    }
+    Column(Modifier.fillMaxSize()) {
+        if (showContinue) {
+            TvContinueRow(viewModel, continueRequester, up = toolbarFocusRequester,
+                onDown = { gridEntry.focusTop?.invoke() ?: false },
+                modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 12.dp))
+        }
+        BrowserGrid(
+            folderKey = currentPath,
+            items = items,
+            isGridView = isGridView,
+            initialSelection = viewModel.getSelection(currentPath),
+            toolbarFocusRequester = toolbarFocusRequester,
+            contentEntry = gridEntry,
+            takeFocus = !viewModel.toolbarKeepsFocus,
+            upFocusRequester = if (showContinue) continueRequester else toolbarFocusRequester,
+            onDialogFocusChanged = onDialogFocusChanged,
+            onVisibleItemsChanged = onVisibleItemsChanged
+        ) { item, modifier ->
+            val thumbnailUrl = remember(item.path, item.thumbnailUrl) { viewModel.thumbnailSourceFor(item) }
+            val playback = if (item.isDirectory) null else viewModel.playbackFor(item.path)
+            if (isGridView) {
+                FileTileItem(item, thumbnailUrl, modifier = modifier, playback = playback) { onItemClick(item) }
+            } else {
+                FileRowItem(item, thumbnailUrl, modifier = modifier, playback = playback) { onItemClick(item) }
+            }
         }
     }
 }
@@ -600,7 +632,7 @@ private fun handleFileClick(viewModel: MediaViewModel, item: FileItem) {
         }
     } else {
         when {
-            viewModel.isVideo(item.path) -> viewModel.playVideo(item.path)
+            viewModel.isVideo(item.path) -> viewModel.openVideo(item)
             viewModel.isImage(item.path) -> viewModel.showImage(item.path)
             viewModel.isPdf(item.path) -> viewModel.showPdf(item.path)
         }

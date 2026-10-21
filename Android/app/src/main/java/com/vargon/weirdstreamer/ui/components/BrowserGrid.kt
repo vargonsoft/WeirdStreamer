@@ -84,6 +84,8 @@ fun BrowserGrid(
     toolbarFocusRequester: FocusRequester,
     contentEntry: ContentEntry,
     takeFocus: Boolean,
+    // Where Up from the top row goes (a row above the grid, else the toolbar)
+    upFocusRequester: FocusRequester = toolbarFocusRequester,
     onDialogFocusChanged: (FocusRequester?) -> Unit,
     onVisibleItemsChanged: (List<FileItem>) -> Unit,
     itemContent: @Composable (FileItem, Modifier) -> Unit
@@ -254,7 +256,7 @@ fun BrowserGrid(
                     // edges are explicit: left/up go to the toolbar, right stops at the row end.
                     itemModifier = itemModifier.focusProperties {
                         if (isFirstColumn) left = toolbarFocusRequester
-                        if (isFirstRow) up = toolbarFocusRequester
+                        if (isFirstRow) up = upFocusRequester
                         if (isRowEnd) right = FocusRequester.Cancel
                     }
                 }

@@ -160,6 +160,7 @@ function setupEventListeners() {
     // Modal close buttons
     document.querySelectorAll('.close').forEach(closeBtn => {
         closeBtn.addEventListener('click', () => {
+            finishPlaybackReports();
             playerModal.classList.remove('active');
             imageModal.classList.remove('active');
             // Properly stop video loading
@@ -181,6 +182,7 @@ function setupEventListeners() {
     // Close modal on outside click
     window.addEventListener('click', (e) => {
         if (e.target === playerModal) {
+            finishPlaybackReports();
             playerModal.classList.remove('active');
             videoPlayer.pause();
             videoPlayer.src = '';
@@ -506,6 +508,17 @@ function renderMedia() {
         const element = createMediaElement(item);
         mediaGrid.appendChild(element);
     });
+
+    // The server's front page leads with what's in progress, in every library.
+    if (!state.currentPath) {
+        const path = state.currentPath;
+        createContinueRow().then(row => {
+            if (row && state.view === 'folders' && state.currentPath === path) {
+                directoryList.innerHTML = '';
+                directoryList.appendChild(row);
+            }
+        });
+    }
 }
 
 function createDirectoryElement(dir) {
@@ -606,6 +619,12 @@ function createMediaElement(item) {
     if (item.type === 'video' && canFixMatches()) {
         thumbnail.appendChild(createFixMatchButton({ path: item.path }, item.name));
     }
+    if (item.type === 'video') {
+        addProgressOverlay(thumbnail, item.playback, item.duration);
+        thumbnail.appendChild(createCardActions(item));
+        const left = timeLeftText(item);
+        if (left) size.textContent += ` • ${left}`;
+    }
     div.appendChild(thumbnail);
     div.appendChild(info);
     
@@ -614,7 +633,9 @@ function createMediaElement(item) {
 
 function handleMediaClick(item) {
     if (item.type === 'video') {
-        playVideo(item);
+        // A partly watched video asks first: Resume, or Play from start.
+        if (resumePosition(item)) showResumeChoice(item);
+        else playVideo(item);
     } else if (item.type === 'image') {
         viewImage(item);
     } else if (item.type === 'document') {
@@ -630,15 +651,20 @@ function needsTranscoding(filename) {
     return incompatibleFormats.includes(ext);
 }
 
-function playVideo(item, forceTranscode = false) {
+// startAt: where to start, in seconds (resuming).
+function playVideo(item, forceTranscode = false, startAt = 0) {
     if (isDiscImage(item)) {
-        playDisc(item);
+        playDisc(item, startAt);
         return;
     }
     hideDiscControls();
     console.log('Playing video:', item, 'Force transcode:', forceTranscode);
     console.log('API token exists:', !!api.token);
-    const streamUrl = api.getStreamUrl(item.path, forceTranscode);
+    let streamUrl = api.getStreamUrl(item.path, forceTranscode);
+    // A transcoded stream starts at the resume point and its time counts from there; a direct
+    // one seeks once it's loaded.
+    streamOffset = forceTranscode && startAt > 0 ? startAt : 0;
+    if (streamOffset > 0) streamUrl += `&start=${streamOffset.toFixed(2)}`;
     console.log('Final stream URL:', streamUrl);
     
     playerTitle.textContent = item.name;
@@ -672,9 +698,10 @@ function playVideo(item, forceTranscode = false) {
     } else {
         transcodeBtn.style.display = '';
         transcodeBtn.onclick = () => {
+            const at = playerPosition();
             playerModal.classList.remove('active');
             videoPlayer.pause();
-            playVideo(item, true);
+            playVideo(item, true, at);
         };
     }
     
@@ -683,6 +710,7 @@ function playVideo(item, forceTranscode = false) {
     // Wait for video to be ready before playing
     videoPlayer.onloadedmetadata = () => {
         console.log('Video loaded, playing...');
+        if (startAt > 0 && streamOffset === 0) videoPlayer.currentTime = startAt;
         videoPlayer.play().catch(err => {
             console.error('Error playing video:', err);
         });
@@ -693,27 +721,44 @@ function playVideo(item, forceTranscode = false) {
     };
 }
 
-// The player tells the server where it is, for the admin Streams page: every few seconds while
-// playing, and right away on play and pause.
+// The player tells the server where it is, for the admin Streams page and the user's progress:
+// every few seconds while playing, right away on play, pause and the end, and on closing.
 let playbackReportTimer = null;
+let playbackReport = null; // sends the current position: (ended) => void
+let streamOffset = 0; // a transcoded stream started partway in: where its time 0 is
 
 function startPlaybackReports(item) {
     clearInterval(playbackReportTimer);
-    const send = () => {
+    let started = false; // until playback starts, the position is still the resume point's
+    const send = (ended = false) => {
         if (!playerModal.classList.contains('active')) {
             clearInterval(playbackReportTimer);
             return;
         }
-        api.reportPlayback(item.path, playerPosition(), videoPlayer.paused).catch(() => {});
+        if (!started && !ended) return;
+        const extra = { ended };
+        if (disc && disc.info) extra.title = disc.title === disc.info.main_title ? 0 : disc.title;
+        api.reportPlayback(item.path, playerPosition(), videoPlayer.paused, extra).catch(() => {});
     };
-    playbackReportTimer = setInterval(send, 5000);
-    videoPlayer.onplay = send;
-    videoPlayer.onpause = send;
+    playbackReport = send;
+    playbackReportTimer = setInterval(() => send(), 5000);
+    videoPlayer.onplay = () => { started = true; send(); };
+    videoPlayer.onpause = () => send();
+    videoPlayer.onended = () => send(true);
 }
 
-// Where playback is in the file: discs restart their stream at an offset when seeking.
+// Sends the last position as the player closes, then shows the new progress.
+function finishPlaybackReports() {
+    if (!playerModal.classList.contains('active') || !playbackReport) return;
+    playbackReport(videoPlayer.ended);
+    playbackReport = null;
+    clearInterval(playbackReportTimer);
+    setTimeout(refreshCurrentView, 300);
+}
+
+// Where playback is in the file: discs and resumed transcodes start their stream at an offset.
 function playerPosition() {
-    return (disc && disc.item ? disc.offset : 0) + (videoPlayer.currentTime || 0);
+    return (disc && disc.item ? disc.offset : streamOffset) + (videoPlayer.currentTime || 0);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -736,7 +781,7 @@ function hideDiscControls() {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 
-async function playDisc(item) {
+async function playDisc(item, startAt = 0) {
     disc = { item, info: null, title: 0, angle: 1, audio: 0, subtitle: -1, offset: 0 };
     videoPlayer.controls = false;
     playerTitle.textContent = item.name + ' — reading disc…';
@@ -755,7 +800,7 @@ async function playDisc(item) {
     disc.title = info.main_title;
     playerTitle.textContent = item.name;
     renderDiscControls();
-    loadDiscStream(0);
+    loadDiscStream(startAt); // progress is kept for the main title, which plays first
 }
 
 function discTitle() {
@@ -877,6 +922,8 @@ const MATERIAL_ICONS = {
     description: 'M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z',
     tv: 'M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z',
     theaters: 'M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z',
+    check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+    close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     search: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
 };
 
@@ -2189,7 +2236,9 @@ async function showLibrary(libId, push = true, keepScroll = false) {
     state.mediaItems = data.unmatched.map(libraryFileItem);
     libraryBreadcrumb(null);
 
+    const continueRow = await createContinueRow(libId);
     container.innerHTML = '';
+    if (continueRow) container.appendChild(continueRow);
     const grid = document.createElement('div');
     grid.className = 'poster-grid';
     data.titles.forEach(t => grid.appendChild(createPosterCard(t)));
@@ -2235,6 +2284,15 @@ function createPosterCard(t) {
     const year = document.createElement('div');
     year.className = 'poster-year';
     year.textContent = t.year || '';
+    // Progress: a movie's place in it; a show's share of episodes watched.
+    const allWatched = t.file_count > 0 && (t.watched || 0) >= (t.kind === 'movie' ? 1 : t.file_count);
+    addProgressOverlay(poster, null, 0, { watched: allWatched });
+    if (t.kind === 'movie') {
+        addProgressBar(poster, t.progress);
+    } else if (t.watched && !allWatched) {
+        addProgressBar(poster, t.watched / t.file_count);
+        year.textContent = [t.year, `${t.watched} of ${t.file_count} watched`].filter(Boolean).join(' · ');
+    }
     card.appendChild(poster);
     card.appendChild(title);
     card.appendChild(year);
@@ -2258,6 +2316,7 @@ function createUnmatchedCard(f) {
     const meta = document.createElement('div');
     meta.className = 'poster-year';
     meta.textContent = f.count ? `${f.count} files` : formatSize(f.size || 0);
+    if (!f.count) addProgressOverlay(poster, f.playback, f.duration);
     card.appendChild(poster);
     card.appendChild(title);
     card.appendChild(meta);
@@ -2267,7 +2326,7 @@ function createUnmatchedCard(f) {
 
 function libraryFileItem(f) {
     return { path: f.path, name: f.name, type: 'video', size: f.size || 0, duration: f.duration || 0,
-             thumbnail_url: f.thumbnail_url || '', metadata: f.match || null };
+             thumbnail_url: f.thumbnail_url || '', metadata: f.match || null, playback: f.playback || null };
 }
 
 async function showTitle(libId, kind, id, push = true, keepScroll = false) {
@@ -2297,7 +2356,8 @@ async function showTitle(libId, kind, id, push = true, keepScroll = false) {
     if (!state.libraryType) state.libraryType = kind === 'show' ? 'tv' : 'movie';
     libraryBreadcrumb(t.title);
     container.innerHTML = '';
-    container.appendChild(createTitleHero(t));
+    const hero = createTitleHero(t);
+    container.appendChild(hero);
 
     // Movie libraries list files, also for a title matched to a TV show (a TV movie).
     if (kind === 'movie' || (t.files || []).length) {
@@ -2311,6 +2371,13 @@ async function showTitle(libId, kind, id, push = true, keepScroll = false) {
         if ((t.other_files || []).length) {
             container.appendChild(createFilesSection('Other files', t.other_files));
         }
+    }
+    // The whole title: a movie's files, or every episode of a show.
+    const titleItems = kind === 'movie' || (t.files || []).length ? state.mediaItems
+        : state.mediaItems.filter(i => !(t.other_files || []).some(f => f.path === i.path));
+    if (titleItems.length) {
+        const mark = createWatchedToggle(titleItems, 'btn secondary watched-btn', { label: true });
+        hero.querySelector('.title-info').appendChild(mark);
     }
     if (keepScroll) window.scrollTo(0, scroll);
     restorePendingScroll();
@@ -2424,12 +2491,7 @@ function createFilesSection(heading, files) {
         const wrap = document.createElement('div');
         wrap.className = 'title-file';
         wrap.appendChild(createMediaElement(item));
-        const play = document.createElement('button');
-        play.type = 'button';
-        play.className = 'btn play-btn';
-        play.textContent = '▶ Play';
-        play.onclick = () => playVideo(item);
-        wrap.appendChild(play);
+        wrap.appendChild(createPlayButtons(item));
         grid.appendChild(wrap);
     });
     section.appendChild(grid);
@@ -2450,24 +2512,38 @@ function createSeasonsSection(t) {
     const list = document.createElement('div');
     list.className = 'episode-list';
 
+    const seasonActions = el('div', 'season-actions');
+    const seasonItems = (se) => se.episodes.flatMap(ep => ep.files.map(libraryFileItem));
     const select = (index) => {
+        state.seasonIndex = index;
         picker.querySelectorAll('button').forEach((b, i) => {
             b.classList.toggle('active', i === index);
             b.setAttribute('aria-selected', String(i === index));
         });
         list.innerHTML = '';
         seasons[index].episodes.forEach(ep => list.appendChild(createEpisodeRow(ep)));
+        seasonActions.innerHTML = '';
+        seasonActions.appendChild(createWatchedToggle(seasonItems(seasons[index]), 'btn secondary watched-btn',
+            { label: true }));
+        seasonActions.querySelector('span').textContent += ' (season)';
     };
     seasons.forEach((se, i) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.setAttribute('role', 'tab');
-        btn.textContent = `${se.name} (${se.episodes.length})`;
+        // An episode is watched when any of its files is.
+        const watched = se.episodes.filter(ep => ep.files.some(f => f.playback && f.playback.watched)).length;
+        btn.textContent = watched
+            ? `${se.name} (${watched}/${se.episodes.length})` : `${se.name} (${se.episodes.length})`;
+        if (watched === se.episodes.length) btn.classList.add('all-watched');
         btn.onclick = () => select(i);
         picker.appendChild(btn);
     });
-    section.append(picker, list);
-    select(0);
+    section.append(picker, seasonActions, list);
+    // A refresh (after playing or marking) stays on the season that was showing.
+    const keep = state.titleSeasonFor === t.tmdb_id ? state.seasonIndex : 0;
+    state.titleSeasonFor = t.tmdb_id;
+    select(Math.min(keep || 0, seasons.length - 1));
     return section;
 }
 
@@ -2487,7 +2563,8 @@ function createEpisodeRow(ep) {
         img.loading = 'lazy';
         still.appendChild(img);
     }
-    still.onclick = () => playVideo(first);
+    addProgressOverlay(still, first.playback, first.duration);
+    still.onclick = () => playVideo(first, false, resumePosition(first));
 
     const text = document.createElement('div');
     text.className = 'episode-text';
@@ -2506,22 +2583,218 @@ function createEpisodeRow(ep) {
     actions.className = 'episode-actions';
     ep.files.forEach(f => {
         const item = libraryFileItem(f);
-        const play = document.createElement('button');
-        play.type = 'button';
-        play.className = 'btn play-btn';
         const ext = f.name.split('.').pop().toUpperCase();
-        play.textContent = ep.files.length > 1 ? `▶ ${ext}` : '▶ Play';
-        play.title = f.name;
-        play.onclick = () => playVideo(item);
-        actions.appendChild(play);
+        actions.appendChild(createPlayButtons(item, ep.files.length > 1 ? ext : 'Play'));
         if (canFixMatches()) {
             const fix = createFixMatchButton({ path: f.path }, f.name);
             fix.classList.add('inline');
             actions.appendChild(fix);
         }
     });
+    actions.appendChild(createWatchedToggle(ep.files.map(libraryFileItem), 'btn secondary icon-btn watched-btn'));
     row.append(still, text, actions);
     return row;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Playback progress: each video's progress for the signed-in user, from the server's playback
+// records (item.playback: { position, duration, watched }).
+
+const MIN_RESUME = 10; // seconds; earlier than this starts over
+
+function resumePosition(item) {
+    const p = item.playback;
+    return p && p.position >= MIN_RESUME ? p.position : 0;
+}
+
+function progressFraction(playback, duration) {
+    if (!playback || playback.position < MIN_RESUME) return 0;
+    const total = playback.duration || duration || 0;
+    return total > 0 ? Math.min(playback.position / total, 1) : 0;
+}
+
+// "23 min left", for a video in progress.
+function timeLeftText(item) {
+    const p = item.playback;
+    const total = (p && p.duration) || item.duration || 0;
+    if (!resumePosition(item) || !total) return '';
+    const minutes = Math.max(1, Math.round((total - p.position) / 60));
+    return `${minutes} min left`;
+}
+
+// A progress line along the bottom of a thumbnail, and a check in the corner once watched.
+function addProgressOverlay(container, playback, duration, { watched } = {}) {
+    container.querySelectorAll('.watch-progress, .watched-badge').forEach(n => n.remove());
+    addProgressBar(container, progressFraction(playback, duration));
+    if (watched ?? (playback && playback.watched)) {
+        const badge = el('div', 'watched-badge');
+        badge.innerHTML = iconSvg('check');
+        badge.title = 'Watched';
+        container.appendChild(badge);
+    }
+}
+
+function addProgressBar(container, fraction) {
+    if (!(fraction > 0)) return;
+    const bar = el('div', 'watch-progress');
+    const fill = el('span');
+    fill.style.width = `${(Math.min(fraction, 1) * 100).toFixed(1)}%`;
+    bar.appendChild(fill);
+    container.appendChild(bar);
+}
+
+// Corner buttons on a video's thumbnail: Play from start (when in progress), and watched.
+function createCardActions(item) {
+    const actions = el('div', 'card-actions');
+    if (resumePosition(item)) {
+        const restart = el('button', 'card-action');
+        restart.type = 'button';
+        restart.title = 'Play from start';
+        restart.innerHTML = iconSvg('replay');
+        restart.onclick = (e) => { e.stopPropagation(); playVideo(item, false, 0); };
+        actions.appendChild(restart);
+    }
+    actions.appendChild(createWatchedToggle([item], 'card-action'));
+    return actions;
+}
+
+function isWatched(items) {
+    return items.length > 0 && items.every(i => i.playback && i.playback.watched);
+}
+
+// A button that marks files watched, or unwatched if they all are.
+function createWatchedToggle(items, className, { label = false } = {}) {
+    const btn = el('button', className);
+    btn.type = 'button';
+    const watched = isWatched(items);
+    const text = watched ? 'Mark unwatched' : 'Mark watched';
+    btn.title = text;
+    btn.classList.toggle('is-watched', watched);
+    btn.innerHTML = iconSvg('check') + (label ? `<span>${text}</span>` : '');
+    btn.onclick = async (e) => {
+        e.stopPropagation();
+        try {
+            await api.setWatched(items.map(i => i.path), !watched);
+            refreshCurrentView();
+        } catch (error) {
+            alert('Could not save: ' + error.message);
+        }
+    };
+    return btn;
+}
+
+// Play (or Resume, with a Play from start beside it) buttons for a file.
+function createPlayButtons(item, label = 'Play') {
+    const group = el('div', 'play-buttons');
+    const at = resumePosition(item);
+    const play = el('button', 'btn play-btn');
+    play.type = 'button';
+    play.innerHTML = iconSvg('play') + `<span>${at ? `Resume ${clock(at)}` : label}</span>`;
+    play.title = item.name;
+    play.onclick = () => playVideo(item, false, at);
+    group.appendChild(play);
+    if (at) {
+        const restart = el('button', 'btn play-btn secondary');
+        restart.type = 'button';
+        restart.innerHTML = iconSvg('replay') + '<span>Play from start</span>';
+        restart.onclick = () => playVideo(item, false, 0);
+        group.appendChild(restart);
+    }
+    return group;
+}
+
+// Resume or Play from start, for a partly watched video opened from a folder.
+function showResumeChoice(item) {
+    document.querySelector('.resume-choice')?.remove();
+    const overlay = el('div', 'resume-choice');
+    const box = el('div', 'resume-choice-box');
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-label', item.name);
+    box.appendChild(el('div', 'resume-choice-title', item.name));
+    const left = timeLeftText(item);
+    if (left) box.appendChild(el('div', 'resume-choice-meta', left));
+    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+    const button = (icon, text, cls, action) => {
+        const b = el('button', cls);
+        b.type = 'button';
+        b.innerHTML = iconSvg(icon) + `<span>${text}</span>`;
+        b.onclick = () => { close(); action(); };
+        box.appendChild(b);
+        return b;
+    };
+    const resume = button('play', `Resume from ${clock(resumePosition(item))}`, 'btn',
+        () => playVideo(item, false, resumePosition(item)));
+    button('replay', 'Play from start', 'btn secondary', () => playVideo(item, false, 0));
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    resume.focus();
+}
+
+// Continue Watching: a row of videos in progress, newest first, optionally in one library.
+async function createContinueRow(lib = '') {
+    let items;
+    try {
+        items = await api.continueWatching(lib);
+    } catch (error) {
+        return null;
+    }
+    if (!items || !items.length) return null;
+    const section = el('section', 'continue-row');
+    section.appendChild(el('h2', 'library-section', 'Continue Watching'));
+    const row = el('div', 'continue-items');
+    items.forEach(item => row.appendChild(createContinueCard(item)));
+    section.appendChild(row);
+    return section;
+}
+
+function continueTitle(item) {
+    const md = item.metadata;
+    if (md && md.kind === 'episode') {
+        return { title: md.show_title, subtitle: `${episodeCode(md.season, md.episode)} · ${md.title}` };
+    }
+    if (md && md.title) return { title: md.title + (md.year ? ` (${md.year})` : ''), subtitle: item.name };
+    return { title: item.name, subtitle: '' };
+}
+
+function createContinueCard(item) {
+    const card = el('div', 'continue-card');
+    card.tabIndex = 0;
+    const thumb = el('div', 'continue-thumb');
+    const md = item.metadata || {};
+    const src = md.still ? API_BASE + md.still : md.backdrop ? API_BASE + md.backdrop
+        : item.thumbnail_url ? api.getThumbnailUrl(item.thumbnail_url) : '';
+    if (src) {
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = '';
+        img.loading = 'lazy';
+        thumb.appendChild(img);
+    } else {
+        thumb.innerHTML = placeholderIcon('movie');
+    }
+    addProgressOverlay(thumb, item.playback, item.duration);
+    const remove = el('button', 'card-action continue-remove');
+    remove.type = 'button';
+    remove.title = 'Remove from Continue Watching';
+    remove.innerHTML = iconSvg('close');
+    remove.onclick = async (e) => {
+        e.stopPropagation();
+        await api.removeFromContinue(item.path).catch(() => {});
+        card.remove();
+    };
+    thumb.appendChild(remove);
+    const { title, subtitle } = continueTitle(item);
+    card.append(thumb, el('div', 'continue-title', title));
+    if (subtitle) card.appendChild(el('div', 'continue-subtitle', subtitle));
+    const left = timeLeftText(item);
+    if (left) card.appendChild(el('div', 'continue-subtitle', left));
+    const play = () => playVideo(item, false, resumePosition(item));
+    card.onclick = play;
+    card.onkeydown = (e) => { if (e.key === 'Enter') play(); };
+    return card;
 }
 
 // ---------------------------------------------------------------------------------------------

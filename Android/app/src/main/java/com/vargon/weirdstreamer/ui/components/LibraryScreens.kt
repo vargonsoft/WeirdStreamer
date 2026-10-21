@@ -33,7 +33,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.runtime.Composable
@@ -87,6 +91,7 @@ private const val POSTER_COLUMNS = 6
 @Composable
 fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequester, contentEntry: ContentEntry) {
     val listing = viewModel.libraryListing
+    TvResumeDialog(viewModel) // held Continue Watching cards
     when {
         listing == null && viewModel.libraryError != null -> CenteredMessage("Error: ${viewModel.libraryError}")
         listing == null -> CenteredMessage("Loading…")
@@ -102,6 +107,7 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
             val gridState = rememberLazyGridState(returnTo?.index ?: 0, returnTo?.offset ?: 0)
             val lastRequester = remember { FocusRequester() }
             val isTv = listing.libraryType == "tv"
+            val hasContinue = viewModel.continueItems.isNotEmpty()
             // Requesters of the composed tiles by key, for Down from the toolbar.
             val requesters = remember(listing.libraryId) { HashMap<Any, FocusRequester>() }
             DisposableEffect(contentEntry, listing.libraryId) {
@@ -117,7 +123,24 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                 if (viewModel.toolbarKeepsFocus) return@LaunchedEffect
                 awaitFrame()
                 val restored = returnTo != null && runCatching { lastRequester.requestFocus() }.isSuccess
-                if (!restored) runCatching { firstRequester.requestFocus() }
+                // Start on Continue Watching when there is one: it's the top row.
+                if (!restored) runCatching { (requesters[CONTINUE_ROW] ?: firstRequester).requestFocus() }
+            }
+            // A card removed from Continue Watching took focus with it: onto the next, or the posters.
+            LaunchedEffect(viewModel.continueRemovals) {
+                if (viewModel.continueRemovals == 0) return@LaunchedEffect
+                awaitFrame()
+                val onRow = hasContinue && runCatching { requesters[CONTINUE_ROW]?.requestFocus() }.getOrNull() != null
+                if (!onRow) runCatching { firstRequester.requestFocus() }
+            }
+            // Continue Watching usually arrives just after the titles: show it and move onto it,
+            // unless the user has already moved on or came back to a title.
+            LaunchedEffect(listing.libraryId, hasContinue) {
+                if (!hasContinue || returnTo != null || viewModel.toolbarKeepsFocus) return@LaunchedEffect
+                if (gridState.firstVisibleItemIndex > 1) return@LaunchedEffect
+                gridState.scrollToItem(0)
+                awaitFrame()
+                runCatching { requesters[CONTINUE_ROW]?.requestFocus() }
             }
 
             LazyVerticalGrid(
@@ -128,15 +151,32 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                if (hasContinue) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = CONTINUE_ROW) {
+                        val continueRequester = remember { FocusRequester() }
+                        DisposableEffect(Unit) {
+                            requesters[CONTINUE_ROW] = continueRequester
+                            onDispose { if (requesters[CONTINUE_ROW] === continueRequester) requesters.remove(CONTINUE_ROW) }
+                        }
+                        TvContinueRow(viewModel, continueRequester, up = toolbarFocusRequester,
+                            onDown = { runCatching { firstRequester.requestFocus() }.isSuccess })
+                    }
+                }
                 itemsIndexed(listing.titles, key = { _, t -> "${t.kind}:${t.tmdbId}" }) { index, t ->
                     val key = "${t.kind}:${t.tmdbId}"
+                    // A movie's place in it; a show's share of episodes watched.
+                    val showPart = t.kind == "show" && t.watched > 0 && !t.allWatched
                     PosterTile(
                         title = t.title,
-                        subtitle = t.year?.toString(),
+                        subtitle = listOfNotNull(t.year?.toString(),
+                            if (showPart) "${t.watched} of ${t.fileCount} watched" else null).joinToString(" · "),
                         posterUrl = viewModel.serverUrl(t.poster),
                         placeholder = if (t.kind == "show") Icons.Default.Tv else Icons.Default.Movie,
+                        progress = if (t.kind == "movie") t.progress.toFloat()
+                            else if (showPart) t.watched.toFloat() / t.fileCount else 0f,
+                        watched = t.allWatched,
                         modifier = Modifier
-                            .gridEdges(index, toolbarFocusRequester)
+                            .gridEdges(index, toolbarFocusRequester, firstRow = !hasContinue)
                             .registered(key, requesters)
                             .then(if (index == 0) Modifier.focusRequester(firstRequester) else Modifier)
                             .then(if (key == returnTo?.titleKey) Modifier.focusRequester(lastRequester) else Modifier),
@@ -162,8 +202,10 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                             subtitle = if (playable) formatBytes(f.size) else "${f.count} files",
                             posterUrl = null,
                             placeholder = if (isTv) Icons.Default.Tv else Icons.Default.Movie,
+                            progress = f.playback?.fraction(f.duration) ?: 0f,
+                            watched = f.playback?.watched == true,
                             modifier = Modifier
-                                .gridEdges(index, toolbarFocusRequester, firstRow = listing.titles.isEmpty())
+                                .gridEdges(index, toolbarFocusRequester, firstRow = listing.titles.isEmpty() && !hasContinue)
                                 .registered("file:${f.path}", requesters)
                                 .then(if (listing.titles.isEmpty() && index == 0) Modifier.focusRequester(firstRequester) else Modifier),
                             onClick = { if (playable) viewModel.playLibraryFile(f, listOf(f)) }
@@ -176,6 +218,7 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
 }
 
 private const val UNMATCHED_HEADER = "unmatched-header"
+private const val CONTINUE_ROW = "continue-row"
 
 /** Attaches a focus requester recorded in [requesters] under [key] while the item is composed. */
 @Composable
@@ -207,6 +250,8 @@ fun PosterTile(
     posterUrl: String?,
     placeholder: ImageVector,
     modifier: Modifier = Modifier,
+    progress: Float = 0f,
+    watched: Boolean = false,
     onClick: () -> Unit
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -224,6 +269,8 @@ fun PosterTile(
             if (posterUrl != null) {
                 RemoteImage(posterUrl, Modifier.fillMaxSize())
             }
+            WatchProgressOverlay(progress, watched, barHeight = 5.dp, badgeSize = 28.dp,
+                accent = TvAccent, onAccent = TvOnAccent)
         }
         Spacer(Modifier.height(8.dp))
         Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -440,6 +487,8 @@ private fun FileRow(
                 ) {
                     Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(40.dp))
                     viewModel.serverUrl(file.thumbnailUrl)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
+                    PlaybackOverlay(file.playback, file.duration, barHeight = 5.dp, badgeSize = 26.dp,
+                        accent = TvAccent, onAccent = TvOnAccent)
                 }
                 Spacer(Modifier.width(18.dp))
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -450,13 +499,28 @@ private fun FileRow(
                     formatBytes(file.size).takeIf { it.isNotEmpty() }?.let {
                         Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Button(
-                        onClick = { viewModel.playLibraryFile(file, queue) },
-                        modifier = if (index == 0 && firstRequester != null) Modifier.focusRequester(firstRequester) else Modifier
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Play")
+                    timeLeftText(file.playback, file.duration)?.let {
+                        Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    // Play, or Resume with Play from start beside it; then Mark watched.
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val resumeAt = file.playback?.resumeAt ?: 0.0
+                        Button(
+                            onClick = { viewModel.playLibraryFile(file, queue) },
+                            modifier = if (index == 0 && firstRequester != null) Modifier.focusRequester(firstRequester) else Modifier
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (resumeAt > 0) "Resume ${clockText(resumeAt)}" else "Play")
+                        }
+                        if (resumeAt > 0) {
+                            Button(onClick = { viewModel.playLibraryFile(file, queue, fromStart = true) }) {
+                                Icon(Icons.Default.Replay, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Play from start")
+                            }
+                        }
+                        TvWatchedButton(viewModel, listOf(file))
                     }
                 }
             }
@@ -518,15 +582,41 @@ private fun SeasonsAndEpisodes(
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ) else ButtonDefaults.colors()
                 ) {
-                    Text("${s.name} (${s.episodes.size})")
+                    // Episodes watched (any of an episode's files), with a check once they all are.
+                    val watched = s.episodes.count { e -> e.files.any { it.playback?.watched == true } }
+                    Text(if (watched > 0) "${s.name} ($watched/${s.episodes.size})" else "${s.name} (${s.episodes.size})")
+                    if (watched == s.episodes.size) {
+                        Spacer(Modifier.width(6.dp))
+                        Icon(Icons.Default.Check, contentDescription = "Watched", modifier = Modifier.size(18.dp))
+                    }
                 }
+            }
+            item(key = "season-watched") {
+                TvWatchedButton(viewModel, season.episodes.flatMap { it.files }, label = "season")
+            }
+            item(key = "show-watched") {
+                TvWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, label = "show")
             }
         }
         season.episodes.forEachIndexed { index, episode ->
             // Up from the first episode goes to the season picker (Compose's own search can pick the
             // cast instead, since the full-width row lines up with it too).
-            EpisodeRow(viewModel, episode, queue, if (index == 0) playRequester else null,
-                up = if (index == 0) pickerRequester else null)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) {
+                    EpisodeRow(viewModel, episode, queue, if (index == 0) playRequester else null,
+                        up = if (index == 0) pickerRequester else null)
+                }
+                // Selecting the row resumes; these start over and mark it watched.
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 12.dp)) {
+                    val first = episode.files.firstOrNull()
+                    if (first != null && (first.playback?.resumeAt ?: 0.0) > 0) {
+                        Button(onClick = { viewModel.playLibraryFile(first, queue, fromStart = true) }) {
+                            Icon(Icons.Default.Replay, contentDescription = "Play from start")
+                        }
+                    }
+                    TvWatchedButton(viewModel, episode.files, iconOnly = true)
+                }
+            }
         }
     }
 }
@@ -562,6 +652,8 @@ private fun EpisodeRow(
             (viewModel.serverUrl(episode.still) ?: viewModel.serverUrl(first.thumbnailUrl))?.let {
                 RemoteImage(it, Modifier.fillMaxSize())
             }
+            PlaybackOverlay(first.playback, first.duration, barHeight = 5.dp, badgeSize = 24.dp,
+                accent = TvAccent, onAccent = TvOnAccent)
         }
         Spacer(Modifier.width(20.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -583,6 +675,31 @@ private fun EpisodeRow(
                 Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp))
             }
+            first.playback?.resumeAt?.takeIf { it > 0 }?.let {
+                Text("Resumes at ${clockText(it)}" + (timeLeftText(first.playback, first.duration)?.let { l -> " · $l" } ?: ""),
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+    }
+}
+
+/**
+ * Marks [files] watched, or unwatched when they all are: an icon, or "Mark season watched" style
+ * text for a [label]led group.
+ */
+@Composable
+private fun TvWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>, label: String? = null, iconOnly: Boolean = false) {
+    if (files.isEmpty()) return
+    val watched = files.all { it.playback?.watched == true }
+    // Watched: a filled check; not yet: an empty circle (button colors alone don't tell them apart).
+    Button(onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
+        Icon(if (watched) Icons.Default.CheckCircle else Icons.Outlined.Circle,
+            contentDescription = if (watched) "Mark unwatched" else "Mark watched")
+        if (!iconOnly) {
+            Spacer(Modifier.width(6.dp))
+            val what = label?.let { " $it" } ?: ""
+            Text(if (watched) "Mark$what unwatched" else "Mark$what watched")
         }
     }
 }

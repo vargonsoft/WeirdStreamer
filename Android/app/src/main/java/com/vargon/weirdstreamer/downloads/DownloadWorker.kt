@@ -91,9 +91,11 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         var width = 0
         var height = 0
 
+        val options = api.downloadOptions(encodedPath).body()
+        options?.let { o -> item = DownloadStore.update(item.id) { it.copy(durationSeconds = o.duration) } ?: return@withContext }
         val url: String
         if (item.isOriginal) {
-            api.downloadOptions(encodedPath).body()?.let { width = it.width; height = it.height }
+            options?.let { width = it.width; height = it.height }
             url = "${item.serverAddress}/api/media/stream?path=${URLEncoder.encode(encodedPath, "UTF-8")}&auto-transcode=0"
         } else {
             // The server encodes the copy first; its progress is shown as "Preparing".

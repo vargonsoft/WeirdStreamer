@@ -39,7 +39,8 @@ data class FileItem(
     val width: Int? = null,
     val height: Int? = null,
     val originalPath: String? = null, // For SSE matching or original reference
-    val id: Long? = null // Database ID for WS Server
+    val id: Long? = null, // Database ID for WS Server
+    val playback: com.vargon.weirdstreamer.api.models.Playback? = null // the user's progress (WS Server videos)
 )
 
 /**

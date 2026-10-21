@@ -541,6 +541,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			h.meta.Annotate(targetLib, absTarget, dirs, items)
 		}
 	}
+	annotateItems(items, h.requestPlayback(r))
 
 	result := models.Directory{
 		Path:        relativePath,

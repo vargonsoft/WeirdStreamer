@@ -128,9 +128,11 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
     var showControls by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
-    var playbackPosition by remember(path) { mutableLongStateOf(0L) }
+    // Starts where the user stopped last time (0 to start over), as the view model says.
+    var playbackPosition by remember(path) { mutableLongStateOf(viewModel.playbackStartMs) }
     var duration by remember(path) { mutableLongStateOf(0L) }
     var isBuffering by remember { mutableStateOf(true) }
+    var ended by remember(path) { mutableStateOf(false) }
 
     // Keep screen on while playing or buffering
     DisposableEffect(isPlaying, isBuffering) {
@@ -291,6 +293,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
+                if (state == Player.STATE_ENDED && !isSmbSource) {
+                    ended = true
+                    viewModel.reportPlayback(path, playbackPosition, paused = true, ended = true, discTitle = discTitle)
+                }
                 if (state == Player.STATE_READY) {
                     val currentDuration = exoPlayer.duration
                     if (fullDuration > 0) {
@@ -316,6 +322,11 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
+            // Where the user stopped, so it resumes from there (the end was already reported).
+            if (!isSmbSource && !ended && exoPlayer.mediaItemCount > 0) {
+                val position = if (enableTranscode) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
+                viewModel.reportPlayback(path, position, paused = true, discTitle = discTitle)
+            }
             exoPlayer.release()
         }
     }
@@ -358,9 +369,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     // Where the player is, for the server's admin Streams page: every few seconds, and on
     // play/pause (isPlaying restarts the effect).
     LaunchedEffect(exoPlayer, path, isPlaying) {
-        if (isSmbSource || isLocal) return@LaunchedEffect
-        while (true) {
-            viewModel.reportPlayback(path, playbackPosition, !exoPlayer.isPlaying)
+        if (isSmbSource) return@LaunchedEffect
+        while (!ended) { // the end was reported, and a report after it would undo "watched"
+            // Downloads played from the phone are recorded locally and synced later.
+            viewModel.reportPlayback(path, playbackPosition, !exoPlayer.isPlaying, discTitle = discTitle)
             delay(5000)
         }
     }

@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,7 +30,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.filled.Theaters
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +42,8 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -89,12 +97,23 @@ fun PhoneLibraryScreen(viewModel: MediaViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                if (viewModel.continueItems.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "continue") {
+                        PhoneContinueRow(viewModel, sidePadding = 0.dp) // the grid has its own
+                    }
+                }
                 itemsIndexed(listing.titles, key = { _, t -> "${t.kind}:${t.tmdbId}" }) { _, t ->
+                    // A movie's place in it; a show's share of episodes watched.
+                    val showPart = t.kind == "show" && t.watched > 0 && !t.allWatched
                     PhonePosterTile(
                         title = t.title,
-                        subtitle = t.year?.toString(),
+                        subtitle = listOfNotNull(t.year?.toString(),
+                            if (showPart) "${t.watched} of ${t.fileCount} watched" else null).joinToString(" · "),
                         posterUrl = viewModel.serverUrl(t.poster),
-                        placeholder = if (t.kind == "show") Icons.Default.Tv else Icons.Default.Movie
+                        placeholder = if (t.kind == "show") Icons.Default.Tv else Icons.Default.Movie,
+                        progress = if (t.kind == "movie") t.progress.toFloat()
+                            else if (showPart) t.watched.toFloat() / t.fileCount else 0f,
+                        watched = t.allWatched
                     ) {
                         viewModel.libraryReturn = LibraryReturn(listing.libraryId, "${t.kind}:${t.tmdbId}",
                             gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset)
@@ -112,7 +131,9 @@ fun PhoneLibraryScreen(viewModel: MediaViewModel) {
                             title = f.name,
                             subtitle = if (playable) formatBytes(f.size) else "${f.count} files",
                             posterUrl = null,
-                            placeholder = if (isTv) Icons.Default.Tv else Icons.Default.Theaters
+                            placeholder = if (isTv) Icons.Default.Tv else Icons.Default.Theaters,
+                            progress = f.playback?.fraction(f.duration) ?: 0f,
+                            watched = f.playback?.watched == true
                         ) { if (playable) viewModel.playLibraryFile(f, listOf(f)) }
                     }
                 }
@@ -127,6 +148,8 @@ private fun PhonePosterTile(
     subtitle: String?,
     posterUrl: String?,
     placeholder: ImageVector,
+    progress: Float = 0f,
+    watched: Boolean = false,
     onClick: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
@@ -141,6 +164,7 @@ private fun PhonePosterTile(
             Icon(placeholder, contentDescription = null, modifier = Modifier.size(40.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
             posterUrl?.let { RemoteImage(it, Modifier.fillMaxSize()) }
+            WatchProgressOverlay(progress, watched)
         }
         Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 6.dp))
@@ -159,6 +183,7 @@ fun PhoneTitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "header") { PhoneTitleHeader(viewModel, title) }
         item(key = "details") { PhoneTitleDetails(title) }
+        item(key = "watched") { PhoneTitleWatched(viewModel, title) }
         title.cast?.takeIf { it.isNotEmpty() }?.let { cast ->
             item(key = "cast") { PhoneCastRow(viewModel, cast) }
         }
@@ -287,6 +312,7 @@ private fun PhoneSectionHeader(text: String) {
 }
 
 /** A file: its thumbnail (tap to play) with the full name, size, and play and download buttons. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: List<LibraryFile>, titleLabel: String? = null) {
     Row(
@@ -304,6 +330,7 @@ private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: Li
         ) {
             Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(32.dp))
             viewModel.serverUrl(file.thumbnailUrl)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
+            PlaybackOverlay(file.playback, file.duration)
         }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -314,10 +341,28 @@ private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: Li
             formatBytes(file.size).takeIf { it.isNotEmpty() }?.let {
                 Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalIconButton(onClick = { viewModel.playLibraryFile(file, queue) }) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Play")
+            timeLeftText(file.playback, file.duration)?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
+            // Play, or Resume with Play from start beside it; then watched and download.
+            FlowRow(verticalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
+                val resumeAt = file.playback?.resumeAt ?: 0.0
+                if (resumeAt > 0) {
+                    FilledTonalButton(onClick = { viewModel.playLibraryFile(file, queue) },
+                        contentPadding = PaddingValues(horizontal = 12.dp)) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Resume ${clockText(resumeAt)}")
+                    }
+                    IconButton(onClick = { viewModel.playLibraryFile(file, queue, fromStart = true) }) {
+                        Icon(Icons.Default.Replay, contentDescription = "Play from start")
+                    }
+                } else {
+                    FilledTonalIconButton(onClick = { viewModel.playLibraryFile(file, queue) }) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Play")
+                    }
                 }
+                WatchedButton(viewModel, listOf(file))
                 val label = file.match?.let { m -> m.title + (m.year?.let { " ($it)" } ?: "") } ?: titleLabel
                 DownloadButton(viewModel, DownloadRequest.of(viewModel, file, label))
             }
@@ -352,8 +397,13 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
         ) {
             itemsIndexed(seasons, key = { _, s -> s.season }) { index, s ->
+                // Episodes watched (any of an episode's files), with a check once they all are.
+                val watched = s.episodes.count { e -> e.files.any { it.playback?.watched == true } }
                 FilterChip(selected = index == selected, onClick = { selected = index },
-                    label = { Text("${s.name} (${s.episodes.size})") })
+                    label = { Text(if (watched > 0) "${s.name} ($watched/${s.episodes.size})" else "${s.name} (${s.episodes.size})") },
+                    trailingIcon = if (watched == s.episodes.size) {
+                        { Icon(Icons.Default.Check, contentDescription = "Watched", modifier = Modifier.size(16.dp)) }
+                    } else null)
             }
         }
         var downloading by remember { mutableStateOf<List<DownloadRequest>?>(null) }
@@ -370,6 +420,14 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
             }
         }
         downloading?.let { DownloadQualityDialog(viewModel, it) { downloading = null } }
+        val seasonFiles = season.episodes.flatMap { it.files }
+        val seasonWatched = seasonFiles.isNotEmpty() && seasonFiles.all { it.playback?.watched == true }
+        TextButton(onClick = { viewModel.setWatched(seasonFiles.map { it.path }, !seasonWatched) },
+            modifier = Modifier.padding(horizontal = 8.dp)) {
+            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (seasonWatched) "Mark season unwatched" else "Mark season watched")
+        }
         season.episodes.forEach { PhoneEpisodeRow(viewModel, it, queue, title.title) }
     }
 }
@@ -396,6 +454,7 @@ private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, 
             (viewModel.serverUrl(episode.still) ?: viewModel.serverUrl(first.thumbnailUrl))?.let {
                 RemoteImage(it, Modifier.fillMaxSize())
             }
+            PlaybackOverlay(first.playback, first.duration, badgeSize = 18.dp)
         }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -417,8 +476,19 @@ private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, 
                 Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp))
             }
+            // Tapping the row resumes; this starts over.
+            val resumeAt = first.playback?.resumeAt ?: 0.0
+            if (resumeAt > 0) {
+                TextButton(onClick = { viewModel.playLibraryFile(first, queue, fromStart = true) },
+                    contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Play from start · resumes at ${clockText(resumeAt)}", style = MaterialTheme.typography.labelMedium)
+                }
+            }
         }
         Column {
+            WatchedButton(viewModel, episode.files)
             episode.files.forEach { f -> DownloadButton(viewModel, DownloadRequest.of(viewModel, f, episodeLabel(showTitle, episode), episode.still)) }
         }
     }
@@ -436,5 +506,34 @@ private fun PhoneMessage(text: String) {
     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center)
+    }
+}
+
+/** A check that marks [files] watched, or unwatched when they all are. */
+@Composable
+private fun WatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>) {
+    val watched = files.isNotEmpty() && files.all { it.playback?.watched == true }
+    IconButton(onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
+        Icon(
+            if (watched) Icons.Default.CheckCircle else Icons.Outlined.CheckCircle,
+            contentDescription = if (watched) "Mark unwatched" else "Mark watched",
+            tint = if (watched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** Marks the whole title (a movie's files, or every episode) watched or unwatched. */
+@Composable
+private fun PhoneTitleWatched(viewModel: MediaViewModel, title: TitleDetail) {
+    val files = if (title.kind == "movie" || !title.files.isNullOrEmpty()) title.files.orEmpty()
+        else title.seasons.orEmpty().flatMap { s -> s.episodes.flatMap { it.files } }
+    if (files.isEmpty()) return
+    val watched = files.all { it.playback?.watched == true }
+    TextButton(onClick = { viewModel.setWatched(files.map { it.path }, !watched) },
+        modifier = Modifier.padding(horizontal = 8.dp)) {
+        Icon(if (watched) Icons.Default.CheckCircle else Icons.Outlined.CheckCircle, contentDescription = null,
+            modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(if (watched) "Mark unwatched" else "Mark watched")
     }
 }

@@ -108,6 +108,8 @@ type streamProgress struct {
 	Path     string  `json:"path"` // base64 absolute path
 	Position float64 `json:"position"`
 	Paused   bool    `json:"paused"`
+	Ended    bool    `json:"ended"` // played to the end
+	Title    int     `json:"title"` // discs: the title playing (0 is the main title)
 }
 
 // ReportStreamProgress takes a player's position and paused state for the Streams page.
@@ -134,6 +136,10 @@ func (h *MediaHandler) ReportStreamProgress(w http.ResponseWriter, r *http.Reque
 	}
 	sess := h.streams.Report(streamKey(r, path), h.streamDescriber(r, item), req.Position, req.Paused)
 	h.probeStream(sess, path)
+	// A disc's progress is in its main title; other titles (extras) aren't tracked.
+	if !media.IsDiscImage(path) || req.Title == 0 {
+		h.recordPlayback(r, item, req.Position, req.Ended, time.Now(), false)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

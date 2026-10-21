@@ -31,7 +31,8 @@ data class DownloadItem(
     val width: Int = 0,
     val height: Int = 0,
     val error: String? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val durationSeconds: Double = 0.0 // the video's length, for progress played from the phone
 ) {
     enum class State { QUEUED, PREPARING, DOWNLOADING, DONE, FAILED }
 

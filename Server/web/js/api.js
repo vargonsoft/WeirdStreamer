@@ -225,11 +225,37 @@ class MediaAPI {
         return this.request('/api/admin/streams');
     }
 
-    async reportPlayback(path, position, paused) {
+    // extra: { ended, title } — the player reached the end; a disc's title (0: the main title)
+    async reportPlayback(path, position, paused, extra = {}) {
         return this.request('/api/streams/progress', {
             method: 'POST',
-            body: JSON.stringify({ path: this.encodePath(path), position, paused }),
+            body: JSON.stringify({ path: this.encodePath(path), position, paused, ...extra }),
         });
+    }
+
+    // Marks files watched or unwatched for the signed-in user.
+    async setWatched(paths, watched) {
+        return this.request('/api/playback/watched', {
+            method: 'POST',
+            body: JSON.stringify({ paths: paths.map(p => this.encodePath(p)), watched }),
+        });
+    }
+
+    // Marks every file of a movie or show watched or unwatched.
+    async setTitleWatched(library, kind, tmdbId, watched) {
+        return this.request('/api/playback/watched', {
+            method: 'POST',
+            body: JSON.stringify({ paths: [], library, kind, tmdb_id: tmdbId, watched }),
+        });
+    }
+
+    // Videos in progress, most recent first (optionally in one library).
+    async continueWatching(lib = '') {
+        return this.request('/api/playback/continue' + (lib ? `?lib=${encodeURIComponent(lib)}` : ''));
+    }
+
+    async removeFromContinue(path) {
+        return this.request(`/api/playback/continue?path=${encodeURIComponent(this.encodePath(path))}`, { method: 'DELETE' });
     }
 
     // Every TMDB poster for the title a target is matched to: { current, manual, posters: [...] }

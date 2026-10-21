@@ -1,6 +1,7 @@
 package com.vargon.weirdstreamer.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,10 +57,13 @@ fun PhoneHostRowItem(host: String, modifier: Modifier = Modifier, onClick: () ->
     )
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
     val viewModel: MediaViewModel = viewModel()
+    var menuOpen by remember { mutableStateOf(false) }
+    val playback = if (item.isDirectory || isParent) null else viewModel.playbackFor(item.path)
 
     LaunchedEffect(item.path) {
         if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
@@ -83,7 +87,8 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                 } else {
                     sizeStr
                 }
-                Text(infoStr)
+                val left = timeLeftText(playback, item.duration)
+                Text(if (left != null) "$infoStr · $left" else infoStr)
             }
         } else null,
         // Videos on a WeirdStreamer server can be downloaded for offline viewing.
@@ -121,9 +126,30 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp))
                     )
                 }
+                PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 14.dp)
+                // Long press: Play from start, and Mark watched (server videos).
+                if (playback != null || (item.originalPath != null && viewModel.isVideo(item.path))) {
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if ((playback?.resumeAt ?: 0.0) > 0) {
+                            DropdownMenuItem(text = { Text("Play from start") }, onClick = {
+                                menuOpen = false
+                                viewModel.playVideo(item.path, fromStart = true)
+                            })
+                        }
+                        item.originalPath?.let { original ->
+                            val watched = playback?.watched == true
+                            DropdownMenuItem(text = { Text(if (watched) "Mark unwatched" else "Mark watched") }, onClick = {
+                                menuOpen = false
+                                viewModel.setWatched(listOf(original), !watched)
+                            })
+                        }
+                    }
+                }
             }
         },
-        modifier = modifier.clickable(onClick = onClick)
+        modifier = modifier.combinedClickable(onClick = onClick, onLongClick = {
+            if (!item.isDirectory && !isParent && item.originalPath != null && viewModel.isVideo(item.path)) menuOpen = true
+        })
     )
 }
 
@@ -131,6 +157,7 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
 fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
     val viewModel: MediaViewModel = viewModel()
+    val playback = if (item.isDirectory || isParent) null else viewModel.playbackFor(item.path)
 
     LaunchedEffect(item.path) {
         if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
@@ -187,6 +214,7 @@ fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: ()
                         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
                     )
                 }
+                PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 18.dp)
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(

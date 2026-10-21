@@ -42,6 +42,7 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
         super.onCreate()
         instance = this
         com.vargon.weirdstreamer.downloads.DownloadStore.init(this)
+        com.vargon.weirdstreamer.downloads.LocalProgress.init(this)
         if (com.vargon.weirdstreamer.downloads.DownloadStore.items.value.any { it.isActive }) {
             com.vargon.weirdstreamer.downloads.DownloadWorker.schedule(this)
         }

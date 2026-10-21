@@ -8,6 +8,10 @@ import com.vargon.weirdstreamer.api.models.LoginRequest
 import com.vargon.weirdstreamer.api.models.LoginResponse
 import com.vargon.weirdstreamer.api.models.MediaItem
 import com.vargon.weirdstreamer.api.models.StreamProgress
+import com.vargon.weirdstreamer.api.models.ContinueItem
+import com.vargon.weirdstreamer.api.models.PlaybackSync
+import com.vargon.weirdstreamer.api.models.SyncedPlayback
+import com.vargon.weirdstreamer.api.models.WatchedRequest
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.google.gson.JsonObject
 import com.vargon.weirdstreamer.api.models.AdminStream
@@ -106,6 +110,18 @@ interface ApiService {
 
     @POST("/api/streams/progress")
     suspend fun reportStreamProgress(@Body progress: StreamProgress): Response<Unit>
+
+    @POST("/api/playback/watched")
+    suspend fun setWatched(@Body request: WatchedRequest): Response<Unit>
+
+    @POST("/api/playback/sync")
+    suspend fun syncPlayback(@Body request: PlaybackSync): Response<Unit>
+
+    @GET("/api/playback/continue")
+    suspend fun continueWatching(@Query("lib") libraryId: String? = null): Response<List<ContinueItem>>
+
+    @DELETE("/api/playback/continue")
+    suspend fun removeFromContinue(@Query("path") path: String): Response<Unit>
 
     @GET("/api/library")
     suspend fun getLibrary(@Query("lib") libraryId: String): Response<LibraryListing>

@@ -100,6 +100,9 @@ func (db *DB) initSchema() error {
 	if err := db.initDiscSchema(); err != nil {
 		return err
 	}
+	if err := db.initPlaybackSchema(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -244,6 +247,9 @@ func (db *DB) UpdateUser(username string, req models.UserUpdateRequest) error {
 }
 
 func (db *DB) DeleteUser(username string) error {
+	if _, err := db.userConn.Exec("DELETE FROM playback WHERE user_id = (SELECT id FROM users WHERE username = ?)", username); err != nil {
+		return err
+	}
 	_, err := db.userConn.Exec("DELETE FROM users WHERE username = ?", username)
 	return err
 }

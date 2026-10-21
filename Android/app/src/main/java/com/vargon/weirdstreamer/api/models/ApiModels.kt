@@ -21,8 +21,84 @@ data class MediaItem(
     @SerializedName("width") val width: Int? = null,
     @SerializedName("height") val height: Int? = null,
     @SerializedName("created_at") val createdAt: String,
-    @SerializedName("updated_at") val updatedAt: String
+    @SerializedName("updated_at") val updatedAt: String,
+    @SerializedName("playback") val playback: Playback? = null
 )
+
+/** Where the signed-in user is in a video (seconds); position is 0 once it's been watched. */
+data class Playback(
+    @SerializedName("position") val position: Double = 0.0,
+    @SerializedName("duration") val duration: Double = 0.0,
+    @SerializedName("watched") val watched: Boolean = false,
+    @SerializedName("updated_at") val updatedAt: Long = 0
+) {
+    /** Where to resume, or 0 to start from the beginning. */
+    val resumeAt: Double get() = if (position >= MIN_RESUME_SECONDS) position else 0.0
+
+    /** How far in, 0..1, for a progress bar (0 when not in progress). */
+    fun fraction(fallbackDuration: Double?): Float {
+        val total = duration.takeIf { it > 0 } ?: fallbackDuration ?: 0.0
+        return if (resumeAt > 0 && total > 0) (position / total).coerceIn(0.0, 1.0).toFloat() else 0f
+    }
+
+    companion object {
+        const val MIN_RESUME_SECONDS = 10.0
+    }
+}
+
+/** A video in progress, for Continue Watching. */
+data class ContinueItem(
+    @SerializedName("id") val id: Long? = null,
+    @SerializedName("path") val path: String,
+    @SerializedName("name") val name: String,
+    @SerializedName("size") val size: Long = 0,
+    @SerializedName("thumbnail_url") val thumbnailUrl: String? = null,
+    @SerializedName("duration") val duration: Double? = null,
+    @SerializedName("library_id") val libraryId: String,
+    @SerializedName("metadata") val metadata: ContinueMetadata? = null,
+    @SerializedName("playback") val playback: Playback? = null
+) {
+    /** "Example Show" and "S01E02 · Example Episode", or "Example Movie (2008)" and the file name. */
+    val titleLines: Pair<String, String?>
+        get() {
+            val md = metadata
+            return when {
+                md?.kind == "episode" && md.season != null && md.episode != null -> (md.showTitle ?: md.title ?: name) to
+                    String.format(java.util.Locale.US, "S%02dE%02d · %s", md.season, md.episode, md.title)
+                md?.title != null -> (md.title + (md.year?.let { " ($it)" } ?: "")) to name
+                else -> name to null
+            }
+        }
+}
+
+data class ContinueMetadata(
+    @SerializedName("kind") val kind: String? = null,
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("year") val year: Int? = null,
+    @SerializedName("show_title") val showTitle: String? = null,
+    @SerializedName("season") val season: Int? = null,
+    @SerializedName("episode") val episode: Int? = null,
+    @SerializedName("still") val still: String? = null,
+    @SerializedName("backdrop") val backdrop: String? = null,
+    @SerializedName("poster") val poster: String? = null
+)
+
+data class WatchedRequest(
+    @SerializedName("paths") val paths: List<String>, // base64 server paths
+    @SerializedName("watched") val watched: Boolean,
+    @SerializedName("library") val library: String? = null,
+    @SerializedName("kind") val kind: String? = null,
+    @SerializedName("tmdb_id") val tmdbId: Int? = null
+)
+
+data class SyncedPlayback(
+    @SerializedName("path") val path: String, // base64 server path
+    @SerializedName("position") val position: Double,
+    @SerializedName("ended") val ended: Boolean,
+    @SerializedName("updated_at") val updatedAt: Long // Unix milliseconds
+)
+
+data class PlaybackSync(@SerializedName("items") val items: List<SyncedPlayback>)
 
 data class TrickplayFrame(
     @SerializedName("time") val time: Int,
@@ -59,8 +135,13 @@ data class LibraryTitle(
     @SerializedName("title") val title: String,
     @SerializedName("year") val year: Int? = null,
     @SerializedName("poster") val poster: String? = null,
-    @SerializedName("file_count") val fileCount: Int = 0
-)
+    @SerializedName("file_count") val fileCount: Int = 0,
+    // The user's progress: files watched, and a movie's place in it (0..1)
+    @SerializedName("watched") val watched: Int = 0,
+    @SerializedName("progress") val progress: Double = 0.0
+) {
+    val allWatched: Boolean get() = fileCount > 0 && watched >= if (kind == "movie") 1 else fileCount
+}
 
 data class LibraryFile(
     @SerializedName("id") val id: Long? = null,
@@ -71,7 +152,8 @@ data class LibraryFile(
     @SerializedName("thumbnail_url") val thumbnailUrl: String? = null,
     @SerializedName("count") val count: Int? = null,
     // The movie a TV-library file that isn't an episode was matched to by hand
-    @SerializedName("match") val match: FileMatch? = null
+    @SerializedName("match") val match: FileMatch? = null,
+    @SerializedName("playback") val playback: Playback? = null
 )
 
 /** What a file downloads as (GET /api/downloads/options). */
@@ -187,7 +269,9 @@ data class DiscTrack(
 data class StreamProgress(
     @SerializedName("path") val path: String, // base64 server path
     @SerializedName("position") val position: Double, // seconds
-    @SerializedName("paused") val paused: Boolean
+    @SerializedName("paused") val paused: Boolean,
+    @SerializedName("ended") val ended: Boolean = false, // played to the end
+    @SerializedName("title") val title: Int = 0 // discs: the title playing (0: the main title)
 )
 
 data class FileMatch(

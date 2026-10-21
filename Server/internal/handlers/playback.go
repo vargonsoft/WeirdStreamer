@@ -1,0 +1,344 @@
+package handlers
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"log"
+	"net/http"
+	"path/filepath"
+	"strconv"
+	"time"
+
+	"github.com/weirdstreamer/server/internal/auth"
+	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/media"
+	"github.com/weirdstreamer/server/internal/models"
+)
+
+// Each user's playback progress: recorded from player reports, attached to browse and library
+// results, and listed as Continue Watching.
+
+const (
+	// Videos at least this long count as watched within the last creditsAllowance; shorter ones
+	// only when played to the end.
+	longVideo        = 20 * 60
+	creditsAllowance = 2 * 60
+	// Positions before this aren't worth resuming from.
+	minResumePosition = 10
+	continueLimit     = 30
+)
+
+// playbackFinished reports whether a position counts as having watched the video.
+func playbackFinished(position, duration float64, ended bool) bool {
+	if ended {
+		return true
+	}
+	if duration <= 0 {
+		return false
+	}
+	if duration >= longVideo {
+		return position >= duration-creditsAllowance
+	}
+	return position >= duration-1 // allow for the player's last report landing just short of the end
+}
+
+func userID(r *http.Request) (int64, bool) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		return 0, false
+	}
+	return claims.UserID, true
+}
+
+// videoDuration is a video's length for progress: a disc's main title, else the file's.
+func (h *MediaHandler) videoDuration(item *models.MediaItem) float64 {
+	if media.IsDiscImage(item.Path) {
+		if info, err := media.LoadDisc(item.Path); err == nil {
+			if t := info.Title(0); t != nil {
+				return t.Duration
+			}
+		}
+		return 0
+	}
+	if item.Duration <= 0 {
+		if duration, width, height, err := media.ProbeVideo(item.Path); err == nil && duration > 0 {
+			item.Duration, item.Width, item.Height = duration, width, height
+			h.db.SaveMediaItem(item)
+		}
+	}
+	return item.Duration
+}
+
+// recordPlayback saves a player's report as the user's progress in the video.
+func (h *MediaHandler) recordPlayback(r *http.Request, item *models.MediaItem, position float64, ended bool, at time.Time, onlyIfNewer bool) {
+	uid, ok := userID(r)
+	if !ok {
+		return
+	}
+	duration := h.videoDuration(item)
+	update := database.PlaybackUpdate{Position: position, Duration: duration,
+		Finished: playbackFinished(position, duration, ended), UpdatedAt: at}
+	if err := h.db.SavePlayback(uid, item.Path, update, onlyIfNewer); err != nil {
+		log.Printf("[PLAYBACK] Failed to save progress: %v", err)
+	}
+}
+
+// requestPlayback loads the signed-in user's progress for annotating results (nil if none).
+func (h *MediaHandler) requestPlayback(r *http.Request) map[string]*models.Playback {
+	uid, ok := userID(r)
+	if !ok {
+		return nil
+	}
+	pb, err := h.db.UserPlayback(uid)
+	if err != nil {
+		log.Printf("[PLAYBACK] Failed to load progress: %v", err)
+		return nil
+	}
+	return pb
+}
+
+func annotateItems(items []models.MediaItem, pb map[string]*models.Playback) {
+	for i := range items {
+		if items[i].Type == "video" {
+			items[i].Playback = pb[items[i].Path]
+		}
+	}
+}
+
+func annotateFiles(files []models.LibraryFile, pb map[string]*models.Playback) {
+	for i := range files {
+		if files[i].Count == 0 { // not an unmatched show's stand-in
+			files[i].Playback = pb[files[i].Path]
+		}
+	}
+}
+
+func annotateTitle(t *models.TitleDetail, pb map[string]*models.Playback) {
+	annotateFiles(t.Files, pb)
+	annotateFiles(t.OtherFiles, pb)
+	for s := range t.Seasons {
+		for e := range t.Seasons[s].Episodes {
+			annotateFiles(t.Seasons[s].Episodes[e].Files, pb)
+		}
+	}
+}
+
+// annotateListing adds each title's progress: files watched and, for a movie in progress, how far.
+func annotateListing(l *models.LibraryListing, pb map[string]*models.Playback) {
+	annotateFiles(l.Unmatched, pb)
+	for i := range l.Titles {
+		t := &l.Titles[i]
+		var latest *models.Playback
+		for _, path := range t.Paths {
+			p := pb[path]
+			if p == nil {
+				continue
+			}
+			if p.Watched {
+				t.Watched++
+			}
+			if p.Position >= minResumePosition && p.Duration > 0 && (latest == nil || p.UpdatedAt > latest.UpdatedAt) {
+				latest = p
+			}
+		}
+		if t.Kind == "movie" && latest != nil {
+			t.Progress = min(latest.Position/latest.Duration, 1)
+		}
+	}
+}
+
+type watchedRequest struct {
+	Paths   []string `json:"paths"` // base64 absolute paths
+	Watched bool     `json:"watched"`
+	// Or a whole title: every file of a movie or show in a library
+	Library string `json:"library,omitempty"`
+	Kind    string `json:"kind,omitempty"`
+	TMDBID  int    `json:"tmdb_id,omitempty"`
+}
+
+// SetWatched marks videos (or every file of a title) watched or unwatched for the user:
+// POST /api/playback/watched
+func (h *MediaHandler) SetWatched(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userID(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not signed in")
+		return
+	}
+	var req watchedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	var paths []string
+	for _, encoded := range req.Paths {
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil || len(decoded) == 0 {
+			respondError(w, http.StatusBadRequest, "Invalid path encoding")
+			return
+		}
+		path := string(decoded)
+		if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
+			respondError(w, http.StatusForbidden, "Access denied")
+			return
+		}
+		paths = append(paths, path)
+	}
+	if req.Library != "" && h.meta != nil {
+		lib, found := libraryByID(req.Library)
+		if !found || !h.canAccessLibrary(r, lib) {
+			respondError(w, http.StatusForbidden, "Access denied")
+			return
+		}
+		detail, err := h.meta.Title(r.Context(), lib, req.Kind, req.TMDBID, func(path string) models.LibraryFile {
+			return models.LibraryFile{Path: path}
+		})
+		if err != nil {
+			respondError(w, http.StatusNotFound, "Title not found")
+			return
+		}
+		for _, files := range titleFiles(detail) {
+			for _, f := range files {
+				paths = append(paths, f.Path)
+			}
+		}
+	}
+	if err := h.db.SetWatched(uid, paths, req.Watched); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to save")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func titleFiles(t *models.TitleDetail) [][]models.LibraryFile {
+	out := [][]models.LibraryFile{t.Files, t.OtherFiles}
+	for _, s := range t.Seasons {
+		for _, e := range s.Episodes {
+			out = append(out, e.Files)
+		}
+	}
+	return out
+}
+
+func libraryByID(id string) (config.MediaPath, bool) {
+	for _, lib := range config.GlobalConfig.Media.Paths {
+		if lib.ID == id {
+			return lib, true
+		}
+	}
+	return config.MediaPath{}, false
+}
+
+type syncedPlayback struct {
+	Path      string  `json:"path"` // base64 absolute path
+	Position  float64 `json:"position"`
+	Ended     bool    `json:"ended"`
+	UpdatedAt int64   `json:"updated_at"` // Unix milliseconds, when it was played
+}
+
+// SyncPlayback takes progress recorded while offline (downloaded videos), applying each report
+// unless the server has a newer one: POST /api/playback/sync
+func (h *MediaHandler) SyncPlayback(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Items []syncedPlayback `json:"items"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	now := time.Now()
+	for _, it := range req.Items {
+		decoded, err := base64.StdEncoding.DecodeString(it.Path)
+		if err != nil || len(decoded) == 0 {
+			continue
+		}
+		path := string(decoded)
+		if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
+			continue
+		}
+		item, err := h.db.GetMediaItem(path)
+		if err != nil || item.Type != "video" {
+			continue // gone from the server since it was downloaded
+		}
+		at := time.UnixMilli(it.UpdatedAt)
+		if at.After(now) {
+			at = now
+		}
+		h.recordPlayback(r, item, it.Position, it.Ended, at, true)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// continueItem is a video in progress, described like a browse result.
+type continueItem struct {
+	models.MediaItem
+	LibraryID   string `json:"library_id"`
+	LibraryType string `json:"library_type,omitempty"`
+}
+
+// ContinueWatching lists the user's videos in progress, most recent first, optionally in one
+// library: GET /api/playback/continue?lib=<id>
+func (h *MediaHandler) ContinueWatching(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userID(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not signed in")
+		return
+	}
+	only := r.URL.Query().Get("lib")
+	limit := continueLimit
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n < continueLimit {
+		limit = n
+	}
+	// Some rows may be filtered out (other libraries, removed files): read a few extra.
+	paths, pb, err := h.db.RecentPlayback(uid, minResumePosition, limit*4)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load progress")
+		return
+	}
+	items := []continueItem{}
+	for _, path := range paths {
+		if len(items) >= limit {
+			break
+		}
+		p := pb[path]
+		if p.Duration > 0 && playbackFinished(p.Position, p.Duration, false) {
+			continue
+		}
+		lib, found := libraryForPath(path)
+		if !found || (only != "" && lib.ID != only) || !h.canAccessLibrary(r, lib) {
+			continue
+		}
+		item, err := h.db.GetMediaItem(path)
+		if err != nil || item.Type != "video" {
+			continue
+		}
+		item.Playback = p
+		if h.meta != nil {
+			one := []models.MediaItem{*item}
+			h.meta.Annotate(lib, filepath.Dir(path), nil, one)
+			item = &one[0]
+		}
+		items = append(items, continueItem{MediaItem: *item, LibraryID: lib.ID, LibraryType: lib.Type})
+	}
+	respondJSON(w, http.StatusOK, items)
+}
+
+// RemoveFromContinue forgets where the user stopped in a video, taking it off Continue
+// Watching: DELETE /api/playback/continue?path=<base64>
+func (h *MediaHandler) RemoveFromContinue(w http.ResponseWriter, r *http.Request) {
+	uid, ok := userID(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Not signed in")
+		return
+	}
+	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
+	if err != nil || len(decoded) == 0 {
+		respondError(w, http.StatusBadRequest, "Invalid path encoding")
+		return
+	}
+	if err := h.db.ClearPosition(uid, string(decoded)); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to save")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

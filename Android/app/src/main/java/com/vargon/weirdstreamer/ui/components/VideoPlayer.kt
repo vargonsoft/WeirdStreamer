@@ -76,8 +76,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var selectedTranscodeModeIndex by remember { mutableIntStateOf(if (isDisc) 1 else 0) }
     val currentTranscodeMode = transcodeModes[selectedTranscodeModeIndex]
 
-    // Track the start offset for transcoded streams
-    var transcodeStartOffset by remember { mutableLongStateOf(0L) }
+    // Where the user stopped last time (0 to start over), as the view model says.
+    val startAtMs = remember(path) { viewModel.playbackStartMs }
+    var resumePending by remember(path) { mutableStateOf(startAtMs > 0) }
+    var ended by remember(path) { mutableStateOf(false) }
+
+    // Track the start offset for transcoded streams (discs start their stream at the resume point)
+    var transcodeStartOffset by remember(path) { mutableLongStateOf(if (isDisc && !isSmbSource) startAtMs else 0L) }
 
     // Store the original full duration (before any transcoding)
     var fullDuration by remember { mutableLongStateOf(0L) }
@@ -121,7 +126,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
         player.apply {
             val mediaItem = MediaItem.fromUri(videoUrl)
-            setMediaItem(mediaItem)
+            // A direct stream seeks to the resume point; a transcoded one starts there.
+            if (resumePending && currentTranscodeMode.isOriginal) setMediaItem(mediaItem, startAtMs) else setMediaItem(mediaItem)
+            resumePending = false
             prepare()
             playWhenReady = true
         }
@@ -266,7 +273,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     }
 
     var isSeekingSlider by remember { mutableStateOf(false) }
-    var playbackPosition by remember { mutableLongStateOf(0L) }
+    var playbackPosition by remember(path) { mutableLongStateOf(startAtMs) }
     var duration by remember { mutableLongStateOf(0L) }
     var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
     var speedFeedback by remember { mutableStateOf<Float?>(null) }
@@ -304,6 +311,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         duration = fullDuration
                     } else { fullDuration = currentDuration; duration = currentDuration }
                 } else if (state == Player.STATE_ENDED) {
+                    if (!isSmbSource && !ended) {
+                        ended = true
+                        viewModel.reportPlayback(path, playbackPosition, paused = true, ended = true, discTitle = discTitle)
+                    }
                     val videos = viewModel.getVideosInCurrentFolder()
                     val currentIndex = videos.indexOf(path)
                     if (currentIndex != -1 && currentIndex < videos.size - 1) viewModel.playVideo(videos[currentIndex + 1])
@@ -328,7 +339,15 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             }
         }
         exoPlayer.addListener(listener)
-        onDispose { exoPlayer.removeListener(listener); exoPlayer.release() }
+        onDispose {
+            exoPlayer.removeListener(listener)
+            // Where the user stopped, so it resumes from there (the end was already reported).
+            // (playbackPosition, kept current twice a second, is already absolute for transcodes.)
+            if (!isSmbSource && !ended && exoPlayer.playbackState != Player.STATE_IDLE) {
+                viewModel.reportPlayback(path, playbackPosition, paused = true, discTitle = discTitle)
+            }
+            exoPlayer.release()
+        }
     }
 
     LaunchedEffect(exoPlayer, transcodeStartOffset) {
@@ -344,8 +363,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     val isPlayingNow = isPlaying
     LaunchedEffect(exoPlayer, path, isPlayingNow) {
         if (isSmbSource) return@LaunchedEffect
-        while (true) {
-            viewModel.reportPlayback(path, playbackPosition, !exoPlayer.isPlaying)
+        while (!ended) { // a report after the end would undo "watched"
+            viewModel.reportPlayback(path, playbackPosition, !exoPlayer.isPlaying, discTitle = discTitle)
             delay(5000)
         }
     }

@@ -46,6 +46,7 @@ func (h *MediaHandler) GetLibrary(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to list library")
 		return
 	}
+	annotateListing(listing, h.requestPlayback(r))
 	respondJSON(w, http.StatusOK, listing)
 }
 
@@ -70,6 +71,7 @@ func (h *MediaHandler) GetLibraryTitle(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to load title")
 		return
 	}
+	annotateTitle(detail, h.requestPlayback(r))
 	respondJSON(w, http.StatusOK, detail)
 }
 

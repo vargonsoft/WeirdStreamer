@@ -285,6 +285,7 @@ private fun PhoneSourceSelectionScreen(viewModel: MediaViewModel) {
 @Composable
 private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
     val items = viewModel.getFilteredFileList()
+    PhoneResumeDialog(viewModel)
     
     if (viewModel.isGridView) {
         LazyVerticalGrid(
@@ -294,6 +295,11 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (viewModel.continueItems.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "continue") {
+                    PhoneContinueRow(viewModel, sidePadding = 0.dp)
+                }
+            }
             items(items) { item ->
                 PhoneFileTileItem(item) {
                     handlePhoneFileClick(viewModel, item)
@@ -302,6 +308,10 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
         }
     } else {
         LazyColumn(modifier = Modifier.fillMaxSize()) {
+            // The server's front page leads with what's in progress, in every library.
+            if (viewModel.continueItems.isNotEmpty()) {
+                item(key = "continue") { PhoneContinueRow(viewModel, Modifier.padding(bottom = 8.dp)) }
+            }
             items(items) { item ->
                 PhoneFileRowItem(item) {
                     handlePhoneFileClick(viewModel, item)
@@ -325,7 +335,7 @@ private fun handlePhoneFileClick(viewModel: MediaViewModel, item: FileItem) {
         }
     } else {
         when {
-            viewModel.isVideo(item.path) -> viewModel.playVideo(item.path)
+            viewModel.isVideo(item.path) -> viewModel.openVideo(item)
             viewModel.isImage(item.path) -> viewModel.showImage(item.path)
             viewModel.isPdf(item.path) -> viewModel.showPdf(item.path)
         }

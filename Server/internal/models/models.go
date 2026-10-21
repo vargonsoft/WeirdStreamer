@@ -28,6 +28,15 @@ type MediaItem struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 
 	Metadata *ItemMetadata `json:"metadata,omitempty"` // TMDB info, for files in movie/tv libraries
+	Playback *Playback     `json:"playback,omitempty"` // the signed-in user's progress, for videos
+}
+
+// Playback is where a user is in a video. Times are in seconds; UpdatedAt is Unix milliseconds.
+type Playback struct {
+	Position  float64 `json:"position"` // where to resume; 0 when watched to the end
+	Duration  float64 `json:"duration,omitempty"`
+	Watched   bool    `json:"watched"`
+	UpdatedAt int64   `json:"updated_at"`
 }
 
 // ItemMetadata is the TMDB summary attached to browse results. Image fields are server URLs.
@@ -128,6 +137,10 @@ type LibraryTitle struct {
 	Year      int    `json:"year,omitempty"`
 	Poster    string `json:"poster,omitempty"`
 	FileCount int    `json:"file_count"`
+	// The signed-in user's progress: files watched, and for a movie, how far into it they are
+	Watched  int      `json:"watched,omitempty"`
+	Progress float64  `json:"progress,omitempty"` // 0..1
+	Paths    []string `json:"-"`
 }
 
 // LibraryFile is a playable file on a title page or in the Unmatched section.
@@ -140,7 +153,8 @@ type LibraryFile struct {
 	ThumbnailURL string  `json:"thumbnail_url,omitempty"`
 	Count        int     `json:"count,omitempty"` // unmatched TV shows: how many files
 	// Match is the movie a TV library file that isn't an episode was matched to by hand.
-	Match *ItemMetadata `json:"match,omitempty"`
+	Match    *ItemMetadata `json:"match,omitempty"`
+	Playback *Playback     `json:"playback,omitempty"`
 }
 
 // TitleDetail is a title page: the full metadata plus the library's files for it.

@@ -90,6 +90,9 @@ func (s *Service) Library(ctx context.Context, lib config.MediaPath, info FileIn
 			count += len(idx.files[k])
 		}
 		t := models.LibraryTitle{Kind: tk.kind, TMDBID: tk.id, FileCount: count}
+		for _, k := range keys {
+			t.Paths = append(t.Paths, idx.files[k]...)
+		}
 		if tk.kind == "movie" {
 			m, err := s.db.GetMovie(tk.id)
 			if err != nil || m == nil {

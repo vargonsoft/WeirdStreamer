@@ -370,7 +370,7 @@ fun DownloadsTab(viewModel: MediaViewModel) {
         }
         items(sorted, key = { it.id }) { d ->
             DownloadRow(d,
-                onPlay = { d.localFile?.let { viewModel.playVideo("file://$it") } },
+                onPlay = { viewModel.playDownload(d) },
                 onRemove = { confirm = d })
         }
     }
@@ -447,6 +447,13 @@ private fun DownloadRow(d: DownloadItem, onPlay: () -> Unit, onRemove: () -> Uni
             if (done) {
                 Icon(Icons.Default.PlayArrow, contentDescription = "Play", modifier = Modifier.size(32.dp),
                     tint = androidx.compose.ui.graphics.Color.White)
+                // Progress played on this phone (offline or not).
+                com.vargon.weirdstreamer.downloads.LocalProgress.get(d.serverAddress, d.sourcePath)?.let { p ->
+                    val total = d.durationSeconds
+                    WatchProgressOverlay(
+                        if (!p.ended && p.position >= 10 && total > 0) (p.position / total).toFloat() else 0f,
+                        p.ended, barHeight = 3.dp, badgeSize = 18.dp)
+                }
             }
         }
         Spacer(Modifier.width(12.dp))

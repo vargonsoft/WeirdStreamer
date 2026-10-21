@@ -15,7 +15,12 @@ import androidx.media3.common.util.UnstableApi
 import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
 import com.vargon.weirdstreamer.api.ThumbnailUpdateListener
+import com.vargon.weirdstreamer.api.models.ContinueItem
 import com.vargon.weirdstreamer.api.models.LibraryFile
+import com.vargon.weirdstreamer.api.models.Playback
+import com.vargon.weirdstreamer.api.models.SyncedPlayback
+import com.vargon.weirdstreamer.downloads.DownloadStore
+import com.vargon.weirdstreamer.downloads.LocalProgress
 import com.vargon.weirdstreamer.api.models.LibraryListing
 import com.vargon.weirdstreamer.api.models.TitleDetail
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
@@ -297,6 +302,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             }
             else -> setGridView(false)
         }
+        loadContinueWatching()
     }
 
     fun loadLibrary() {
@@ -310,6 +316,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             libraryError = result.exceptionOrNull()?.let { it.localizedMessage ?: "Failed to load library" }
             libraryLoading = false
         }
+        loadContinueWatching()
     }
 
     fun openLibraryTitle(kind: String, tmdbId: Int) {
@@ -342,17 +349,140 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun serverUrl(url: String?): String? = serverRepository?.absoluteUrl(url)
 
     /** Plays a Library-view file; [queue] (the title's files) becomes the player's previous/next list. */
-    /** Reports the player's position in a server file (by its player path) to the server. */
-    fun reportPlayback(path: String, positionMs: Long, paused: Boolean) {
+    /**
+     * Reports the player's position in a server file (by its player path) to the server, for its
+     * Streams page and the user's progress. A download played from the phone records it here and
+     * sends it to its server when it can. [discTitle]: the disc title playing (0: main title).
+     */
+    fun reportPlayback(path: String, positionMs: Long, paused: Boolean, ended: Boolean = false, discTitle: Int = 0) {
+        if (path.startsWith("file://")) {
+            val download = DownloadStore.items.value.firstOrNull { it.localFile == path.removePrefix("file://") } ?: return
+            LocalProgress.record(download.serverAddress, download.sourcePath, positionMs / 1000.0, ended)
+            val repo = serverRepository?.takeIf { it.address == download.serverAddress } ?: return
+            viewModelScope.launch { syncLocalProgress(repo) }
+            return
+        }
         val repo = serverRepository ?: return
         val originalPath = getFileItemForPath(path)?.originalPath ?: return
-        viewModelScope.launch { repo.reportPlayback(originalPath, positionMs / 1000.0, paused) }
+        viewModelScope.launch { repo.reportPlayback(originalPath, positionMs / 1000.0, paused, ended, discTitle) }
     }
 
-    fun playLibraryFile(file: LibraryFile, queue: List<LibraryFile>) {
+    // ---- Playback progress: resume points, watched marks and Continue Watching ----
+
+    /** Where the player should start the video it's about to open, in ms; it reads this once. */
+    var playbackStartMs = 0L
+        private set
+
+    /** Videos in progress on the current server, for the Continue Watching row. */
+    var continueItems by mutableStateOf<List<ContinueItem>>(emptyList())
+        private set
+
+    /** The user's progress in a video by its player path (server results, or offline play). */
+    fun playbackFor(path: String): Playback? {
+        val item = getFileItemForPath(path) ?: return null
+        return newestProgress(item)
+    }
+
+    private fun newestProgress(item: FileItem): Playback? {
+        val server = item.playback
+        val local = serverRepository?.let { repo -> item.originalPath?.let { LocalProgress.get(repo.address, it) } }
+        if (local == null || (server != null && server.updatedAt >= local.updatedAt)) return server
+        return Playback(
+            position = if (local.ended) 0.0 else local.position,
+            duration = server?.duration ?: item.duration ?: 0.0,
+            watched = local.ended || server?.watched == true,
+            updatedAt = local.updatedAt
+        )
+    }
+
+    /** Where to resume a video, in seconds (0: from the start). */
+    fun resumeSeconds(path: String): Double = playbackFor(path)?.resumeAt ?: 0.0
+
+    /** Sends progress in downloads played offline to the server it came from. */
+    private suspend fun syncLocalProgress(repo: ServerRepository) {
+        val pending = LocalProgress.unsynced(repo.address)
+        if (pending.isEmpty()) return
+        val items = pending.map {
+            SyncedPlayback(Base64.encodeToString(it.sourcePath.toByteArray(), Base64.NO_WRAP), it.position, it.ended, it.updatedAt)
+        }
+        if (repo.syncPlayback(items).isSuccess) LocalProgress.markSynced(pending)
+    }
+
+    fun loadContinueWatching() {
+        val repo = serverRepository ?: return
+        // Library view shows its own library's; the server's front page shows every library's.
+        val libraryId = if (isLibraryView) currentLibraryId else null
+        // Whenever the server answers, progress played offline goes to it.
+        viewModelScope.launch { syncLocalProgress(repo) }
+        if (!isLibraryView && repo.getParentPath(currentPath) != null) {
+            continueItems = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            // Offline, the row keeps what it had.
+            repo.continueWatching(libraryId).getOrNull()?.let { continueItems = it }
+        }
+    }
+
+    /** Plays a Continue Watching entry from where it stopped. */
+    fun playContinue(item: ContinueItem) {
+        val repo = serverRepository ?: return
+        val file = repo.fileItemFor(item)
+        playbackQueue = listOf(file)
+        playVideo(file.path)
+    }
+
+    fun removeFromContinue(item: ContinueItem) {
+        val repo = serverRepository ?: return
+        continueItems = continueItems - item
+        viewModelScope.launch { repo.removeFromContinue(item.path) }
+    }
+
+    /** Marks videos (server paths) watched or unwatched, then shows it. */
+    fun setWatched(originalPaths: List<String>, watched: Boolean) {
+        val repo = serverRepository ?: return
+        viewModelScope.launch {
+            if (repo.setWatched(originalPaths, watched).isSuccess) {
+                originalPaths.forEach { LocalProgress.forget(repo.address, it) }
+                refreshProgress()
+            }
+        }
+    }
+
+    /**
+     * Reloads what's on screen for its new progress, quietly (no spinner, scroll kept): the title
+     * page, the library, or the folder, and Continue Watching.
+     */
+    fun refreshProgress() {
+        val repo = serverRepository ?: return
+        viewModelScope.launch {
+            syncLocalProgress(repo)
+            val libraryId = currentLibraryId
+            openTitle?.let { t ->
+                if (libraryId != null) repo.libraryTitle(libraryId, t.kind, t.tmdbId).getOrNull()?.let { fresh ->
+                    if (openTitle?.tmdbId == fresh.tmdbId) openTitle = fresh
+                }
+            }
+            if (isLibraryView && libraryId != null) {
+                repo.library(libraryId).getOrNull()?.let { if (libraryListing?.libraryId == it.libraryId) libraryListing = it }
+            } else {
+                val path = currentPath
+                repo.browse(path).getOrNull()?.let { fresh ->
+                    if (currentPath != path) return@let
+                    val byPath = fresh.associateBy { it.path }
+                    fileList = fileList.map { old -> byPath[old.path]?.let { old.copy(playback = it.playback) } ?: old }
+                    updateSortedList()
+                }
+            }
+            playbackQueue = playbackQueue.map { q -> fileList.firstOrNull { it.path == q.path } ?: q }
+            loadContinueWatching()
+        }
+    }
+
+    fun playLibraryFile(file: LibraryFile, queue: List<LibraryFile>, fromStart: Boolean = false) {
         val repo = serverRepository ?: return
         playbackQueue = queue.map { repo.fileItemFor(it) }
-        playVideo(repo.fileItemFor(file).path)
+        playVideo(repo.fileItemFor(file).path, fromStart)
     }
 
 
@@ -488,6 +618,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     libraryType = newLibraryType
                     if (isLibraryView && libraryListing == null) loadLibrary()
+                    loadContinueWatching()
                 } else {
                     val exception = result.exceptionOrNull() ?: Exception("Unknown error")
                     if (repository.isAuthRequired(exception)) {
@@ -516,7 +647,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 val result = metadataPermits.withPermit { repo.getMetadata(item) }
                 val updatedItem = result.getOrNull()
                 if (updatedItem != null) {
-                    queueItemUpdate(path) { current -> updatedItem.copy(thumbnailUrl = current.thumbnailUrl) }
+                    queueItemUpdate(path) { current -> updatedItem.copy(thumbnailUrl = current.thumbnailUrl, playback = current.playback) }
                 } else {
                     metadataUnavailablePaths.add(path)
                 }
@@ -621,11 +752,70 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     // The server file a local copy is playing in place of, to restore the selection afterwards
     private var localPlaybackOf: String? = null
 
-    /** Plays a video, from its downloaded copy when there is one. */
-    fun playVideo(path: String) {
+    /**
+     * Plays a video, from its downloaded copy when there is one: from where the user stopped,
+     * or from the beginning with [fromStart].
+     */
+    fun playVideo(path: String, fromStart: Boolean = false) {
+        playbackStartMs = if (fromStart || path.startsWith("smb://")) 0L else (resumeSeconds(path) * 1000).toLong()
         val local = localCopyOf(path)
         localPlaybackOf = if (local != null) path else null
         selectedVideoPath = local ?: path
+    }
+
+    /** A partly watched video picked in folder view: the UI asks Resume or Play from start. */
+    var resumeChoice by mutableStateOf<FileItem?>(null)
+        private set
+
+    /** The Continue Watching entry the choice was opened from (held on TV), which it can remove. */
+    var continueChoice by mutableStateOf<ContinueItem?>(null)
+        private set
+
+    /** TV: holding a Continue Watching card asks Resume, Play from start, or Remove. */
+    fun openContinueMenu(item: ContinueItem) {
+        val repo = serverRepository ?: return
+        val file = repo.fileItemFor(item)
+        playbackQueue = listOf(file)
+        continueChoice = item
+        resumeChoice = file
+    }
+
+    /** Answers the choice with Remove from Continue Watching. */
+    fun removeChoice() {
+        continueChoice?.let { removeFromContinue(it) }
+        continueChoice = null
+        resumeChoice = null
+        continueRemovals++
+    }
+
+    /** Counts removals from the TV menu, so the screen can put focus back (the card is gone). */
+    var continueRemovals by mutableIntStateOf(0)
+        private set
+
+    /** Folder view: plays a video, first asking whether to resume when it's partly watched. */
+    fun openVideo(item: FileItem) {
+        if (resumeSeconds(item.path) > 0) resumeChoice = item else playVideo(item.path)
+    }
+
+    /** Answers [resumeChoice]: resume, start over, or (null) cancel. */
+    fun chooseResume(fromStart: Boolean?) {
+        val item = resumeChoice ?: return
+        resumeChoice = null
+        continueChoice = null
+        if (fromStart != null) playVideo(item.path, fromStart)
+    }
+
+    /** Plays a download from the Downloads list, resuming where it was left. */
+    fun playDownload(item: com.vargon.weirdstreamer.downloads.DownloadItem) {
+        val file = item.localFile ?: return
+        // The newest of what the server said (if the file is on screen) and what was played here.
+        val known = (fileList + playbackQueue).firstOrNull { it.originalPath == item.sourcePath }
+            ?.takeIf { serverRepository?.address == item.serverAddress }
+        val resumeAt = known?.let { newestProgress(it)?.resumeAt } ?: LocalProgress.get(item.serverAddress, item.sourcePath)
+            ?.takeIf { !it.ended && it.position >= Playback.MIN_RESUME_SECONDS }?.position ?: 0.0
+        playbackStartMs = (resumeAt * 1000).toLong()
+        localPlaybackOf = null
+        selectedVideoPath = "file://$file"
     }
 
     /** The finished download of a server file (by its player path), as a file:// URL. */
@@ -645,6 +835,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         viewed?.let { recordSelection(currentPath, it) }
         localPlaybackOf = null
         selectedVideoPath = null
+        // The player's last report needs a moment to land before the new progress is fetched.
+        viewModelScope.launch {
+            delay(400)
+            refreshProgress()
+        }
     }
 
     fun showImage(path: String) { selectedImagePath = path }
