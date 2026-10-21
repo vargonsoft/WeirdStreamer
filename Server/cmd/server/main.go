@@ -58,6 +58,10 @@ func main() {
 		config.GlobalConfig.Media.ArtworkPath = "./artwork"
 	}
 	os.MkdirAll(config.GlobalConfig.Media.ArtworkPath, 0755)
+	// Encodes for offline downloads; by default next to the thumbnails, not in /tmp (often RAM-backed).
+	if config.GlobalConfig.Media.DownloadPath == "" {
+		config.GlobalConfig.Media.DownloadPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "downloads")
+	}
 
 	// Initialize database
 	db, err := database.New(config.GlobalConfig.Database.UserPath, config.GlobalConfig.Database.MediaPath)
@@ -73,9 +77,7 @@ func main() {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
 	mediaHandler := handlers.NewMediaHandler(db, authService)
-	// Encodes for offline downloads live next to the thumbnails, not in /tmp (often RAM-backed).
-	mediaHandler.SetDownloads(media.NewDownloadManager(
-		filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "downloads")))
+	mediaHandler.SetDownloads(media.NewDownloadManager(config.GlobalConfig.Media.DownloadPath))
 	configHandler := handlers.NewConfigHandler(db)
 	userHandler := handlers.NewUserHandler(db)
 

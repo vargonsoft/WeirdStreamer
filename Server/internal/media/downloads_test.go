@@ -66,3 +66,26 @@ func TestDownloadEncode(t *testing.T) {
 		t.Errorf("file left after delete: %v", err)
 	}
 }
+
+// Starting up clears only encodes left from an earlier run, as the folder may hold other files.
+func TestDownloadManagerKeepsOtherFiles(t *testing.T) {
+	dir := t.TempDir()
+	leftovers := []string{"0123456789abcdef01234567.mp4", "0123456789abcdef01234567.mp4.part"}
+	keep := []string{"movie.mp4", "notes.txt", "0123456789abcdef01234567.mkv"}
+	for _, name := range append(leftovers, keep...) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	NewDownloadManager(dir)
+	for _, name := range leftovers {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Errorf("%s should have been removed", name)
+		}
+	}
+	for _, name := range keep {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s should have been kept: %v", name, err)
+		}
+	}
+}

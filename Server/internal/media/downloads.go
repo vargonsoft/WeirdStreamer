@@ -69,10 +69,18 @@ type DownloadManager struct {
 	queue chan *DownloadJob
 }
 
-// NewDownloadManager keeps encodes in dir (emptied on start) and starts its worker.
+// NewDownloadManager keeps encodes in dir and starts its worker. Encodes left from an earlier
+// run are removed; nothing else in dir is touched, as it may be shared with other files.
 func NewDownloadManager(dir string) *DownloadManager {
-	os.RemoveAll(dir)
 	os.MkdirAll(dir, 0755)
+	for _, pattern := range []string{"*.mp4", "*.mp4.part"} {
+		matches, _ := filepath.Glob(filepath.Join(dir, pattern))
+		for _, f := range matches {
+			if isJobFile(filepath.Base(f)) {
+				os.Remove(f)
+			}
+		}
+	}
 	m := &DownloadManager{dir: dir, jobs: map[string]*DownloadJob{}, queue: make(chan *DownloadJob, 1000)}
 	go m.work()
 	go m.expire()
@@ -326,6 +334,16 @@ func (m *DownloadManager) expire() {
 			os.Remove(j.file)
 		}
 	}
+}
+
+// isJobFile reports whether name is an encode's file: its 24-hex-digit job ID plus .mp4 or .mp4.part.
+func isJobFile(name string) bool {
+	id := strings.TrimSuffix(strings.TrimSuffix(name, ".part"), ".mp4")
+	if len(id) != 24 || len(id)+4 > len(name) {
+		return false
+	}
+	_, err := hex.DecodeString(id)
+	return err == nil
 }
 
 func newID() string {

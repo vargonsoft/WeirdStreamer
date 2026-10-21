@@ -30,6 +30,7 @@
     "thumbnailPath": "./thumbnails",
     "trickplayPath": "./trickplay",
     "artworkPath": "./artwork",
+    "downloadPath": "./downloads",
     "supportedVideoFormats": [".mp4", ".mkv", ".avi", ".divx", ".xvid", ".iso", ".mov", ".wmv", ".flv", ".webm", ".3gp", ".3gpp", ".m4v", ".mpg", ".mpeg", ".ts", ".mp2"],
     "supportedImageFormats": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
     "supportedDocFormats": [".pdf"],
