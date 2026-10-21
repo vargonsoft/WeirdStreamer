@@ -91,8 +91,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     val videoUrl = remember(path, selectedTranscodeModeIndex, discQuery) {
         if (!isSmbSource && !currentTranscodeMode.isOriginal) {
             var url = if (path.contains("?")) "$path&transcode=1" else "$path?transcode=1"
-            currentTranscodeMode.bitrate?.let { url += "&bitrate=$it" }
-            currentTranscodeMode.resolution?.let { url += "&resolution=$it" }
+            url += transcodeQuery(currentTranscodeMode) // no taller than the hardware decodes
             url += discQuery
             if (transcodeStartOffset > 0) {
                 url += "&start=${transcodeStartOffset / 1000f}"

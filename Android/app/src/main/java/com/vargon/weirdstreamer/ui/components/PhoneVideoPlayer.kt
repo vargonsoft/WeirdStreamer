@@ -164,8 +164,19 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }
     }
 
-    // New states
-    var enableTranscode by remember { mutableStateOf(isDisc) }
+    // Transcoding: a mode from the TV's list (0: the original file). Discs are always transcoded,
+    // and so is a video too big for this phone's hardware decoder (4K on many phones).
+    val sourceItem = remember(path) { viewModel.getFileItemForPath(path) }
+    val tooBigToDecode = remember(path) {
+        !isSmbSource && !isLocal && !VideoDecoders.canPlay(sourceItem?.width, sourceItem?.height)
+    }
+    var transcodeModeIndex by remember(path) { mutableIntStateOf(if (isDisc || tooBigToDecode) 1 else 0) }
+    var enableTranscode by remember { mutableStateOf(isDisc || tooBigToDecode) }
+    var showTranscodeMenu by remember { mutableStateOf(false) }
+    fun chooseTranscodeMode(index: Int) {
+        transcodeModeIndex = index
+        enableTranscode = index != 0
+    }
     var transcodeStartOffset by remember { mutableLongStateOf(0L) }
     var fullDuration by remember { mutableLongStateOf(0L) }
     var rotation by remember { mutableFloatStateOf(0f) }
@@ -252,7 +263,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     }
 
     // Handle MediaItem updates when path or transcode mode changes
-    LaunchedEffect(path, enableTranscode, discQuery) {
+    LaunchedEffect(path, enableTranscode, transcodeModeIndex, discQuery) {
         // Capture current position if available
         val currentPos = discRestartAt?.also { discRestartAt = null } ?: if (exoPlayer.mediaItemCount > 0) {
             if (transcodeStartOffset > 0) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
@@ -265,7 +276,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             transcodeStartOffset = currentPos
             val base = path.substringBefore("?")
             val pathParam = path.substringAfter("path=").substringBefore("&")
-            "$base?path=$pathParam&auto-transcode=0&transcode=1&start=$startTimeSeconds$discQuery"
+            "$base?path=$pathParam&auto-transcode=0&transcode=1&start=$startTimeSeconds$discQuery" +
+                transcodeQuery(transcodeModes[transcodeModeIndex])
         } else {
             transcodeStartOffset = 0L
             path
@@ -289,6 +301,24 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlayingChanged: Boolean) {
                 isPlaying = isPlayingChanged
+            }
+
+            // The phone can't decode the original (too big, or a codec it lacks): have the server
+            // transcode it instead, from the same place. A download can't be transcoded: say so.
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                val decoderProblem = error.errorCode in androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..
+                    androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED
+                if (decoderProblem && !enableTranscode && !isSmbSource && !isLocal) {
+                    playbackPosition = exoPlayer.currentPosition.takeIf { it > 0 } ?: playbackPosition
+                    chooseTranscodeMode(1)
+                    android.widget.Toast.makeText(context, "This phone can't play the original. Transcoding it.",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    val message = if (decoderProblem && isLocal)
+                        "This phone can't play this download. Download a compressed copy at a lower resolution."
+                    else "Playback failed: ${error.errorCodeName}"
+                    android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                }
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -341,7 +371,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             } else {
                 path
             }
-            val newUrl = "$baseUrlWithPath&auto-transcode=0&transcode=1&start=$startTimeSeconds$discQuery"
+            val newUrl = "$baseUrlWithPath&auto-transcode=0&transcode=1&start=$startTimeSeconds$discQuery" +
+                transcodeQuery(transcodeModes[transcodeModeIndex])
             transcodeStartOffset = targetPos
             val mediaItem = MediaItem.fromUri(newUrl)
             exoPlayer.setMediaItem(mediaItem)
@@ -377,8 +408,9 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }
     }
 
-    LaunchedEffect(showControls, showSpeedDialog, isTrickplayDragged, isTrickplayPressed, trickplayListState.isScrollInProgress, isSliderDragged, isSliderPressed, lastInteractionTime) {
-        if (showControls && !showSpeedDialog && !isTrickplayDragged && !isTrickplayPressed && !trickplayListState.isScrollInProgress && !isSliderDragged && !isSliderPressed) {
+    LaunchedEffect(showControls, showSpeedDialog, showTranscodeMenu, isTrickplayDragged, isTrickplayPressed, trickplayListState.isScrollInProgress, isSliderDragged, isSliderPressed, lastInteractionTime) {
+        // Not while the transcode menu is open: it closes with the controls.
+        if (showControls && !showSpeedDialog && !showTranscodeMenu && !isTrickplayDragged && !isTrickplayPressed && !trickplayListState.isScrollInProgress && !isSliderDragged && !isSliderPressed) {
             delay(5000)
             if (!showSpeedDialog) showControls = false
         }
@@ -541,17 +573,38 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         }
                     }
 
-                    // Transcode toggle (discs are always transcoded)
-                    if (!isSmbSource && !isLocal && !isDisc) {
-                        IconButton(onClick = { 
-                            lastInteractionTime = System.currentTimeMillis()
-                            enableTranscode = !enableTranscode 
-                        }) {
-                            Icon(
-                                Icons.Default.VideoSettings,
-                                contentDescription = "Transcode",
-                                tint = if (enableTranscode) Color.Green else Color.White
-                            )
+                    // Transcoding: the TV's list of modes (discs can't play as they are)
+                    if (!isSmbSource && !isLocal) {
+                        Box {
+                            IconButton(onClick = {
+                                lastInteractionTime = System.currentTimeMillis()
+                                showTranscodeMenu = true
+                            }) {
+                                Icon(
+                                    Icons.Default.VideoSettings,
+                                    contentDescription = "Transcode",
+                                    tint = if (enableTranscode) Color.Green else Color.White
+                                )
+                            }
+                            DropdownMenu(expanded = showTranscodeMenu, onDismissRequest = { showTranscodeMenu = false }) {
+                                transcodeModes.forEachIndexed { index, mode ->
+                                    val unavailable = mode.isOriginal && (isDisc || tooBigToDecode)
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(if (mode.isOriginal && tooBigToDecode) "Original (too big for this phone)" else mode.name)
+                                        },
+                                        enabled = !unavailable,
+                                        trailingIcon = if (index == transcodeModeIndex) {
+                                            { Icon(Icons.Default.Check, contentDescription = "Selected") }
+                                        } else null,
+                                        onClick = {
+                                            showTranscodeMenu = false
+                                            lastInteractionTime = System.currentTimeMillis()
+                                            if (index != transcodeModeIndex) chooseTranscodeMode(index)
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                     

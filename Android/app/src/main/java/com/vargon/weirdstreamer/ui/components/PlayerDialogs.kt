@@ -151,7 +151,14 @@ fun TranscodeDialog(
         ) {
             Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Transcoding Options", style = MaterialTheme.typography.headlineSmall, color = Color.White)
-                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Keeps the highlighted mode on screen as Up/Down move it (the list can be taller
+                // than the TV's screen).
+                val listScroll = rememberScrollState()
+                val rowPx = with(androidx.compose.ui.platform.LocalDensity.current) { 56.dp.roundToPx() }
+                LaunchedEffect(pendingModeIndex) {
+                    listScroll.animateScrollTo((pendingModeIndex * rowPx - listScroll.viewportSize / 2 + rowPx / 2).coerceAtLeast(0))
+                }
+                Column(modifier = Modifier.fillMaxWidth().verticalScroll(listScroll), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     transcodeModes.forEachIndexed { index, mode ->
                         Row(
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))

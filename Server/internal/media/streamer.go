@@ -356,10 +356,12 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	// Handle resolution reduction
 	if resolution != "" {
 		// Expect resolution like "720", "480", etc.
-		args = append(args, "-vf", fmt.Sprintf("scale=-2:%s", resolution))
+		// Down to that height, never up: a smaller source keeps its size.
+		args = append(args, "-vf", fmt.Sprintf("scale=-2:'min(%s,ih)'", resolution))
 	}
 
 	args = append(args,
+		"-pix_fmt", "yuv420p", // 8-bit 4:2:0, which every hardware H.264 decoder plays
 		"-c:a", "aac",
 		"-b:a", "128k",
 		"-movflags", "frag_keyframe+empty_moov",
