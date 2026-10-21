@@ -8,6 +8,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -59,6 +60,8 @@ class ContentEntry {
     var focusTop: (() -> Boolean)? = null
 }
 
+internal const val GRID_HEADER = "grid-header"
+
 /** The key of the first item in the topmost fully visible row of a lazy grid, skipping [skip]. */
 internal fun LazyGridState.topRowKey(skip: (Any) -> Boolean = { false }): Any? {
     val visible = layoutInfo.visibleItemsInfo.filterNot { skip(it.key) }
@@ -86,11 +89,14 @@ fun BrowserGrid(
     takeFocus: Boolean,
     // Where Up from the top row goes (a row above the grid, else the toolbar)
     upFocusRequester: FocusRequester = toolbarFocusRequester,
+    // A full-width row above the items that scrolls with them (Continue Watching)
+    header: (@Composable () -> Unit)? = null,
     onDialogFocusChanged: (FocusRequester?) -> Unit,
     onVisibleItemsChanged: (List<FileItem>) -> Unit,
     itemContent: @Composable (FileItem, Modifier) -> Unit
 ) {
     val columns = if (isGridView) GRID_COLUMNS else 1
+    val headerCount = if (header != null) 1 else 0
     val gridState = remember(folderKey) { LazyGridState() }
     val scope = rememberCoroutineScope()
     val currentItems by rememberUpdatedState(items)
@@ -110,8 +116,9 @@ fun BrowserGrid(
     suspend fun focusItem(path: String) {
         val index = currentItems.indexOfFirst { it.path == path }
         if (index < 0) return
+        val lazyIndex = index + headerCount
         val visible = gridState.layoutInfo.visibleItemsInfo
-        if (visible.none { it.index == index }) gridState.scrollToItem(index)
+        if (visible.none { it.index == lazyIndex }) gridState.scrollToItem(lazyIndex)
         // Wait for the targeted item to be composed.
         repeat(3) {
             withFrameNanos { }
@@ -146,7 +153,7 @@ fun BrowserGrid(
 
     DisposableEffect(contentEntry, folderKey) {
         val focusTop = {
-            val path = gridState.topRowKey() as? String
+            val path = gridState.topRowKey { it == GRID_HEADER } as? String
             if (path != null && !tryFocus(path)) scope.launch { focusItem(path) }
             path != null
         }
@@ -158,11 +165,21 @@ fun BrowserGrid(
     LaunchedEffect(folderKey) {
         if (takeFocus) initialPath?.let { focusItem(it) }
     }
+    // The header (Continue Watching) usually arrives just after the items. While focus is still
+    // in the top row, show it whole above them instead of scrolled half away.
+    LaunchedEffect(folderKey, headerCount) {
+        if (headerCount == 0) return@LaunchedEffect
+        withFrameNanos { }
+        val inTopRow = focusedIndex[0] in 0 until columns ||
+            (focusedIndex[0] < 0 && items.indexOfFirst { it.path == initialPath } in 0 until columns)
+        if (inTopRow && gridState.firstVisibleItemIndex <= headerCount) gridState.scrollToItem(0)
+    }
 
     LaunchedEffect(gridState, columns) {
         snapshotFlow {
             val visible = gridState.layoutInfo.visibleItemsInfo
-            if (visible.isEmpty()) null else visible.first().index to visible.last().index
+            if (visible.isEmpty()) null
+            else (visible.first().index - headerCount).coerceAtLeast(0) to (visible.last().index - headerCount).coerceAtLeast(0)
         }
             .distinctUntilChanged()
             .debounce(250)
@@ -235,6 +252,12 @@ fun BrowserGrid(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(if (isGridView) 10.dp else 0.dp)
         ) {
+            if (header != null) {
+                item(key = GRID_HEADER, span = { GridItemSpan(maxLineSpan) }, contentType = GRID_HEADER) {
+                    // While the header has focus, row-by-row moves are its own (Down leaves it).
+                    Box(Modifier.onFocusChanged { if (it.hasFocus) focusedIndex[0] = -1 }) { header() }
+                }
+            }
             itemsIndexed(
                 items = items,
                 key = { _, item -> item.path },

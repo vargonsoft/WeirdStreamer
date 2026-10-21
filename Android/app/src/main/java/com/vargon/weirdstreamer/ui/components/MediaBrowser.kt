@@ -550,12 +550,7 @@ private fun FileBrowserScreen(
         withFrameNanos { }
         if (!(showContinue && runCatching { continueRequester.requestFocus() }.isSuccess)) gridEntry.focusTop?.invoke()
     }
-    Column(Modifier.fillMaxSize()) {
-        if (showContinue) {
-            TvContinueRow(viewModel, continueRequester, up = toolbarFocusRequester,
-                onDown = { gridEntry.focusTop?.invoke() ?: false },
-                modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 12.dp))
-        }
+    run {
         BrowserGrid(
             folderKey = currentPath,
             items = items,
@@ -565,6 +560,14 @@ private fun FileBrowserScreen(
             contentEntry = gridEntry,
             takeFocus = !viewModel.toolbarKeepsFocus,
             upFocusRequester = if (showContinue) continueRequester else toolbarFocusRequester,
+            // Scrolls away with the folders as focus moves down them.
+            header = if (showContinue) {
+                {
+                    TvContinueRow(viewModel, continueRequester, up = toolbarFocusRequester,
+                        onDown = { gridEntry.focusTop?.invoke() ?: false },
+                        modifier = Modifier.padding(bottom = 12.dp))
+                }
+            } else null,
             onDialogFocusChanged = onDialogFocusChanged,
             onVisibleItemsChanged = onVisibleItemsChanged
         ) { item, modifier ->
