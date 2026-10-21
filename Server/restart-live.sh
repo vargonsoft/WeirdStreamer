@@ -27,7 +27,7 @@ done
 started_by_live() {
     local p=$1
     while [ "$p" -gt 1 ]; do
-        tr '\0' ' ' <"/proc/$p/cmdline" | grep -q "live.sh" && return 0
+        tr '\0' '\n' <"/proc/$p/cmdline" | grep -qE '(^|/)live\.sh$' && return 0
         p=$(ps -o ppid= -p "$p" | tr -d ' ')
     done
     return 1
