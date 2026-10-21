@@ -11,8 +11,9 @@ for each TODO item are at the end of this file.
   so far: reading codec/format details (ffprobe, no frames) of a file the user names.
 - **Secrets:** the TMDB token is in `Server/config.json` and the test password is in
   `Server/e2e/pw`. Never print or repeat either.
-- **Live server restarts:** first run `curl -sk https://127.0.0.1:9000/local/streams`. If
-  `active` > 0, say who's watching and ask before restarting. Restart only when asked.
+- **Live server restarts:** only when asked, with `Server/restart-live.sh` (below). It won't
+  restart while someone is watching (exit code 2, listing the streams): then say who's watching
+  and ask before running it with `--force`.
 - **Onn TV box:** no testing or installing on it during the day. Use the emulators.
 - **Deploying the Android app:** only through `Android/deploy-release.sh` (below), never manual
   `adb install` of a debug build on real devices. Leave out `--onn` unless the user asks.
@@ -56,13 +57,14 @@ for each TODO item are at the end of this file.
 
 ## Live server
 
-- Runs from `Server/` as `./server` (via `~/bin/ws`) in the user's "WeirdStreamer live"
+- Runs from `Server/` as `./server`, under `Server/live.sh` in the user's "WeirdStreamer live"
   terminal tab. It logs to `Server/server.log`. Port 9000, HTTPS. Config is `Server/config.json`
   (git-ignored). Data is in `Server/run/` (databases, thumbnails, trickplay, artwork, download
   encodes).
-- To deploy server code: `cd Server && go build -o server.new ./cmd/server`, check streams (see
-  Rules), stop the live tab with Ctrl-C, `mv server.new server`, then rerun
-  `~/bin/ws 2>&1 | tee -a ~/Documents/Source/clones/WeirdStreamer/Server/server.log` in that tab.
+- To deploy server code: `Server/restart-live.sh`. It checks for active streams, builds, stops
+  the live server and waits for `live.sh` to start the new one (`--no-build` restarts the binary
+  as it is). It refuses if the server wasn't started by `live.sh`; then the user has to stop it
+  and run `live.sh` in that tab.
 - Server tests: `cd Server && go vet ./internal/... ./cmd/... && go test ./internal/...`.
   Don't use `./...`: stray `main` files in `Server/` (`test_auth.go`, `verify_pw.go`,
   `test_login.go`) break it.
