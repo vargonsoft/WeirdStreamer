@@ -24,7 +24,15 @@ for p in $(pgrep -u "$USER" -x server || true); do
 done
 [ -n "$pid" ] || { echo "The live server isn't running. Start it with Server/live.sh." >&2; exit 1; }
 # live.sh restarts it; a server started some other way would just stop.
-if ! pstree -sp "$pid" | grep -q "live.sh"; then
+started_by_live() {
+    local p=$1
+    while [ "$p" -gt 1 ]; do
+        tr '\0' ' ' <"/proc/$p/cmdline" | grep -q "live.sh" && return 0
+        p=$(ps -o ppid= -p "$p" | tr -d ' ')
+    done
+    return 1
+}
+if ! started_by_live "$pid"; then
     echo "The live server (PID $pid) wasn't started by live.sh, so it wouldn't come back." >&2
     echo "Stop it, then run Server/live.sh in its terminal." >&2
     exit 1
