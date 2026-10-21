@@ -73,7 +73,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     val discQuery = if (isDisc) "&title=$discTitle&angle=$discAngle&audio=$discAudio&subtitle=$discSubtitle" else ""
 
     // Transcode state
-    var selectedTranscodeModeIndex by remember { mutableIntStateOf(if (isDisc) 1 else 0) }
+    // A video too big for this box's hardware decoder (4K on a 1080p box) starts transcoded,
+    // like a disc; it's decided per video, so the next one starts on its own terms.
+    val tooBigToDecode = remember(path) {
+        val item = viewModel.getFileItemForPath(path)
+        !isSmbSource && !VideoDecoders.canPlay(item?.width, item?.height)
+    }
+    var selectedTranscodeModeIndex by remember(path) { mutableIntStateOf(if (isDisc || tooBigToDecode) 1 else 0) }
     val currentTranscodeMode = transcodeModes[selectedTranscodeModeIndex]
 
     // Where the user stopped last time (0 to start over), as the view model says.
@@ -300,6 +306,22 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 isPlaying = isPlayingChanged
                 if (isPlaying) isPaused = false
             }
+            // The box can't decode the original (too big, or a codec it lacks): have the server
+            // transcode it instead, from the same place.
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                val decoderProblem = error.errorCode in androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..
+                    androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED
+                if (decoderProblem && currentTranscodeMode.isOriginal && !isSmbSource) {
+                    transcodeStartOffset = playbackPosition
+                    selectedTranscodeModeIndex = 1
+                    android.widget.Toast.makeText(context, "This device can't play the original. Transcoding it.",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    android.widget.Toast.makeText(context, "Playback failed: ${error.errorCodeName}",
+                        android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
                     val currentDuration = exoPlayer.duration
@@ -741,7 +763,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         )
 
         SpeedDialog(show = showSpeedDialog, currentSpeedIndex = currentSpeedIndex, speedIntervals = speedIntervals, onDismiss = { showSpeedDialog = false }, onSpeedSelected = { idx, speed -> exoPlayer.playbackParameters = PlaybackParameters(speed); speedFeedback = speed; currentSpeedIndex = idx; showSpeedDialog = false })
-        TranscodeDialog(show = showTranscodeDialog, selectedModeIndex = selectedTranscodeModeIndex, transcodeModes = transcodeModes, onDismiss = { showTranscodeDialog = false }, onModeSelected = { idx -> if (selectedTranscodeModeIndex != idx && !(isDisc && transcodeModes[idx].isOriginal)) { transcodeStartOffset = playbackPosition; selectedTranscodeModeIndex = idx }; showTranscodeDialog = false })
+        TranscodeDialog(show = showTranscodeDialog, selectedModeIndex = selectedTranscodeModeIndex, transcodeModes = transcodeModes, onDismiss = { showTranscodeDialog = false }, onModeSelected = { idx -> if (selectedTranscodeModeIndex != idx && !((isDisc || tooBigToDecode) && transcodeModes[idx].isOriginal)) { transcodeStartOffset = playbackPosition; selectedTranscodeModeIndex = idx }; showTranscodeDialog = false })
         DiscDialog(
             show = showDiscDialog,
             info = discInfo,
