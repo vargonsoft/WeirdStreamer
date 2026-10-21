@@ -39,3 +39,14 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.slf4j.**
 -dontwarn javax.servlet.**
+
+# Downloads and offline progress are stored as JSON through Gson, by field name: keep the names
+# (and the State enum) so release builds read what earlier builds wrote.
+-keep class com.vargon.weirdstreamer.downloads.DownloadItem { *; }
+-keep class com.vargon.weirdstreamer.downloads.DownloadItem$State { *; }
+-keep class com.vargon.weirdstreamer.downloads.LocalProgress$Entry { *; }
+
+# WorkManager (downloads) creates its Room database reflectively at startup; R8 removed the
+# generated database's constructor, crashing every launch.
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
+-keep class * extends androidx.work.ListenableWorker { <init>(android.content.Context, androidx.work.WorkerParameters); }
