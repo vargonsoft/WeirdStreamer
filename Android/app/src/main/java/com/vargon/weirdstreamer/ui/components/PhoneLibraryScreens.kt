@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.Theaters
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -163,7 +166,8 @@ fun PhoneTitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
         if (title.kind == "movie" || !title.files.isNullOrEmpty()) {
             val files = title.files.orEmpty()
             item(key = "files-header") { PhoneSectionHeader(if (files.size > 1) "Files" else "File") }
-            items(files, key = { "file:" + it.path }) { PhoneFileRow(viewModel, it, files) }
+            val label = title.title + (title.year?.let { " ($it)" } ?: "")
+            items(files, key = { "file:" + it.path }) { PhoneFileRow(viewModel, it, files, label) }
         } else {
             phoneShowSections(viewModel, title)
         }
@@ -282,9 +286,9 @@ private fun PhoneSectionHeader(text: String) {
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp))
 }
 
-/** A file: its thumbnail (tap to play) with the full name, size and a Play button beside it. */
+/** A file: its thumbnail (tap to play) with the full name, size, and play and download buttons. */
 @Composable
-private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: List<LibraryFile>) {
+private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: List<LibraryFile>, titleLabel: String? = null) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
@@ -310,10 +314,12 @@ private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: Li
             formatBytes(file.size).takeIf { it.isNotEmpty() }?.let {
                 Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            FilledTonalButton(onClick = { viewModel.playLibraryFile(file, queue) }) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(4.dp))
-                Text("Play")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalIconButton(onClick = { viewModel.playLibraryFile(file, queue) }) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Play")
+                }
+                val label = file.match?.let { m -> m.title + (m.year?.let { " ($it)" } ?: "") } ?: titleLabel
+                DownloadButton(viewModel, DownloadRequest.of(viewModel, file, label))
             }
         }
     }
@@ -330,7 +336,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.phoneShowSections(vie
     val other = title.otherFiles.orEmpty()
     if (other.isNotEmpty()) {
         item(key = "other-header") { PhoneSectionHeader("Other files") }
-        items(other, key = { "other:" + it.path }) { PhoneFileRow(viewModel, it, other) }
+        items(other, key = { "other:" + it.path }) { PhoneFileRow(viewModel, it, other, title.title) }
     }
 }
 
@@ -350,12 +356,26 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
                     label = { Text("${s.name} (${s.episodes.size})") })
             }
         }
-        season.episodes.forEach { PhoneEpisodeRow(viewModel, it, queue) }
+        var downloading by remember { mutableStateOf<List<DownloadRequest>?>(null) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 16.dp)) {
+            FilledTonalButton(onClick = { downloading = episodeDownloads(viewModel, title, listOf(season)) }) {
+                Icon(Icons.Default.Download, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("Download season")
+            }
+            if (seasons.size > 1) {
+                FilledTonalButton(onClick = { downloading = episodeDownloads(viewModel, title, seasons) }) {
+                    Text("Whole show")
+                }
+            }
+        }
+        downloading?.let { DownloadQualityDialog(viewModel, it) { downloading = null } }
+        season.episodes.forEach { PhoneEpisodeRow(viewModel, it, queue, title.title) }
     }
 }
 
 @Composable
-private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, queue: List<LibraryFile>) {
+private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, queue: List<LibraryFile>, showTitle: String) {
     val first = episode.files.firstOrNull() ?: return
     Row(
         verticalAlignment = Alignment.Top,
@@ -398,8 +418,18 @@ private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, 
                     modifier = Modifier.padding(top = 4.dp))
             }
         }
+        Column {
+            episode.files.forEach { f -> DownloadButton(viewModel, DownloadRequest.of(viewModel, f, episodeLabel(showTitle, episode), episode.still)) }
+        }
     }
 }
+
+private fun episodeLabel(showTitle: String, episode: LibraryEpisode) =
+    String.format(Locale.US, "%s S%02dE%02d · %s", showTitle, episode.season, episode.episode, episode.title)
+
+/** Every episode file of [seasons], to download. */
+private fun episodeDownloads(viewModel: MediaViewModel, title: TitleDetail, seasons: List<com.vargon.weirdstreamer.api.models.LibrarySeason>) =
+    seasons.flatMap { s -> s.episodes.flatMap { e -> e.files.map { DownloadRequest.of(viewModel, it, episodeLabel(title.title, e), e.still) } } }
 
 @Composable
 private fun PhoneMessage(text: String) {

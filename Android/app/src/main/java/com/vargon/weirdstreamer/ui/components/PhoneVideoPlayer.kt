@@ -107,6 +107,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     }
 
     val isSmbSource = remember(path) { path.startsWith("smb://") }
+    // A download on this device: played as it is, with nothing asked of or reported to the server.
+    val isLocal = remember(path) { path.startsWith("file://") }
 
     // DVD disc images (.iso) are always transcoded by the server, one title at a time, with the
     // chosen angle and tracks; the disc sheet changes them.
@@ -183,7 +185,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
     // Fetch metadata for duration and trickplay
     LaunchedEffect(path) {
-        if (!isSmbSource) {
+        if (!isSmbSource && !isLocal) {
             try {
                 val encodedPath = path.substringAfter("path=").substringBefore("&")
                 val okHttpClient = WeirdStreamerApplication.getOkHttpClient()
@@ -222,7 +224,9 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     val exoPlayer = remember(path) {
         ExoPlayer.Builder(context)
             .apply {
-                if (isSmbSource) {
+                if (isLocal) {
+                    setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(context))
+                } else if (isSmbSource) {
                     setMediaSourceFactory(
                         androidx.media3.exoplayer.source.DefaultMediaSourceFactory(context)
                             .setDataSourceFactory(
@@ -254,7 +258,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             playbackPosition
         }
 
-        val url = if (!isSmbSource && enableTranscode) {
+        val url = if (!isSmbSource && !isLocal && enableTranscode) {
             val startTimeSeconds = currentPos / 1000f
             transcodeStartOffset = currentPos
             val base = path.substringBefore("?")
@@ -354,7 +358,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     // Where the player is, for the server's admin Streams page: every few seconds, and on
     // play/pause (isPlaying restarts the effect).
     LaunchedEffect(exoPlayer, path, isPlaying) {
-        if (isSmbSource) return@LaunchedEffect
+        if (isSmbSource || isLocal) return@LaunchedEffect
         while (true) {
             viewModel.reportPlayback(path, playbackPosition, !exoPlayer.isPlaying)
             delay(5000)
@@ -526,7 +530,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     }
 
                     // Transcode toggle (discs are always transcoded)
-                    if (!isSmbSource && !isDisc) {
+                    if (!isSmbSource && !isLocal && !isDisc) {
                         IconButton(onClick = { 
                             lastInteractionTime = System.currentTimeMillis()
                             enableTranscode = !enableTranscode 

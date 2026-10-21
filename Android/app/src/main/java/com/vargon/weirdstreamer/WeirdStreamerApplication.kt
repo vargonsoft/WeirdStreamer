@@ -41,6 +41,10 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.vargon.weirdstreamer.downloads.DownloadStore.init(this)
+        if (com.vargon.weirdstreamer.downloads.DownloadStore.items.value.any { it.isActive }) {
+            com.vargon.weirdstreamer.downloads.DownloadWorker.schedule(this)
+        }
         Log.d("WeirdStreamerApp", "Application created")
     }
 

@@ -618,9 +618,32 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun playVideo(path: String) { selectedVideoPath = path }
+    // The server file a local copy is playing in place of, to restore the selection afterwards
+    private var localPlaybackOf: String? = null
+
+    /** Plays a video, from its downloaded copy when there is one. */
+    fun playVideo(path: String) {
+        val local = localCopyOf(path)
+        localPlaybackOf = if (local != null) path else null
+        selectedVideoPath = local ?: path
+    }
+
+    /** The finished download of a server file (by its player path), as a file:// URL. */
+    fun localCopyOf(path: String): String? {
+        val repo = serverRepository ?: return null
+        val original = getFileItemForPath(path)?.originalPath ?: return null
+        return downloadOf(repo.address, original)
+    }
+
+    private fun downloadOf(server: String, original: String): String? =
+        com.vargon.weirdstreamer.downloads.DownloadStore.find(server, original)
+            ?.takeIf { it.state == com.vargon.weirdstreamer.downloads.DownloadItem.State.DONE }
+            ?.localFile?.takeIf { java.io.File(it).exists() }?.let { "file://$it" }
+
     fun stopPlayback(lastViewedPath: String? = null) {
-        lastViewedPath?.let { recordSelection(currentPath, it) }
+        val viewed = if (lastViewedPath?.startsWith("file://") == true) localPlaybackOf else lastViewedPath
+        viewed?.let { recordSelection(currentPath, it) }
+        localPlaybackOf = null
         selectedVideoPath = null
     }
 
@@ -677,6 +700,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getDisplayName(path: String): String {
+        if (path.startsWith("file://")) {
+            // A download: what it is, not its file in app storage.
+            val file = path.removePrefix("file://")
+            com.vargon.weirdstreamer.downloads.DownloadStore.items.value.firstOrNull { it.localFile == file }
+                ?.let { return it.title ?: it.name }
+        }
         return currentRepository?.getDisplayName(path) ?: path.substringAfterLast('/')
     }
 

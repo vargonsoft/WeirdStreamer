@@ -73,6 +73,9 @@ func main() {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
 	mediaHandler := handlers.NewMediaHandler(db, authService)
+	// Encodes for offline downloads live next to the thumbnails, not in /tmp (often RAM-backed).
+	mediaHandler.SetDownloads(media.NewDownloadManager(
+		filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "downloads")))
 	configHandler := handlers.NewConfigHandler(db)
 	userHandler := handlers.NewUserHandler(db)
 
@@ -121,6 +124,11 @@ func main() {
 	api.HandleFunc("/media/match", mediaHandler.ResetMatch).Methods("DELETE")
 	api.HandleFunc("/streams/progress", mediaHandler.ReportStreamProgress).Methods("POST")
 	api.HandleFunc("/media/disc", mediaHandler.GetDisc).Methods("GET")
+	api.HandleFunc("/downloads/options", mediaHandler.DownloadOptions).Methods("GET")
+	api.HandleFunc("/downloads", mediaHandler.CreateDownload).Methods("POST")
+	api.HandleFunc("/downloads/{id}", mediaHandler.GetDownload).Methods("GET")
+	api.HandleFunc("/downloads/{id}", mediaHandler.DeleteDownload).Methods("DELETE")
+	api.HandleFunc("/downloads/{id}/file", mediaHandler.DownloadFile).Methods("GET", "HEAD")
 	api.HandleFunc("/admin/streams", mediaHandler.ListStreams).Methods("GET")
 	api.HandleFunc("/media/match/search", mediaHandler.SearchMatch).Methods("GET")
 	api.HandleFunc("/media/match/posters", mediaHandler.GetMatchPosters).Methods("GET")

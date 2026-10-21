@@ -24,7 +24,7 @@ func IsDiscImage(path string) bool {
 }
 
 // discInfoVersion changes when probing changes, so discs stored by older builds are probed again.
-const discInfoVersion = 2
+const discInfoVersion = 3
 
 // DiscInfo describes what a DVD disc image holds.
 type DiscInfo struct {
@@ -43,7 +43,8 @@ type DiscTitle struct {
 	Subtitles []DiscTrack   `json:"subtitles"`
 	Width     int           `json:"width,omitempty"`
 	Height    int           `json:"height,omitempty"`
-	Segments  []DiscSegment `json:"segments"` // the program chains played one after another
+	Aspect    float64       `json:"aspect,omitempty"` // display aspect ratio (4:3, 16:9)
+	Segments  []DiscSegment `json:"segments"`         // the program chains played one after another
 }
 
 // DiscTrack is an audio or subtitle track; Index counts tracks of its kind from 0.
@@ -295,6 +296,7 @@ func probeTitle(path string, n int) (*DiscTitle, error) {
 			Channels  int    `json:"channels"`
 			Width     int    `json:"width"`
 			Height    int    `json:"height"`
+			Aspect    string `json:"display_aspect_ratio"`
 			Tags      struct {
 				Language string `json:"language"`
 			} `json:"tags"`
@@ -319,6 +321,13 @@ func probeTitle(path string, n int) (*DiscTitle, error) {
 		case "video":
 			if t.Width == 0 {
 				t.Width, t.Height = s.Width, s.Height
+				if w, h, ok := strings.Cut(s.Aspect, ":"); ok {
+					a, _ := strconv.ParseFloat(w, 64)
+					b, _ := strconv.ParseFloat(h, 64)
+					if a > 0 && b > 0 {
+						t.Aspect = a / b
+					}
+				}
 			}
 		case "audio":
 			track.Index = len(t.Audio)

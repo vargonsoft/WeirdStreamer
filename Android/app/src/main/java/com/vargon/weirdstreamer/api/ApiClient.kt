@@ -53,6 +53,15 @@ object ApiClient {
             .followRedirects(false)
     ).build()
 
+    /** An HTTP client that signs in to [serverUrl], for large file downloads (no read timeout). */
+    fun downloadClient(serverUrl: String, credentialManager: CredentialManager): OkHttpClient =
+        getUnsafeOkHttpClient(
+            OkHttpClient.Builder()
+                .addInterceptor(AuthInterceptor(credentialManager, serverUrl))
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(2, TimeUnit.MINUTES)
+        ).build()
+
     fun create(
         serverUrl: String,
         credentialManager: CredentialManager

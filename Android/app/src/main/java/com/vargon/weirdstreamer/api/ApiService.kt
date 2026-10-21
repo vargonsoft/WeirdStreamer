@@ -11,6 +11,9 @@ import com.vargon.weirdstreamer.api.models.StreamProgress
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.google.gson.JsonObject
 import com.vargon.weirdstreamer.api.models.AdminStream
+import com.vargon.weirdstreamer.api.models.CreateDownloadRequest
+import com.vargon.weirdstreamer.api.models.DownloadJob
+import com.vargon.weirdstreamer.api.models.DownloadOptions
 import com.vargon.weirdstreamer.api.models.ChangePasswordRequest
 import com.vargon.weirdstreamer.api.models.CreateUserRequest
 import com.vargon.weirdstreamer.api.models.ServerUser
@@ -86,6 +89,20 @@ interface ApiService {
 
     @GET("/api/admin/streams")
     suspend fun getStreams(): Response<List<AdminStream>>
+
+    // Offline downloads: originals come from /api/media/stream; compressed copies are encoded
+    // by a server job first and fetched from /api/downloads/{id}/file.
+    @GET("/api/downloads/options")
+    suspend fun downloadOptions(@Query("path") path: String): Response<DownloadOptions>
+
+    @POST("/api/downloads")
+    suspend fun createDownload(@Body request: CreateDownloadRequest): Response<DownloadJob>
+
+    @GET("/api/downloads/{id}")
+    suspend fun getDownload(@Path("id") id: String): Response<DownloadJob>
+
+    @DELETE("/api/downloads/{id}")
+    suspend fun deleteDownload(@Path("id") id: String): Response<Unit>
 
     @POST("/api/streams/progress")
     suspend fun reportStreamProgress(@Body progress: StreamProgress): Response<Unit>

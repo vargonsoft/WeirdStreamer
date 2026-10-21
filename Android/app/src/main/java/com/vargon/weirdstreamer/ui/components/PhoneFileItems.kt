@@ -86,6 +86,10 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                 Text(infoStr)
             }
         } else null,
+        // Videos on a WeirdStreamer server can be downloaded for offline viewing.
+        trailingContent = if (!item.isDirectory && !isParent && viewModel.connectedServer != null && viewModel.isVideo(item.path)) {
+            { DownloadRequest.of(item)?.let { DownloadButton(viewModel, it) } }
+        } else null,
         leadingContent = {
             Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                 var isImageLoaded by remember { mutableStateOf(false) }

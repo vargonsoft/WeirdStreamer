@@ -69,6 +69,7 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.okhttp.sse)
     implementation(libs.gson)
+    implementation(libs.androidx.work.runtime.ktx)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

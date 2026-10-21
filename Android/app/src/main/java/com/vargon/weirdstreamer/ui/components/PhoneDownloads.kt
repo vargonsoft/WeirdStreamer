@@ -1,0 +1,517 @@
+package com.vargon.weirdstreamer.ui.components
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import coil.compose.AsyncImage
+import com.vargon.weirdstreamer.MediaViewModel
+import com.vargon.weirdstreamer.api.models.DownloadOptions
+import com.vargon.weirdstreamer.api.models.LibraryFile
+import com.vargon.weirdstreamer.downloads.DownloadItem
+import com.vargon.weirdstreamer.downloads.DownloadStore
+import com.vargon.weirdstreamer.downloads.DownloadWorker
+import com.vargon.weirdstreamer.repository.FileItem
+import kotlinx.coroutines.launch
+import java.io.File
+
+/** A server file that can be downloaded: its path on the server, and how it's shown. */
+data class DownloadRequest(
+    val sourcePath: String,
+    val name: String,
+    val size: Long,
+    val title: String? = null,
+    val thumbnailUrl: String? = null
+) {
+    val isDisc get() = name.endsWith(".iso", ignoreCase = true)
+
+    companion object {
+        fun of(item: FileItem, title: String? = null) = item.originalPath?.let {
+            DownloadRequest(it, item.name, item.size, title, item.thumbnailUrl)
+        }
+
+        fun of(viewModel: MediaViewModel, file: LibraryFile, title: String? = null, still: String? = null) =
+            DownloadRequest(file.path, file.name, file.size, title,
+                viewModel.serverUrl(file.thumbnailUrl) ?: viewModel.serverUrl(still))
+    }
+}
+
+/** The download of [request] on this device, kept current. */
+@Composable
+private fun rememberDownload(viewModel: MediaViewModel, sourcePath: String): DownloadItem? {
+    val items by DownloadStore.items.collectAsState()
+    val server = viewModel.connectedServer?.address ?: return null
+    return items.firstOrNull { it.serverAddress == server && it.sourcePath == sourcePath }
+}
+
+/**
+ * A file's download control: a download icon, a progress circle while it downloads (tap to
+ * cancel), a delete button once it's downloaded, or an error icon if it failed.
+ */
+@Composable
+fun DownloadButton(viewModel: MediaViewModel, request: DownloadRequest) {
+    val download = rememberDownload(viewModel, request.sourcePath)
+    var choosing by remember { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf(false) }
+    when {
+        download == null -> IconButton(onClick = { choosing = true }) {
+            Icon(Icons.Default.Download, contentDescription = "Download")
+        }
+        download.isActive -> IconButton(onClick = { confirming = true }) {
+            DownloadProgress(download)
+        }
+        download.state == DownloadItem.State.DONE -> IconButton(onClick = { confirming = true }) {
+            Icon(Icons.Default.Delete, contentDescription = "Delete download")
+        }
+        else -> IconButton(onClick = { confirming = true }) {
+            Icon(Icons.Default.ErrorOutline, contentDescription = "Download failed", tint = MaterialTheme.colorScheme.error)
+        }
+    }
+    if (choosing) DownloadQualityDialog(viewModel, listOf(request)) { choosing = false }
+    if (confirming && download != null) RemoveDownloadDialog(download) { confirming = false }
+}
+
+/** A progress circle with a stop mark; it spins while waiting. */
+@Composable
+private fun DownloadProgress(download: DownloadItem) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp)) {
+        if (download.state == DownloadItem.State.QUEUED || download.progress <= 0f) {
+            CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+        } else {
+            CircularProgressIndicator(progress = { download.progress }, modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+        }
+        Icon(Icons.Default.Close, contentDescription = "Cancel download", modifier = Modifier.size(14.dp))
+    }
+}
+
+/** Confirms deleting a download, cancelling one in progress, or retrying a failed one. */
+@Composable
+private fun RemoveDownloadDialog(download: DownloadItem, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val name = download.title ?: download.name
+    when {
+        download.state == DownloadItem.State.FAILED -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Download failed") },
+            text = { Text("$name\n\n${download.error ?: "Unknown error"}") },
+            confirmButton = {
+                TextButton(onClick = {
+                    DownloadStore.update(download.id) { it.copy(state = DownloadItem.State.QUEUED, error = null, progress = 0f) }
+                    DownloadWorker.schedule(context)
+                    onDismiss()
+                }) { Text("Retry") }
+            },
+            dismissButton = {
+                TextButton(onClick = { DownloadStore.remove(download.id); onDismiss() }) { Text("Remove") }
+            }
+        )
+        else -> {
+            val done = download.state == DownloadItem.State.DONE
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text(if (done) "Delete download?" else "Cancel download?") },
+                text = {
+                    Text(if (done) "$name will be removed from this phone (${formatBytes(download.bytesTotal)})."
+                    else "$name will stop downloading.")
+                },
+                confirmButton = {
+                    TextButton(onClick = { DownloadStore.remove(download.id); onDismiss() }) {
+                        Text(if (done) "Delete" else "Cancel download", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = { TextButton(onClick = onDismiss) { Text(if (done) "Keep" else "Keep downloading") } }
+            )
+        }
+    }
+}
+
+/**
+ * Asks how to download [requests]: the original file, or a compressed copy made by the server at
+ * a share of the original's size and resolution. Disc images download as their main title in MP4.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequest>, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val server = viewModel.connectedServer ?: return onDismiss()
+    val pending = remember(requests) {
+        requests.filter { r -> DownloadStore.find(server.address, r.sourcePath) == null }
+    }
+    var compressed by remember { mutableStateOf(false) }
+    var sizePct by remember { mutableIntStateOf(50) }
+    var scale by remember { mutableIntStateOf(100) }
+    // One file: its details for the estimate.
+    var options by remember { mutableStateOf<DownloadOptions?>(null) }
+    LaunchedEffect(pending) {
+        pending.singleOrNull()?.let { r ->
+            options = server.downloadOptions(r.sourcePath)
+        }
+    }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val allDiscs = pending.isNotEmpty() && pending.all { it.isDisc }
+    val anyDiscs = pending.any { it.isDisc }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(when (pending.size) {
+                0 -> "Already downloaded"
+                1 -> "Download ${pending[0].name}"
+                else -> "Download ${pending.size} files"
+            }, style = MaterialTheme.typography.titleMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+        },
+        text = {
+            if (pending.isEmpty()) {
+                Text(if (requests.size > 1) "All of these files are downloaded or downloading." else "This file is downloaded or downloading.")
+                return@AlertDialog
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                QualityChoice(
+                    selected = !compressed,
+                    label = if (allDiscs) "Full quality MP4" else "Original",
+                    detail = when {
+                        allDiscs -> "The disc's main title, converted on the server"
+                        anyDiscs -> "Discs download as their main title in MP4"
+                        else -> "The file as it is"
+                    }
+                ) { compressed = false }
+                QualityChoice(selected = compressed, label = "Compressed", detail = "A smaller copy, made on the server first") { compressed = true }
+                if (compressed) {
+                    Text("Size", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(90, 75, 50, 25).forEach { pct ->
+                            FilterChip(selected = sizePct == pct, onClick = { sizePct = pct }, label = { Text("$pct%") })
+                        }
+                    }
+                    Text("Resolution", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(100 to "Original", 75 to "75%", 50 to "50%").forEach { (s, label) ->
+                            FilterChip(selected = scale == s, onClick = { scale = s }, label = { Text(label) })
+                        }
+                    }
+                }
+                val estimate = estimateText(pending, options, compressed, sizePct, scale)
+                if (estimate.isNotEmpty()) {
+                    Text(estimate, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+                }
+                if (DownloadStore.wifiOnly) {
+                    Text("Downloads use Wi-Fi only. You can change this in Settings › Downloads.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        },
+        confirmButton = {
+            if (pending.isNotEmpty()) {
+                TextButton(onClick = {
+                    DownloadStore.add(pending.map { r ->
+                        DownloadItem(
+                            serverAddress = server.address,
+                            sourcePath = r.sourcePath,
+                            name = r.name,
+                            title = r.title,
+                            thumbnailUrl = r.thumbnailUrl,
+                            sizePct = if (compressed) sizePct else 100,
+                            scale = if (compressed) scale else 100,
+                            isDisc = r.isDisc,
+                            bytesTotal = r.size
+                        )
+                    })
+                    DownloadWorker.schedule(context)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    onDismiss()
+                }) { Text("Download") }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(if (pending.isEmpty()) "OK" else "Cancel") } }
+    )
+}
+
+@Composable
+private fun QualityChoice(selected: Boolean, label: String, detail: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** "About 1.2 GB · 1280×720", from the original's size and the chosen quality. */
+private fun estimateText(
+    pending: List<DownloadRequest>, options: DownloadOptions?, compressed: Boolean, sizePct: Int, scale: Int
+): String {
+    val total = options?.size ?: pending.sumOf { it.size }
+    val parts = mutableListOf<String>()
+    when {
+        compressed && total > 0 -> parts += "About ${formatBytes(total * sizePct / 100)}"
+        // A disc's full-quality MP4 size isn't known ahead; an original is its size.
+        !compressed && pending.none { it.isDisc } && total > 0 -> parts += formatBytes(total)
+    }
+    options?.takeIf { it.width > 0 && it.height > 0 }?.let { o ->
+        val s = if (compressed) scale else 100
+        val h = (o.height * s / 100) and 1.inv()
+        val w = (o.width * s / 100) and 1.inv()
+        parts += "${w}×${h}"
+    }
+    return parts.joinToString(" · ")
+}
+
+/** Settings › Downloads: what's on this phone, what's downloading, and the Wi-Fi setting. */
+@Composable
+fun DownloadsTab(viewModel: MediaViewModel) {
+    val context = LocalContext.current
+    val items by DownloadStore.items.collectAsState()
+    var wifiOnly by remember { mutableStateOf(DownloadStore.wifiOnly) }
+    var confirm by remember { mutableStateOf<DownloadItem?>(null) }
+    val sorted = remember(items) { items.sortedWith(compareBy<DownloadItem> { !it.isActive && it.state != DownloadItem.State.FAILED }.thenByDescending { it.createdAt }) }
+
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item(key = "wifi") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().clickable {
+                    wifiOnly = !wifiOnly
+                    DownloadStore.wifiOnly = wifiOnly
+                    DownloadWorker.schedule(context, restart = true)
+                }.padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Download on Wi-Fi only", style = MaterialTheme.typography.bodyLarge)
+                    Text(if (wifiOnly) "Downloads wait for Wi-Fi" else "Downloads also use mobile data",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = wifiOnly, onCheckedChange = {
+                    wifiOnly = it
+                    DownloadStore.wifiOnly = it
+                    DownloadWorker.schedule(context, restart = true)
+                })
+            }
+        }
+        item(key = "used") {
+            DownloadStorage(items)
+            HorizontalDivider(Modifier.padding(top = 8.dp))
+        }
+        if (items.isEmpty()) {
+            item(key = "empty") {
+                Text("Nothing downloaded yet. Use the download button next to a file, or ⋮ › Download this folder.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp))
+            }
+        }
+        items(sorted, key = { it.id }) { d ->
+            DownloadRow(d,
+                onPlay = { d.localFile?.let { viewModel.playVideo("file://$it") } },
+                onRemove = { confirm = d })
+        }
+    }
+    confirm?.let { d -> RemoveDownloadDialog(items.firstOrNull { it.id == d.id } ?: d) { confirm = null } }
+}
+
+/**
+ * The phone's storage as a bar (downloads, everything else, free) with the totals: what the
+ * downloads take on disk, partial files included, and how much of the phone is used.
+ */
+@Composable
+private fun DownloadStorage(items: List<DownloadItem>) {
+    val storage = remember(items) {
+        val ours = DownloadStore.directory.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        val stat = android.os.StatFs(DownloadStore.directory.path)
+        Triple(ours, stat.totalBytes, stat.availableBytes)
+    }
+    val (ours, total, free) = storage
+    val usedByOthers = (total - free - ours).coerceAtLeast(0)
+    val done = items.count { it.state == DownloadItem.State.DONE }
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Storage", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        if (total > 0) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                // Downloads get a sliver even when tiny, so they're visible.
+                val oursWeight = if (ours > 0) maxOf(ours.toFloat() / total, 0.01f) else 0f
+                val othersWeight = usedByOthers.toFloat() / total
+                if (oursWeight > 0f) Box(Modifier.weight(oursWeight).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
+                if (othersWeight > 0f) Box(Modifier.weight(othersWeight).fillMaxHeight().background(MaterialTheme.colorScheme.outline))
+                val freeWeight = 1f - oursWeight - othersWeight
+                if (freeWeight > 0f) Spacer(Modifier.weight(freeWeight))
+            }
+        }
+        StorageLegend(MaterialTheme.colorScheme.primary, "Downloads",
+            "${formatBytes(ours).ifEmpty { "0 B" }} · $done ${if (done == 1) "file" else "files"}")
+        StorageLegend(MaterialTheme.colorScheme.outline, "Everything else", formatBytes(usedByOthers))
+        StorageLegend(MaterialTheme.colorScheme.surfaceVariant, "Free", "${formatBytes(free)} of ${formatBytes(total)}")
+    }
+}
+
+@Composable
+private fun StorageLegend(color: androidx.compose.ui.graphics.Color, label: String, value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(color))
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun DownloadRow(d: DownloadItem, onPlay: () -> Unit, onRemove: () -> Unit) {
+    val done = d.state == DownloadItem.State.DONE
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(enabled = done, onClick = onPlay).padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .width(112.dp)
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(28.dp))
+            val thumb = d.thumbFile?.let { File(it) }?.takeIf { it.exists() } ?: d.thumbnailUrl
+            if (thumb != null) {
+                AsyncImage(model = thumb, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+            if (done) {
+                Icon(Icons.Default.PlayArrow, contentDescription = "Play", modifier = Modifier.size(32.dp),
+                    tint = androidx.compose.ui.graphics.Color.White)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            d.title?.let { Text(it, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            Text(d.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val facts = listOfNotNull(
+                d.qualityLabel,
+                if (d.width > 0 && d.height > 0) "${d.width}×${d.height}" else null,
+                if (done) formatBytes(d.bytesTotal) else null
+            ).filter { it.isNotEmpty() }
+            Text(facts.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            when (d.state) {
+                DownloadItem.State.DONE -> {}
+                DownloadItem.State.FAILED -> Text(d.error ?: "Download failed", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                else -> {
+                    val status = when (d.state) {
+                        DownloadItem.State.QUEUED -> d.stage ?: "Waiting"
+                        DownloadItem.State.PREPARING -> "${d.stage ?: "Preparing"} · ${(d.progress * 100).toInt()}%"
+                        else -> "Downloading · ${formatBytes(d.bytesDone)} of ${formatBytes(d.bytesTotal)}"
+                    }
+                    Text(status, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    if (d.state == DownloadItem.State.QUEUED) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+                    } else {
+                        LinearProgressIndicator(progress = { d.progress }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+                    }
+                }
+            }
+        }
+        IconButton(onClick = onRemove) {
+            when {
+                d.isActive -> Icon(Icons.Default.Close, contentDescription = "Cancel download")
+                d.state == DownloadItem.State.FAILED -> Icon(Icons.Default.ErrorOutline, contentDescription = "Retry or remove",
+                    tint = MaterialTheme.colorScheme.error)
+                else -> Icon(Icons.Default.Delete, contentDescription = "Delete download")
+            }
+        }
+    }
+}
+
+/** Downloads every video in the folder being browsed (and its subfolders). */
+@Composable
+fun DownloadFolderDialog(viewModel: MediaViewModel, onDismiss: () -> Unit) {
+    val server = viewModel.connectedServer ?: return onDismiss()
+    var found by remember { mutableStateOf<List<DownloadRequest>?>(null) }
+    LaunchedEffect(viewModel.currentPath) {
+        found = server.videosUnder(viewModel.currentPath).mapNotNull { DownloadRequest.of(it) }
+    }
+    val requests = found
+    when {
+        requests == null -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Finding videos…") },
+            text = { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        )
+        requests.isEmpty() -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("No videos here") },
+            text = { Text("This folder has no videos to download.") },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } }
+        )
+        else -> DownloadQualityDialog(viewModel, requests, onDismiss)
+    }
+}

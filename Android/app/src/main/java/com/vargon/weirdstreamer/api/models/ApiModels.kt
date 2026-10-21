@@ -74,6 +74,34 @@ data class LibraryFile(
     @SerializedName("match") val match: FileMatch? = null
 )
 
+/** What a file downloads as (GET /api/downloads/options). */
+data class DownloadOptions(
+    @SerializedName("size") val size: Long = 0,
+    @SerializedName("duration") val duration: Double = 0.0,
+    @SerializedName("width") val width: Int = 0,
+    @SerializedName("height") val height: Int = 0,
+    @SerializedName("disc") val disc: Boolean = false,
+    @SerializedName("sizes") val sizes: List<Int> = listOf(90, 75, 50, 25),
+    @SerializedName("scales") val scales: List<Int> = listOf(100, 75, 50)
+)
+
+data class CreateDownloadRequest(
+    @SerializedName("path") val path: String, // base64 server path
+    @SerializedName("size_pct") val sizePct: Int,
+    @SerializedName("scale") val scale: Int
+)
+
+/** A server-side encode for a compressed download. */
+data class DownloadJob(
+    @SerializedName("id") val id: String,
+    @SerializedName("status") val status: String, // queued, encoding, ready, failed
+    @SerializedName("progress") val progress: Double = 0.0,
+    @SerializedName("error") val error: String? = null,
+    @SerializedName("size") val size: Long = 0,
+    @SerializedName("width") val width: Int = 0,
+    @SerializedName("height") val height: Int = 0
+)
+
 /** A user account on the server, as admins see it. */
 data class ServerUser(
     @SerializedName("id") val id: Long,

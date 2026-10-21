@@ -41,10 +41,38 @@ class ServerRepository(
     fun libraryName(libraryId: String): String = shareMap[libraryId] ?: libraryId
 
     /** Server-relative artwork/thumbnail URLs as absolute URLs. */
+    /**
+     * Every video under a folder (browse path), for downloading a whole folder or show: its own
+     * videos and those of its subfolders, up to [limit].
+     */
+    suspend fun videosUnder(path: String, limit: Int = 5000): List<FileItem> {
+        val found = mutableListOf<FileItem>()
+        val pending = ArrayDeque(listOf(path))
+        while (pending.isNotEmpty() && found.size < limit) {
+            val items = browse(pending.removeFirst()).getOrNull() ?: continue
+            items.forEach { item ->
+                when {
+                    item.isDirectory && item.path != "UP" && item.name != ".." -> pending.add(item.path)
+                    !item.isDirectory && isDownloadableVideo(item.name) -> found.add(item)
+                }
+            }
+        }
+        return found.take(limit)
+    }
+
+    private fun isDownloadableVideo(name: String) =
+        name.substringAfterLast('.', "").lowercase() in setOf(
+            "mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2", "divx", "xvid", "iso")
+
     /** The server's API, for the admin settings screens. */
     val api: ApiService get() = apiService
 
     val address: String get() = serverUrl
+
+    /** What [path] (a server path) would download as, for the quality dialog's estimate. */
+    suspend fun downloadOptions(path: String): com.vargon.weirdstreamer.api.models.DownloadOptions? = runCatching {
+        apiService.downloadOptions(Base64.encodeToString(path.toByteArray(), Base64.NO_WRAP)).body()
+    }.getOrNull()
 
     /** Who the saved login is, from its token's claims: username and whether they're an admin. */
     fun signedInAs(): Pair<String?, Boolean> {

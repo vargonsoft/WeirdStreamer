@@ -49,6 +49,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
         val isAdmin = remember(server?.address, authStateRefresh) { server?.signedInAs()?.second ?: false }
         val tabs = buildList {
             add("App")
+            add("Downloads")
             if (server != null) {
                 if (isAdmin) addAll(listOf("Server", "Users", "Streams"))
                 add("Account")
@@ -64,7 +65,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                 }
             }
         }
-        if (server == null) {
+        if (server == null && tab != "Downloads") {
             Text(
                 "Open a WeirdStreamer server to manage it here.",
                 style = MaterialTheme.typography.bodySmall,
@@ -77,6 +78,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
         "Users" -> UsersTab(server!!)
         "Streams" -> StreamsTab(server!!)
         "Account" -> AccountTab(server!!)
+        "Downloads" -> DownloadsTab(viewModel)
         else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
             // Theme Section
             item {

@@ -39,6 +39,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     var showMainAddDialog by remember { mutableStateOf(false) }
     var showAuthDialog by remember { mutableStateOf(false) }
     var showRegenerateDialog by remember { mutableStateOf(false) }
+    var showDownloadFolder by remember { mutableStateOf(false) }
     val currentSource = viewModel.currentSource
 
     // Back closes a title page, then leaves Library view for the server's libraries, else goes up.
@@ -128,6 +129,13 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                                 }
                                 HorizontalDivider()
                             }
+                            if (currentSource != null && !viewModel.isLibraryView && viewModel.connectedServer != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Download this folder") },
+                                    leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                                    onClick = { menuOpen = false; showDownloadFolder = true }
+                                )
+                            }
                             if (currentSource != null && !viewModel.isLibraryView && viewModel.supportsThumbnailRegeneration) {
                                 DropdownMenuItem(
                                     text = { Text("Regenerate thumbnails") },
@@ -199,6 +207,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         }
     }
 
+    if (showDownloadFolder) DownloadFolderDialog(viewModel) { showDownloadFolder = false }
     if (showRegenerateDialog) {
         AlertDialog(
             onDismissRequest = { showRegenerateDialog = false },

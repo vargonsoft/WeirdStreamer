@@ -34,6 +34,7 @@ type MediaHandler struct {
 	authService        *auth.Service
 	meta               *metadata.Service // nil until SetMetadata
 	streams            *media.StreamTracker
+	downloads          *media.DownloadManager // nil until SetDownloads
 }
 
 // SetMetadata enables TMDB metadata for movie and tv libraries.
