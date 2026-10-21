@@ -42,6 +42,39 @@ fun subtitlesOffByDefault(params: androidx.media3.common.TrackSelectionParameter
         .build()
 
 /**
+ * Names subtitle tracks so ones in the same language can be told apart: "English · SDH · Image",
+ * with the file's title for the track, whether it's text or images (Blu-ray PGS, DVD), forced and
+ * hearing-impaired marks, and a number for tracks that still read the same.
+ */
+fun subtitleLabels(formats: List<androidx.media3.common.Format>): List<String> {
+    val base = formats.mapIndexed { i, f ->
+        val language = f.language?.takeIf { it.isNotBlank() && it != "und" }
+            ?.let { Locale.forLanguageTag(it).getDisplayLanguage(Locale.getDefault()).ifBlank { it } }
+        val title = f.label?.trim()?.takeIf { it.isNotEmpty() && !it.equals(language, ignoreCase = true) }
+        val kind = when (f.sampleMimeType) {
+            androidx.media3.common.MimeTypes.APPLICATION_PGS, androidx.media3.common.MimeTypes.APPLICATION_VOBSUB,
+            androidx.media3.common.MimeTypes.APPLICATION_DVBSUBS -> "Image"
+            androidx.media3.common.MimeTypes.APPLICATION_CEA608, androidx.media3.common.MimeTypes.APPLICATION_CEA708 -> "Closed captions"
+            null -> null
+            else -> "Text"
+        }
+        val marks = listOfNotNull(
+            if (f.selectionFlags and androidx.media3.common.C.SELECTION_FLAG_FORCED != 0) "Forced" else null,
+            if (f.roleFlags and androidx.media3.common.C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND != 0 &&
+                title?.contains("SDH", ignoreCase = true) != true) "SDH" else null,
+            if (f.roleFlags and androidx.media3.common.C.ROLE_FLAG_COMMENTARY != 0) "Commentary" else null
+        )
+        listOfNotNull(language ?: "Subtitle ${i + 1}", title?.take(40)) .plus(marks).plus(listOfNotNull(kind)).joinToString(" · ")
+    }
+    // Number the ones that still read the same: "Chinese · Image (1)", "Chinese · Image (2)".
+    val counts = base.groupingBy { it }.eachCount()
+    val seen = HashMap<String, Int>()
+    return base.map { label ->
+        if ((counts[label] ?: 0) < 2) label else "$label (${seen.merge(label, 1, Int::plus)})"
+    }
+}
+
+/**
  * What this device's hardware H.264 decoders can play, so videos beyond them (4K on many phones)
  * are transcoded down to a size they handle instead of failing. Software decoders don't count:
  * they "support" 4K but can't keep up.

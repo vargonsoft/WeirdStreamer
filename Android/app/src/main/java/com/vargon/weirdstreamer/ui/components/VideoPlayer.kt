@@ -349,15 +349,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 if (videoSize.width > 0 && videoSize.height > 0) videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
             }
             override fun onTracksChanged(tracks: Tracks) {
-                val subtitleTracks = mutableListOf<String>()
+                val formats = mutableListOf<androidx.media3.common.Format>()
                 for (group in tracks.groups) {
                     if (group.type == C.TRACK_TYPE_TEXT) {
-                        for (i in 0 until group.length) {
-                            val format = group.getTrackFormat(i)
-                            subtitleTracks.add(format.language ?: "Subtitle ${i + 1}")
-                        }
+                        for (i in 0 until group.length) formats.add(group.getTrackFormat(i))
                     }
                 }
+                val subtitleTracks = subtitleLabels(formats)
                 availableSubtitles = subtitleTracks
                 if (subtitleTracks.isEmpty()) selectedSubtitleIndex = -1
             }

@@ -204,14 +204,15 @@ fun SubtitleDialog(
     ) {
         Surface(
             modifier = Modifier
-                .width(500.dp)
+                .width(680.dp)
+                .heightIn(max = 600.dp) // the TV's 1080p screen is 540dp tall: the list scrolls inside
                 .background(Color.Black.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
                 .border(2.dp, Color.White, RoundedCornerShape(16.dp)),
             color = Color.Black.copy(alpha = 0.9f)
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     text = "Subtitles",
@@ -229,9 +230,12 @@ fun SubtitleDialog(
                         color = Color.White.copy(alpha = 0.8f)
                     )
 
+                    // A long list (Blu-rays carry dozens) scrolls inside its share of the dialog, so
+                    // the download row and Close stay on screen below it.
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .weight(1f, fill = false)
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
