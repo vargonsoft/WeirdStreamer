@@ -38,6 +38,7 @@ import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     var showMainAddDialog by remember { mutableStateOf(false) }
     var showAuthDialog by remember { mutableStateOf(false) }
+    var showRegenerateDialog by remember { mutableStateOf(false) }
     val currentSource = viewModel.currentSource
 
     // Back closes a title page, then leaves Library view for the server's libraries, else goes up.
@@ -101,21 +102,45 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                             contentDescription = "Switch View"
                         )
                     }
-                    if (currentSource != null && !viewModel.isLibraryView) {
-                        IconButton(onClick = { viewModel.toggleContentFilter() }) {
-                            Icon(
-                                when (viewModel.contentFilter) {
-                                    ContentFilter.ALL -> Icons.Default.FilterList
-                                    ContentFilter.IMAGE -> Icons.Default.Image
-                                    ContentFilter.VIDEO -> Icons.Default.VideoLibrary
-                                    ContentFilter.PDF -> Icons.Default.PictureAsPdf
-                                },
-                                contentDescription = "Filter"
+                    // Everything else lives in the overflow menu, so the bar fits on a phone.
+                    var menuOpen by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            if (currentSource != null && !viewModel.isLibraryView) {
+                                Text("Show", style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                                listOf(
+                                    Triple(ContentFilter.ALL, "Everything", Icons.Default.FilterList),
+                                    Triple(ContentFilter.VIDEO, "Videos", Icons.Default.VideoLibrary),
+                                    Triple(ContentFilter.IMAGE, "Images", Icons.Default.Image),
+                                    Triple(ContentFilter.PDF, "PDFs", Icons.Default.PictureAsPdf)
+                                ).forEach { (filter, label, icon) ->
+                                    DropdownMenuItem(
+                                        text = { Text(label) },
+                                        leadingIcon = { Icon(icon, contentDescription = null) },
+                                        trailingIcon = { if (viewModel.contentFilter == filter) Icon(Icons.Default.Check, contentDescription = "Selected") },
+                                        onClick = { menuOpen = false; viewModel.chooseContentFilter(filter) }
+                                    )
+                                }
+                                HorizontalDivider()
+                            }
+                            if (currentSource != null && !viewModel.isLibraryView && viewModel.supportsThumbnailRegeneration) {
+                                DropdownMenuItem(
+                                    text = { Text("Regenerate thumbnails") },
+                                    leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                                    onClick = { menuOpen = false; showRegenerateDialog = true }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Settings") },
+                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                                onClick = { menuOpen = false; onOpenSettings() }
                             )
                         }
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
             )
@@ -172,6 +197,18 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showRegenerateDialog) {
+        AlertDialog(
+            onDismissRequest = { showRegenerateDialog = false },
+            title = { Text("Regenerate thumbnails?") },
+            text = { Text("Thumbnails for this folder are made again on the server.") },
+            confirmButton = {
+                TextButton(onClick = { showRegenerateDialog = false; viewModel.regenerateThumbnails() }) { Text("Regenerate") }
+            },
+            dismissButton = { TextButton(onClick = { showRegenerateDialog = false }) { Text("Cancel") } }
+        )
     }
 
     if (showMainAddDialog) {

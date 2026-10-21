@@ -74,6 +74,55 @@ data class LibraryFile(
     @SerializedName("match") val match: FileMatch? = null
 )
 
+/** A user account on the server, as admins see it. */
+data class ServerUser(
+    @SerializedName("id") val id: Long,
+    @SerializedName("username") val username: String,
+    @SerializedName("is_admin") val isAdmin: Boolean,
+    @SerializedName("group") val group: String? = null
+)
+
+data class CreateUserRequest(
+    @SerializedName("username") val username: String,
+    @SerializedName("password") val password: String,
+    @SerializedName("is_admin") val isAdmin: Boolean,
+    @SerializedName("group") val group: String
+)
+
+data class ChangePasswordRequest(
+    @SerializedName("old_password") val oldPassword: String,
+    @SerializedName("new_password") val newPassword: String
+)
+
+/** A stream playing on the server, from its admin Streams list. */
+data class AdminStream(
+    @SerializedName("id") val id: String,
+    @SerializedName("user") val user: String = "",
+    @SerializedName("client") val client: String = "",
+    @SerializedName("client_ip") val clientIp: String = "",
+    @SerializedName("name") val name: String = "",
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("duration") val duration: Double = 0.0,
+    @SerializedName("state") val state: String = "",
+    @SerializedName("mode") val mode: String = "",
+    @SerializedName("bytes_sent") val bytesSent: Long = 0,
+    @SerializedName("served_to") val servedTo: Double = 0.0,
+    @SerializedName("position") val position: Double? = null,
+    @SerializedName("width") val width: Int = 0,
+    @SerializedName("height") val height: Int = 0,
+    @SerializedName("transcode") val transcode: AdminTranscode? = null
+)
+
+data class AdminTranscode(
+    @SerializedName("reason") val reason: String = "",
+    @SerializedName("video") val video: String = "",
+    @SerializedName("audio") val audio: String = "",
+    @SerializedName("speed") val speed: Double = 0.0,
+    @SerializedName("fps") val fps: Double = 0.0,
+    @SerializedName("stalled") val stalled: Boolean = false,
+    @SerializedName("source_video") val sourceVideo: String? = null
+)
+
 /** A DVD disc image's titles, for the player's disc controls. */
 data class DiscInfo(
     @SerializedName("titles") val titles: List<DiscTitle> = emptyList(),

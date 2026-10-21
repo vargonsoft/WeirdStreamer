@@ -249,6 +249,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     // Files of the title being played from, so the player can find the item and its neighbours
     private var playbackQueue: List<FileItem> = emptyList()
 
+    /** The WeirdStreamer server being browsed, if any (for its admin settings). */
+    val connectedServer: ServerRepository?
+        get() = serverRepository
+
     private val serverRepository: ServerRepository?
         get() = currentRepository as? ServerRepository
 
@@ -351,6 +355,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         playVideo(repo.fileItemFor(file).path)
     }
 
+
+    fun chooseContentFilter(filter: ContentFilter) {
+        if (filter == contentFilter) return
+        contentFilter = filter
+        viewModelScope.launch { updateSortedList() }
+    }
 
     fun toggleContentFilter() {
         contentFilter = when (contentFilter) {

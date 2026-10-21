@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,11 +44,40 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
+        // The server being browsed can be managed here, as in the web UI's Settings.
+        val server = viewModel.connectedServer
+        val isAdmin = remember(server?.address, authStateRefresh) { server?.signedInAs()?.second ?: false }
+        val tabs = buildList {
+            add("App")
+            if (server != null) {
+                if (isAdmin) addAll(listOf("Server", "Users", "Streams"))
+                add("Account")
+            }
+        }
+        var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+        val tab = tabs[selectedTab.coerceIn(tabs.indices)]
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        if (tabs.size > 1) {
+            PrimaryScrollableTabRow(selectedTabIndex = selectedTab.coerceIn(tabs.indices), edgePadding = 8.dp) {
+                tabs.forEachIndexed { index, name ->
+                    Tab(selected = index == selectedTab, onClick = { selectedTab = index }, text = { Text(name) })
+                }
+            }
+        }
+        if (server == null) {
+            Text(
+                "Open a WeirdStreamer server to manage it here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
+        when (tab) {
+        "Server" -> ServerSettingsTab(server!!)
+        "Users" -> UsersTab(server!!)
+        "Streams" -> StreamsTab(server!!)
+        "Account" -> AccountTab(server!!)
+        else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
             // Theme Section
             item {
                 Text(
@@ -196,6 +226,8 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                     }
                 }
             }
+        }
+        }
         }
     }
 }

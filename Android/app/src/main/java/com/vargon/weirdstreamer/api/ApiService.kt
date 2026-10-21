@@ -9,11 +9,18 @@ import com.vargon.weirdstreamer.api.models.LoginResponse
 import com.vargon.weirdstreamer.api.models.MediaItem
 import com.vargon.weirdstreamer.api.models.StreamProgress
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
+import com.google.gson.JsonObject
+import com.vargon.weirdstreamer.api.models.AdminStream
+import com.vargon.weirdstreamer.api.models.ChangePasswordRequest
+import com.vargon.weirdstreamer.api.models.CreateUserRequest
+import com.vargon.weirdstreamer.api.models.ServerUser
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Streaming
@@ -47,6 +54,38 @@ interface ApiService {
 
     @GET("/api/media/disc")
     suspend fun getDisc(@Query("path") path: String): Response<DiscInfo>
+
+    // Server administration (admins), as in the web UI's Settings. The config is kept as raw
+    // JSON, so fields this app doesn't edit go back to the server untouched.
+    @GET("/api/config")
+    suspend fun getConfig(): Response<JsonObject>
+
+    @PUT("/api/config")
+    suspend fun updateConfig(@Body config: JsonObject): Response<JsonObject>
+
+    @GET("/api/groups")
+    suspend fun getGroups(): Response<List<String>>
+
+    @GET("/api/users")
+    suspend fun getUsers(): Response<List<ServerUser>>
+
+    @POST("/api/users")
+    suspend fun createUser(@Body request: CreateUserRequest): Response<JsonObject>
+
+    @PUT("/api/users")
+    suspend fun updateUser(@Query("username") username: String, @Body changes: JsonObject): Response<JsonObject>
+
+    @DELETE("/api/users")
+    suspend fun deleteUser(@Query("username") username: String): Response<JsonObject>
+
+    @POST("/api/users/change-password")
+    suspend fun changePassword(@Body request: ChangePasswordRequest): Response<JsonObject>
+
+    @POST("/api/media/scan")
+    suspend fun scanMedia(): Response<JsonObject>
+
+    @GET("/api/admin/streams")
+    suspend fun getStreams(): Response<List<AdminStream>>
 
     @POST("/api/streams/progress")
     suspend fun reportStreamProgress(@Body progress: StreamProgress): Response<Unit>

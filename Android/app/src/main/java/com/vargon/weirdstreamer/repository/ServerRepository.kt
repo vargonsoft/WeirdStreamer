@@ -41,6 +41,22 @@ class ServerRepository(
     fun libraryName(libraryId: String): String = shareMap[libraryId] ?: libraryId
 
     /** Server-relative artwork/thumbnail URLs as absolute URLs. */
+    /** The server's API, for the admin settings screens. */
+    val api: ApiService get() = apiService
+
+    val address: String get() = serverUrl
+
+    /** Who the saved login is, from its token's claims: username and whether they're an admin. */
+    fun signedInAs(): Pair<String?, Boolean> {
+        val token = credentialManager.getServerToken(serverUrl) ?: return null to false
+        return runCatching {
+            val payload = token.split(".")[1]
+            val json = String(Base64.decode(payload, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING))
+            val claims = com.google.gson.JsonParser.parseString(json).asJsonObject
+            claims.get("username")?.asString to (claims.get("is_admin")?.asBoolean ?: false)
+        }.getOrDefault(null to false)
+    }
+
     fun absoluteUrl(url: String?): String? = url?.let { if (it.startsWith("http")) it else "$serverUrl$it" }
 
     /** A Library-view file as a playable [FileItem] (stream URL path, like browse items). */
