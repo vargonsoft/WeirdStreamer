@@ -16,7 +16,8 @@ for each TODO item are at the end of this file.
   and ask before running it with `--force`.
 - **Onn TV box:** no testing or installing on it during the day. Use the emulators.
 - **Deploying the Android app:** only through `Android/deploy-release.sh` (below), never manual
-  `adb install` of a debug build on real devices. Leave out `--onn` unless the user asks.
+  `adb install` of a debug build on real devices. Deploy only to the destinations the user names
+  (`--onn` only when they ask for the Onn).
 - **Commits:** only when asked. End messages with
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. `origin` is a local bare repo
   (`../repos/WeirdStreamer`); push only when asked. There's also a `github` remote.
@@ -131,10 +132,11 @@ for each TODO item are at the end of this file.
 
 ## Deploying the Android app
 
-`Android/deploy-release.sh` builds the R8 release APK and launches it on every running emulator,
-aborting on a crash (with none running it skips that; don't start emulators just to deploy). It then installs on the connected allowed devices: Moto G
-(`moto g power - 2025`) and Galaxy Fold 7 (`SM-F966U1`) always, and the Onn
-(`onn. 4K Plus Streaming`) only with `--onn`. Options: `--no-build`, `--no-install`.
+`Android/deploy-release.sh` builds the R8 release APK and installs it only on the destinations
+given: `--emulators` (the running emulators, with a launch-and-crash check; emulators go first and
+a crash stops the rest), `--onn` (`onn. 4K Plus Streaming`), `--moto` (`moto g power - 2025`) and
+`--fold7` (`SM-F966U1`). With none it builds nothing. `--no-build` reuses the built APK. A
+destination that isn't connected, or a failed install, makes it exit non-zero.
 
 - Real devices must get release builds. Debug builds are visibly sluggish on the Onn.
 - R8 needs keep rules (`Android/app/proguard-rules.pro`) for anything Gson stores by field name
