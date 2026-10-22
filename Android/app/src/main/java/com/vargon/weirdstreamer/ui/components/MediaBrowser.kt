@@ -119,6 +119,10 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             )
         }
         backdropTitle?.let { TitleBackdrop(viewModel, it) }
+        // The wordmark on the clock's line, left; the source list shows it large instead.
+        if (currentSource != null) {
+            Wordmark(MaterialTheme.colorScheme.onSurface, Modifier.align(Alignment.TopStart).padding(top = 14.dp, start = 48.dp).height(20.dp))
+        }
         Clock(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 52.dp))
 
         Column(
@@ -165,10 +169,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                             modifier = Modifier.fillMaxWidth().padding(end = 16.dp)
                         )
                     } else {
-                        Text(
-                            text = "Select Media Source",
-                            style = MaterialTheme.typography.headlineMedium
-                        )
+                        Wordmark(MaterialTheme.colorScheme.onSurface, Modifier.height(60.dp))
                     }
                 }
                 

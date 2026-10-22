@@ -74,7 +74,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                                 overflow = TextOverflow.Ellipsis
                             )
                         } else {
-                            Text("WeirdStreamer")
+                            Wordmark(MaterialTheme.colorScheme.onSurface, Modifier.height(22.dp))
                         }
                     }
                 },
