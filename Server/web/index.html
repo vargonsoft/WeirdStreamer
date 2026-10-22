@@ -25,7 +25,10 @@
         <!-- Main Screen -->
         <div id="main-screen" class="screen">
             <header>
-                <h1><img class="brand-logo" src="images/brand-wordmark.svg" alt="Weird Streamer"></h1>
+                <h1>
+                    <img class="brand-logo brand-on-dark" src="images/brand-wordmark.svg" alt="Weird Streamer">
+                    <img class="brand-logo brand-on-light" src="images/brand-wordmark-on-light.svg" alt="Weird Streamer">
+                </h1>
                 <div class="header-controls">
                     <button id="scan-btn" class="btn" data-icon="search"><span class="btn-label">Scan Media</span></button>
                     <button id="regenerate-thumbnails-btn" class="btn" style="display: none;" data-icon="refresh"><span class="btn-label">Regenerate Thumbnails</span></button>
@@ -142,16 +145,19 @@
                     <div class="settings-group">
                         <h3 class="icon-heading" data-icon="palette">Theme</h3>
                         <label>
-                            <input type="radio" name="theme" value="default" id="theme-default"> Default (Purple)
+                            <input type="radio" name="theme" value="default" id="theme-default"> Default (Ember)
+                        </label><br>
+                        <label>
+                            <input type="radio" name="theme" value="purple" id="theme-purple"> Purple
+                        </label><br>
+                        <label>
+                            <input type="radio" name="theme" value="dark" id="theme-dark"> Dark
                         </label><br>
                         <label>
                             <input type="radio" name="theme" value="cinema-blue" id="theme-cinema-blue"> Cinema Blue (Gold & Blue)
                         </label><br>
                         <label>
                             <input type="radio" name="theme" value="cinema-red" id="theme-cinema-red"> Cinema Red (Gold & Red)
-                        </label><br>
-                        <label>
-                            <input type="radio" name="theme" value="dark" id="theme-dark"> Dark
                         </label><br><br>
                         <button id="save-theme-btn" class="btn" data-icon="save"><span class="btn-label">Save Theme</span></button>
                         <p id="theme-message" style="margin-top: 10px; font-weight: bold;"></p>

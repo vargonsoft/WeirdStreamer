@@ -39,7 +39,33 @@
     --button-hover: #3b4285;
 }
 
+/* Ember, the default: the Weird Streamer logo's aubergine, gold and cream */
 :root[data-theme="default"] {
+    color-scheme: dark; /* inputs, menus and scrollbars drawn dark too */
+    --primary-color: #F6C445; /* the logo's gold: accent text, borders, focus */
+    --primary-dark: #E0A82E;
+    --secondary-color: #E0892C;
+    --background-gradient: linear-gradient(180deg, #1C0F1B 0%, #28142A 100%);
+    --text-color: #FFF2D8; /* the logo's cream */
+    --surface-color: #321B2F; /* the logo's aubergine */
+    --surface-hover: #4A2A45;
+    --card-bg: #321B2F;
+    --panel-bg: #3D2239;
+    --placeholder-bg: #4A2A45;
+    --hover-bg: #43263F;
+    --border-color: #5A3654;
+    --muted-text: #D8C6B4;
+    --strong-text: #FFF2D8;
+    --success-bg: #2f7a4b;
+    --danger-bg: #8f3a33;
+    --danger-hover: #7a302a;
+    --button-bg: #6A3A62; /* plum: white labels stay readable, unlike on gold */
+    --button-hover: #7C4672;
+    --heading-color: #F6C445; /* settings headings and tabs, the image title (purple elsewhere) */
+    --placeholder-gradient: linear-gradient(135deg, #4A2A45 0%, #321B2F 100%); /* missing thumbnails and posters */
+}
+
+:root[data-theme="purple"] {
     --primary-color: #667eea;
     --primary-dark: #5568d3;
     --secondary-color: #764ba2;
@@ -103,6 +129,16 @@ body {
     display: block;
     width: clamp(180px, 24vw, 260px);
     height: auto;
+}
+
+/* The header's wordmark: cream letters, or aubergine ones on Purple's light header */
+.brand-logo.brand-on-light,
+:root[data-theme="purple"] .brand-logo.brand-on-dark {
+    display: none;
+}
+
+:root[data-theme="purple"] .brand-logo.brand-on-light {
+    display: block;
 }
 
 .login-container .brand-logo {
@@ -313,7 +349,7 @@ header h1 {
 }
 
 .media-thumbnail.no-thumb {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--placeholder-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
     color: white;
 }
 
@@ -433,7 +469,7 @@ header h1 {
 #player-title,
 #image-title {
     margin-bottom: 10px;
-    color: #667eea;
+    color: var(--heading-color, #667eea);
 }
 
 /* Settings Screen */
@@ -451,7 +487,7 @@ header h1 {
 }
 
 .settings-container h1 {
-    color: #667eea;
+    color: var(--heading-color, #667eea);
     margin-bottom: 20px;
 }
 
@@ -463,7 +499,7 @@ header h1 {
 }
 
 .settings-group h3 {
-    color: #667eea;
+    color: var(--heading-color, #667eea);
     margin-bottom: 15px;
 }
 
@@ -504,12 +540,12 @@ header h1 {
 }
 
 .settings-tab:hover {
-    color: #667eea;
+    color: var(--heading-color, #667eea);
 }
 
 .settings-tab.active {
-    color: #667eea;
-    border-bottom-color: #667eea;
+    color: var(--heading-color, #667eea);
+    border-bottom-color: var(--heading-color, #667eea);
 }
 
 .settings-tab-content {
@@ -1093,7 +1129,7 @@ header h1 {
     align-items: center;
     justify-content: center;
     font-size: 48px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--placeholder-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
     color: white;
 }
 
@@ -1165,7 +1201,7 @@ header h1 {
     align-items: center;
     justify-content: center;
     font-size: 72px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--placeholder-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
 }
 
 .title-info {
@@ -1695,23 +1731,23 @@ header h1 {
     font-size: 13px;
 }
 
-/* Dark theme: pieces whose light colors aren't theme variables */
-:root[data-theme="dark"] .stream-badge.state-playing { background: #1d3a26; color: #7ee2a0; }
-:root[data-theme="dark"] .stream-badge.state-paused { background: #3d3216; color: #f2cf6b; }
-:root[data-theme="dark"] .stream-badge.state-streaming { background: #232c52; color: #a9b6ff; }
-:root[data-theme="dark"] .stream-badge.mode-transcode { background: #4a2220; color: #ff9c92; }
-:root[data-theme="dark"] .stream-bar-sent { background: #3b416b; }
-:root[data-theme="dark"] .modal-content,
-:root[data-theme="dark"] .settings-container,
-:root[data-theme="dark"] .user-item,
-:root[data-theme="dark"] .match-hit,
-:root[data-theme="dark"] .match-poster,
-:root[data-theme="dark"] .stream-card {
+/* Dark and Ember themes: pieces whose light colors aren't theme variables */
+:root:is([data-theme="dark"], [data-theme="default"]) .stream-badge.state-playing { background: #1d3a26; color: #7ee2a0; }
+:root:is([data-theme="dark"], [data-theme="default"]) .stream-badge.state-paused { background: #3d3216; color: #f2cf6b; }
+:root:is([data-theme="dark"], [data-theme="default"]) .stream-badge.state-streaming { background: #232c52; color: #a9b6ff; }
+:root:is([data-theme="dark"], [data-theme="default"]) .stream-badge.mode-transcode { background: #4a2220; color: #ff9c92; }
+:root:is([data-theme="dark"], [data-theme="default"]) .stream-bar-sent { background: #3b416b; }
+:root:is([data-theme="dark"], [data-theme="default"]) .modal-content,
+:root:is([data-theme="dark"], [data-theme="default"]) .settings-container,
+:root:is([data-theme="dark"], [data-theme="default"]) .user-item,
+:root:is([data-theme="dark"], [data-theme="default"]) .match-hit,
+:root:is([data-theme="dark"], [data-theme="default"]) .match-poster,
+:root:is([data-theme="dark"], [data-theme="default"]) .stream-card {
     color: var(--text-color);
 }
-:root[data-theme="dark"] .settings-input,
-:root[data-theme="dark"] #login-form input,
-:root[data-theme="dark"] .player-controls select {
+:root:is([data-theme="dark"], [data-theme="default"]) .settings-input,
+:root:is([data-theme="dark"], [data-theme="default"]) #login-form input,
+:root:is([data-theme="dark"], [data-theme="default"]) .player-controls select {
     background: var(--panel-bg);
     color: var(--text-color);
 }
