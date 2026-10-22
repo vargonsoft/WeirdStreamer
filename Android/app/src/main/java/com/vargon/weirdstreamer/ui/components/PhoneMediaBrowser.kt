@@ -53,7 +53,9 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
 
     Scaffold(
         topBar = {
+            PhoneTopBarPanel {
             TopAppBar(
+                windowInsets = panelTopBarInsets(),
                 title = {
                     Column {
                         if (currentSource != null) {
@@ -152,9 +154,10 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     }
                 }
             )
+            }
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        PhoneContentPanel(modifier = Modifier.fillMaxSize().padding(padding)) {
             // Background image from theme spec
             val themeSpec = WeirdStreamerTheme.spec
             themeSpec.backgroundImage?.let { bgRes ->
@@ -182,7 +185,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(text = "Error: ${viewModel.errorMessage}", color = MaterialTheme.colorScheme.error)
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { 
+                            Button(colors = phoneButtonColors(), onClick = { 
                                 currentSource?.let { viewModel.loadPath(it, viewModel.currentPath) }
                             }) {
                                 Text("Retry")

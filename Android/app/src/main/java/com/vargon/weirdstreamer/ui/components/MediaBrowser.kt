@@ -119,6 +119,8 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             )
         }
         backdropTitle?.let { TitleBackdrop(viewModel, it) }
+        // The boxes let a title's backdrop show through (their contents stay opaque).
+        val panelAlpha = if (backdropTitle != null) 0.5f else 1f
         // The wordmark on the clock's line, left; the source list shows it large instead.
         if (currentSource != null) {
             Wordmark(MaterialTheme.colorScheme.onSurface, Modifier.align(Alignment.TopStart).padding(top = 14.dp, start = 48.dp).height(20.dp))
@@ -138,7 +140,8 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     } else false
                 }
         ) {
-            // Header
+            // Header (in a box, in themes that draw them)
+            Panel(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), alpha = panelAlpha) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.onPreviewKeyEvent { event ->
@@ -174,7 +177,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 }
                 
                 if (currentSource != null) {
-                    Button(
+                    Button(colors = tvButtonColors(),
                         onClick = { viewModel.returnToSourceSelection() },
                         modifier = Modifier.focusRequester(toolbarFocusRequester)
                     ) {
@@ -182,12 +185,12 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     // Replaces the ".." entry: up a folder, or back out of a title or library.
-                    Button(onClick = goBack, modifier = Modifier.focusRequester(upFocusRequester)) {
+                    Button(colors = tvButtonColors(), onClick = goBack, modifier = Modifier.focusRequester(upFocusRequester)) {
                         Icon(Icons.Default.ArrowUpward, contentDescription = "Up")
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                 } else {
-                    Button(
+                    Button(colors = tvButtonColors(),
                         onClick = { showMainAddDialog = true },
                         modifier = Modifier.focusRequester(toolbarFocusRequester)
                     ) {
@@ -198,7 +201,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     Spacer(modifier = Modifier.width(16.dp))
                 }
 
-                Button(onClick = { viewModel.toggleViewMode() }) {
+                Button(colors = tvButtonColors(), onClick = { viewModel.toggleViewMode() }) {
                     // Shows the mode it switches to: list -> grid -> library (movie/tv libraries) -> list
                     Icon(
                         when {
@@ -214,13 +217,13 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
 
                 if (currentSource != null) {
                     if (viewModel.supportsThumbnailRegeneration) {
-                        Button(onClick = { showRegenerateThumbnailsDialog = true }) {
+                        Button(colors = tvButtonColors(), onClick = { showRegenerateThumbnailsDialog = true }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Regenerate Thumbnails")
                         }
                         Spacer(modifier = Modifier.width(16.dp))
                     }
 
-                    if (!viewModel.isLibraryView) Button(onClick = { viewModel.toggleContentFilter() }) {
+                    if (!viewModel.isLibraryView) Button(colors = tvButtonColors(), onClick = { viewModel.toggleContentFilter() }) {
                         Icon(
                             when (viewModel.contentFilter) {
                                 ContentFilter.ALL -> Icons.Default.FilterList
@@ -234,14 +237,21 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     Spacer(modifier = Modifier.width(16.dp))
                 }
 
-                Button(onClick = onOpenSettings) {
+                Button(colors = tvButtonColors(), onClick = onOpenSettings) {
                     Icon(Icons.Default.Settings, contentDescription = "Settings")
                 }
+            }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Content area
+            // Content area: a box to the bottom
+            Panel(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                margin = PaddingValues(bottom = 24.dp),
+                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp),
+                alpha = panelAlpha
+            ) {
             when {
                 viewModel.isLoading -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -253,7 +263,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(text = "Error: ${viewModel.errorMessage}", color = Color.Red)
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { 
+                            Button(colors = tvButtonColors(), onClick = { 
                                 currentSource?.let { viewModel.loadPath(it, viewModel.currentPath) }
                             }) {
                                 Text("Retry")
@@ -283,6 +293,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         onDialogFocusChanged = { dialogFocusRequester = it }
                     )
                 }
+            }
             }
         }
     }
@@ -329,11 +340,11 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     Text("Are you sure you want to regenerate all thumbnails in this folder? This may take some time.")
                     Spacer(modifier = Modifier.height(24.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        Button(onClick = { showRegenerateThumbnailsDialog = false }) {
+                        Button(colors = tvButtonColors(), onClick = { showRegenerateThumbnailsDialog = false }) {
                             Text("Cancel")
                         }
                         Spacer(modifier = Modifier.width(16.dp))
-                        Button(
+                        Button(colors = tvButtonColors(),
                             onClick = {
                                 showRegenerateThumbnailsDialog = false
                                 viewModel.regenerateThumbnails()
@@ -359,6 +370,15 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
     val refreshTrigger = viewModel.authStateRefreshTrigger
     val serversByProvider = remember(viewModel.sourceProviders, refreshTrigger) {
         viewModel.sourceProviders.associateWith { it.getServers() }
+    }
+    // Focus starts on the first saved server (the WeirdStreamer servers come first).
+    val firstServer = viewModel.sourceProviders.firstNotNullOfOrNull { p -> serversByProvider[p].orEmpty().firstOrNull()?.let { p to it } }
+    val firstRequester = remember { FocusRequester() }
+    val first = { provider: SourceProvider, address: String ->
+        if (firstServer == provider to address) Modifier.focusRequester(firstRequester) else Modifier
+    }
+    LaunchedEffect(firstServer, viewModel.isGridView) {
+        if (firstServer != null) runCatching { firstRequester.requestFocus() }
     }
     if (viewModel.isGridView) {
         LazyVerticalGrid(
@@ -387,7 +407,7 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
                     }
                 } else {
                     items(servers) { address ->
-                        HostTileItem(address) {
+                        HostTileItem(address, first(provider, address)) {
                             viewModel.selectSource(provider, address)
                         }
                     }
@@ -421,7 +441,7 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
                     }
                 } else {
                     items(servers) { address ->
-                        HostRowItem(address) {
+                        HostRowItem(address, first(provider, address)) {
                             viewModel.selectSource(provider, address)
                         }
                     }
@@ -457,7 +477,7 @@ private fun MainAddSourceDialog(
                     Text("Select Source Type", style = MaterialTheme.typography.headlineSmall)
                     Spacer(modifier = Modifier.height(16.dp))
                     providers.forEachIndexed { index, provider ->
-                        Button(
+                        Button(colors = tvButtonColors(),
                             onClick = { selectedProvider = provider },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -467,7 +487,7 @@ private fun MainAddSourceDialog(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                     }
-                    Button(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                    Button(colors = tvButtonColors(), onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                         Text("Cancel")
                     }
                 } else {
@@ -493,11 +513,11 @@ private fun MainAddSourceDialog(
                     Spacer(modifier = Modifier.height(24.dp))
                     
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        Button(onClick = { selectedProvider = null; address = "" }) { Text("Back") }
+                        Button(colors = tvButtonColors(), onClick = { selectedProvider = null; address = "" }) { Text("Back") }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Button(onClick = onDismiss) { Text("Cancel") }
+                        Button(colors = tvButtonColors(), onClick = onDismiss) { Text("Cancel") }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Button(onClick = { if (address.isNotBlank()) onAdd(provider, address) }) {
+                        Button(colors = tvButtonColors(), onClick = { if (address.isNotBlank()) onAdd(provider, address) }) {
                             Text("Add")
                         }
                     }

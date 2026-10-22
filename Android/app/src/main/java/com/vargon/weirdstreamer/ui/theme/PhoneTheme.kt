@@ -47,10 +47,12 @@ fun WeirdStreamerPhoneTheme(
                 onPrimaryContainer = EmberCream,
                 secondary = EmberAmber,
                 onSecondary = EmberNight,
+                secondaryContainer = EmberButton, // tonal buttons, like the filled ones
+                onSecondaryContainer = EmberCream,
                 tertiary = EmberGold,
-                background = EmberNight,
+                background = EmberNight, // behind the boxes (Panel)
                 onBackground = EmberCream,
-                surface = EmberNight,
+                surface = EmberAubergine, // the boxes: lists, tab rows and top bars inside them blend in
                 onSurface = EmberCream,
                 surfaceVariant = EmberPlum,
                 onSurfaceVariant = EmberCreamMuted,

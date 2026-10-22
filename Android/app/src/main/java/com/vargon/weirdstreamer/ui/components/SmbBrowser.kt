@@ -55,18 +55,18 @@ fun SmbBrowser(viewModel: SmbViewModel, onOpenSettings: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Button(onClick = { viewModel.toggleViewMode() }) {
+            Button(colors = tvButtonColors(), onClick = { viewModel.toggleViewMode() }) {
                 Icon(
                     if (viewModel.isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
                     contentDescription = "Switch View"
                 )
             }
             Spacer(modifier = Modifier.width(16.dp))
-            Button(onClick = { showAddressDialog = true }) {
+            Button(colors = tvButtonColors(), onClick = { showAddressDialog = true }) {
                 Text("Manual Address")
             }
             Spacer(modifier = Modifier.width(16.dp))
-            Button(onClick = onOpenSettings) {
+            Button(colors = tvButtonColors(), onClick = onOpenSettings) {
                 Icon(Icons.Default.Settings, contentDescription = "Settings")
             }
         }
@@ -82,7 +82,7 @@ fun SmbBrowser(viewModel: SmbViewModel, onOpenSettings: () -> Unit) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(text = "Error: ${viewModel.errorMessage}", color = Color.Red)
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { viewModel.loadPath(viewModel.currentPath) }) {
+                    Button(colors = tvButtonColors(), onClick = { viewModel.loadPath(viewModel.currentPath) }) {
                         Text("Retry")
                     }
                 }

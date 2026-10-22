@@ -61,6 +61,9 @@
     --danger-hover: #7a302a;
     --button-bg: #6A3A62; /* plum: white labels stay readable, unlike on gold */
     --button-hover: #7C4672;
+    --button-text: #FFF2D8; /* cream labels, like the rest of Ember's text */
+    --button-focus: #F6C445; /* hovered and focused buttons: gold, as on the TV */
+    --button-focus-text: #321B2F;
     --heading-color: #F6C445; /* settings headings and tabs, the image title (purple elsewhere) */
     --placeholder-gradient: linear-gradient(135deg, #4A2A45 0%, #321B2F 100%); /* missing thumbnails and posters */
 }
@@ -159,7 +162,7 @@ body {
     width: 100%;
     padding: 12px;
     background: var(--button-bg, var(--primary-color));
-    color: white;
+    color: var(--button-text, white);
     border: none;
     border-radius: 5px;
     font-size: 16px;
@@ -168,7 +171,8 @@ body {
 }
 
 #login-form button:hover {
-    background: var(--button-hover, var(--primary-dark));
+    background: var(--button-focus, var(--button-hover, var(--primary-dark)));
+    color: var(--button-focus-text, white);
 }
 
 .error {
@@ -211,7 +215,7 @@ header h1 {
 .btn {
     padding: 10px 20px;
     background: var(--button-bg, var(--primary-color));
-    color: white;
+    color: var(--button-text, white);
     border: none;
     border-radius: 5px;
     cursor: pointer;
@@ -219,7 +223,8 @@ header h1 {
 }
 
 .btn:hover {
-    background: var(--button-hover, var(--primary-dark));
+    background: var(--button-focus, var(--button-hover, var(--primary-dark)));
+    color: var(--button-focus-text, white);
 }
 
 /* Tabs */
@@ -249,7 +254,7 @@ header h1 {
 
 .tab.active {
     background: var(--button-bg, var(--primary-color));
-    color: white;
+    color: var(--button-text, white);
 }
 
 /* Breadcrumb */
@@ -379,9 +384,10 @@ header h1 {
 }
 
 .transcode-btn:hover {
-    background: var(--button-bg, var(--primary-color));
+    background: var(--button-focus, var(--button-bg, var(--primary-color)));
     border-color: white;
     transform: scale(1.1);
+    color: var(--button-focus-text, white);
 }
 
 .transcode-btn:active {
@@ -578,7 +584,7 @@ header h1 {
     display: inline-block;
     padding: 2px 8px;
     background: var(--button-bg, var(--primary-color));
-    color: white;
+    color: var(--button-text, white);
     border-radius: 3px;
     font-size: 12px;
     margin-left: 10px;
@@ -678,8 +684,8 @@ header h1 {
 
 .fix-match-btn:hover,
 .fix-match-btn:focus-visible {
-    background: var(--button-bg, var(--primary-color));
-    color: white;
+    background: var(--button-focus, var(--button-bg, var(--primary-color)));
+    color: var(--button-focus-text, white);
     outline: 2px solid white;
 }
 
@@ -857,7 +863,7 @@ header h1 {
 .match-kind button.active {
     background: var(--button-bg, var(--primary-color));
     border-color: var(--primary-color);
-    color: white;
+    color: var(--button-text, white);
 }
 
 /* Poster section of the fix match dialog */
@@ -1028,7 +1034,7 @@ header h1 {
 
 .match-episode-row.picked {
     background: var(--button-bg, var(--primary-color));
-    color: white;
+    color: var(--button-text, white);
 }
 
 .match-episode-row.picked .date {
@@ -1056,7 +1062,7 @@ header h1 {
 
 .view-toggle button.active {
     background: var(--button-bg, var(--primary-color));
-    color: white;
+    color: var(--button-text, white);
 }
 
 /* Library view */
@@ -1310,7 +1316,7 @@ header h1 {
 
 .season-picker button.active {
     background: var(--button-bg, var(--primary-color));
-    color: white;
+    color: var(--button-text, white);
 }
 
 .episode-list {
@@ -1887,7 +1893,7 @@ header h1 {
     align-items: center;
     justify-content: center;
     background: var(--button-bg, var(--primary-color));
-    color: white;
+    color: var(--button-text, white);
     box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
     z-index: 2;
 }
@@ -1942,8 +1948,8 @@ header h1 {
 .card-action:hover,
 .card-action:focus-visible,
 .card-action.is-watched {
-    background: var(--button-bg, var(--primary-color));
-    color: white;
+    background: var(--button-focus, var(--button-bg, var(--primary-color)));
+    color: var(--button-focus-text, white);
 }
 
 /* Play / Resume with Play from start beside it */
@@ -1968,8 +1974,8 @@ header h1 {
 }
 
 .btn.secondary:hover {
-    background: var(--button-bg, var(--primary-color));
-    color: white;
+    background: var(--button-focus, var(--button-bg, var(--primary-color)));
+    color: var(--button-focus-text, white);
 }
 
 .btn.icon-btn {
@@ -1979,7 +1985,7 @@ header h1 {
 
 .watched-btn.is-watched {
     background: var(--button-bg, var(--primary-color));
-    color: white;
+    color: var(--button-text, white);
 }
 
 .title-info .watched-btn {

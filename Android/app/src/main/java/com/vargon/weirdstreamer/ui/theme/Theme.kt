@@ -33,6 +33,17 @@ interface WeirdStreamerThemeSpec {
     val parentIconTint: Color
     val backgroundImage: Int?
     val spinnerColor: Color
+    // Ember's look, shared with the web UI (Unspecified: the theme keeps Material's defaults):
+    /** The boxes the header and content sit in, over the darker background (`Panel`). */
+    val panelColor: Color get() = Color.Unspecified
+    /** Buttons and their labels (`tvButtonColors`, `phoneButtonColors`). */
+    val buttonColor: Color get() = Color.Unspecified
+    val buttonLabel: Color get() = Color.Unspecified
+    /** Settings headings (the web's --heading-color). */
+    val headingColor: Color get() = Color.Unspecified
+    /** A focused TV button (a hovered one on the web). */
+    val focusColor: Color get() = Color.Unspecified
+    val focusLabel: Color get() = Color.Unspecified
 }
 
 object DefaultThemeSpec : WeirdStreamerThemeSpec {
@@ -49,6 +60,12 @@ object EmberThemeSpec : WeirdStreamerThemeSpec {
     override val parentIconTint: Color = EmberGold
     override val backgroundImage: Int? = null
     override val spinnerColor: Color = EmberGold
+    override val panelColor: Color = EmberAubergine
+    override val buttonColor: Color = EmberButton
+    override val buttonLabel: Color = EmberCream
+    override val focusColor: Color = EmberGold
+    override val focusLabel: Color = EmberAubergine
+    override val headingColor: Color = EmberGold
 }
 
 object CinemaBlueThemeSpec : WeirdStreamerThemeSpec {

@@ -35,14 +35,17 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            PhoneTopBarPanel {
+                TopAppBar(
+                    windowInsets = panelTopBarInsets(),
+                    title = { Text("Settings") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     ) { padding ->
         // The server being browsed can be managed here, as in the web UI's Settings.
@@ -58,7 +61,8 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
         }
         var selectedTab by rememberSaveable { mutableIntStateOf(0) }
         val tab = tabs[selectedTab.coerceIn(tabs.indices)]
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        PhoneContentPanel(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(modifier = Modifier.fillMaxSize()) {
         if (tabs.size > 1) {
             PrimaryScrollableTabRow(selectedTabIndex = selectedTab.coerceIn(tabs.indices), edgePadding = 8.dp) {
                 tabs.forEachIndexed { index, name ->
@@ -221,6 +225,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                     }
                 }
             }
+        }
         }
         }
         }

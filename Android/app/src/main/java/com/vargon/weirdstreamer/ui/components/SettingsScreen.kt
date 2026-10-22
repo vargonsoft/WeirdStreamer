@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
 import com.vargon.weirdstreamer.ui.theme.AppTheme
+import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import com.vargon.weirdstreamer.MediaViewModel
 import kotlinx.coroutines.delay
 
@@ -76,10 +77,12 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                 }
             }
     ) {
+        // In a box, like the web UI's settings page, in themes that draw them
+        Panel(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp)) {
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(
+                    Button(colors = tvButtonColors(),
                         onClick = onBack,
                         modifier = Modifier
                             .focusRequester(backFocus)
@@ -90,7 +93,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text("Settings", style = MaterialTheme.typography.headlineMedium)
+                    Text("Settings", style = MaterialTheme.typography.headlineMedium, color = WeirdStreamerTheme.spec.headingColor)
                 }
                 Spacer(modifier = Modifier.height(32.dp))
             }
@@ -154,9 +157,9 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                                     themeMenuExpanded = false
                                 },
                                 colors = if (currentTheme == themeKey) {
-                                    ButtonDefaults.colors()
+                                    tvButtonColors()
                                 } else {
-                                    ButtonDefaults.colors(
+                                    tvButtonColors(
                                         containerColor = Color.Transparent,
                                         contentColor = MaterialTheme.colorScheme.onSurface
                                     )
@@ -254,7 +257,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
             // Dynamic Provider Sections
             viewModel.sourceProviders.forEach { provider ->
                 item {
-                    Text(provider.displayName, style = MaterialTheme.typography.headlineSmall)
+                    Text(provider.displayName, style = MaterialTheme.typography.headlineSmall, color = WeirdStreamerTheme.spec.headingColor)
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
@@ -284,7 +287,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
 
                                 // Connect Button - Show for SMB or logged in Server
                                 if (!isServer || hasToken) {
-                                    Button(
+                                    Button(colors = tvButtonColors(),
                                         onClick = { 
                                             viewModel.selectSource(provider, address)
                                             onBack() 
@@ -296,7 +299,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                                 }
 
                                 if (isServer) {
-                                    Button(
+                                    Button(colors = tvButtonColors(),
                                         onClick = { 
                                             if (hasToken) {
                                                 viewModel.logout(address)
@@ -358,6 +361,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
             }
+        }
         }
     }
 }

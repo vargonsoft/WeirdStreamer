@@ -505,7 +505,7 @@ private fun FileRow(
                     // Play (an icon), or Resume with where it picks up; Play from start; Mark watched.
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         val resumeAt = file.playback?.resumeAt ?: 0.0
-                        Button(
+                        Button(colors = tvButtonColors(),
                             onClick = { viewModel.playLibraryFile(file, queue) },
                             modifier = if (index == 0 && firstRequester != null) Modifier.focusRequester(firstRequester) else Modifier
                         ) {
@@ -516,7 +516,7 @@ private fun FileRow(
                             }
                         }
                         if (resumeAt > 0) {
-                            Button(onClick = { viewModel.playLibraryFile(file, queue, fromStart = true) }) {
+                            Button(colors = tvButtonColors(), onClick = { viewModel.playLibraryFile(file, queue, fromStart = true) }) {
                                 Icon(Icons.Default.Replay, contentDescription = "Play from start")
                             }
                         }
@@ -577,10 +577,17 @@ private fun SeasonsAndEpisodes(
                 Button(
                     onClick = { selected = index },
                     modifier = if (isSelected) Modifier.focusRequester(pickerRequester) else Modifier,
-                    colors = if (isSelected) ButtonDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ) else ButtonDefaults.colors()
+                    // The season shown: a button among plain labels (themed buttons, as on the web),
+                    // or in the primary color.
+                    colors = when {
+                        hasThemedButtons && isSelected -> tvButtonColors()
+                        hasThemedButtons -> tvButtonColors(containerColor = Color.Transparent)
+                        isSelected -> tvButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                        else -> tvButtonColors()
+                    }
                 ) {
                     // Episodes watched (any of an episode's files), with a check once they all are.
                     val watched = s.episodes.count { e -> e.files.any { it.playback?.watched == true } }
@@ -610,7 +617,7 @@ private fun SeasonsAndEpisodes(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 12.dp)) {
                     val first = episode.files.firstOrNull()
                     if (first != null && (first.playback?.resumeAt ?: 0.0) > 0) {
-                        Button(onClick = { viewModel.playLibraryFile(first, queue, fromStart = true) }) {
+                        Button(colors = tvButtonColors(), onClick = { viewModel.playLibraryFile(first, queue, fromStart = true) }) {
                             Icon(Icons.Default.Replay, contentDescription = "Play from start")
                         }
                     }
@@ -693,7 +700,7 @@ private fun TvWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>,
     if (files.isEmpty()) return
     val watched = files.all { it.playback?.watched == true }
     // Watched: a filled check; not yet: an empty circle (button colors alone don't tell them apart).
-    Button(onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
+    Button(colors = tvButtonColors(), onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
         Icon(if (watched) Icons.Default.CheckCircle else Icons.Outlined.Circle,
             contentDescription = if (watched) "Mark unwatched" else "Mark watched")
         if (!iconOnly && label != null) {

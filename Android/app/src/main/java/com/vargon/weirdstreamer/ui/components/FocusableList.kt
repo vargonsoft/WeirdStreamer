@@ -281,7 +281,7 @@ fun CharacterSelectorDialog(
                                             for (col in 0 until 7) {
                                                 val idx = row * 7 + col
                                                 if (idx < folderCharacters.size) {
-                                                    Button(onClick = { onCharacterSelected(folderCharacters[idx], true); onDismiss() }, modifier = Modifier.size(64.dp).focusRequester(focusRequesters[idx])) {
+                                                    Button(colors = tvButtonColors(), onClick = { onCharacterSelected(folderCharacters[idx], true); onDismiss() }, modifier = Modifier.size(64.dp).focusRequester(focusRequesters[idx])) {
                                                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(text = folderCharacters[idx].toString(), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center) }
                                                     }
                                                 } else Spacer(modifier = Modifier.size(64.dp))
@@ -304,7 +304,7 @@ fun CharacterSelectorDialog(
                                             for (col in 0 until 7) {
                                                 val idx = row * 7 + col
                                                 if (idx < fileCharacters.size) {
-                                                    Button(onClick = { onCharacterSelected(fileCharacters[idx], false); onDismiss() }, modifier = Modifier.size(64.dp).focusRequester(focusRequesters[folderOffset + idx])) {
+                                                    Button(colors = tvButtonColors(), onClick = { onCharacterSelected(fileCharacters[idx], false); onDismiss() }, modifier = Modifier.size(64.dp).focusRequester(focusRequesters[folderOffset + idx])) {
                                                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(text = fileCharacters[idx].toString(), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center) }
                                                     }
                                                 } else Spacer(modifier = Modifier.size(64.dp))

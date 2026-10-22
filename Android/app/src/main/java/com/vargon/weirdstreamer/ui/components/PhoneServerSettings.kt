@@ -295,7 +295,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(top = 8.dp).fillMaxWidth().height(IntrinsicSize.Min)
                 ) {
-                    Button(enabled = !saving, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = {
+                    Button(colors = phoneButtonColors(), enabled = !saving, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = {
                         val body = buildConfig() ?: return@Button
                         saving = true
                         scope.launch {
@@ -401,7 +401,7 @@ fun UsersTab(server: ServerRepository) {
                     Checkbox(checked = newAdmin, onCheckedChange = { newAdmin = it })
                     Text("Administrator")
                 }
-                Button(onClick = {
+                Button(colors = phoneButtonColors(), onClick = {
                     if (newName.isBlank() || newPassword.isEmpty()) {
                         message = "Enter a username and password" to true; return@Button
                     }
@@ -520,7 +520,7 @@ fun AccountTab(server: ServerRepository) {
                 OutlinedTextField(confirm, { confirm = it }, label = { Text("Confirm password") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                 Message(message?.first, message?.second ?: false)
-                Button(onClick = {
+                Button(colors = phoneButtonColors(), onClick = {
                     when {
                         current.isEmpty() -> message = "Enter your current password" to true
                         password.isEmpty() -> message = "Enter a new password" to true

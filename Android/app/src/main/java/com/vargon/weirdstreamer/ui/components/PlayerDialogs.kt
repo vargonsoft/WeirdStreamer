@@ -262,7 +262,7 @@ fun SubtitleDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    Button(
+                    Button(colors = tvButtonColors(),
                         onClick = onDismiss
                     ) {
                         Text("Close")
@@ -388,7 +388,7 @@ fun DownloadSubtitlesDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    Button(
+                    Button(colors = tvButtonColors(),
                         onClick = onDismiss
                     ) {
                         Text("Close")
