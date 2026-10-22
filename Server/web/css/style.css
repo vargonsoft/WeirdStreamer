@@ -1052,17 +1052,35 @@ header h1 {
 }
 
 .view-toggle button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     border: none;
     background: transparent;
     color: var(--primary-color);
     padding: 4px 14px;
     font: inherit;
     cursor: pointer;
+    transition: background 0.2s;
 }
 
-.view-toggle button.active {
+/* The other view: clickable, so it fills like a button on hover */
+.view-toggle button:not(.active):hover {
     background: var(--button-bg, var(--primary-color));
     color: var(--button-text, white);
+}
+
+/* The current view: filled in the accent, with a check, and nothing to click */
+.view-toggle button.active {
+    background: var(--primary-color);
+    color: var(--button-focus-text, white);
+    font-weight: 600;
+    cursor: default;
+}
+
+.view-toggle button svg {
+    width: 16px;
+    height: 16px;
 }
 
 /* Library view */

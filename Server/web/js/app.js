@@ -2653,11 +2653,12 @@ function createViewToggle() {
     [['folders', 'Folders'], ['library', 'Library']].forEach(([mode, label]) => {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.textContent = label;
         const active = mode === 'folders' ? state.view === 'folders' : state.view !== 'folders';
+        btn.innerHTML = (active ? iconSvg('check') : '') + `<span>${label}</span>`; // a check on the current view
         btn.className = active ? 'active' : '';
         btn.setAttribute('aria-pressed', String(active));
         btn.onclick = () => {
+            if (active) return; // already showing
             setLibraryMode(state.libraryId, mode);
             if (mode === 'library') {
                 showLibrary(state.libraryId);
