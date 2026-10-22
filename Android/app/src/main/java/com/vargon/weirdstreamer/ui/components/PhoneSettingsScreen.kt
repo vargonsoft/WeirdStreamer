@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.vargon.weirdstreamer.ui.theme.AppTheme
 import com.vargon.weirdstreamer.MediaViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,11 +97,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                     headlineContent = { Text("Theme") },
                     supportingContent = {
                         Text(
-                            when (currentTheme) {
-                                "CINEMA_BLUE" -> "Cinema Blue"
-                                "CINEMA_RED" -> "Cinema Red"
-                                else -> "Default"
-                            }
+                            AppTheme.fromKey(currentTheme).label
                         )
                     },
                     leadingContent = { Icon(Icons.Default.Palette, contentDescription = null) },
@@ -113,11 +110,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                         title = { Text("Select Theme") },
                         text = {
                             Column {
-                                listOf(
-                                    "DEFAULT" to "Default",
-                                    "CINEMA_BLUE" to "Cinema Blue",
-                                    "CINEMA_RED" to "Cinema Red"
-                                ).forEach { (key, name) ->
+                                AppTheme.entries.map { it.name to it.label }.forEach { (key, name) ->
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier

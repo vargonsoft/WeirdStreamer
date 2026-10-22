@@ -30,6 +30,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
+import com.vargon.weirdstreamer.ui.theme.AppTheme
 import com.vargon.weirdstreamer.MediaViewModel
 import kotlinx.coroutines.delay
 
@@ -53,14 +54,12 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
 
     val currentTheme = viewModel.credentialManager.getAppTheme()
     var themeMenuExpanded by remember { mutableStateOf(false) }
-    val themeButton1Focus = remember { FocusRequester() }
-    val themeButton2Focus = remember { FocusRequester() }
-    val themeButton3Focus = remember { FocusRequester() }
+    val themeButtonFocus = remember { AppTheme.entries.map { FocusRequester() } }
 
     LaunchedEffect(themeMenuExpanded) {
         if (themeMenuExpanded) {
             delay(50)
-            themeButton1Focus.requestFocus()
+            themeButtonFocus[AppTheme.fromKey(currentTheme).ordinal].requestFocus()
         }
     }
 
@@ -130,11 +129,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Theme", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                when (currentTheme) {
-                                    "CINEMA_BLUE" -> "Cinema Blue"
-                                    "CINEMA_RED" -> "Cinema Red"
-                                    else -> "Default"
-                                },
+                                AppTheme.fromKey(currentTheme).label,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -149,11 +144,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
             if (themeMenuExpanded) {
                 item {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        val themes = listOf(
-                            Triple("DEFAULT", "Default", themeButton1Focus),
-                            Triple("CINEMA_BLUE", "Cinema Blue", themeButton2Focus),
-                            Triple("CINEMA_RED", "Cinema Red", themeButton3Focus)
-                        )
+                        val themes = AppTheme.entries.map { Triple(it.name, it.label, themeButtonFocus[it.ordinal]) }
                         
                         themes.forEachIndexed { index, (themeKey, themeName, focusReq) ->
                             Button(

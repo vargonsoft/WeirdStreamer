@@ -2,7 +2,16 @@ package com.vargon.weirdstreamer.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Default Dark Theme
+// Ember (the default theme): the Weird Streamer logo's aubergine, gold and cream
+val EmberNight = Color(0xFF1C0F1B) // Deepest aubergine: the background
+val EmberAubergine = Color(0xFF321B2F) // The logo's aubergine (the app icon's background)
+val EmberPlum = Color(0xFF4A2A45) // Raised surfaces, buttons
+val EmberGold = Color(0xFFF6C445) // The logo's gold: the play mark and seek dot
+val EmberAmber = Color(0xFFE0892C) // A warmer accent
+val EmberCream = Color(0xFFFFF2D8) // The logo's cream: text
+val EmberCreamMuted = Color(0xFFD8C6B4) // Secondary text
+
+// Dark and Light (Material's defaults)
 val Purple80 = Color(0xFFD0BCFF)
 val PurpleGrey80 = Color(0xFFCCC2DC)
 val Pink80 = Color(0xFFEFB8C8)

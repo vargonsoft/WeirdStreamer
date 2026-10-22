@@ -29,13 +29,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val credentialManager = remember { CredentialManager(applicationContext) }
             var currentTheme by remember { 
-                mutableStateOf(
-                    when (credentialManager.getAppTheme()) {
-                        "CINEMA_BLUE" -> AppTheme.CINEMA_BLUE
-                        "CINEMA_RED" -> AppTheme.CINEMA_RED
-                        else -> AppTheme.DEFAULT
-                    }
-                )
+                mutableStateOf(AppTheme.fromKey(credentialManager.getAppTheme()))
             }
             
             if (isTv) {
@@ -129,12 +123,7 @@ class MainActivity : ComponentActivity() {
             showSettings -> {
                 val credentialManager = remember { CredentialManager(applicationContext) }
                 val onThemeUpdate = {
-                    val newTheme = when (credentialManager.getAppTheme()) {
-                        "CINEMA_BLUE" -> AppTheme.CINEMA_BLUE
-                        "CINEMA_RED" -> AppTheme.CINEMA_RED
-                        else -> AppTheme.DEFAULT
-                    }
-                    onThemeChanged(newTheme)
+                    onThemeChanged(AppTheme.fromKey(credentialManager.getAppTheme()))
                 }
                 
                 if (isTv) {
