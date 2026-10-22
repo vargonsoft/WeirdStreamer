@@ -78,10 +78,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         BaseContext(PropertyConfiguration(props))
     }
 
-    // Abstract source providers - pass baseContext as a lambda to avoid main-thread init
+    // Abstract source providers - pass baseContext as a lambda to avoid main-thread init. Their
+    // order is the source list's and the Add Source dialog's (whose first is the default).
     val sourceProviders: List<SourceProvider> = listOf(
-        SmbSourceProvider({ baseContext }, credentialManager),
-        ServerSourceProvider(credentialManager)
+        ServerSourceProvider(credentialManager),
+        SmbSourceProvider({ baseContext }, credentialManager)
     )
 
     var fileList by mutableStateOf<List<FileItem>>(emptyList())

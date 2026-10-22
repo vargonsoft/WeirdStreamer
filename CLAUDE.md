@@ -111,9 +111,9 @@ for each TODO item are at the end of this file.
 
   Install debug builds on emulators only.
 - Navigation tips:
-  - The app opens on "Select Media Source". On the TV, the test server is the second tile
-    under WeirdStreamer Server (`http://10.0.2.2:9100`). From the top: DPAD_DOWN, DPAD_RIGHT,
-    DPAD_CENTER. On the phone, `phone.sh tapt "http://10.0.2.2:9100"`.
+  - The app opens on the source list (WeirdStreamer servers first, then SMB shares). On the TV,
+    focus starts on the first server tile, and the test server (`http://10.0.2.2:9100`) is the
+    second: DPAD_RIGHT, DPAD_CENTER. On the phone, `phone.sh tapt "http://10.0.2.2:9100"`.
   - In the TV player, DPAD_DOWN (with controls hidden) opens the toolbar. Its buttons are
     Transcode, Zoom, Speed, Fill+, Fill−, Aspect, Subtitles, Rotate (and Disc), and it remembers
     the last button focused, so press DPAD_LEFT several times before counting.
