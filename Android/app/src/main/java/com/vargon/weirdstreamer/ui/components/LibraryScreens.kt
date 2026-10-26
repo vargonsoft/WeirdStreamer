@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -51,6 +52,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -149,10 +151,37 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                 runCatching { requesters[CONTINUE_ROW]?.requestFocus() }
             }
 
+            // The A–Z bar: the titles' letters (as the server sorts them, without "The"), then the
+            // unmatched files'. Positions count titles, then unmatched files.
+            val letters = remember(listing) {
+                buildIndex(listing.titles.map { indexLabel(it.title, skipArticles = true) to 0 } +
+                    listing.unmatched.map { indexLabel(it.name, skipArticles = true) to 1 },
+                    { it.first }, { it.second })
+            }
+            val showBar = letters.size > 1
+            val barRequester = remember { FocusRequester() }
+            val scope = rememberCoroutineScope()
+            val continueCount = if (hasContinue) 1 else 0
+            fun lazyIndex(position: Int) =
+                if (position < listing.titles.size) position + continueCount else position + continueCount + 1
+            fun keyAt(position: Int): Any =
+                if (position < listing.titles.size) listing.titles[position].let { "${it.kind}:${it.tmdbId}" }
+                else "file:${listing.unmatched[position - listing.titles.size].path}"
+            val focusedPosition = remember(listing.libraryId) { intArrayOf(0) }
+            var barFocused by remember { mutableStateOf(false) }
+            var barLetter by remember(listing.libraryId) { mutableIntStateOf(0) }
+            val topLetter by remember(letters, continueCount) {
+                derivedStateOf {
+                    val first = gridState.firstVisibleItemIndex - continueCount
+                    letters.entryFor(if (first > listing.titles.size) first - 1 else first.coerceAtLeast(0))
+                }
+            }
+
+            Row(Modifier.fillMaxSize()) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(POSTER_COLUMNS),
                 state = gridState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 contentPadding = PaddingValues(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -182,7 +211,9 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                             else if (showPart) t.watched.toFloat() / t.fileCount else 0f,
                         watched = t.allWatched,
                         modifier = Modifier
-                            .gridEdges(index, toolbarFocusRequester, firstRow = !hasContinue)
+                            .gridEdges(index, toolbarFocusRequester, firstRow = !hasContinue,
+                                last = listing.titles.lastIndex, bar = barRequester.takeIf { showBar })
+                            .onFocusChanged { if (it.isFocused) focusedPosition[0] = index }
                             .registered(key, requesters)
                             .then(if (index == 0) Modifier.focusRequester(firstRequester) else Modifier)
                             .then(if (key == returnTo?.titleKey) Modifier.focusRequester(lastRequester) else Modifier),
@@ -211,13 +242,43 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                             progress = f.playback?.fraction(f.duration) ?: 0f,
                             watched = f.playback?.watched == true,
                             modifier = Modifier
-                                .gridEdges(index, toolbarFocusRequester, firstRow = listing.titles.isEmpty() && !hasContinue)
+                                .gridEdges(index, toolbarFocusRequester, firstRow = listing.titles.isEmpty() && !hasContinue,
+                                    last = listing.unmatched.lastIndex, bar = barRequester.takeIf { showBar })
+                                .onFocusChanged { if (it.isFocused) focusedPosition[0] = listing.titles.size + index }
                                 .registered("file:${f.path}", requesters)
                                 .then(if (listing.titles.isEmpty() && index == 0) Modifier.focusRequester(firstRequester) else Modifier),
                             onClick = { if (playable) viewModel.playLibraryFile(f, listOf(f)) }
                         )
                     }
                 }
+            }
+            if (showBar) {
+                TvIndexBar(
+                    entries = letters,
+                    current = if (barFocused) barLetter else topLetter,
+                    focusRequester = barRequester,
+                    onFocused = {
+                        barFocused = true
+                        barLetter = letters.entryFor(focusedPosition[0])
+                    },
+                    onMove = { i ->
+                        barLetter = i
+                        scope.launch { gridState.scrollToItem(lazyIndex(letters[i].position)) }
+                    },
+                    onPick = { i ->
+                        barFocused = false
+                        val key = keyAt(letters[i].position)
+                        scope.launch {
+                            if (requesters[key] == null) gridState.scrollToItem(lazyIndex(letters[i].position))
+                            awaitFrame()
+                            runCatching { requesters[key]?.requestFocus() }
+                        }
+                    },
+                    modifier = Modifier
+                        .padding(start = 4.dp, top = 8.dp, bottom = 8.dp)
+                        .onFocusChanged { if (!it.hasFocus) barFocused = false }
+                )
+            }
             }
         }
     }
@@ -237,14 +298,20 @@ private fun Modifier.registered(key: Any, requesters: HashMap<Any, FocusRequeste
     return focusRequester(requester)
 }
 
-/** Left from the first column and up from the first row go to the toolbar, as in folders view. */
-private fun Modifier.gridEdges(index: Int, toolbar: FocusRequester, firstRow: Boolean = true): Modifier {
+/**
+ * Left from the first column and up from the first row go to the toolbar, as in folders view;
+ * right from a row's last poster (of [last] + 1) goes to the A–Z [bar], when there is one.
+ */
+private fun Modifier.gridEdges(index: Int, toolbar: FocusRequester, firstRow: Boolean = true,
+                               last: Int = -1, bar: FocusRequester? = null): Modifier {
     val isFirstColumn = index % POSTER_COLUMNS == 0
     val isFirstRow = firstRow && index < POSTER_COLUMNS
-    if (!isFirstColumn && !isFirstRow) return this
+    val isRowEnd = bar != null && (index % POSTER_COLUMNS == POSTER_COLUMNS - 1 || index == last)
+    if (!isFirstColumn && !isFirstRow && !isRowEnd) return this
     return focusProperties {
         if (isFirstColumn) left = toolbar
         if (isFirstRow) up = toolbar
+        if (isRowEnd) right = bar!!
     }
 }
 

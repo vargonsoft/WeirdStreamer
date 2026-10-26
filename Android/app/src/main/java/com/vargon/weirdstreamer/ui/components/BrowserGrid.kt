@@ -1,19 +1,13 @@
 package com.vargon.weirdstreamer.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -23,10 +17,10 @@ import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,24 +29,19 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.Text
 import com.vargon.weirdstreamer.repository.FileItem
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -98,7 +87,6 @@ fun BrowserGrid(
     header: (@Composable () -> Unit)? = null,
     // Focuses the header's first item: on a fresh visit it takes focus when it arrives
     headerFocus: FocusRequester? = null,
-    onDialogFocusChanged: (FocusRequester?) -> Unit,
     onVisibleItemsChanged: (List<FileItem>) -> Unit,
     itemContent: @Composable (FileItem, Modifier) -> Unit
 ) {
@@ -210,41 +198,19 @@ fun BrowserGrid(
             }
     }
 
-    // Jump-to-letter (list view: press Right)
-    var showCharacterSelector by remember { mutableStateOf(false) }
-    var jumpLabel by remember { mutableStateOf("") }
-    var showJumpChar by remember { mutableStateOf(false) }
-    val dialogFocusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(showCharacterSelector) {
-        onDialogFocusChanged(if (showCharacterSelector) dialogFocusRequester else null)
+    // The A–Z bar: folders' letters, then files'. Right from an item (from a row's last tile in
+    // grid view) moves onto it; Up/Down scroll letter by letter and Left goes to the letter's
+    // first item.
+    val letters = remember(items) {
+        buildIndex(items, { indexLabel(it.name) }, { if (it.isDirectory) 0 else 1 })
     }
-    LaunchedEffect(showJumpChar) {
-        if (showJumpChar) {
-            delay(1500)
-            showJumpChar = false
-        }
-    }
-
-    val (folderChars, fileChars) = remember(items) {
-        val folders = sortedSetOf<Char>()
-        val files = sortedSetOf<Char>()
-        items.forEach { item ->
-            if (item.name == "..") return@forEach
-            val c = item.name.firstOrNull()?.uppercaseChar() ?: return@forEach
-            if (item.isDirectory) folders.add(c) else files.add(c)
-        }
-        folders.toList() to files.toList()
-    }
-
-    fun jumpToCharacter(char: Char, isFolder: Boolean) {
-        val target = items.firstOrNull { item ->
-            item.name != ".." && item.isDirectory == isFolder &&
-                item.name.firstOrNull()?.uppercaseChar() == char.uppercaseChar()
-        } ?: return
-        jumpLabel = char.uppercase()
-        showJumpChar = true
-        scope.launch { focusItem(target.path) }
+    val showBar = letters.size > 1
+    val barRequester = remember { FocusRequester() }
+    var barFocused by remember { mutableStateOf(false) }
+    var barLetter by remember(folderKey) { mutableStateOf(0) }
+    // Unfocused, the bar marks the letter at the top of the screen.
+    val topLetter by remember(letters, headerCount) {
+        derivedStateOf { letters.entryFor((gridState.firstVisibleItemIndex - headerCount).coerceAtLeast(0)) }
     }
 
     // Moving along a row to a tile already fully on screen doesn't scroll. The TV's own scrolling
@@ -260,13 +226,14 @@ fun BrowserGrid(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Row(modifier = Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalBringIntoViewSpec provides scrolling) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
             state = gridState,
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxHeight()
                 .onFocusChanged { gridFocused[0] = it.hasFocus }
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -275,10 +242,6 @@ fun BrowserGrid(
                     when (event.key) {
                         Key.DirectionDown -> isGridView && moveVertically(1)
                         Key.DirectionUp -> isGridView && moveVertically(-1)
-                        Key.DirectionRight -> if (!isGridView && (folderChars.isNotEmpty() || fileChars.isNotEmpty())) {
-                            showCharacterSelector = true
-                            true
-                        } else false
                         else -> false
                     }
                 },
@@ -327,14 +290,15 @@ fun BrowserGrid(
                     }
                 val isFirstColumn = index % columns == 0
                 val isFirstRow = index < columns
-                val isRowEnd = isGridView && (index % columns == columns - 1 || index == items.lastIndex)
+                // The row's last tile (any row in list view): Right goes to the A–Z bar, or nowhere.
+                val isRowEnd = index % columns == columns - 1 || index == items.lastIndex
                 if (isFirstColumn || isFirstRow || isRowEnd) {
                     // The lazy grid doesn't hand focus searches off its edges reliably, so the
-                    // edges are explicit: left/up go to the toolbar, right stops at the row end.
+                    // edges are explicit: left/up go to the toolbar, right from the row end to the bar.
                     itemModifier = itemModifier.focusProperties {
                         if (isFirstColumn) left = toolbarFocusRequester
                         if (isFirstRow) up = upFocusRequester
-                        if (isRowEnd) right = FocusRequester.Cancel
+                        if (isRowEnd) right = if (showBar) barRequester else FocusRequester.Cancel
                     }
                 }
                 itemContent(item, itemModifier)
@@ -343,31 +307,26 @@ fun BrowserGrid(
 
         }
 
-        AnimatedVisibility(
-            visible = showJumpChar,
-            enter = fadeIn() + scaleIn(),
-            exit = fadeOut() + scaleOut(),
-            modifier = Modifier.align(Alignment.TopEnd).padding(48.dp)
-        ) {
-            Box(
-                modifier = Modifier.wrapContentSize().sizeIn(minWidth = 100.dp, minHeight = 100.dp)
-                    .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(16.dp)).padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = jumpLabel, style = MaterialTheme.typography.displayLarge, color = Color.White)
-            }
-        }
-
-        if (showCharacterSelector) {
-            CharacterSelectorDialog(
-                folderCharacters = folderChars,
-                fileCharacters = fileChars,
-                dialogFocusRequester = dialogFocusRequester,
-                onCharacterSelected = { char, isFolder ->
-                    showCharacterSelector = false
-                    jumpToCharacter(char, isFolder)
+        if (showBar) {
+            TvIndexBar(
+                entries = letters,
+                current = if (barFocused) barLetter else topLetter,
+                focusRequester = barRequester,
+                onFocused = {
+                    barFocused = true
+                    barLetter = letters.entryFor(focusedIndex[0].coerceAtLeast(0))
                 },
-                onDismiss = { showCharacterSelector = false }
+                onMove = { i ->
+                    barLetter = i
+                    scope.launch { gridState.scrollToItem(letters[i].position + headerCount) }
+                },
+                onPick = { i ->
+                    barFocused = false
+                    scope.launch { focusItem(currentItems[letters[i].position].path) }
+                },
+                modifier = Modifier
+                    .padding(start = 4.dp, top = 8.dp, bottom = 8.dp)
+                    .onFocusChanged { if (!it.hasFocus) barFocused = false }
             )
         }
     }

@@ -509,6 +509,11 @@ function renderMedia() {
         const element = createMediaElement(item);
         mediaGrid.appendChild(element);
     });
+    // Folders' letters, then files' (the names as shown).
+    setAzIndex([...mediaGrid.children].map(el => ({
+        el, label: azLabel(el.querySelector('.media-name')?.textContent || ''),
+        run: el.classList.contains('directory-item') ? 0 : 1,
+    })));
 
     // The server's front page leads with what's in progress, in every library.
     if (!state.currentPath) {
@@ -2802,7 +2807,103 @@ function setView(view) {
     mediaGrid.hidden = library;
     directoryList.hidden = library;
     document.querySelector('.tabs').hidden = library;
+    setAzIndex([]); // each view sets its own once it has rendered
 }
+
+// The A–Z bar: a letter per run of items (folders then files; titles then unmatched files), in
+// the order shown. Clicking or dragging along it scrolls to that letter's first item; otherwise
+// it marks the letter at the top of the window.
+let azEntries = [];
+const azBar = document.getElementById('az-bar');
+
+function azLabel(name, skipArticles = false) {
+    let n = name.trim();
+    if (!n || n === '..') return null;
+    if (skipArticles) {
+        const article = ['the ', 'a ', 'an '].find(a => n.toLowerCase().startsWith(a) && n.length > a.length);
+        if (article) n = n.slice(article.length).trimStart();
+    }
+    const c = n[0];
+    return c.toLowerCase() !== c.toUpperCase() ? c.toUpperCase() : '#';
+}
+
+function setAzIndex(items) {
+    const seen = new Set();
+    azEntries = items.filter(i => i.label && !seen.has(i.run + i.label) && seen.add(i.run + i.label));
+    azBar.innerHTML = '';
+    azBar.hidden = azEntries.length < 2;
+    document.body.classList.toggle('has-az', !azBar.hidden);
+    if (azBar.hidden) return;
+    azEntries.forEach((e, i) => {
+        if (i > 0 && e.run !== azEntries[i - 1].run) azBar.appendChild(Object.assign(document.createElement('span'), { className: 'az-divider' }));
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'az-letter';
+        b.textContent = e.label;
+        b.dataset.index = i;
+        e.button = b;
+        azBar.appendChild(b);
+    });
+    azBar.appendChild(Object.assign(document.createElement('span'), { className: 'az-bubble', hidden: true }));
+    markAzLetter();
+}
+
+// The page's own top: below the sticky parts, if any.
+function azScrollTo(entry) {
+    const top = entry.el.getBoundingClientRect().top + window.scrollY - 16;
+    window.scrollTo({ top: Math.max(0, top) });
+}
+
+function markAzLetter(current) {
+    if (current === undefined) {
+        // The last letter whose first item starts at or above the top of the window.
+        current = 0;
+        azEntries.forEach((e, i) => { if (e.el.getBoundingClientRect().top <= 80) current = i; });
+    }
+    azEntries.forEach((e, i) => e.button.classList.toggle('current', i === current));
+}
+
+let azPointer = null;
+function azTouch(event) {
+    const button = document.elementFromPoint(azBar.getBoundingClientRect().left + azBar.clientWidth / 2, event.clientY)
+        ?.closest('.az-letter');
+    if (!button) return;
+    const i = Number(button.dataset.index);
+    const bubble = azBar.querySelector('.az-bubble');
+    bubble.textContent = azEntries[i].label;
+    bubble.hidden = false;
+    bubble.style.top = (button.offsetTop + button.offsetHeight / 2) + 'px';
+    if (azPointer === i) return;
+    azPointer = i;
+    azScrollTo(azEntries[i]);
+    markAzLetter(i);
+}
+azBar.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    azBar.setPointerCapture(e.pointerId);
+    azBar.classList.add('dragging');
+    azPointer = null;
+    azTouch(e);
+});
+azBar.addEventListener('pointermove', e => { if (azBar.classList.contains('dragging')) azTouch(e); });
+const azRelease = () => {
+    azBar.classList.remove('dragging');
+    const bubble = azBar.querySelector('.az-bubble');
+    if (bubble) bubble.hidden = true;
+};
+azBar.addEventListener('pointerup', azRelease);
+azBar.addEventListener('pointercancel', azRelease);
+// Keyboard: Enter or Space on a letter jumps there.
+azBar.addEventListener('click', e => {
+    const button = e.target.closest('.az-letter');
+    if (button && e.detail === 0) azScrollTo(azEntries[Number(button.dataset.index)]);
+});
+let azScrollFrame = 0;
+window.addEventListener('scroll', () => {
+    if (azBar.hidden || azBar.classList.contains('dragging') || azScrollFrame) return;
+    azScrollFrame = requestAnimationFrame(() => { azScrollFrame = 0; markAzLetter(); });
+}, { passive: true });
 
 function refreshCurrentView() {
     if (state.view === 'library') showLibrary(state.libraryId, false, true);
@@ -2934,6 +3035,12 @@ async function showLibrary(libId, push = true, keepScroll = false) {
         data.unmatched.forEach(f => unmatched.appendChild(createUnmatchedCard(f)));
         container.appendChild(unmatched);
     }
+    // Titles' letters (as the server sorts them, without "The"), then the unmatched files'.
+    const cards = container.querySelectorAll('.poster-card');
+    setAzIndex([...cards].map(el => ({
+        el, label: azLabel(el.querySelector('.poster-title')?.textContent || '', true),
+        run: el.classList.contains('unmatched') ? 1 : 0,
+    })));
     if (keepScroll) window.scrollTo(0, scroll);
     restorePendingScroll();
 }

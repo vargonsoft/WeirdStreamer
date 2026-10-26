@@ -85,7 +85,6 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     // Up and left off the content's edges go to the Up button; Down from the toolbar goes back in.
     val upFocusRequester = remember { FocusRequester() }
     val contentEntry = remember { ContentEntry() }
-    var dialogFocusRequester by remember { mutableStateOf<FocusRequester?>(null) }
 
     val currentSource = viewModel.currentSource
 
@@ -96,7 +95,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             else -> viewModel.navigateUp()
         }
     }
-    BackHandler(enabled = currentSource != null && dialogFocusRequester == null) {
+    BackHandler(enabled = currentSource != null) {
         goBack()
     }
 
@@ -145,7 +144,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 .padding(start = 48.dp, top = 48.dp, end = 48.dp)
                 .onPreviewKeyEvent { 
                     if (it.key == Key.Backspace && it.type == KeyEventType.KeyUp) {
-                        if (currentSource != null && dialogFocusRequester == null) {
+                        if (currentSource != null) {
                             goBack()
                             true
                         } else false
@@ -158,10 +157,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
-                        if (dialogFocusRequester != null) {
-                            dialogFocusRequester?.requestFocus()
-                            true
-                        } else contentEntry.focusTop?.invoke() ?: false
+                        contentEntry.focusTop?.invoke() ?: false
                     } else false
                 }
             ) {
@@ -296,8 +292,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     FileBrowserScreen(
                         viewModel = viewModel,
                         toolbarFocusRequester = upFocusRequester,
-                        contentEntry = contentEntry,
-                        onDialogFocusChanged = { dialogFocusRequester = it }
+                        contentEntry = contentEntry
                     )
                 }
             }
@@ -543,8 +538,7 @@ private fun MainAddSourceDialog(
 private fun FileBrowserScreen(
     viewModel: MediaViewModel,
     toolbarFocusRequester: FocusRequester,
-    contentEntry: ContentEntry,
-    onDialogFocusChanged: (FocusRequester?) -> Unit
+    contentEntry: ContentEntry
 ) {
     val isGridView = viewModel.isGridView
     val currentPath = viewModel.currentPath
@@ -597,7 +591,6 @@ private fun FileBrowserScreen(
                         modifier = Modifier.padding(bottom = 12.dp))
                 }
             } else null,
-            onDialogFocusChanged = onDialogFocusChanged,
             onVisibleItemsChanged = onVisibleItemsChanged
         ) { item, modifier ->
             val thumbnailUrl = remember(item.path, item.thumbnailUrl) { viewModel.thumbnailSourceFor(item) }

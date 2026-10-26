@@ -5,6 +5,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -290,10 +293,27 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
     val items = viewModel.getFilteredFileList()
     PhoneResumeDialog(viewModel)
     
+    // The A–Z strip: folders' letters, then files'.
+    val letters = remember(items) {
+        buildIndex(items, { indexLabel(it.name) }, { if (it.isDirectory) 0 else 1 })
+    }
+    val continueCount = if (viewModel.continueItems.isNotEmpty()) 1 else 0
+    val gridState = remember(viewModel.currentPath) { LazyGridState() }
+    val listState = remember(viewModel.currentPath) { LazyListState() }
+    val scope = rememberCoroutineScope()
+    val topLetter by remember(letters, continueCount) {
+        derivedStateOf {
+            val first = if (viewModel.isGridView) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
+            letters.entryFor((first - continueCount).coerceAtLeast(0))
+        }
+    }
+
+    Row(Modifier.fillMaxSize()) {
     if (viewModel.isGridView) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(120.dp),
-            modifier = Modifier.fillMaxSize(),
+            state = gridState,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
             contentPadding = PaddingValues(8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -310,7 +330,7 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
             }
         }
     } else {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxHeight()) {
             // The server's front page leads with what's in progress, in every library.
             if (viewModel.continueItems.isNotEmpty()) {
                 item(key = "continue") { PhoneContinueRow(viewModel, Modifier.padding(bottom = 8.dp)) }
@@ -321,6 +341,15 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
                 }
             }
         }
+    }
+    if (letters.size > 1) {
+        PhoneIndexBar(letters, topLetter, onSelect = { i ->
+            val target = letters[i].position + continueCount
+            scope.launch {
+                if (viewModel.isGridView) gridState.scrollToItem(target) else listState.scrollToItem(target)
+            }
+        }, Modifier.padding(vertical = 8.dp))
+    }
     }
 }
 

@@ -31,7 +31,6 @@ import androidx.tv.material3.*
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.vargon.weirdstreamer.MediaViewModel
-import com.vargon.weirdstreamer.SmbFileItem
 import com.vargon.weirdstreamer.repository.FileItem
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import java.util.Locale
@@ -51,42 +50,6 @@ private fun getIconTint(icon: ImageVector): Color {
 
 private fun Color.takeOrElse(block: () -> Color): Color = if (this != Color.Unspecified) this else block()
 
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-fun HostItemRow(host: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = Color.Transparent,
-            pressedContainerColor = Color.Transparent
-        ),
-        border = ClickableSurfaceDefaults.border(
-            focusedBorder = Border(
-                border = BorderStroke(2.dp, Color.White),
-                inset = 0.dp,
-                shape = MaterialTheme.shapes.small
-            )
-        ),
-        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.Dns, 
-                contentDescription = null, 
-                modifier = Modifier.size(32.dp),
-                tint = getIconTint(Icons.Default.Dns)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(text = host, style = MaterialTheme.typography.bodyLarge)
-        }
-    }
-}
-
 @Composable
 fun HostTileItem(host: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     TileItem(
@@ -97,34 +60,6 @@ fun HostTileItem(host: String, modifier: Modifier = Modifier, onClick: () -> Uni
     )
 }
 
-@Composable
-fun FileTileItem(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val isParent = item.name == ".."
-    val subtitle = if (!item.isDirectory && !isParent) {
-        val sizeStr = formatFileSize(item.size)
-        if (item.duration != null && item.duration > 0) {
-            "$sizeStr, ${formatDuration(item.duration)}"
-        } else {
-            sizeStr
-        }
-    } else null
-
-    TileItem(
-        title = item.name,
-        subtitle = subtitle,
-        icon = when {
-            isParent -> Icons.Default.SubdirectoryArrowLeft
-            item.isDirectory -> Icons.Default.Folder
-            else -> Icons.Default.Description
-        },
-        modifier = modifier,
-        onClick = onClick,
-        thumbnailUrl = if (!item.isDirectory && !isParent) item.path else null,
-        rotateIcon = if (isParent) 90f else 0f
-    )
-}
-
-// Overload for new FileItem from repository
 @Composable
 fun FileTileItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modifier,
                  playback: com.vargon.weirdstreamer.api.models.Playback? = null, onClick: () -> Unit) {
@@ -269,82 +204,6 @@ private fun MultiLineTileItemPreview() {
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-fun FileItemRow(item: SmbFileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val isParent = item.name == ".."
-    val icon = when {
-        isParent -> Icons.Default.SubdirectoryArrowLeft
-        item.isDirectory -> Icons.Default.Folder
-        else -> Icons.Default.Description
-    }
-    Surface(
-        onClick = onClick,
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = Color.Transparent,
-            pressedContainerColor = Color.Transparent
-        ),
-        border = ClickableSurfaceDefaults.border(
-            focusedBorder = Border(
-                border = BorderStroke(2.dp, Color.White),
-                inset = 0.dp,
-                shape = MaterialTheme.shapes.small
-            )
-        ),
-        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                var isImageLoaded by remember(item.path) { mutableStateOf(false) }
-                
-                if (!isImageLoaded) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .graphicsLayer(rotationZ = if (isParent) 90f else 0f),
-                        tint = getIconTint(icon)
-                    )
-                }
-                
-                if (!item.isDirectory && !isParent) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(item.path)
-                            .crossfade(true)
-                            .size(48)
-                            .build(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        onSuccess = { isImageLoaded = true },
-                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
-                if (!item.isDirectory && !isParent) {
-                    val sizeStr = formatFileSize(item.size)
-                    val infoStr = if (item.duration != null && item.duration > 0) {
-                        "$sizeStr, ${formatDuration(item.duration)}"
-                    } else {
-                        sizeStr
-                    }
-                    Text(text = infoStr, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-    }
-}
-
-// Overload for new FileItem from repository
 @Composable
 fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modifier,
                 playback: com.vargon.weirdstreamer.api.models.Playback? = null, onClick: () -> Unit) {

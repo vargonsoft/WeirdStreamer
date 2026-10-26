@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -49,6 +50,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -89,10 +93,26 @@ fun PhoneLibraryScreen(viewModel: MediaViewModel) {
             }
             val gridState = rememberLazyGridState(returnTo?.index ?: 0, returnTo?.offset ?: 0)
             val isTv = listing.libraryType == "tv"
+            // The A–Z strip: the titles' letters (as the server sorts them, without "The"), then
+            // the unmatched files'. Positions count titles, then unmatched files.
+            val letters = remember(listing) {
+                buildIndex(listing.titles.map { indexLabel(it.title, skipArticles = true) to 0 } +
+                    listing.unmatched.map { indexLabel(it.name, skipArticles = true) to 1 },
+                    { it.first }, { it.second })
+            }
+            val continueCount = if (viewModel.continueItems.isNotEmpty()) 1 else 0
+            val scope = rememberCoroutineScope()
+            val topLetter by remember(letters, continueCount) {
+                derivedStateOf {
+                    val first = gridState.firstVisibleItemIndex - continueCount
+                    letters.entryFor(if (first > listing.titles.size) first - 1 else first.coerceAtLeast(0))
+                }
+            }
+            Row(Modifier.fillMaxSize()) {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(108.dp),
                 state = gridState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -137,6 +157,14 @@ fun PhoneLibraryScreen(viewModel: MediaViewModel) {
                         ) { if (playable) viewModel.playLibraryFile(f, listOf(f)) }
                     }
                 }
+            }
+            if (letters.size > 1) {
+                PhoneIndexBar(letters, topLetter, onSelect = { i ->
+                    val p = letters[i].position
+                    val target = if (p < listing.titles.size) p + continueCount else p + continueCount + 1
+                    scope.launch { gridState.scrollToItem(target) }
+                }, Modifier.padding(vertical = 8.dp))
+            }
             }
         }
     }
