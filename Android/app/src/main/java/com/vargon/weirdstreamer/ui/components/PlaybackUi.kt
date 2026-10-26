@@ -34,12 +34,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.api.models.ContinueItem
 import com.vargon.weirdstreamer.api.models.Playback
+import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import java.util.Locale
 
 // Playback progress, shared by the phone and TV screens: a progress line along the bottom of a
@@ -52,8 +54,8 @@ fun BoxScope.WatchProgressOverlay(
     watched: Boolean,
     barHeight: Dp = 4.dp,
     badgeSize: Dp = 22.dp,
-    accent: Color = MaterialTheme.colorScheme.primary, // the TV app passes its own theme's
-    onAccent: Color = MaterialTheme.colorScheme.onPrimary
+    accent: Color = WeirdStreamerTheme.spec.progressColor.takeOrElse { MaterialTheme.colorScheme.primary },
+    onAccent: Color = WeirdStreamerTheme.spec.progressLabel.takeOrElse { MaterialTheme.colorScheme.onPrimary }
 ) {
     if (fraction > 0f) {
         Box(
@@ -82,8 +84,8 @@ fun BoxScope.PlaybackOverlay(
     duration: Double?,
     barHeight: Dp = 4.dp,
     badgeSize: Dp = 22.dp,
-    accent: Color = MaterialTheme.colorScheme.primary,
-    onAccent: Color = MaterialTheme.colorScheme.onPrimary
+    accent: Color = WeirdStreamerTheme.spec.progressColor.takeOrElse { MaterialTheme.colorScheme.primary },
+    onAccent: Color = WeirdStreamerTheme.spec.progressLabel.takeOrElse { MaterialTheme.colorScheme.onPrimary }
 ) {
     WatchProgressOverlay(playback?.fraction(duration) ?: 0f, playback?.watched == true, barHeight, badgeSize, accent, onAccent)
 }

@@ -46,6 +46,9 @@ interface WeirdStreamerThemeSpec {
     /** A focused TV button (a hovered one on the web). */
     val focusColor: Color get() = Color.Unspecified
     val focusLabel: Color get() = Color.Unspecified
+    /** Progress lines on thumbnails and posters, and the check once watched (the web's --progress-color). */
+    val progressColor: Color get() = Color.Unspecified
+    val progressLabel: Color get() = Color.Unspecified
 }
 
 /** No theme's colors: the composition's default before a theme is applied. */
@@ -70,6 +73,8 @@ class PaletteThemeSpec(p: ThemePalette, override val backgroundImage: Int? = nul
     override val headingColor = p.accent
     override val focusColor = p.accent
     override val focusLabel = p.onAccent
+    override val progressColor = p.accent
+    override val progressLabel = p.onAccent
 }
 
 private val emberSpec = PaletteThemeSpec(EmberPalette)

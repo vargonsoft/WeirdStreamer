@@ -269,8 +269,7 @@ fun PosterTile(
             if (posterUrl != null) {
                 RemoteImage(posterUrl, Modifier.fillMaxSize())
             }
-            WatchProgressOverlay(progress, watched, barHeight = 5.dp, badgeSize = 28.dp,
-                accent = TvAccent, onAccent = TvOnAccent)
+            WatchProgressOverlay(progress, watched, barHeight = 5.dp, badgeSize = 28.dp)
         }
         Spacer(Modifier.height(8.dp))
         Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -488,8 +487,7 @@ private fun FileRow(
                 ) {
                     Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(40.dp))
                     viewModel.serverUrl(file.thumbnailUrl)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
-                    PlaybackOverlay(file.playback, file.duration, barHeight = 5.dp, badgeSize = 26.dp,
-                        accent = TvAccent, onAccent = TvOnAccent)
+                    PlaybackOverlay(file.playback, file.duration, barHeight = 5.dp, badgeSize = 26.dp)
                 }
                 Spacer(Modifier.width(18.dp))
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -661,8 +659,7 @@ private fun EpisodeRow(
             (viewModel.serverUrl(episode.still) ?: viewModel.serverUrl(first.thumbnailUrl))?.let {
                 RemoteImage(it, Modifier.fillMaxSize())
             }
-            PlaybackOverlay(first.playback, first.duration, barHeight = 5.dp, badgeSize = 24.dp,
-                accent = TvAccent, onAccent = TvOnAccent)
+            PlaybackOverlay(first.playback, first.duration, barHeight = 5.dp, badgeSize = 24.dp)
         }
         Spacer(Modifier.width(20.dp))
         Column(modifier = Modifier.weight(1f)) {

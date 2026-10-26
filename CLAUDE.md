@@ -214,7 +214,9 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 - **Themes:** Default is Ember (the logo's aubergine, gold and cream) on web and Android, and the
   two should match: a dark background (#1C0F1B) with aubergine boxes (#321B2F) for the header and
   content, plum buttons (#6A3A62) with cream labels, gold (#F6C445) with aubergine text for a
-  focused (TV) or hovered (web) button, and gold headings. Web: `:root[data-theme="default"]` in
+  focused (TV) or hovered (web) button, and gold headings and progress lines (with the watched
+  check). Progress has its own color in each theme: `--progress-color` / `--progress-label` on
+  the web, `progressColor` / `progressLabel` in the Android theme spec. Web: `:root[data-theme="default"]` in
   `style.css` (`--button-text`, `--button-focus`, `--heading-color`…; other themes fall back to
   their old colors). Android: every theme is a `ThemePalette` (`Color.kt`) built from its
   background (boxes, buttons, text and one accent for focus, headings and icons; `panelAlpha` makes

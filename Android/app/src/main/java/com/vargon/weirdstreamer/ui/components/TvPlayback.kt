@@ -40,9 +40,6 @@ import androidx.tv.material3.Text
 import com.vargon.weirdstreamer.MediaViewModel
 
 /** Progress lines and checks on TV: white reads on every theme's dark backgrounds. */
-val TvAccent = androidx.compose.ui.graphics.Color.White
-val TvOnAccent = androidx.compose.ui.graphics.Color.Black
-
 /**
  * TV: Continue Watching, a row of videos in progress above a folder or library grid. Up goes to
  * the toolbar ([up]); Down hands focus to the grid ([onDown]). [firstRequester] focuses the first card.
@@ -105,8 +102,7 @@ fun TvContinueRow(
                     ) {
                         Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(40.dp))
                         continueImage(viewModel, item)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
-                        PlaybackOverlay(item.playback, item.duration, barHeight = 5.dp,
-                            accent = TvAccent, onAccent = TvOnAccent)
+                        PlaybackOverlay(item.playback, item.duration, barHeight = 5.dp)
                     }
                     Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 8.dp))

@@ -197,8 +197,7 @@ fun TileItem(
                     modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.small)
                 )
             }
-            WatchProgressOverlay(progress, watched, barHeight = 5.dp, badgeSize = 28.dp,
-                accent = TvAccent, onAccent = TvOnAccent)
+            WatchProgressOverlay(progress, watched, barHeight = 5.dp, badgeSize = 28.dp)
         }
         Spacer(modifier = Modifier.height(12.dp))
         Column(
@@ -381,8 +380,7 @@ fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modi
                     modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall)
                 )
             }
-            PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 16.dp,
-                accent = TvAccent, onAccent = TvOnAccent)
+            PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 16.dp)
         }
         Spacer(modifier = Modifier.width(16.dp))
         Column {
