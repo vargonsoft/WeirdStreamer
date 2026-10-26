@@ -13,6 +13,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.ui.graphics.Color
+import com.vargon.weirdstreamer.update.AppUpdater
+import com.vargon.weirdstreamer.update.UpdateState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -157,6 +161,19 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                     headlineContent = { Text("Clear Thumbnail Cache") },
                     trailingContent = { Icon(Icons.Default.DeleteSweep, contentDescription = null) },
                     modifier = Modifier.clickable { viewModel.clearThumbnailCache(context) }
+                )
+            }
+
+            // App update, from the APK a server publishes
+            item {
+                val (title, detail) = updateLabels(AppUpdater.state)
+                ListItem(
+                    headlineContent = {
+                        Text(title, color = if (AppUpdater.state is UpdateState.Available) MaterialTheme.colorScheme.primary else Color.Unspecified)
+                    },
+                    supportingContent = { Text(detail) },
+                    trailingContent = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
+                    modifier = Modifier.clickable { onUpdateRow(viewModel, context) }
                 )
             }
 

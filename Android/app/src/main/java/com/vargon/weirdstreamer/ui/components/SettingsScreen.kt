@@ -16,6 +16,9 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.SystemUpdate
+import com.vargon.weirdstreamer.update.AppUpdater
+import com.vargon.weirdstreamer.update.UpdateState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -44,6 +47,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     val themeFocus = remember { FocusRequester() }
     val hiddenFilesFocus = remember { FocusRequester() }
     val clearCacheFocus = remember { FocusRequester() }
+    val updateFocus = remember { FocusRequester() }
 
     // Observe auth state changes
     val authStateRefresh = viewModel.authStateRefreshTrigger
@@ -239,6 +243,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         .focusRequester(clearCacheFocus)
                         .focusProperties {
                             up = hiddenFilesFocus
+                            down = updateFocus
                         }
                 ) {
                     Row(
@@ -247,6 +252,41 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     ) {
                         Text("Clear Thumbnail Cache", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                         Icon(Icons.Default.DeleteSweep, contentDescription = null)
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                // App update, from the APK a server publishes
+                Surface(
+                    onClick = { onUpdateRow(viewModel, context) },
+                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        pressedContainerColor = Color.Transparent
+                    ),
+                    border = ClickableSurfaceDefaults.border(
+                        focusedBorder = Border(
+                            border = BorderStroke(2.dp, Color.White),
+                            inset = 0.dp,
+                            shape = MaterialTheme.shapes.small
+                        )
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(updateFocus)
+                        .focusProperties { up = clearCacheFocus }
+                ) {
+                    val (title, detail) = updateLabels(AppUpdater.state)
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(title, style = MaterialTheme.typography.titleMedium,
+                                color = if (AppUpdater.state is UpdateState.Available) WeirdStreamerTheme.spec.headingColor else Color.Unspecified)
+                            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(Icons.Default.SystemUpdate, contentDescription = null)
                     }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
