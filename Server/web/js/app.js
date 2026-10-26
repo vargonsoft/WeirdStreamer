@@ -2083,9 +2083,6 @@ function handleSaveTheme() {
     }, 2000);
 }
 
-// Initialize app when DOM is ready
-console.log('Calling init()');
-init();
 
 // ---------------------------------------------------------------------------------------------
 // Manual metadata matching
@@ -3490,3 +3487,8 @@ function createStreamCard(s) {
     card.appendChild(ua);
     return card;
 }
+
+// Start the app last, once every top-level variable above is declared (init uses some of them,
+// such as pendingScroll on a reload).
+console.log('Calling init()');
+init();
