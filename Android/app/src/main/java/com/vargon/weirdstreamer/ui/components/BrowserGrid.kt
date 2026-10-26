@@ -18,6 +18,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -78,7 +82,7 @@ internal fun LazyGridState.topRowKey(skip: (Any) -> Boolean = { false }): Any? {
  * @param folderKey identifies the folder; scroll and focus restoration reset when it changes.
  * @param onVisibleItemsChanged called (debounced) with the items on screen, for lazy metadata loading.
  */
-@OptIn(FlowPreview::class)
+@OptIn(FlowPreview::class, ExperimentalFoundationApi::class)
 @Composable
 fun BrowserGrid(
     folderKey: Any,
@@ -229,7 +233,21 @@ fun BrowserGrid(
         scope.launch { focusItem(target.path) }
     }
 
+    // Moving along a row to a tile already fully on screen doesn't scroll. The TV's own scrolling
+    // (focus at a fixed point) would, and in the first row that fights the scroll keeping the
+    // header above it in view, bouncing the grid on every move.
+    val alongRow = remember { booleanArrayOf(false) }
+    val tvScrolling = LocalBringIntoViewSpec.current
+    val scrolling = remember(tvScrolling) {
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+                if (alongRow[0] && offset >= 0 && offset + size <= containerSize) 0f
+                else tvScrolling.calculateScrollDistance(offset, size, containerSize)
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
+        CompositionLocalProvider(LocalBringIntoViewSpec provides scrolling) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
             state = gridState,
@@ -237,6 +255,7 @@ fun BrowserGrid(
                 .fillMaxSize()
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    alongRow[0] = event.key == Key.DirectionLeft || event.key == Key.DirectionRight
                     when (event.key) {
                         Key.DirectionDown -> isGridView && moveVertically(1)
                         Key.DirectionUp -> isGridView && moveVertically(-1)
@@ -304,6 +323,8 @@ fun BrowserGrid(
                 }
                 itemContent(item, itemModifier)
             }
+        }
+
         }
 
         AnimatedVisibility(
