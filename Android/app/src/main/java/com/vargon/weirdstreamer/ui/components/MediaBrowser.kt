@@ -256,7 +256,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             Panel(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 margin = PaddingValues(bottom = 24.dp),
-                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp),
+                contentPadding = PaddingValues(16.dp),
                 alpha = panelAlpha
             ) {
             when {
@@ -589,6 +589,7 @@ private fun FileBrowserScreen(
             takeFocus = !viewModel.toolbarKeepsFocus,
             upFocusRequester = if (showContinue) continueRequester else toolbarFocusRequester,
             // Scrolls away with the folders as focus moves down them.
+            headerFocus = if (showContinue) continueRequester else null,
             header = if (showContinue) {
                 {
                     TvContinueRow(viewModel, continueRequester, up = toolbarFocusRequester,

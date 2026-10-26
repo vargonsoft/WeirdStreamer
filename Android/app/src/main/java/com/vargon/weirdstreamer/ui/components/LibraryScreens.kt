@@ -3,6 +3,12 @@ package com.vargon.weirdstreamer.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -463,6 +469,7 @@ private fun CastRow(viewModel: MediaViewModel, cast: List<CreditInfo>, onFocused
  * A title's files, one per row: the video thumbnail (which plays it) with the full file name, its
  * size and a Play button to the right.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileRow(
     viewModel: MediaViewModel,
@@ -472,9 +479,26 @@ private fun FileRow(
     modifier: Modifier = Modifier,
     thumbnailWidth: Dp = 200.dp
 ) {
+    val scope = rememberCoroutineScope()
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         files.forEachIndexed { index, file ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // With any of its buttons focused, the whole row shows, with room around it for the
+            // focused thumbnail's growth and outline: the page otherwise scrolls only as far as the
+            // focused button, leaving the taller thumbnail beside it cut off.
+            val wholeRow = remember { BringIntoViewRequester() }
+            var rowSize by remember { mutableStateOf(IntSize.Zero) }
+            val margin = with(LocalDensity.current) { 16.dp.toPx() }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .bringIntoViewRequester(wholeRow)
+                    .onSizeChanged { rowSize = it }
+                    .onFocusChanged {
+                        if (it.hasFocus) scope.launch {
+                            wholeRow.bringIntoView(Rect(0f, -margin, rowSize.width.toFloat(), rowSize.height + margin))
+                        }
+                    }
+            ) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier

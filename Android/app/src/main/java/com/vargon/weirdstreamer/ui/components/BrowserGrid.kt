@@ -96,6 +96,8 @@ fun BrowserGrid(
     upFocusRequester: FocusRequester = toolbarFocusRequester,
     // A full-width row above the items that scrolls with them (Continue Watching)
     header: (@Composable () -> Unit)? = null,
+    // Focuses the header's first item: on a fresh visit it takes focus when it arrives
+    headerFocus: FocusRequester? = null,
     onDialogFocusChanged: (FocusRequester?) -> Unit,
     onVisibleItemsChanged: (List<FileItem>) -> Unit,
     itemContent: @Composable (FileItem, Modifier) -> Unit
@@ -166,15 +168,27 @@ fun BrowserGrid(
         onDispose { if (contentEntry.focusTop === focusTop) contentEntry.focusTop = null }
     }
 
+    // A fresh visit (nothing opened here before), and whether a key was pressed in the grid
+    // since: until then the header, when there is one, takes focus as it arrives.
+    val freshVisit = remember(folderKey) { initialSelection == null }
+    val keyPressed = remember(folderKey) { booleanArrayOf(false) }
+    val gridFocused = remember { booleanArrayOf(false) }
+
     // Not keyed on isGridView: the list/grid toggle is on the toolbar, which keeps focus.
     LaunchedEffect(folderKey) {
         if (takeFocus) initialPath?.let { focusItem(it) }
     }
-    // The header (Continue Watching) usually arrives just after the items: while focus is in the
-    // top row, show it whole above them.
+    // The header (Continue Watching) usually arrives just after the items. On a fresh visit its
+    // first item takes focus (the grid's first item had it, and the header would push it off
+    // screen); otherwise, while focus is in the top row, the header shows whole above it.
     LaunchedEffect(folderKey, headerCount) {
         if (headerCount == 0) return@LaunchedEffect
         withFrameNanos { }
+        if (headerFocus != null && takeFocus && freshVisit && !keyPressed[0] && gridFocused[0]) {
+            gridState.scrollToItem(0)
+            withFrameNanos { }
+            if (runCatching { headerFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+        }
         if (focusedIndex[0] in 0 until columns) gridState.scrollToItem(0)
     }
 
@@ -253,8 +267,10 @@ fun BrowserGrid(
             state = gridState,
             modifier = Modifier
                 .fillMaxSize()
+                .onFocusChanged { gridFocused[0] = it.hasFocus }
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    keyPressed[0] = true
                     alongRow[0] = event.key == Key.DirectionLeft || event.key == Key.DirectionRight
                     when (event.key) {
                         Key.DirectionDown -> isGridView && moveVertically(1)
