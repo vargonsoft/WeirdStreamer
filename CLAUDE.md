@@ -135,7 +135,9 @@ for each TODO item are at the end of this file.
 `Android/deploy-release.sh` builds the R8 release APK and installs it only on the destinations
 given: `--emulators` (the running emulators, with a launch-and-crash check; emulators go first and
 a crash stops the rest), `--onn` (`onn. 4K Plus Streaming`), `--moto` (`moto g power - 2025`) and
-`--fold7` (`SM-F966U1`). With none it builds nothing. `--no-build` reuses the built APK. A
+`--fold7` (`SM-F966U1`), and `--web`: copies it to `Server/web/downloads/WeirdStreamer.apk`
+(git-ignored), which the web UI's sign-in page and Settings (My Account) link to for downloading;
+the links hide when there's no APK. With none it builds nothing. `--no-build` reuses the built APK. A
 destination that isn't connected, or a failed install, makes it exit non-zero.
 
 - Real devices must get release builds. Debug builds are visibly sluggish on the Onn.

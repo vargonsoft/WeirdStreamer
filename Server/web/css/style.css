@@ -149,6 +149,45 @@ body {
     margin: 0 auto;
 }
 
+/* The Android app's download links (shown once an APK is published) */
+.app-download {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+}
+
+.app-download[hidden],
+.app-download-group[hidden] {
+    display: none;
+}
+
+.app-download svg {
+    flex: none;
+}
+
+.app-download-info {
+    opacity: 0.75;
+    font-size: 0.85em;
+}
+
+.app-download-login {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+    color: var(--primary-color);
+    font-size: 14px;
+}
+
+.app-download-login:hover {
+    text-decoration: underline;
+}
+
+.app-download-text {
+    color: var(--muted-text);
+    margin-bottom: 12px;
+}
+
 #login-form input {
     width: 100%;
     padding: 12px;

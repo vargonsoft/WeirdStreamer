@@ -16,6 +16,8 @@
 .cxx
 local.properties
 /Server/run
+# The Android app published for download by Android/deploy-release.sh --web
+/Server/web/downloads
 
 
 # Local test server (its own config, accounts and sample media)

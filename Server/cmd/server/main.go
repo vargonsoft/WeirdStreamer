@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -181,6 +182,9 @@ func main() {
 
 	webDir := "./web"
 	if _, err := os.Stat(webDir); err == nil {
+		// The Android app (web/downloads, from Android/deploy-release.sh --web): installable as a
+		// package, not a zip
+		mime.AddExtensionType(".apk", "application/vnd.android.package-archive")
 		// no-cache makes browsers revalidate (a cheap 304) instead of running a stale web UI after an update
 		fileServer := http.FileServer(http.Dir(webDir))
 		r.PathPrefix("/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

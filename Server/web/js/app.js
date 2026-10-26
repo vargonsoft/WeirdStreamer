@@ -154,6 +154,7 @@ function setupEventListeners() {
     
     setupMatchDialog();
     setupPlayerControls();
+    setupAppDownloads();
     decorateIconButtons();
     setupSecretToggles();
 
@@ -1353,8 +1354,28 @@ const MATERIAL_ICONS = {
     theaters: 'M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z',
     check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+    android: 'M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85-.29-.15-.65-.06-.83.22l-1.88 3.24c-2.86-1.21-6.08-1.21-8.94 0L5.65 5.67c-.19-.29-.58-.38-.87-.2-.28.18-.37.54-.22.83L6.4 9.48C3.3 11.25 1.28 14.44 1 18h22c-.28-3.56-2.3-6.75-5.4-8.52zM7 15.25c-.69 0-1.25-.56-1.25-1.25s.56-1.25 1.25-1.25 1.25.56 1.25 1.25-.56 1.25-1.25 1.25zm10 0c-.69 0-1.25-.56-1.25-1.25s.56-1.25 1.25-1.25 1.25.56 1.25 1.25-.56 1.25-1.25 1.25z',
     search: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
 };
+
+// Links to the Android app's release APK, which Android/deploy-release.sh --web publishes to
+// web/downloads: shown, with its size and date, once it's there.
+async function setupAppDownloads() {
+    try {
+        const res = await fetch('downloads/WeirdStreamer.apk', { method: 'HEAD', cache: 'no-cache' });
+        if (!res.ok) return;
+        const size = Number(res.headers.get('Content-Length'));
+        const date = new Date(res.headers.get('Last-Modified') || '');
+        const info = [size ? formatSize(size) : '', isNaN(date) ? '' : date.toLocaleDateString()].filter(Boolean).join(' · ');
+        document.querySelectorAll('.app-download, .app-download-group').forEach(el => { el.hidden = false; });
+        document.querySelectorAll('.app-download').forEach(link => {
+            link.querySelector('.app-download-info').textContent = info;
+            if (!link.querySelector('svg')) link.insertAdjacentHTML('afterbegin', iconSvg('android'));
+        });
+    } catch (e) {
+        // no app published
+    }
+}
 
 // Buttons and headings with a data-icon get that Material icon in front of their label.
 function decorateIconButtons() {

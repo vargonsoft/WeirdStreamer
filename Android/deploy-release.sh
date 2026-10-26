@@ -5,6 +5,7 @@
 #   --onn         the Onn TV box (onn. 4K Plus Streaming)
 #   --moto        the Moto G (moto g power - 2025)
 #   --fold7       the Galaxy Fold 7 (SM-F966U1)
+#   --web         the web UI's download links (Server/web/downloads/WeirdStreamer.apk)
 #   --no-build    use the APK already built
 #
 # For example: ./deploy-release.sh --emulators --moto --fold7
@@ -18,7 +19,7 @@ APK=app/build/outputs/apk/release/app-release.apk
 PACKAGE=com.vargon.weirdstreamer
 ACTIVITY=$PACKAGE/.MainActivity
 
-build=1 emulators=0 onn=0 moto=0 fold7=0
+build=1 emulators=0 onn=0 moto=0 fold7=0 web=0
 for arg in "$@"; do
     case "$arg" in
         --emulators) emulators=1 ;;
@@ -26,12 +27,13 @@ for arg in "$@"; do
         --moto) moto=1 ;;
         --fold7) fold7=1 ;;
         --no-build) build=0 ;;
-        -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+        --web) web=1 ;;
+        -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac
 done
-if [ $((emulators + onn + moto + fold7)) = 0 ]; then
-    echo "No destination given: pass --emulators, --onn, --moto and/or --fold7 (see --help)." >&2
+if [ $((emulators + onn + moto + fold7 + web)) = 0 ]; then
+    echo "No destination given: pass --emulators, --onn, --moto, --fold7 and/or --web (see --help)." >&2
     exit 2
 fi
 
@@ -98,6 +100,15 @@ if [ "$emulators" = 1 ]; then
         echo "== --emulators: no emulator is running" >&2
         failed=1
     fi
+fi
+
+# The web UI's download links: the live and test servers serve Server/web from disk.
+if [ "$web" = 1 ]; then
+    downloads=../Server/web/downloads
+    mkdir -p "$downloads"
+    cp -p "$APK" "$downloads/WeirdStreamer.apk.new" # keeping its build date, which the links show
+    mv "$downloads/WeirdStreamer.apk.new" "$downloads/WeirdStreamer.apk" # never half a file
+    echo "== Published for download: Server/web/downloads/WeirdStreamer.apk"
 fi
 
 installed=0
