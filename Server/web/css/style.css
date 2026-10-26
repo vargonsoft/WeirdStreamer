@@ -173,6 +173,7 @@ body {
 
 .app-download-login {
     display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     margin-top: 20px;
     color: var(--primary-color);

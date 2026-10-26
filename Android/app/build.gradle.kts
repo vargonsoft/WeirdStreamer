@@ -3,6 +3,11 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val buildNumber: Int = runCatching {
+    providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
+        .standardOutput.asText.get().trim().toInt()
+}.getOrDefault(1)
+
 android {
     namespace = "com.vargon.weirdstreamer"
     compileSdk = 36
@@ -11,8 +16,11 @@ android {
         applicationId = "com.vargon.weirdstreamer"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // The build number: the commits in the git history, so each build after a commit is higher
+        // (as Android needs for an update to install). The version is set by hand, and the full
+        // version name ends with the build number: 0.0.1.254.
+        versionCode = buildNumber
+        versionName = "0.0.1.$buildNumber"
     }
 
     buildTypes {

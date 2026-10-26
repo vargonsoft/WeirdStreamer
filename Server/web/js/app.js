@@ -1359,14 +1359,26 @@ const MATERIAL_ICONS = {
 };
 
 // Links to the Android app's release APK, which Android/deploy-release.sh --web publishes to
-// web/downloads: shown, with its size and date, once it's there.
+// web/downloads with WeirdStreamer.json ({ version, build, size, built }): shown, with its
+// version, build number, size and date, once it's there.
 async function setupAppDownloads() {
     try {
-        const res = await fetch('downloads/WeirdStreamer.apk', { method: 'HEAD', cache: 'no-cache' });
-        if (!res.ok) return;
-        const size = Number(res.headers.get('Content-Length'));
-        const date = new Date(res.headers.get('Last-Modified') || '');
-        const info = [size ? formatSize(size) : '', isNaN(date) ? '' : date.toLocaleDateString()].filter(Boolean).join(' · ');
+        let app = null;
+        const meta = await fetch('downloads/WeirdStreamer.json', { cache: 'no-cache' });
+        if (meta.ok) {
+            app = await meta.json();
+        } else {
+            // Published without the version file: the APK's own size and date
+            const res = await fetch('downloads/WeirdStreamer.apk', { method: 'HEAD', cache: 'no-cache' });
+            if (!res.ok) return;
+            app = { size: Number(res.headers.get('Content-Length')), built: res.headers.get('Last-Modified') };
+        }
+        const date = new Date(app.built || '');
+        const info = [
+            app.version ? `Version ${app.version}` : '', // 0.0.1.254: the build number is its last part
+            app.size ? formatSize(app.size) : '',
+            isNaN(date) ? '' : date.toLocaleDateString(),
+        ].filter(Boolean).join(' · ');
         document.querySelectorAll('.app-download, .app-download-group').forEach(el => { el.hidden = false; });
         document.querySelectorAll('.app-download').forEach(link => {
             link.querySelector('.app-download-info').textContent = info;

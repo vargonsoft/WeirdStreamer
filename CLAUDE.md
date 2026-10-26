@@ -140,6 +140,9 @@ a crash stops the rest), `--onn` (`onn. 4K Plus Streaming`), `--moto` (`moto g p
 the links hide when there's no APK. With none it builds nothing. `--no-build` reuses the built APK. A
 destination that isn't connected, or a failed install, makes it exit non-zero.
 
+- Versions: `versionCode` (the build number) is the git commit count, and `versionName` is a
+  hand-set version plus the build number (`0.0.1.254`), in `app/build.gradle.kts`. `--web` also
+  writes `WeirdStreamer.json` (version, build, size, date), which the download links show.
 - Real devices must get release builds. Debug builds are visibly sluggish on the Onn.
 - R8 needs keep rules (`Android/app/proguard-rules.pro`) for anything Gson stores by field name
   or created by reflection. Missing ones once crashed release builds at startup (WorkManager's

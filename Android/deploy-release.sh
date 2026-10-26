@@ -108,7 +108,15 @@ if [ "$web" = 1 ]; then
     mkdir -p "$downloads"
     cp -p "$APK" "$downloads/WeirdStreamer.apk.new" # keeping its build date, which the links show
     mv "$downloads/WeirdStreamer.apk.new" "$downloads/WeirdStreamer.apk" # never half a file
-    echo "== Published for download: Server/web/downloads/WeirdStreamer.apk"
+    # What the links show: version, build number (versionCode), size and build date.
+    python3 - "$(dirname "$APK")/output-metadata.json" "$downloads/WeirdStreamer.apk" >"$downloads/WeirdStreamer.json" <<'PY'
+import datetime, json, os, sys
+element = json.load(open(sys.argv[1]))["elements"][0]
+built = datetime.datetime.fromtimestamp(os.path.getmtime(sys.argv[2]), datetime.timezone.utc)
+print(json.dumps({"version": element["versionName"], "build": element["versionCode"],
+                  "size": os.path.getsize(sys.argv[2]), "built": built.isoformat(timespec="seconds")}))
+PY
+    echo "== Published for download: Server/web/downloads/WeirdStreamer.apk ($(cat "$downloads/WeirdStreamer.json"))"
 fi
 
 installed=0
