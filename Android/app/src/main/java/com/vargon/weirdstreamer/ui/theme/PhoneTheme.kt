@@ -5,66 +5,51 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
 
 @Composable
 fun WeirdStreamerPhoneTheme(
     appTheme: AppTheme = AppTheme.DEFAULT,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = when (appTheme.resolved()) {
-        AppTheme.CINEMA_BLUE -> {
-            darkColorScheme(
-                primary = CinemaGold,
-                onPrimary = CinemaBlueDeep,
-                secondary = CinemaBlueLight,
-                onSecondary = CinemaSilver,
-                tertiary = CinemaGoldDark,
-                background = CinemaBlueDeep,
-                onBackground = CinemaSilver,
-                surface = CinemaBlueMid,
-                onSurface = CinemaSilver,
-                surfaceVariant = CinemaBlue
-            )
-        }
-        AppTheme.CINEMA_RED -> {
-            darkColorScheme(
-                primary = CinemaRedGold,
-                onPrimary = CinemaBurgundy,
-                secondary = CinemaRedLight,
-                onSecondary = CinemaRedSilver,
-                tertiary = CinemaRedGoldDark,
-                background = CinemaBurgundy,
-                onBackground = CinemaRedSilver,
-                surface = CinemaRed,
-                onSurface = CinemaRedSilver
-            )
-        }
-        AppTheme.DEFAULT -> {
-            darkColorScheme(
-                primary = EmberGold,
-                onPrimary = EmberAubergine,
-                primaryContainer = EmberPlum,
-                onPrimaryContainer = EmberCream,
-                secondary = EmberAmber,
-                onSecondary = EmberNight,
-                secondaryContainer = EmberButton, // tonal buttons, like the filled ones
-                onSecondaryContainer = EmberCream,
-                tertiary = EmberGold,
-                background = EmberNight, // behind the boxes (Panel)
-                onBackground = EmberCream,
-                surface = EmberAubergine, // the boxes: lists, tab rows and top bars inside them blend in
-                onSurface = EmberCream,
-                surfaceVariant = EmberPlum,
-                onSurfaceVariant = EmberCreamMuted,
-                surfaceContainer = EmberAubergine,
-                surfaceContainerHigh = EmberAubergine,
-                surfaceContainerHighest = EmberPlum,
-                outline = EmberCreamMuted,
-                outlineVariant = EmberPlum
-            )
-        }
-        AppTheme.DARK -> darkColorScheme(primary = Purple80, secondary = PurpleGrey80, tertiary = Pink80)
-        AppTheme.LIGHT, AppTheme.AUTO -> lightColorScheme(primary = Purple40, secondary = PurpleGrey40, tertiary = Pink40)
+    val p = appTheme.palette()
+    // The screen is the background and the boxes (Panel) are the panel color. Lists, tab rows and
+    // top bars are transparent (surface) so they show the box they sit in, see-through or not;
+    // dialogs, menus and sheets (the surface containers) get the box's color, opaque.
+    val colorScheme = if (p.isLight) {
+        lightColorScheme(
+            primary = p.accent, onPrimary = p.onAccent,
+            primaryContainer = p.raised, onPrimaryContainer = p.text,
+            secondary = p.secondary, onSecondary = p.background,
+            secondaryContainer = p.button, onSecondaryContainer = p.buttonLabel,
+            tertiary = p.accent, onTertiary = p.onAccent,
+            background = p.background, onBackground = p.text,
+            surface = Color.Transparent, onSurface = p.text,
+            surfaceVariant = p.raised, onSurfaceVariant = p.mutedText,
+            surfaceTint = Color.Transparent,
+            inverseSurface = p.text, inverseOnSurface = p.background,
+            outline = p.mutedText, outlineVariant = p.raised,
+            surfaceContainerLowest = p.panel, surfaceContainerLow = p.panel,
+            surfaceContainer = p.panel, surfaceContainerHigh = p.panel,
+            surfaceContainerHighest = p.raised,
+        )
+    } else {
+        darkColorScheme(
+            primary = p.accent, onPrimary = p.onAccent,
+            primaryContainer = p.raised, onPrimaryContainer = p.text,
+            secondary = p.secondary, onSecondary = p.background,
+            secondaryContainer = p.button, onSecondaryContainer = p.buttonLabel,
+            tertiary = p.accent, onTertiary = p.onAccent,
+            background = p.background, onBackground = p.text,
+            surface = Color.Transparent, onSurface = p.text,
+            surfaceVariant = p.raised, onSurfaceVariant = p.mutedText,
+            surfaceTint = Color.Transparent,
+            inverseSurface = p.text, inverseOnSurface = p.background,
+            outline = p.mutedText, outlineVariant = p.raised,
+            surfaceContainerLowest = p.panel, surfaceContainerLow = p.panel,
+            surfaceContainer = p.panel, surfaceContainerHigh = p.panel,
+            surfaceContainerHighest = p.raised,
+        )
     }
 
     CompositionLocalProvider(LocalThemeSpec provides appTheme.spec()) {

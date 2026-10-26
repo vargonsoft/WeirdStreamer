@@ -33,9 +33,11 @@ interface WeirdStreamerThemeSpec {
     val parentIconTint: Color
     val backgroundImage: Int?
     val spinnerColor: Color
-    // Ember's look, shared with the web UI (Unspecified: the theme keeps Material's defaults):
+    // The look shared with the web UI (Unspecified: Material's defaults, no boxes):
     /** The boxes the header and content sit in, over the darker background (`Panel`). */
     val panelColor: Color get() = Color.Unspecified
+    /** How opaque the boxes are: below 1 lets a background image show through. */
+    val panelAlpha: Float get() = 1f
     /** Buttons and their labels (`tvButtonColors`, `phoneButtonColors`). */
     val buttonColor: Color get() = Color.Unspecified
     val buttonLabel: Color get() = Color.Unspecified
@@ -46,6 +48,7 @@ interface WeirdStreamerThemeSpec {
     val focusLabel: Color get() = Color.Unspecified
 }
 
+/** No theme's colors: the composition's default before a theme is applied. */
 object DefaultThemeSpec : WeirdStreamerThemeSpec {
     override val folderIconTint: Color = Color.Unspecified
     override val serverIconTint: Color = Color.Unspecified
@@ -54,36 +57,26 @@ object DefaultThemeSpec : WeirdStreamerThemeSpec {
     override val spinnerColor: Color = Color.Unspecified
 }
 
-object EmberThemeSpec : WeirdStreamerThemeSpec {
-    override val folderIconTint: Color = EmberGold
-    override val serverIconTint: Color = EmberGold
-    override val parentIconTint: Color = EmberGold
-    override val backgroundImage: Int? = null
-    override val spinnerColor: Color = EmberGold
-    override val panelColor: Color = EmberAubergine
-    override val buttonColor: Color = EmberButton
-    override val buttonLabel: Color = EmberCream
-    override val focusColor: Color = EmberGold
-    override val focusLabel: Color = EmberAubergine
-    override val headingColor: Color = EmberGold
+/** A theme's spec, from its palette: the accent for icons, headings and focus. */
+class PaletteThemeSpec(p: ThemePalette, override val backgroundImage: Int? = null) : WeirdStreamerThemeSpec {
+    override val folderIconTint = p.accent
+    override val serverIconTint = p.accent
+    override val parentIconTint = p.accent
+    override val spinnerColor = p.accent
+    override val panelColor = p.panel
+    override val panelAlpha = p.panelAlpha
+    override val buttonColor = p.button
+    override val buttonLabel = p.buttonLabel
+    override val headingColor = p.accent
+    override val focusColor = p.accent
+    override val focusLabel = p.onAccent
 }
 
-object CinemaBlueThemeSpec : WeirdStreamerThemeSpec {
-    override val folderIconTint: Color = CinemaGold
-    override val serverIconTint: Color = CinemaGold
-    override val parentIconTint: Color = CinemaGold
-    override val backgroundImage: Int? = R.drawable.film_reel
-    override val spinnerColor: Color = CinemaBlue
-
-}
-
-object CinemaRedThemeSpec : WeirdStreamerThemeSpec {
-    override val folderIconTint: Color = Color.Unspecified
-    override val serverIconTint: Color = Color.Unspecified
-    override val parentIconTint: Color = Color.Unspecified
-    override val backgroundImage: Int? = null
-    override val spinnerColor: Color = CinemaBurgundy
-}
+private val emberSpec = PaletteThemeSpec(EmberPalette)
+private val lightSpec = PaletteThemeSpec(LightPalette)
+private val darkSpec = PaletteThemeSpec(DarkPalette)
+private val cinemaBlueSpec = PaletteThemeSpec(CinemaBluePalette, backgroundImage = R.drawable.film_reel)
+private val cinemaRedSpec = PaletteThemeSpec(CinemaRedPalette)
 
 val LocalThemeSpec = staticCompositionLocalOf<WeirdStreamerThemeSpec> { DefaultThemeSpec }
 
@@ -94,12 +87,24 @@ object WeirdStreamerTheme {
         get() = LocalThemeSpec.current
 }
 
-/** The theme spec (icon tints, backdrop) that goes with each theme, on the TV and the phone. */
-fun AppTheme.spec(): WeirdStreamerThemeSpec = when (this) {
-    AppTheme.DEFAULT -> EmberThemeSpec
-    AppTheme.CINEMA_BLUE -> CinemaBlueThemeSpec
-    AppTheme.CINEMA_RED -> CinemaRedThemeSpec
-    AppTheme.LIGHT, AppTheme.DARK, AppTheme.AUTO -> DefaultThemeSpec
+/** The palette a theme draws with (Auto: Light or Dark, from the device's setting). */
+@Composable
+fun AppTheme.palette(): ThemePalette = when (resolved()) {
+    AppTheme.DEFAULT -> EmberPalette
+    AppTheme.LIGHT, AppTheme.AUTO -> LightPalette
+    AppTheme.DARK -> DarkPalette
+    AppTheme.CINEMA_BLUE -> CinemaBluePalette
+    AppTheme.CINEMA_RED -> CinemaRedPalette
+}
+
+/** The spec (icon tints, boxes, buttons, background image) that goes with a theme, on TV and phone. */
+@Composable
+fun AppTheme.spec(): WeirdStreamerThemeSpec = when (resolved()) {
+    AppTheme.DEFAULT -> emberSpec
+    AppTheme.LIGHT, AppTheme.AUTO -> lightSpec
+    AppTheme.DARK -> darkSpec
+    AppTheme.CINEMA_BLUE -> cinemaBlueSpec
+    AppTheme.CINEMA_RED -> cinemaRedSpec
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -108,51 +113,31 @@ fun WeirdStreamerTheme(
     appTheme: AppTheme = AppTheme.DEFAULT,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = when (appTheme.resolved()) {
-        AppTheme.CINEMA_BLUE -> {
-            darkColorScheme(
-                primary = CinemaBlueMid,
-                onPrimary = CinemaSilver,
-                secondary = CinemaBlueLight,
-                onSecondary = CinemaSilver,
-                tertiary = CinemaGold,
-                background = CinemaBlueDeep,
-                onBackground = CinemaSilver,
-                surface = CinemaBlueDeep,
-                onSurface = CinemaSilver,
-                surfaceVariant = CinemaBlueMid
-            )
-        }
-        AppTheme.CINEMA_RED -> {
-            darkColorScheme(
-                primary = CinemaRedGold,
-                onPrimary = CinemaBurgundy,
-                secondary = CinemaRedLight,
-                onSecondary = CinemaRedSilver,
-                tertiary = CinemaRedGoldDark,
-                background = CinemaBurgundy,
-                onBackground = CinemaRedSilver,
-                surface = CinemaBurgundy,
-                onSurface = CinemaRedSilver
-            )
-        }
-        AppTheme.DEFAULT -> {
-            darkColorScheme(
-                primary = EmberPlum,
-                onPrimary = EmberCream,
-                secondary = EmberAmber,
-                onSecondary = EmberNight,
-                tertiary = EmberGold,
-                background = EmberNight,
-                onBackground = EmberCream,
-                surface = EmberNight,
-                onSurface = EmberCream,
-                surfaceVariant = EmberPlum,
-                onSurfaceVariant = EmberCreamMuted
-            )
-        }
-        AppTheme.DARK -> darkColorScheme(primary = Purple80, secondary = PurpleGrey80, tertiary = Pink80)
-        AppTheme.LIGHT, AppTheme.AUTO -> lightColorScheme(primary = Purple40, secondary = PurpleGrey40, tertiary = Pink40)
+    val p = appTheme.palette()
+    // The screen is the background; buttons, focus and text come from the palette too
+    // (buttons through tvButtonColors).
+    val colorScheme = if (p.isLight) {
+        lightColorScheme(
+            primary = p.button, onPrimary = p.buttonLabel,
+            secondary = p.secondary, onSecondary = p.background,
+            tertiary = p.accent, onTertiary = p.onAccent,
+            background = p.background, onBackground = p.text,
+            surface = p.background, onSurface = p.text,
+            surfaceVariant = p.raised, onSurfaceVariant = p.mutedText,
+            inverseSurface = p.text, inverseOnSurface = p.background,
+            border = p.mutedText, borderVariant = p.raised,
+        )
+    } else {
+        darkColorScheme(
+            primary = p.button, onPrimary = p.buttonLabel,
+            secondary = p.secondary, onSecondary = p.background,
+            tertiary = p.accent, onTertiary = p.onAccent,
+            background = p.background, onBackground = p.text,
+            surface = p.background, onSurface = p.text,
+            surfaceVariant = p.raised, onSurfaceVariant = p.mutedText,
+            inverseSurface = p.text, inverseOnSurface = p.background,
+            border = p.mutedText, borderVariant = p.raised,
+        )
     }
 
     CompositionLocalProvider(LocalThemeSpec provides appTheme.spec()) {

@@ -34,11 +34,12 @@ fun Panel(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val color = WeirdStreamerTheme.spec.panelColor
+    val opacity = minOf(alpha, WeirdStreamerTheme.spec.panelAlpha) // the theme's, or less over a backdrop
     val shape = RoundedCornerShape(12.dp)
     Box(
         modifier = if (color.isSpecified) {
             modifier.padding(margin).then(if (clip) Modifier.clip(shape) else Modifier)
-                .background(color.copy(alpha = alpha), shape).padding(contentPadding)
+                .background(color.copy(alpha = opacity), shape).padding(contentPadding)
         } else modifier,
         content = content,
     )

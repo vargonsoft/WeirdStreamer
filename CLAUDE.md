@@ -211,10 +211,13 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   content, plum buttons (#6A3A62) with cream labels, gold (#F6C445) with aubergine text for a
   focused (TV) or hovered (web) button, and gold headings. Web: `:root[data-theme="default"]` in
   `style.css` (`--button-text`, `--button-focus`, `--heading-color`…; other themes fall back to
-  their old colors). Android: `EmberThemeSpec` (`panelColor`, `buttonColor`, `focusColor`…) used by
-  `Panel`, `tvButtonColors()` and `phoneButtonColors()` in `ThemedControls.kt`; themes that don't
-  set them keep Material's look and no boxes. Android also has Light, Dark and Auto Light/Dark
-  (`AppTheme`); the web's old purple default is now Purple.
+  their old colors). Android: every theme is a `ThemePalette` (`Color.kt`) built from its
+  background (boxes, buttons, text and one accent for focus, headings and icons; `panelAlpha` makes
+  Cinema Blue's boxes see-through over its film reel). The TV and phone color schemes and the
+  theme spec come from it; `Panel`, `tvButtonColors()` and `phoneButtonColors()` in
+  `ThemedControls.kt` draw with it. On the phone `surface` is transparent, so lists and bars show
+  their box. Android also has Light, Dark and Auto Light/Dark (`AppTheme`); the web's old purple
+  default is now Purple.
 - **Progress and resume:** players report position every 5s, on pause and at the end. The
   server decides "watched" (the last 2 minutes of videos 20 minutes or longer; the end of shorter
   ones). `MediaViewModel.playVideo(path, fromStart)` sets `playbackStartMs`.
