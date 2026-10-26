@@ -1,6 +1,11 @@
 package com.vargon.weirdstreamer.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.FilterChip
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -120,11 +125,33 @@ fun AdminOnly(message: String = "Only administrators can change these settings."
 }
 
 /** One media path being edited; [source] keeps the fields this screen doesn't show. */
-private class PathEdit(val source: JsonObject, name: String, path: String, groups: String, type: String) {
+private class PathEdit(val source: JsonObject, name: String, path: String, groups: List<String>, type: String) {
     var name by mutableStateOf(name)
     var path by mutableStateOf(path)
-    var groups by mutableStateOf(groups)
+    val groups = mutableStateListOf<String>().apply { addAll(groups) } // the groups that can see it
     var type by mutableStateOf(type)
+}
+
+private fun jsonNames(names: List<String>) = JsonArray().apply { names.forEach { add(it) } }
+
+/** The groups that can see a library: chips for each defined group. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LibraryGroups(all: List<String>, selected: MutableList<String>) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+        Text("Groups:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.CenterVertically))
+        if (all.isEmpty()) Text("none defined (add one under Groups)", style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.align(Alignment.CenterVertically))
+        all.forEach { g ->
+            val on = g in selected
+            FilterChip(selected = on, label = { Text(g) }, onClick = {
+                if (on) selected.remove(g) else selected.add(g)
+                val order = all.filter { it in selected } // keep the groups' order
+                selected.clear(); selected.addAll(order)
+            })
+        }
+    }
 }
 
 private val libraryTypes = listOf("" to "No type", "movie" to "Movies", "tv" to "TV Shows")
@@ -151,6 +178,17 @@ fun ServerSettingsTab(server: ServerRepository) {
     var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var saving by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<PathEdit?>(null) }
+    // The defined groups. Changes go to the server right away, and into this screen's settings
+    // (which a Save sends back whole, so they must match).
+    val groupNames = remember { mutableStateListOf<String>() }
+    var newGroupName by remember { mutableStateOf("") }
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var groupMessage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+
+    fun applyGroups(list: List<String>) {
+        groupNames.clear(); groupNames.addAll(list)
+        config?.add("groups", jsonNames(list))
+    }
 
     fun adopt(c: JsonObject) {
         config = c
@@ -159,9 +197,11 @@ fun ServerSettingsTab(server: ServerRepository) {
         media?.getAsJsonArray("paths")?.forEach { e ->
             val o = e.asJsonObject
             paths.add(PathEdit(o, o.get("name")?.asString ?: "", o.get("path")?.asString ?: "",
-                o.getAsJsonArray("groups")?.joinToString(", ") { it.asString } ?: "",
+                o.getAsJsonArray("groups")?.map { it.asString } ?: emptyList(),
                 o.get("type")?.asString ?: ""))
         }
+        groupNames.clear()
+        c.getAsJsonArray("groups")?.forEach { groupNames.add(it.asString) }
         c.getAsJsonObject("server")?.let { port = it.get("port")?.asString ?: ""; host = it.get("host")?.asString ?: "" }
         c.getAsJsonObject("streaming")?.let {
             http2 = it.get("enableHTTP2")?.asBoolean ?: false
@@ -185,13 +225,12 @@ fun ServerSettingsTab(server: ServerRepository) {
             val o = p.source.deepCopy()
             o.addProperty("name", p.name.trim())
             o.addProperty("path", p.path.trim())
-            o.add("groups", JsonArray().apply {
-                p.groups.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { add(it) }
-            })
+            o.add("groups", jsonNames(p.groups))
             if (p.type.isEmpty()) o.remove("type") else o.addProperty("type", p.type)
             array.add(o)
         }
         c.getAsJsonObject("media").add("paths", array)
+        c.add("groups", jsonNames(groupNames))
         c.getAsJsonObject("server").apply {
             port.trim().toIntOrNull()?.let { addProperty("port", it) }
             addProperty("host", host.trim())
@@ -211,14 +250,48 @@ fun ServerSettingsTab(server: ServerRepository) {
         loaded == null && loadError != null -> AdminOnly(loadError!!)
         loaded == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else -> LazyColumn(contentPadding = PaddingValues(16.dp)) {
+            item { SectionTitle("Groups") }
+            item {
+                Text("Each user is in one group, and each library lists the groups that can see it. " +
+                    "Changes here apply right away.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(groupNames.toList(), key = { "group:$it" }) { g ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(g, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { renaming = g }) { Icon(Icons.Default.Edit, contentDescription = "Rename $g") }
+                    IconButton(onClick = {
+                        scope.launch {
+                            val (list, err) = attempt { server.api.deleteGroup(g) }
+                            if (list != null && err == null) { applyGroups(list); groupMessage = "Removed $g." to false }
+                            else groupMessage = (err ?: "Couldn't remove $g") to true // still in use: says by whom
+                        }
+                    }) { Icon(Icons.Default.Delete, contentDescription = "Remove $g", tint = MaterialTheme.colorScheme.error) }
+                }
+            }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(newGroupName, { newGroupName = it }, label = { Text("New group") }, singleLine = true,
+                        modifier = Modifier.weight(1f))
+                    OutlinedButton(onClick = {
+                        val name = newGroupName.trim()
+                        if (name.isEmpty()) return@OutlinedButton
+                        scope.launch {
+                            val (list, err) = attempt { server.api.createGroup(JsonObject().apply { addProperty("name", name) }) }
+                            if (list != null && err == null) { applyGroups(list); newGroupName = ""; groupMessage = "Added $name." to false }
+                            else groupMessage = (err ?: "Couldn't add $name") to true
+                        }
+                    }) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Add") }
+                }
+            }
+            item { Message(groupMessage?.first, groupMessage?.second ?: false) }
             item { SectionTitle("Media paths") }
             itemsIndexed(paths, key = { i, p -> "$i:${p.source.get("id")?.asString}" }) { _, p ->
                 Card(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(p.name, { p.name = it }, label = { Text("Name") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(p.groups, { p.groups = it }, label = { Text("Groups (comma separated)") },
-                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                        LibraryGroups(groupNames, p.groups)
                         LibraryTypeMenu(p.type) { p.type = it }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(p.path, style = MaterialTheme.typography.bodySmall,
@@ -242,7 +315,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                             paths.any { it.path == path } -> message = "That path is already listed" to true
                             else -> {
                                 val name = path.trimEnd('/').substringAfterLast('/').ifEmpty { path }
-                                paths.add(PathEdit(JsonObject(), name, path, "", newType))
+                                paths.add(PathEdit(JsonObject(), name, path, emptyList(), newType))
                                 newPath = ""; newType = ""; message = "Added. Save to apply." to false
                             }
                         }
@@ -326,6 +399,32 @@ fun ServerSettingsTab(server: ServerRepository) {
         }
     }
 
+    renaming?.let { old ->
+        var name by remember(old) { mutableStateOf(old) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Rename $old") },
+            text = { OutlinedTextField(name, { name = it }, label = { Text("New name") }, singleLine = true) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val new = name.trim()
+                    renaming = null
+                    if (new.isEmpty() || new == old) return@TextButton
+                    scope.launch {
+                        val (list, err) = attempt { server.api.renameGroup(old, JsonObject().apply { addProperty("name", new) }) }
+                        if (list != null && err == null) {
+                            applyGroups(list)
+                            // Its libraries here follow, as on the server
+                            paths.forEach { p -> val i = p.groups.indexOf(old); if (i >= 0) p.groups[i] = new }
+                            groupMessage = "Renamed $old to $new, for its users and libraries." to false
+                        } else groupMessage = (err ?: "Couldn't rename $old") to true
+                    }
+                }) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } }
+        )
+    }
+
     removing?.let { p ->
         AlertDialog(
             onDismissRequest = { removing = null },
@@ -372,11 +471,13 @@ fun UsersTab(server: ServerRepository) {
     var newPassword by remember { mutableStateOf("") }
     var newGroup by remember { mutableStateOf("") }
     var newAdmin by remember { mutableStateOf(false) }
+    var creatingGroup by remember { mutableStateOf(false) }
 
     suspend fun reload() {
         val (list, err) = attempt { server.api.getUsers() }
         if (err != null) message = err to true else users = list
-        attempt { server.api.getGroups() }.first?.let { groups = it.sorted() }
+        attempt { server.api.getGroups() }.first?.let { groups = it }
+        if (newGroup !in groups) newGroup = groups.firstOrNull() ?: ""
     }
     LaunchedEffect(server.address) { reload() }
 
@@ -395,8 +496,7 @@ fun UsersTab(server: ServerRepository) {
                 OutlinedTextField(newName, { newName = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(newPassword, { newPassword = it }, label = { Text("Password") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(newGroup, { newGroup = it }, label = { Text("Access group (e.g. adults, kids)") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                GroupMenu(newGroup, groups, Modifier.fillMaxWidth(), onNew = { creatingGroup = true }) { newGroup = it }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = newAdmin, onCheckedChange = { newAdmin = it })
                     Text("Administrator")
@@ -405,11 +505,14 @@ fun UsersTab(server: ServerRepository) {
                     if (newName.isBlank() || newPassword.isEmpty()) {
                         message = "Enter a username and password" to true; return@Button
                     }
+                    if (newGroup !in groups) {
+                        message = "Choose a group for the user" to true; return@Button
+                    }
                     scope.launch {
                         val (_, err) = attempt {
                             server.api.createUser(CreateUserRequest(newName.trim(), newPassword, newAdmin, newGroup.trim()))
                         }
-                        if (err == null) { message = "Created ${newName.trim()}." to false; newName = ""; newPassword = ""; newGroup = ""; newAdmin = false }
+                        if (err == null) { message = "Created ${newName.trim()}." to false; newName = ""; newPassword = ""; newAdmin = false }
                         else message = err to true
                         reload()
                     }
@@ -454,6 +557,27 @@ fun UsersTab(server: ServerRepository) {
         }
     }
 
+    if (creatingGroup) {
+        var name by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { creatingGroup = false },
+            title = { Text("New group") },
+            text = { OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val new = name.trim()
+                    creatingGroup = false
+                    if (new.isEmpty()) return@TextButton
+                    scope.launch {
+                        val (list, err) = attempt { server.api.createGroup(JsonObject().apply { addProperty("name", new) }) }
+                        if (list != null && err == null) { groups = list; newGroup = new } else message = (err ?: "Couldn't add $new") to true
+                    }
+                }) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { creatingGroup = false }) { Text("Cancel") } }
+        )
+    }
+
     deleting?.let { user ->
         AlertDialog(
             onDismissRequest = { deleting = null },
@@ -476,19 +600,25 @@ fun UsersTab(server: ServerRepository) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GroupMenu(group: String, groups: List<String>, modifier: Modifier, onChange: (String) -> Unit) {
+private fun GroupMenu(group: String, groups: List<String>, modifier: Modifier, onNew: (() -> Unit)? = null, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    val options = (listOf("") + groups + listOf(group)).distinct()
+    // The defined groups only; a group that isn't one any more (or none) shows as such until changed
+    val shown = when {
+        group in groups -> group
+        group.isEmpty() -> "Choose a group"
+        else -> "$group (not a group)"
+    }
     ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }, modifier = modifier) {
         OutlinedTextField(
-            value = group.ifEmpty { "None" }, onValueChange = {}, readOnly = true, label = { Text("Group") },
+            value = shown, onValueChange = {}, readOnly = true, label = { Text("Group") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
         ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            options.forEach { g ->
-                DropdownMenuItem(text = { Text(g.ifEmpty { "None" }) }, onClick = { open = false; if (g != group) onChange(g) })
+            groups.forEach { g ->
+                DropdownMenuItem(text = { Text(g) }, onClick = { open = false; if (g != group) onChange(g) })
             }
+            onNew?.let { DropdownMenuItem(text = { Text("New group…") }, onClick = { open = false; it() }) }
         }
     }
 }

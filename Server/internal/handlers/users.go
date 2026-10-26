@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"github.com/weirdstreamer/server/internal/config"
 	"net/http"
+	"strings"
 
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/database"
@@ -64,6 +67,17 @@ func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, response)
 }
 
+// checkUserGroup reports why a user can't be in group: every user is in one defined group.
+func checkUserGroup(group string) error {
+	if group == "" {
+		return fmt.Errorf("Choose a group for the user")
+	}
+	if !config.GlobalConfig.HasGroup(group) {
+		return fmt.Errorf("The group %q doesn't exist (groups: %s)", group, strings.Join(config.GlobalConfig.Groups, ", "))
+	}
+	return nil
+}
+
 // CreateUser creates a new user (admin only)
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
@@ -80,6 +94,10 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	if req.Username == "" || req.Password == "" {
 		respondError(w, http.StatusBadRequest, "Username and password are required")
+		return
+	}
+	if err := checkUserGroup(req.Group); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -117,6 +135,13 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid request body")
 		return
+	}
+
+	if req.Group != nil {
+		if err := checkUserGroup(*req.Group); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	if err := h.db.UpdateUser(username, req); err != nil {

@@ -1675,8 +1675,12 @@ async function showSettings() {
             document.getElementById('tmdb-token').value = metadata.tmdbAccessToken || '';
             document.getElementById('metadata-language').value = metadata.language || '';
 
-            // Render media paths
+            // Render the groups and media paths
+            renderGroups();
             renderMediaPaths(config.media.paths);
+            document.getElementById('add-group-btn').onclick = handleAddGroup;
+            document.getElementById('new-group-input').onkeydown = (e) => { if (e.key === 'Enter') handleAddGroup(); };
+            document.getElementById('new-user-group').onchange = (e) => handleNewUserGroupChange(e.target);
 
             // Setup event listeners for settings
             document.getElementById('add-path-btn').onclick = handleAddPath;
@@ -1702,16 +1706,129 @@ async function showSettings() {
     settingsScreen.classList.add('active');
 }
 
-function updateAvailableGroups() {
-    if (!state.currentConfig || !state.currentConfig.media || !state.currentConfig.media.paths) return;
+// Text made safe to put in HTML.
+function escapeHtml(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
-    const groupsSet = new Set();
-    state.currentConfig.media.paths.forEach(path => {
-        if (path.groups) {
-            path.groups.forEach(group => groupsSet.add(group));
-        }
+// The defined groups (the config's groups list): the only ones users and libraries may name.
+function updateAvailableGroups() {
+    if (!state.currentConfig) return;
+    state.availableGroups = [...(state.currentConfig.groups || [])];
+}
+
+// Settings → Groups: the defined groups, with Rename and Remove. Changes go to the server right
+// away, and into the settings being edited (the media paths), which aren't reloaded.
+function renderGroups() {
+    const list = document.getElementById('groups-list');
+    list.innerHTML = '';
+    const groups = state.availableGroups;
+    if (!groups.length) {
+        list.innerHTML = '<p class="settings-hint">No groups yet. Add one to give users and libraries access.</p>';
+    }
+    groups.forEach(name => {
+        const row = document.createElement('div');
+        row.className = 'group-row';
+        const label = document.createElement('span');
+        label.className = 'group-name';
+        label.textContent = name;
+        const rename = document.createElement('button');
+        rename.type = 'button';
+        rename.className = 'btn btn-small secondary';
+        rename.textContent = 'Rename';
+        rename.onclick = () => handleRenameGroup(name);
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn btn-danger btn-small';
+        remove.innerHTML = iconSvg('delete') + '<span class="btn-label">Remove</span>';
+        remove.onclick = () => handleRemoveGroup(name);
+        row.append(label, rename, remove);
+        list.appendChild(row);
     });
-    state.availableGroups = Array.from(groupsSet).sort();
+    renderNewUserGroups();
+}
+
+function groupsMessage(text, isError = false) {
+    const el = document.getElementById('groups-message');
+    el.textContent = text;
+    el.style.color = isError ? '#e74c3c' : '#27ae60';
+    if (!isError) setTimeout(() => { if (el.textContent === text) el.textContent = ''; }, 4000);
+}
+
+// Takes the server's new list of groups, here and in the settings being edited.
+function setGroups(groups) {
+    if (state.currentConfig) state.currentConfig.groups = groups;
+    state.availableGroups = [...groups];
+    renderGroups();
+    if (state.currentConfig) renderMediaPaths(state.currentConfig.media.paths);
+}
+
+async function handleAddGroup() {
+    const input = document.getElementById('new-group-input');
+    const name = input.value.trim();
+    if (!name) return;
+    try {
+        setGroups(await api.createGroup(name));
+        input.value = '';
+        groupsMessage(`Added ${name}`);
+    } catch (error) {
+        groupsMessage(error.message, true);
+    }
+}
+
+async function handleRenameGroup(name) {
+    const newName = (prompt(`Rename the group "${name}" to:`, name) || '').trim();
+    if (!newName || newName === name) return;
+    try {
+        const groups = await api.renameGroup(name, newName);
+        // Its libraries in the settings being edited follow, as on the server
+        (state.currentConfig?.media?.paths || []).forEach(p => {
+            p.groups = (p.groups || []).map(g => g === name ? newName : g);
+        });
+        setGroups(groups);
+        groupsMessage(`Renamed ${name} to ${newName}, for its users and libraries`);
+        if (document.getElementById('users-tab').classList.contains('active')) loadUsers();
+    } catch (error) {
+        groupsMessage(error.message, true);
+    }
+}
+
+async function handleRemoveGroup(name) {
+    if (!confirm(`Remove the group "${name}"?`)) return;
+    try {
+        setGroups(await api.deleteGroup(name));
+        groupsMessage(`Removed ${name}`);
+    } catch (error) {
+        groupsMessage(error.message, true); // still in use: says by whom
+    }
+}
+
+// The new user form's group menu: the groups, and "New group…" to make one on the spot.
+function renderNewUserGroups() {
+    const select = document.getElementById('new-user-group');
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = '<option value="" disabled>Group</option>' +
+        state.availableGroups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('') +
+        '<option value="__new__">New group…</option>';
+    select.value = state.availableGroups.includes(current) ? current : (state.availableGroups[0] || '');
+}
+
+async function handleNewUserGroupChange(select) {
+    if (select.value !== '__new__') return;
+    const name = (prompt('Name of the new group:') || '').trim();
+    if (!name) {
+        renderNewUserGroups();
+        return;
+    }
+    try {
+        setGroups(await api.createGroup(name));
+        select.value = name;
+    } catch (error) {
+        alert(error.message);
+        renderNewUserGroups();
+    }
 }
 
 // Library types the server accepts; keep in sync with config.LibraryType* on the server.
@@ -1755,16 +1872,32 @@ function renderMediaPaths(paths) {
             state.currentConfig.media.paths[index].name = e.target.value;
         };
         
-        const groupsInput = document.createElement('input');
-        groupsInput.type = 'text';
-        groupsInput.value = (mediaPath.groups || []).join(', ');
-        groupsInput.className = 'settings-input';
-        groupsInput.style.cssText = 'margin-bottom: 5px; width: calc(100% - 20px); font-size: 12px;';
-        groupsInput.placeholder = 'Allowed Groups (comma separated)';
-        groupsInput.onchange = (e) => {
-            state.currentConfig.media.paths[index].groups = e.target.value.split(',').map(s => s.trim()).filter(s => s);
-            updateAvailableGroups();
-        };
+        // The groups that can see the library: any of the defined ones
+        const groupsInput = document.createElement('div');
+        groupsInput.className = 'path-groups';
+        groupsInput.title = 'Groups that can see this library';
+        const label = document.createElement('span');
+        label.className = 'path-groups-label';
+        label.textContent = 'Groups:';
+        groupsInput.appendChild(label);
+        state.availableGroups.forEach(group => {
+            const option = document.createElement('label');
+            option.className = 'path-group';
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = (mediaPath.groups || []).includes(group);
+            box.onchange = () => {
+                const p = state.currentConfig.media.paths[index];
+                const set = new Set(p.groups || []);
+                if (box.checked) set.add(group); else set.delete(group);
+                p.groups = state.availableGroups.filter(g => set.has(g)); // in the groups' order
+            };
+            option.append(box, document.createTextNode(' ' + group));
+            groupsInput.appendChild(option);
+        });
+        if (!state.availableGroups.length) {
+            groupsInput.appendChild(document.createTextNode(' none defined (add one under Groups)'));
+        }
 
         const typeSelect = document.createElement('select');
         typeSelect.className = 'settings-input';
@@ -1895,9 +2028,9 @@ async function loadUsers() {
         const usersList = document.getElementById('users-list');
         const currentUser = JSON.parse(localStorage.getItem('user'));
         
-        // Fetch fresh available groups list
-        const groups = await api.getAvailableGroups();
-        state.availableGroups = groups;
+        // The defined groups (fresh)
+        state.availableGroups = await api.getAvailableGroups();
+        renderNewUserGroups();
 
         usersList.innerHTML = users.map(user => {
             const isMe = user.username === currentUser.username;
@@ -1914,8 +2047,8 @@ async function loadUsers() {
                             <div style="display: flex; align-items: center; gap: 5px;">
                                 <span style="font-size: 12px; color: var(--muted-text);">Group: </span>
                                 <select onchange="updateUserGroup('${user.username}', this.value)" class="settings-input" style="width: auto; padding: 2px 5px; font-size: 12px;">
-                                    <option value="">None</option>
-                                    ${state.availableGroups.map(g => `<option value="${g}" ${user.group === g ? 'selected' : ''}>${g}</option>`).join('')}
+                                    ${state.availableGroups.includes(user.group) ? '' : `<option value="" selected disabled>${escapeHtml(user.group || 'None')} (not a group)</option>`}
+                                    ${state.availableGroups.map(g => `<option value="${escapeHtml(g)}" ${user.group === g ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('')}
                                 </select>
                             </div>
                             <div style="display: flex; align-items: center; gap: 5px;">
@@ -1966,11 +2099,16 @@ async function handleCreateUser() {
     const messageEl = document.getElementById('users-message');
     const username = document.getElementById('new-username').value.trim();
     const password = document.getElementById('new-password').value;
-    const group = document.getElementById('new-user-group').value.trim();
+    const group = document.getElementById('new-user-group').value;
     const isAdmin = document.getElementById('new-user-admin').checked;
     
     if (!username || !password) {
         messageEl.textContent = 'Username and password are required';
+        messageEl.style.color = '#e74c3c';
+        return;
+    }
+    if (!state.availableGroups.includes(group)) {
+        messageEl.textContent = 'Choose a group for the user';
         messageEl.style.color = '#e74c3c';
         return;
     }
@@ -1982,7 +2120,6 @@ async function handleCreateUser() {
         
         document.getElementById('new-username').value = '';
         document.getElementById('new-password').value = '';
-        document.getElementById('new-user-group').value = '';
         document.getElementById('new-user-admin').checked = false;
         
         loadUsers();

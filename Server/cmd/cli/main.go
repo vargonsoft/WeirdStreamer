@@ -37,7 +37,7 @@ func main() {
 	if err := os.MkdirAll(userDBDir, 0755); err != nil {
 		log.Fatalf("Failed to create user database directory: %v", err)
 	}
-	
+
 	mediaDBDir := filepath.Dir(config.GlobalConfig.Database.MediaPath)
 	if err := os.MkdirAll(mediaDBDir, 0755); err != nil {
 		log.Fatalf("Failed to create media database directory: %v", err)
@@ -71,7 +71,7 @@ func main() {
 func printUsage() {
 	fmt.Println("Media Server CLI")
 	fmt.Println("\nUsage:")
-	fmt.Println("  cli user create <username> [--admin] [--group <group>]  - Create a new user")
+	fmt.Println("  cli user create <username> --group <group> [--admin]  - Create a new user")
 	fmt.Println("  cli user list                                          - List all users")
 	fmt.Println("  cli user delete <username>                             - Delete a user")
 	fmt.Println("  cli user change-password <username>                    - Change user password")
@@ -113,6 +113,11 @@ func handleUserCommand(db *database.DB, args []string) {
 				group = args[i+1]
 				i++
 			}
+		}
+
+		if !config.GlobalConfig.HasGroup(group) {
+			fmt.Printf("Error: give the user one of the groups with --group: %s\n", strings.Join(config.GlobalConfig.Groups, ", "))
+			os.Exit(1)
 		}
 
 		fmt.Print("Enter password: ")
@@ -202,6 +207,10 @@ func handleUserCommand(db *database.DB, args []string) {
 		}
 		username := args[1]
 		group := args[2]
+		if !config.GlobalConfig.HasGroup(group) {
+			fmt.Printf("Error: %q isn't a group. Groups: %s\n", group, strings.Join(config.GlobalConfig.Groups, ", "))
+			os.Exit(1)
+		}
 
 		if err := db.UpdateUser(username, models.UserUpdateRequest{Group: &group}); err != nil {
 			log.Fatalf("Failed to set user group: %v", err)
@@ -219,7 +228,7 @@ func handleUserCommand(db *database.DB, args []string) {
 func handleScanCommand(db *database.DB) {
 	fmt.Println("Scanning media directories...")
 	scanner := media.NewScanner(db)
-	
+
 	if err := scanner.ScanMediaPaths(); err != nil {
 		log.Fatalf("Failed to scan media: %v", err)
 	}

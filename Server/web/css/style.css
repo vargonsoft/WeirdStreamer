@@ -149,6 +149,65 @@ body {
     margin: 0 auto;
 }
 
+/* Settings → Groups, and the groups that can see each library */
+.settings-hint {
+    color: var(--muted-text);
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.group-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.group-name {
+    flex: 1;
+    font-weight: 500;
+}
+
+.groups-add {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.groups-add .settings-input {
+    flex: 1;
+    margin: 0;
+}
+
+.groups-message {
+    margin-top: 8px;
+    font-weight: bold;
+}
+
+.groups-message:empty {
+    display: none;
+}
+
+.path-groups {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.path-groups-label {
+    color: var(--muted-text);
+}
+
+.path-group {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
 /* The Android app's download links (shown once an APK is published) */
 .app-download {
     display: inline-flex;

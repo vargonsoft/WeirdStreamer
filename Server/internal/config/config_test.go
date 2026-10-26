@@ -30,7 +30,7 @@ func TestLibraryType(t *testing.T) {
 		{"only one", `, "type": ["movie", "tv"]`, "cannot unmarshal"},
 	}
 	for _, c := range cases {
-		err := loadJSON(t, `{"media": {"paths": [{"name": "Lib", "path": "/x", "groups": ["a"]`+c.typeVal+`}]}}`)
+		err := loadJSON(t, `{"groups": ["a"], "media": {"paths": [{"name": "Lib", "path": "/x", "groups": ["a"]`+c.typeVal+`}]}}`)
 		if c.wantErr == "" {
 			if err != nil {
 				t.Errorf("%s: unexpected error %v", c.name, err)
@@ -67,5 +67,31 @@ func TestContinueWatchingMode(t *testing.T) {
 	bad := &Config{Media: MediaConfig{Paths: []MediaPath{{Name: "x", ContinueWatchingMode: "sometimes"}}}}
 	if err := bad.Validate(); err == nil {
 		t.Error("an unknown mode: want an error")
+	}
+}
+
+func TestGroups(t *testing.T) {
+	ok := `{"groups": ["adults", "kids"], "media": {"paths": [{"name": "Lib", "path": "/x", "groups": ["adults", "kids"]}]}}`
+	if err := loadJSON(t, ok); err != nil {
+		t.Fatalf("defined groups: %v", err)
+	}
+	if !GlobalConfig.HasGroup("kids") || GlobalConfig.HasGroup("Kids") || GlobalConfig.HasGroup("") {
+		t.Error("HasGroup: the exact names only")
+	}
+	for name, body := range map[string]string{
+		"undefined": `{"groups": ["adults"], "media": {"paths": [{"name": "Lib", "path": "/x", "groups": ["adluts"]}]}}`,
+		"twice":     `{"groups": ["adults", "Adults"]}`,
+		"empty":     `{"groups": [""]}`,
+		"comma":     `{"groups": ["a,b"]}`,
+		"spaces":    `{"groups": [" kids"]}`,
+		"no groups": `{"media": {"paths": [{"name": "Lib", "path": "/x", "groups": ["adults"]}]}}`,
+	} {
+		if err := loadJSON(t, body); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+	c := &Config{Groups: []string{"adults"}}
+	if c.CheckGroupName("teens") != nil || c.CheckGroupName("ADULTS") == nil {
+		t.Error("CheckGroupName: a new name is fine, an existing one in any case isn't")
 	}
 }

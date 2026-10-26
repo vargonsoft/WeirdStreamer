@@ -82,6 +82,17 @@
                 <!-- Server & Media Tab -->
                 <div id="server-tab" class="settings-tab-content active">
                     <div class="settings-group">
+                        <h3>Groups</h3>
+                        <p class="settings-hint">Each user is in one group, and each library lists the groups that can see it. Changes here apply right away.</p>
+                        <div id="groups-list" class="groups-list"></div>
+                        <div class="groups-add">
+                            <input type="text" id="new-group-input" placeholder="New group name" class="settings-input">
+                            <button type="button" id="add-group-btn" class="btn" data-icon="personAdd"><span class="btn-label">Add Group</span></button>
+                        </div>
+                        <p id="groups-message" class="groups-message"></p>
+                    </div>
+
+                    <div class="settings-group">
                         <h3>Media Paths</h3>
                         <div id="media-paths-list"></div>
                         <div style="margin-top: 10px;">
@@ -129,7 +140,7 @@
                         <h3>Create New User</h3>
                         <input type="text" id="new-username" placeholder="Username" class="settings-input" style="margin-bottom: 10px;"><br>
                         <input type="password" id="new-password" placeholder="Password" class="settings-input" style="margin-bottom: 10px;"><br>
-                        <input type="text" id="new-user-group" placeholder="Access Group (e.g., adults, kids)" class="settings-input" style="margin-bottom: 10px;"><br>
+                        <select id="new-user-group" class="settings-input" style="margin-bottom: 10px;" title="The user's group"></select><br>
                         <label><input type="checkbox" id="new-user-admin"> Administrator</label><br><br>
                         <button id="create-user-btn" class="btn" data-icon="personAdd"><span class="btn-label">Create User</span></button>
                     </div>

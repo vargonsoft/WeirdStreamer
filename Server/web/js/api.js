@@ -345,6 +345,19 @@ class MediaAPI {
         return this.request('/api/groups');
     }
 
+    // The defined groups (each returns the new list)
+    async createGroup(name) {
+        return this.request('/api/groups', { method: 'POST', body: JSON.stringify({ name }) });
+    }
+
+    async renameGroup(name, newName) {
+        return this.request(`/api/groups/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify({ name: newName }) });
+    }
+
+    async deleteGroup(name) {
+        return this.request(`/api/groups/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    }
+
     async getUsers() {
         return this.request('/api/users');
     }

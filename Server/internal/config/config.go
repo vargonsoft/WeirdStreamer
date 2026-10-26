@@ -11,6 +11,9 @@ import (
 )
 
 type Config struct {
+	// The access groups: each user is in one, and each library lists those that may see it.
+	// Users and libraries may only name groups listed here.
+	Groups    []string        `json:"groups"`
 	Server    ServerConfig    `json:"server"`
 	Database  DatabaseConfig  `json:"database"`
 	Media     MediaConfig     `json:"media"`
@@ -73,10 +76,54 @@ const (
 	LibraryTypeTV    = "tv"
 )
 
+// HasGroup reports whether name is one of the defined groups.
+func (c *Config) HasGroup(name string) bool {
+	for _, g := range c.Groups {
+		if g == name {
+			return true
+		}
+	}
+	return false
+}
+
+// CheckGroupName reports why name can't be a new group's name, or nil.
+func (c *Config) CheckGroupName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("a group needs a name")
+	}
+	if name != strings.TrimSpace(name) || strings.Contains(name, ",") {
+		return fmt.Errorf("group %q: no commas, and no spaces at either end", name)
+	}
+	for _, g := range c.Groups {
+		if strings.EqualFold(g, name) {
+			return fmt.Errorf("the group %q already exists", g)
+		}
+	}
+	return nil
+}
+
 // Validate checks values that can't be expressed by the JSON structure alone.
 func (c *Config) Validate() error {
+	// Groups: each a valid name, none twice (in any case)
+	groups := c.Groups
+	c.Groups = nil
+	for _, g := range groups {
+		if err := c.CheckGroupName(g); err != nil {
+			c.Groups = groups
+			return err
+		}
+		c.Groups = append(c.Groups, g)
+	}
+	if c.Groups == nil {
+		c.Groups = []string{}
+	}
 	for i := range c.Media.Paths {
 		p := &c.Media.Paths[i]
+		for _, g := range p.Groups {
+			if !c.HasGroup(g) {
+				return fmt.Errorf("media path %q: the group %q isn't defined (groups: %s)", p.Name, g, strings.Join(c.Groups, ", "))
+			}
+		}
 		switch p.Type {
 		case "", LibraryTypeMovie, LibraryTypeTV:
 		default:

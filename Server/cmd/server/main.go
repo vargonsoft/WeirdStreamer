@@ -71,6 +71,15 @@ func main() {
 	}
 	defer db.Close()
 	media.SetDiscStore(db)
+	// Users can only be given defined groups; ones from before (or a group removed from
+	// config.json by hand) see nothing until moved to one.
+	if users, err := db.ListUsers(); err == nil {
+		for _, u := range users {
+			if !config.GlobalConfig.HasGroup(u.Group) {
+				log.Printf("Warning: user %q is in the group %q, which isn't defined in config.json's groups", u.Username, u.Group)
+			}
+		}
+	}
 
 	// Initialize services
 	authService := auth.NewService(db)
@@ -157,6 +166,9 @@ func main() {
 	api.HandleFunc("/config", configHandler.GetConfig).Methods("GET")
 	api.HandleFunc("/config", configHandler.UpdateConfig).Methods("PUT")
 	api.HandleFunc("/groups", configHandler.GetAvailableGroups).Methods("GET")
+	api.HandleFunc("/groups", configHandler.CreateGroup).Methods("POST")
+	api.HandleFunc("/groups/{name}", configHandler.RenameGroup).Methods("PUT")
+	api.HandleFunc("/groups/{name}", configHandler.DeleteGroup).Methods("DELETE")
 
 	// User management endpoints
 	api.HandleFunc("/users", userHandler.ListUsers).Methods("GET")

@@ -246,6 +246,30 @@ func (db *DB) UpdateUser(username string, req models.UserUpdateRequest) error {
 	return nil
 }
 
+// UsersInGroup lists the usernames of a group's users.
+func (db *DB) UsersInGroup(group string) ([]string, error) {
+	rows, err := db.userConn.Query("SELECT username FROM users WHERE user_group = ? ORDER BY username", group)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	names := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
+// RenameGroup moves a group's users to its new name.
+func (db *DB) RenameGroup(from, to string) error {
+	_, err := db.userConn.Exec("UPDATE users SET user_group = ? WHERE user_group = ?", to, from)
+	return err
+}
+
 func (db *DB) DeleteUser(username string) error {
 	if _, err := db.userConn.Exec("DELETE FROM playback WHERE user_id = (SELECT id FROM users WHERE username = ?)", username); err != nil {
 		return err

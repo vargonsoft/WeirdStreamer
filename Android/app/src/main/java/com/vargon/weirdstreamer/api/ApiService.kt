@@ -73,6 +73,16 @@ interface ApiService {
     @GET("/api/groups")
     suspend fun getGroups(): Response<List<String>>
 
+    // The defined groups: each returns the new list ({"name": …} bodies)
+    @POST("/api/groups")
+    suspend fun createGroup(@Body body: JsonObject): Response<List<String>>
+
+    @PUT("/api/groups/{name}")
+    suspend fun renameGroup(@Path("name") name: String, @Body body: JsonObject): Response<List<String>>
+
+    @DELETE("/api/groups/{name}")
+    suspend fun deleteGroup(@Path("name") name: String): Response<List<String>>
+
     @GET("/api/users")
     suspend fun getUsers(): Response<List<ServerUser>>
 

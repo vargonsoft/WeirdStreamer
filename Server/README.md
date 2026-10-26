@@ -33,6 +33,9 @@ See `config.example.json`. The main sections:
 - `server`: `host` and `port`.
 - `database`: paths for the users database (accounts, playback progress) and the media database
   (index, TMDB data, discs).
+- `groups`: the access groups. Every user is in one of them, and each library lists those that
+  may see it; nothing else may name a group. Settings → Groups (web) and the phone's Server tab
+  add, rename (its users and libraries follow) and remove them (refused while still in use).
 - `media.paths`: the libraries. Each has a `name`, a `path`, the `groups` allowed to see it, and
   an optional `type` of `movie` or `tv` (typed libraries get TMDB matching and the Library view).
   `continueWatchingMode` says where its videos in progress show on Continue Watching: `on` (the
