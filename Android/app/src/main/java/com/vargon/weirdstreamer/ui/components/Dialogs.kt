@@ -37,9 +37,10 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Bo
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 TextField(
+                    colors = tvTextFieldColors(),
                     value = username,
                     onValueChange = { username = it },
-                    label = { Text("Username") },
+                    label = { FieldText("Username") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(focusRequester),
@@ -51,9 +52,10 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Bo
                 Spacer(modifier = Modifier.height(8.dp))
                 
                 TextField(
+                    colors = tvTextFieldColors(),
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { FieldText("Password") },
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
@@ -104,12 +106,13 @@ fun ManualAddressDialog(initialAddress: String, onDismiss: () -> Unit, onConnect
                 Text("Manual Connection", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(16.dp))
                 TextField(
+                    colors = tvTextFieldColors(),
                     value = address,
                     onValueChange = { address = it },
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(focusRequester),
-                    label = { Text("smb://host/share/") },
+                    label = { FieldText("smb://host/share/") },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { 
                         onConnect(address)

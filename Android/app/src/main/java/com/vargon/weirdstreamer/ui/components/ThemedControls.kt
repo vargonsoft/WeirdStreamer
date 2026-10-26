@@ -105,4 +105,34 @@ fun phoneButtonColors(): androidx.compose.material3.ButtonColors {
     } else androidx.compose.material3.ButtonDefaults.buttonColors()
 }
 
+/**
+ * TV text field colors from the theme. The fields are the phone's Material 3 ones, which would
+ * otherwise draw with Material's light defaults (a pale box under the theme's cream text).
+ */
+@Composable
+fun tvTextFieldColors(): androidx.compose.material3.TextFieldColors {
+    val scheme = androidx.tv.material3.MaterialTheme.colorScheme
+    val accent = WeirdStreamerTheme.spec.focusColor.takeOrElse(scheme.tertiary)
+    return androidx.compose.material3.TextFieldDefaults.colors(
+        focusedContainerColor = scheme.surfaceVariant,
+        unfocusedContainerColor = scheme.surfaceVariant,
+        focusedTextColor = scheme.onSurface,
+        unfocusedTextColor = scheme.onSurface,
+        focusedLabelColor = accent,
+        unfocusedLabelColor = scheme.onSurfaceVariant,
+        focusedPlaceholderColor = scheme.onSurfaceVariant.copy(alpha = 0.4f),
+        unfocusedPlaceholderColor = scheme.onSurfaceVariant.copy(alpha = 0.4f),
+        focusedSupportingTextColor = scheme.onSurfaceVariant,
+        unfocusedSupportingTextColor = scheme.onSurfaceVariant,
+        focusedIndicatorColor = accent,
+        unfocusedIndicatorColor = scheme.onSurfaceVariant,
+        cursorColor = accent,
+        selectionColors = androidx.compose.foundation.text.selection.TextSelectionColors(accent, accent.copy(alpha = 0.4f)),
+    )
+}
+
+/** Text for a TV text field's label, placeholder or hint, in the field's colors (a TV Text has the TV theme's). */
+@Composable
+fun FieldText(text: String) = androidx.compose.material3.Text(text)
+
 private fun Color.takeOrElse(other: Color) = if (isSpecified) this else other

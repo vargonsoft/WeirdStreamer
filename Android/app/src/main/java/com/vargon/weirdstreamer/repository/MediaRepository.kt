@@ -77,6 +77,8 @@ interface MediaRepository {
 /**
  * Abstraction for a type of media source (SMB, WS Server, etc.)
  */
+data class AddressCheck(val url: String, val answered: Boolean?)
+
 interface SourceProvider {
     val typeId: String
     val displayName: String
@@ -86,7 +88,10 @@ interface SourceProvider {
     val addressHint: String? get() = null
 
     /** Completes a typed address (default scheme, port...); may make network requests. */
-    suspend fun normalizeAddress(address: String): String = address.trim()
+    suspend fun normalizeAddress(address: String): String = checkAddress(address).url
+
+    /** The completed address, and whether a server answered there (null: not checked). */
+    suspend fun checkAddress(address: String): AddressCheck = AddressCheck(address.trim(), null)
     
     fun getServers(): List<String>
     fun addServer(address: String)

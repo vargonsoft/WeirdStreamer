@@ -376,17 +376,17 @@ class ServerSourceProvider(
      * scheme is whichever the server answers on, https first (an https server also answers plain
      * http, with an error, so http alone can't tell).
      */
-    override suspend fun normalizeAddress(address: String): String = withContext(Dispatchers.IO) {
+    override suspend fun checkAddress(address: String): AddressCheck = withContext(Dispatchers.IO) {
         val typed = address.trim().trimEnd('/')
-        if (typed.contains("://")) return@withContext typed
+        if (typed.contains("://")) return@withContext AddressCheck(typed, null)
         val hostPort = if (hasPort(typed)) typed else "$typed:$DEFAULT_PORT"
         val client = ApiClient.probeClient()
         val scheme = listOf("https", "http").firstOrNull { scheme ->
             runCatching {
                 client.newCall(Request.Builder().url("$scheme://$hostPort/").head().build()).execute().close()
             }.isSuccess
-        } ?: "https"
-        "$scheme://$hostPort"
+        }
+        AddressCheck("${scheme ?: "https"}://$hostPort", scheme != null)
     }
 
     private fun hasPort(hostPort: String): Boolean {

@@ -72,6 +72,10 @@ import androidx.tv.material3.Text
 import com.vargon.weirdstreamer.ContentFilter
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.repository.FileItem
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.graphics.takeOrElse
+import com.vargon.weirdstreamer.repository.AddressCheck
 import com.vargon.weirdstreamer.repository.SourceProvider
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 
@@ -470,7 +474,19 @@ private fun MainAddSourceDialog(
     var address by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val initialFocusRequester = remember { FocusRequester() }
+    val addRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    // With Add highlighted, the address it will add (default port, and the scheme the server
+    // answers on), worked out for the address as typed; Add uses it.
+    var addFocused by remember { mutableStateOf(false) }
+    var checked by remember { mutableStateOf<Pair<String, AddressCheck>?>(null) }
+    LaunchedEffect(selectedProvider, addFocused, address) {
+        val provider = selectedProvider ?: return@LaunchedEffect
+        if (!addFocused || address.isBlank() || checked?.first == address) return@LaunchedEffect
+        checked = null
+        val typed = address
+        checked = typed to provider.checkAddress(typed)
+    }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Surface(modifier = Modifier.width(500.dp)) {
@@ -498,28 +514,58 @@ private fun MainAddSourceDialog(
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     TextField(
+                        colors = tvTextFieldColors(),
                         value = address,
                         onValueChange = { address = it },
-                        label = { Text(provider.addressLabel) },
-                        placeholder = { Text(provider.addressPlaceholder) },
-                        supportingText = provider.addressHint?.let { hint -> { Text(hint) } },
+                        label = { FieldText(provider.addressLabel) },
+                        placeholder = { FieldText(provider.addressPlaceholder) },
+                        supportingText = provider.addressHint?.let { hint -> { FieldText(hint) } },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                        // Down from the address goes to Add, not the first button (Back). The field
+                        // keeps D-pad keys for itself, so it's caught before it.
+                        modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
+                            .onPreviewKeyEvent {
+                                if (it.key == Key.DirectionDown && it.type == KeyEventType.KeyDown) {
+                                    runCatching { addRequester.requestFocus() }.isSuccess
+                                } else false
+                            },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        // Done (the keyboard's ✓, Enter or OK) closes the keyboard and moves to Add.
                         keyboardActions = KeyboardActions(onDone = {
                             keyboardController?.hide()
-                            if (address.isNotBlank()) onAdd(provider, address)
+                            runCatching { addRequester.requestFocus() }
                         })
                     )
                     
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    // What Add will add, once it's highlighted.
+                    val check = checked?.takeIf { it.first == address }?.second
+                    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+                    Text(
+                        text = when {
+                            !addFocused || address.isBlank() -> ""
+                            check == null -> "Checking ${address.trim()}…"
+                            check.answered == false -> "No server answered. Adds ${check.url}"
+                            else -> "Adds ${check.url}"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (check != null && check.answered != false)
+                            WeirdStreamerTheme.spec.headingColor.takeOrElse { MaterialTheme.colorScheme.onSurface }
+                        else muted,
+                        maxLines = 2,
+                        modifier = Modifier.heightIn(min = 24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Button(colors = tvButtonColors(), onClick = { selectedProvider = null; address = "" }) { Text("Back") }
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(colors = tvButtonColors(), onClick = onDismiss) { Text("Cancel") }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Button(colors = tvButtonColors(), onClick = { if (address.isNotBlank()) onAdd(provider, address) }) {
+                        Button(colors = tvButtonColors(), onClick = {
+                                if (address.isNotBlank()) onAdd(provider, check?.url ?: address)
+                            },
+                            modifier = Modifier.focusRequester(addRequester).onFocusChanged { addFocused = it.isFocused }) {
                             Text("Add")
                         }
                     }
