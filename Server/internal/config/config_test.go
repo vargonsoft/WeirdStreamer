@@ -42,3 +42,30 @@ func TestLibraryType(t *testing.T) {
 		}
 	}
 }
+
+func TestContinueWatchingMode(t *testing.T) {
+	c := &Config{Media: MediaConfig{Paths: []MediaPath{
+		{Name: "a"}, {Name: "b", ContinueWatchingMode: "LibraryOnly"}, {Name: "c", ContinueWatchingMode: "OFF"},
+	}}}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{ContinueOn, ContinueLibraryOnly, ContinueOff}
+	for i, p := range c.Media.Paths {
+		if p.ContinueWatchingMode != want[i] {
+			t.Errorf("%s: mode %q, want %q (any case, written back canonically; empty is on)", p.Name, p.ContinueWatchingMode, want[i])
+		}
+	}
+	// Where each shows: the home screen's list, then the library's own page's
+	for i, shows := range [][2]bool{{true, true}, {false, true}, {false, false}} {
+		p := c.Media.Paths[i]
+		if p.OnContinueWatching(false) != shows[0] || p.OnContinueWatching(true) != shows[1] {
+			t.Errorf("%s (%s): home %v, library page %v; want %v, %v", p.Name, p.ContinueWatchingMode,
+				p.OnContinueWatching(false), p.OnContinueWatching(true), shows[0], shows[1])
+		}
+	}
+	bad := &Config{Media: MediaConfig{Paths: []MediaPath{{Name: "x", ContinueWatchingMode: "sometimes"}}}}
+	if err := bad.Validate(); err == nil {
+		t.Error("an unknown mode: want an error")
+	}
+}

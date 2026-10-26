@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Config struct {
@@ -40,8 +41,30 @@ type MediaPath struct {
 	ID     string   `json:"id,omitempty"`
 	Groups []string `json:"groups"`         // Groups that have access to this library
 	Type   string   `json:"type,omitempty"` // Optional: LibraryTypeMovie or LibraryTypeTV
-	// Leaves this library's videos off Continue Watching (their progress is still kept and shown).
-	ExcludeFromContinueWatching bool `json:"excludeFromContinueWatching,omitempty"`
+	// Where this library's videos in progress show on Continue Watching: ContinueOn (the default,
+	// also when empty), ContinueLibraryOnly or ContinueOff. Their progress is kept and shown
+	// either way.
+	ContinueWatchingMode string `json:"continueWatchingMode,omitempty"`
+}
+
+// Continue Watching modes (MediaPath.ContinueWatchingMode)
+const (
+	ContinueOn          = "on"          // on the home screen's Continue Watching and the library's own
+	ContinueLibraryOnly = "libraryOnly" // only on the library's own page, not the home screen's
+	ContinueOff         = "off"         // nowhere
+)
+
+// OnContinueWatching reports whether the library's videos in progress belong on a Continue
+// Watching list: the library's own page's (libraryPage) or the home screen's, which blends all
+// libraries.
+func (p MediaPath) OnContinueWatching(libraryPage bool) bool {
+	switch p.ContinueWatchingMode {
+	case ContinueOff:
+		return false
+	case ContinueLibraryOnly:
+		return libraryPage
+	}
+	return true
 }
 
 // Library types. A library has at most one type; untyped libraries are plain folders.
@@ -52,11 +75,25 @@ const (
 
 // Validate checks values that can't be expressed by the JSON structure alone.
 func (c *Config) Validate() error {
-	for _, p := range c.Media.Paths {
+	for i := range c.Media.Paths {
+		p := &c.Media.Paths[i]
 		switch p.Type {
 		case "", LibraryTypeMovie, LibraryTypeTV:
 		default:
 			return fmt.Errorf("media path %q: invalid type %q (allowed: %q, %q, or none)", p.Name, p.Type, LibraryTypeMovie, LibraryTypeTV)
+		}
+		// Any capitalization, written back in the canonical one
+		mode := p.ContinueWatchingMode
+		switch {
+		case mode == "" || strings.EqualFold(mode, ContinueOn):
+			p.ContinueWatchingMode = ContinueOn
+		case strings.EqualFold(mode, ContinueLibraryOnly):
+			p.ContinueWatchingMode = ContinueLibraryOnly
+		case strings.EqualFold(mode, ContinueOff):
+			p.ContinueWatchingMode = ContinueOff
+		default:
+			return fmt.Errorf("media path %q: invalid continueWatchingMode %q (allowed: %q, %q, %q)",
+				p.Name, mode, ContinueOn, ContinueLibraryOnly, ContinueOff)
 		}
 	}
 	return nil

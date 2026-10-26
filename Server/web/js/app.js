@@ -1721,6 +1721,13 @@ const LIBRARY_TYPES = [
     { value: 'tv', label: 'TV Shows' },
 ];
 
+// Where a library's videos in progress show on Continue Watching (the config's continueWatchingMode)
+const CONTINUE_MODES = [
+    { value: 'on', label: 'Continue Watching: on the home screen and the library' },
+    { value: 'libraryOnly', label: 'Continue Watching: in the library only' },
+    { value: 'off', label: 'Continue Watching: off' },
+];
+
 // Sets a media path's type, omitting the key for "no type" so the saved config stays clean.
 function setMediaPathType(mediaPath, type) {
     if (type) {
@@ -1774,6 +1781,21 @@ function renderMediaPaths(paths) {
             setMediaPathType(state.currentConfig.media.paths[index], e.target.value);
         };
 
+        const continueSelect = document.createElement('select');
+        continueSelect.className = 'settings-input';
+        continueSelect.style.cssText = 'margin-bottom: 5px; font-size: 12px;';
+        continueSelect.title = 'Where videos in progress show on Continue Watching';
+        CONTINUE_MODES.forEach(({ value, label }) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            continueSelect.appendChild(option);
+        });
+        continueSelect.value = mediaPath.continueWatchingMode || 'on';
+        continueSelect.onchange = (e) => {
+            state.currentConfig.media.paths[index].continueWatchingMode = e.target.value;
+        };
+
         const pathDiv = document.createElement('div');
         pathDiv.style.cssText = 'display: flex; align-items: center; gap: 10px;';
         
@@ -1793,6 +1815,7 @@ function renderMediaPaths(paths) {
         div.appendChild(nameInput);
         div.appendChild(groupsInput);
         div.appendChild(typeSelect);
+        div.appendChild(continueSelect);
         div.appendChild(pathDiv);
         pathsList.appendChild(div);
     });

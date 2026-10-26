@@ -35,7 +35,9 @@ See `config.example.json`. The main sections:
   (index, TMDB data, discs).
 - `media.paths`: the libraries. Each has a `name`, a `path`, the `groups` allowed to see it, and
   an optional `type` of `movie` or `tv` (typed libraries get TMDB matching and the Library view).
-  `excludeFromContinueWatching` keeps a library off Continue Watching.
+  `continueWatchingMode` says where its videos in progress show on Continue Watching: `on` (the
+  default: the home screen's list and the library's own), `libraryOnly` (only the library's own)
+  or `off`. Settings → Media Paths edits it too.
 - `media`: where thumbnails, trickplay frames, artwork and download encodes go, and which file
   extensions count as video, image and document.
 - `auth`: the JWT secret and token lifetime. Change the secret.
