@@ -18,7 +18,9 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 /**
@@ -62,3 +64,21 @@ fun Modifier.tvClickable(
 }
 
 private const val FOCUS_ANIM_MS = 120
+
+/** How far a focused item grows past its edges: tvClickable's scale (up to 1.06) and border. */
+val FocusBleed = 14.dp
+
+/**
+ * Room at a scrolling row's ends for its focused item to grow into, instead of the row clipping
+ * its outline: the row is drawn [bleed] wider on each side. Give its contentPadding the same
+ * [bleed] horizontally, so its items stay where they were. Its parent needs that much room (the
+ * boxes' padding is 16dp).
+ */
+fun Modifier.focusBleed(bleed: Dp = FocusBleed): Modifier = layout { measurable, constraints ->
+    val px = bleed.roundToPx()
+    val wider = if (constraints.hasBoundedWidth) {
+        constraints.copy(minWidth = constraints.minWidth + 2 * px, maxWidth = constraints.maxWidth + 2 * px)
+    } else constraints
+    val placeable = measurable.measure(wider)
+    layout(placeable.width - 2 * px, placeable.height) { placeable.place(-px, 0) }
+}

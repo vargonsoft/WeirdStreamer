@@ -121,9 +121,21 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         backdropTitle?.let { TitleBackdrop(viewModel, it) }
         // The boxes let a title's backdrop show through (their contents stay opaque).
         val panelAlpha = if (backdropTitle != null) 0.5f else 1f
-        // The wordmark on the clock's line, left; the source list shows it large instead.
+        // The wordmark and the source on the clock's line, left; the source list shows the
+        // wordmark large instead.
         if (currentSource != null) {
-            Wordmark(MaterialTheme.colorScheme.onSurface, Modifier.align(Alignment.TopStart).padding(top = 14.dp, start = 48.dp).height(20.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.align(Alignment.TopStart).padding(top = 14.dp, start = 48.dp)
+            ) {
+                Wordmark(MaterialTheme.colorScheme.onSurface, Modifier.height(20.dp))
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = "${currentSource.typeId}: ${currentSource.displayName()}",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         Clock(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 52.dp))
 
@@ -155,11 +167,6 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     if (currentSource != null) {
-                        Text(
-                            text = "${currentSource.typeId}: ${currentSource.displayName()}",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = Color.Gray
-                        )
                         val display = when {
                             viewModel.openTitle != null -> viewModel.openTitle!!.title
                             viewModel.isLibraryView -> viewModel.libraryListing?.libraryName ?: "Library"

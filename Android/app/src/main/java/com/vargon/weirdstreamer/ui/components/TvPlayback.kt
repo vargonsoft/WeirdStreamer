@@ -61,8 +61,8 @@ fun TvContinueRow(
         Text("Continue Watching", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 10.dp))
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(20.dp),
-            contentPadding = PaddingValues(vertical = 8.dp),
-            modifier = Modifier.onPreviewKeyEvent { e ->
+            contentPadding = PaddingValues(horizontal = FocusBleed, vertical = 8.dp),
+            modifier = Modifier.focusBleed().onPreviewKeyEvent { e ->
                 e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown && onDown()
             }
         ) {

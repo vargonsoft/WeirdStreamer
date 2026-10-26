@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -271,10 +272,22 @@ fun BrowserGrid(
                     .onFocusChanged {
                         if (!it.hasFocus) return@onFocusChanged
                         focusedIndex[0] = index
-                        // In the top row, show the header above it whole (after the scroll that
-                        // brings the item itself into view).
+                        // In the top row, show as much of the header above it as fits with the
+                        // item still whole (after the scroll that brings the item into view).
+                        // Scrolling to the very top can push the item off the bottom when the
+                        // header and a row don't both fit.
                         if (headerCount > 0 && index < columns) {
-                            scope.launch { withFrameNanos { }; gridState.animateScrollToItem(0) }
+                            scope.launch {
+                                withFrameNanos { }
+                                val info = gridState.layoutInfo
+                                val shown = info.visibleItemsInfo.firstOrNull { it.index == index + headerCount }
+                                    ?: return@launch
+                                // Room below the item: scrolling up by it keeps the item in view
+                                // (negative: the item is cut off, so scroll down by that much).
+                                val room = info.viewportEndOffset - info.afterContentPadding -
+                                    (shown.offset.y + shown.size.height)
+                                if (room != 0) gridState.animateScrollBy(-room.toFloat())
+                            }
                         }
                     }
                 val isFirstColumn = index % columns == 0

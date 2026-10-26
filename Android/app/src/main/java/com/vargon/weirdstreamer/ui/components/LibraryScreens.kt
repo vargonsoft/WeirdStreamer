@@ -421,9 +421,10 @@ private fun CastRow(viewModel: MediaViewModel, cast: List<CreditInfo>, onFocused
     var hadFocus by remember { mutableStateOf(false) }
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
-        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+        contentPadding = PaddingValues(horizontal = FocusBleed, vertical = 6.dp),
         modifier = Modifier
             .padding(top = 8.dp)
+            .focusBleed()
             .onFocusChanged {
                 if (it.hasFocus && !hadFocus) onFocused()
                 hadFocus = it.hasFocus
@@ -567,7 +568,8 @@ private fun SeasonsAndEpisodes(
         var pickerFocused by remember { mutableStateOf(false) }
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.onFocusChanged {
+            contentPadding = PaddingValues(horizontal = FocusBleed),
+            modifier = Modifier.focusBleed().onFocusChanged {
                 if (it.hasFocus && !pickerFocused) onPickerFocused()
                 pickerFocused = it.hasFocus
             }
