@@ -406,6 +406,7 @@ private fun PhoneAddSourceDialog(
                     placeholder = { Text(provider.addressPlaceholder) },
                     supportingText = provider.addressHint?.let { hint -> { Text(hint) } },
                     singleLine = true,
+                    keyboardOptions = addressKeyboard(),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -446,6 +447,7 @@ private fun PhoneAuthDialog(host: String, onDismiss: () -> Unit, onLogin: (Strin
                     value = username,
                     onValueChange = { username = it },
                     label = { Text("Username") },
+                    keyboardOptions = usernameKeyboard(),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )

@@ -162,3 +162,13 @@ fun transcodeQuery(mode: TranscodeMode): String = buildString {
     val height = listOfNotNull(mode.resolution?.toIntOrNull(), VideoDecoders.maxHeight).minOrNull()
     height?.let { append("&resolution=$it") }
 }
+
+// Keyboards for addresses and usernames. Picking a suggestion in a plain text field adds a space
+// after the word ("babylon5 "), which an address can't have; URL and email keyboards add none.
+fun addressKeyboard(imeAction: androidx.compose.ui.text.input.ImeAction = androidx.compose.ui.text.input.ImeAction.Default) =
+    androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
+        autoCorrectEnabled = false, imeAction = imeAction)
+
+fun usernameKeyboard(imeAction: androidx.compose.ui.text.input.ImeAction = androidx.compose.ui.text.input.ImeAction.Default) =
+    androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email,
+        autoCorrectEnabled = false, imeAction = imeAction)

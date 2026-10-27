@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
@@ -529,7 +528,7 @@ private fun MainAddSourceDialog(
                                     runCatching { addRequester.requestFocus() }.isSuccess
                                 } else false
                             },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardOptions = addressKeyboard(ImeAction.Done),
                         // Done (the keyboard's ✓, Enter or OK) closes the keyboard and moves to Add.
                         keyboardActions = KeyboardActions(onDone = {
                             keyboardController?.hide()

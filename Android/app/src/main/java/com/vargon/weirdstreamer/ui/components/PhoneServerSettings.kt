@@ -334,7 +334,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(port, { port = it.filter(Char::isDigit) }, label = { Text("Port") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
-                    OutlinedTextField(host, { host = it }, label = { Text("Host") }, singleLine = true, modifier = Modifier.weight(2f))
+                    OutlinedTextField(host, { host = it }, label = { Text("Host") }, singleLine = true, keyboardOptions = addressKeyboard(), modifier = Modifier.weight(2f))
                 }
             }
             item { SectionTitle("Streaming") }
@@ -509,7 +509,7 @@ fun UsersTab(server: ServerRepository) {
         item { SectionTitle("Create a user") }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(newName, { newName = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(newName, { newName = it }, label = { Text("Username") }, singleLine = true, keyboardOptions = usernameKeyboard(), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(newPassword, { newPassword = it }, label = { Text("Password") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                 GroupMenu(newGroup, groups, Modifier.fillMaxWidth(), onNew = { creatingGroup = true }) { newGroup = it }

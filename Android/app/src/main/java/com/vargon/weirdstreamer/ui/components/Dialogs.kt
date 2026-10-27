@@ -45,7 +45,7 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Bo
                         .fillMaxWidth()
                         .focusRequester(focusRequester),
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardOptions = usernameKeyboard(ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
                 )
                 
@@ -113,7 +113,7 @@ fun ManualAddressDialog(initialAddress: String, onDismiss: () -> Unit, onConnect
                         .fillMaxWidth()
                         .focusRequester(focusRequester),
                     label = { FieldText("smb://host/share/") },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardOptions = addressKeyboard(ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { 
                         onConnect(address)
                         keyboardController?.hide()
