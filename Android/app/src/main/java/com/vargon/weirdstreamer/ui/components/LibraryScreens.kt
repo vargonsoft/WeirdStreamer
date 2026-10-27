@@ -86,6 +86,7 @@ import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.api.models.CreditInfo
 import com.vargon.weirdstreamer.api.models.LibraryEpisode
 import com.vargon.weirdstreamer.api.models.LibraryFile
+import com.vargon.weirdstreamer.api.models.LibrarySeason
 import com.vargon.weirdstreamer.api.models.TitleDetail
 import kotlinx.coroutines.android.awaitFrame
 import java.util.Locale
@@ -383,7 +384,9 @@ fun TitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
     val playRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val scrollToTop: () -> Unit = { scope.launch { listState.animateScrollToItem(0) } }
+    // A frame later: focus moving onto a cast photo partly off screen scrolls just to it first, and
+    // the later scroll takes over (the other way round, that one would stop this one short).
+    val scrollToTop: () -> Unit = { scope.launch { awaitFrame(); listState.animateScrollToItem(0) } }
     LaunchedEffect(title.kind, title.tmdbId) {
         awaitFrame()
         runCatching { playRequester.requestFocus() }
@@ -412,7 +415,7 @@ fun TitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
                     item(key = "hero") { TitleHero(viewModel, title, onCastFocused = scrollToTop) }
                     // Bring the whole hero back whenever focus reaches the season picker or the cast,
                     // instead of scrolling only as far as the focused row.
-                    showSections(viewModel, title, playRequester, onPickerFocused = scrollToTop)
+                    showSections(viewModel, title, playRequester)
                 }
             }
         }
@@ -631,15 +634,14 @@ private fun FileRow(
 private fun androidx.compose.foundation.lazy.LazyListScope.showSections(
     viewModel: MediaViewModel,
     title: TitleDetail,
-    playRequester: FocusRequester,
-    onPickerFocused: () -> Unit
+    playRequester: FocusRequester
 ) {
     val seasons = title.seasons.orEmpty()
     if (seasons.isEmpty()) {
         item(key = "no-episodes") { Text("No episodes found.", color = Color.Gray) }
     } else {
         item(key = "seasons") {
-            SeasonsAndEpisodes(viewModel, title, playRequester, onPickerFocused)
+            SeasonsAndEpisodes(viewModel, title, playRequester)
         }
     }
     val other = title.otherFiles.orEmpty()
@@ -653,8 +655,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.showSections(
 private fun SeasonsAndEpisodes(
     viewModel: MediaViewModel,
     title: TitleDetail,
-    playRequester: FocusRequester,
-    onPickerFocused: () -> Unit
+    playRequester: FocusRequester
 ) {
     val seasons = title.seasons.orEmpty()
     var selected by rememberSaveable(title.tmdbId) { mutableIntStateOf(0) }
@@ -663,46 +664,45 @@ private fun SeasonsAndEpisodes(
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val pickerRequester = remember { FocusRequester() }
-        var pickerFocused by remember { mutableStateOf(false) }
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(horizontal = FocusBleed),
-            modifier = Modifier.focusBleed().onFocusChanged {
-                if (it.hasFocus && !pickerFocused) onPickerFocused()
-                pickerFocused = it.hasFocus
+        // The watched buttons on their own line above the seasons, so they're easy to find (at the
+        // end of the season row, many seasons pushed them off screen); with either row focused,
+        // both rows show.
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.wholeInView()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TvWatchedButton(viewModel, season.episodes.flatMap { it.files }, label = season.name, season = season)
+                TvWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, label = "Whole show")
             }
-        ) {
-            itemsIndexed(seasons, key = { _, s -> s.season }) { index, s ->
-                val isSelected = index == selected
-                Button(
-                    onClick = { selected = index },
-                    modifier = if (isSelected) Modifier.focusRequester(pickerRequester) else Modifier,
-                    // The season shown: a button among plain labels (themed buttons, as on the web),
-                    // or in the primary color.
-                    colors = when {
-                        hasThemedButtons && isSelected -> tvButtonColors()
-                        hasThemedButtons -> tvButtonColors(containerColor = Color.Transparent)
-                        isSelected -> tvButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                        else -> tvButtonColors()
-                    }
-                ) {
-                    // Episodes watched (any of an episode's files), with a check once they all are.
-                    val watched = s.episodes.count { e -> e.files.any { it.playback?.watched == true } }
-                    Text(if (watched > 0) "${s.name} ($watched/${s.episodes.size})" else "${s.name} (${s.episodes.size})")
-                    if (watched == s.episodes.size) {
-                        Spacer(Modifier.width(6.dp))
-                        Icon(Icons.Default.Check, contentDescription = "Watched", modifier = Modifier.size(18.dp))
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(horizontal = FocusBleed),
+                modifier = Modifier.focusBleed()
+            ) {
+                itemsIndexed(seasons, key = { _, s -> s.season }) { index, s ->
+                    val isSelected = index == selected
+                    Button(
+                        onClick = { selected = index },
+                        modifier = if (isSelected) Modifier.focusRequester(pickerRequester) else Modifier,
+                        // The season shown: a button among plain labels (themed buttons, as on the web),
+                        // or in the primary color.
+                        colors = when {
+                            hasThemedButtons && isSelected -> tvButtonColors()
+                            hasThemedButtons -> tvButtonColors(containerColor = Color.Transparent)
+                            isSelected -> tvButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                            else -> tvButtonColors()
+                        }
+                    ) {
+                        // Episodes watched (any of an episode's files), with a check once they all are.
+                        val watched = s.episodes.count { e -> e.files.any { it.playback?.watched == true } }
+                        SeasonLabel(s, if (watched > 0) "${s.name} ($watched/${s.episodes.size})" else "${s.name} (${s.episodes.size})")
+                        if (watched == s.episodes.size) {
+                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Default.Check, contentDescription = "Watched", modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
-            }
-            item(key = "season-watched") {
-                TvWatchedButton(viewModel, season.episodes.flatMap { it.files }, label = "Season")
-            }
-            item(key = "show-watched") {
-                TvWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, label = "Show")
             }
         }
         season.episodes.forEachIndexed { index, episode ->
@@ -796,7 +796,8 @@ private fun EpisodeRow(
  * "Show") where buttons for different groups sit side by side.
  */
 @Composable
-private fun TvWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>, label: String? = null, iconOnly: Boolean = false) {
+private fun TvWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>, label: String? = null, iconOnly: Boolean = false,
+                            season: LibrarySeason? = null) {
     if (files.isEmpty()) return
     val watched = files.all { it.playback?.watched == true }
     // Watched: a filled check; not yet: an empty circle (button colors alone don't tell them apart).
@@ -805,9 +806,21 @@ private fun TvWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>,
             contentDescription = if (watched) "Mark unwatched" else "Mark watched")
         if (!iconOnly && label != null) {
             Spacer(Modifier.width(6.dp))
-            Text(label)
+            if (season != null) SeasonLabel(season, label) else Text(label)
         }
     }
+}
+
+/** A season's label, with "Season N" small above it when the season has a name of its own ("Signs and Portents"). */
+@Composable
+private fun SeasonLabel(season: LibrarySeason, label: String) {
+    val number = "Season ${season.season}"
+    if (season.season > 0 && !season.name.equals(number, ignoreCase = true)) {
+        Column {
+            Text(number, style = MaterialTheme.typography.labelSmall)
+            Text(label)
+        }
+    } else Text(label)
 }
 
 @Composable
