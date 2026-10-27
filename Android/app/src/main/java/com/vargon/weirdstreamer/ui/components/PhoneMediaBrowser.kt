@@ -130,7 +130,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More")
                         }
                         DropdownMenu(border = phoneMenuBorder(), expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            if (currentSource != null && !viewModel.isLibraryView) {
+                            if (currentSource != null && !viewModel.isLibraryView && !viewModel.isServerRoot) {
                                 Text("Show", style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -149,7 +149,8 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                                 }
                                 HorizontalDivider()
                             }
-                            if (currentSource != null && !viewModel.isLibraryView && viewModel.connectedServer != null) {
+                            // Not among the libraries: that would be every library.
+                            if (currentSource != null && !viewModel.isLibraryView && !viewModel.isServerRoot && viewModel.connectedServer != null) {
                                 DropdownMenuItem(
                                     text = { Text("Download this folder") },
                                     leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },

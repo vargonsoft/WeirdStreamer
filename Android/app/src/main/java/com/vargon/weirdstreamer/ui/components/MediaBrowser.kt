@@ -233,20 +233,25 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         Spacer(modifier = Modifier.width(16.dp))
                     }
 
-                    if (!viewModel.isLibraryView) Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { viewModel.toggleContentFilter() }) {
-                        Icon(
-                            when (viewModel.contentFilter) {
-                                ContentFilter.ALL -> Icons.Default.FilterList
-                                ContentFilter.IMAGE -> Icons.Default.Image
-                                ContentFilter.VIDEO -> Icons.Default.VideoLibrary
-                                ContentFilter.PDF -> Icons.Default.PictureAsPdf
-                            },
-                            contentDescription = "Content Filter"
-                        )
+                    // Not in Library view, nor among the libraries (no files there).
+                    if (!viewModel.isLibraryView && !viewModel.isServerRoot) {
+                        Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { viewModel.toggleContentFilter() }) {
+                            Icon(
+                                when (viewModel.contentFilter) {
+                                    ContentFilter.ALL -> Icons.Default.FilterList
+                                    ContentFilter.IMAGE -> Icons.Default.Image
+                                    ContentFilter.VIDEO -> Icons.Default.VideoLibrary
+                                    ContentFilter.PDF -> Icons.Default.PictureAsPdf
+                                },
+                                contentDescription = "Content Filter"
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
                 }
 
+                // Settings stands a little apart from the page's own buttons, on every page.
+                Spacer(modifier = Modifier.width(16.dp))
                 Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onOpenSettings) {
                     Icon(Icons.Default.Settings, contentDescription = "Settings")
                 }

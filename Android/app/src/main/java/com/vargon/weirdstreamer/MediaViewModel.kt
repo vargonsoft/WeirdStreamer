@@ -268,6 +268,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     private val libraryModeKey: String
         get() = "${currentSource?.serverAddress}|${currentLibraryId}"
 
+    /** A server's top level: its libraries (or shares), never files, so no content filter. */
+    val isServerRoot: Boolean
+        get() = currentSource != null && currentRepository?.getParentPath(currentPath) == null
+
     /** Whether the current library is shown as titles (Library view) rather than folders. */
     val isLibraryView: Boolean
         get() {
