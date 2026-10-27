@@ -60,14 +60,20 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         topBar = {
             PhoneTopBarPanel(above = currentSource?.let { source ->
                 {
-                    Text(
-                        text = viewModel.headerLine(source),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)
-                    )
+                    ) {
+                        Wordmark(MaterialTheme.colorScheme.onBackground, Modifier.height(16.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = viewModel.headerLine(source),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }) {
             TopAppBar(
@@ -337,10 +343,14 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
             }
         }
     } else {
-        LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxHeight()) {
+        // Padded as the grid is, so switching views leaves Continue Watching where it was.
+        LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxHeight(),
+            contentPadding = PaddingValues(vertical = 8.dp)) {
             // The server's front page leads with what's in progress, in every library.
             if (viewModel.continueItems.isNotEmpty()) {
-                item(key = "continue") { PhoneContinueRow(viewModel, Modifier.padding(bottom = 8.dp)) }
+                item(key = "continue") {
+                    PhoneContinueRow(viewModel, Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp), sidePadding = 0.dp)
+                }
             }
             items(items) { item ->
                 PhoneFileRowItem(item) {
