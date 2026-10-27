@@ -3573,10 +3573,18 @@ function createSeasonsSection(t) {
         picker.appendChild(btn);
     });
     section.append(seasonActions, picker, count, list);
-    // A refresh (after playing or marking) stays on the season that was showing.
-    const keep = state.titleSeasonFor === t.tmdb_id ? state.seasonIndex : 0;
+    // A refresh (after playing or marking) stays on the season that was showing; opening the show
+    // starts where it picks up, with that episode scrolled into view.
+    const fresh = state.titleSeasonFor !== t.tmdb_id;
+    const pick = fresh ? upNext(seasons) : null;
+    const keep = fresh ? (pick ? pick.season : 0) : state.seasonIndex;
     state.titleSeasonFor = t.tmdb_id;
     select(Math.min(keep || 0, seasons.length - 1));
+    if (pick) {
+        // Once the page is laid out (the section isn't on it yet).
+        requestAnimationFrame(() => requestAnimationFrame(() =>
+            list.children[pick.episode]?.scrollIntoView({ block: 'center', behavior: 'smooth' })));
+    }
     return section;
 }
 
@@ -3590,6 +3598,24 @@ function progressRingSvg(fraction) {
         // Six long dashes, evenly around (the circumference divides into them exactly)
         : `<circle cx="10" cy="10" r="${r}" opacity="0.45" stroke-dasharray="${(c / 6 * 0.7).toFixed(2)} ${(c / 6 * 0.3).toFixed(2)}" transform="rotate(-90 10 10)"/>`;
     return `<svg class="season-ring" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4">${ring}</svg>`;
+}
+
+// Where a show picks up, as on Android: the episode played most recently if it's unfinished, else
+// the one after it (on into the next season, skipping specials unless it's one). Null when none
+// has been played.
+function upNext(seasons) {
+    const all = seasons.flatMap((s, si) => s.episodes.map((ep, ei) => ({ si, ei, ep, number: s.season })));
+    const played = (f) => f.playback && (f.playback.watched || f.playback.position >= MIN_RESUME);
+    let latest = -1, latestAt = -1;
+    all.forEach((a, i) => a.ep.files.filter(played).forEach(f => {
+        if ((f.playback.updated_at || 0) > latestAt) { latest = i; latestAt = f.playback.updated_at || 0; }
+    }));
+    if (latest < 0) return null;
+    const at = all[latest];
+    const finished = at.ep.files.some(f => f.playback && f.playback.watched) &&
+        !at.ep.files.some(f => f.playback && !f.playback.watched && f.playback.position >= MIN_RESUME);
+    const next = !finished ? at : (all.slice(latest + 1).find(a => a.number !== 0 || at.number === 0) || at);
+    return { season: next.si, episode: next.ei };
 }
 
 // A season's label, with "Season N" small above it when the season has a name of its own ("Blood and Sand").

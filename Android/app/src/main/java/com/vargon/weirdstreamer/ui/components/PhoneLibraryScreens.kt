@@ -64,6 +64,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Close
@@ -425,7 +429,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.phoneShowSections(vie
 @Composable
 private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
     val seasons = title.seasons.orEmpty()
-    var selected by rememberSaveable(title.tmdbId) { mutableIntStateOf(0) }
+    // The season where the show picks up (the latest episode played, or the next), else the first.
+    val pick = remember(title.tmdbId) { upNext(seasons, viewModel.lastPlayedFile) }
+    var selected by rememberSaveable(title.tmdbId) { mutableIntStateOf(pick?.first ?: 0) }
+    // That episode is scrolled into view once, on opening (the phone has no focus to show it by).
+    var scrolled by remember(title.tmdbId) { mutableStateOf(false) }
     val season = seasons[selected.coerceIn(seasons.indices)]
     val queue = remember(season) { season.episodes.flatMap { it.files } }
     Column {
@@ -476,18 +484,29 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
             }
         }
         downloading?.let { DownloadQualityDialog(viewModel, it) { downloading = null } }
-        season.episodes.forEach { PhoneEpisodeRow(viewModel, it, queue, title.title) }
+        season.episodes.forEachIndexed { i, episode ->
+            val target = !scrolled && pick != null && selected == pick.first && i == pick.second
+            val requester = remember { BringIntoViewRequester() }
+            PhoneEpisodeRow(viewModel, episode, queue, title.title,
+                if (target) Modifier.bringIntoViewRequester(requester) else Modifier)
+            if (target) LaunchedEffect(Unit) {
+                withFrameNanos { } // laid out first
+                requester.bringIntoView()
+                scrolled = true
+            }
+        }
     }
 }
 
 @Composable
-private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, queue: List<LibraryFile>, showTitle: String) {
+private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, queue: List<LibraryFile>, showTitle: String,
+                            modifier: Modifier = Modifier) {
     val first = episode.files.firstOrNull() ?: return
     var showDetails by remember { mutableStateOf(false) }
     if (showDetails) PhoneEpisodeDetails(episode) { showDetails = false }
     Row(
         verticalAlignment = Alignment.Top,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {

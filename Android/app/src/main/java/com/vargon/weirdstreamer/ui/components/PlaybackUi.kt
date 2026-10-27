@@ -227,3 +227,22 @@ fun SeasonProgressRing(fraction: Float, color: Color, modifier: Modifier = Modif
 
 /** "10 Episodes", or "1 Episode". */
 fun episodeCountText(count: Int) = if (count == 1) "1 Episode" else "$count Episodes"
+
+/**
+ * Where a show picks up, as (season index, episode index): the episode played most recently if it's
+ * unfinished, else the one after it (on into the next season, skipping specials unless it's one);
+ * [justPlayed] (back from the player) counts as the most recent. Null when none has been played.
+ */
+fun upNext(seasons: List<com.vargon.weirdstreamer.api.models.LibrarySeason>, justPlayed: String?): Pair<Int, Int>? {
+    data class At(val season: Int, val episode: Int, val ep: com.vargon.weirdstreamer.api.models.LibraryEpisode, val number: Int)
+    val all = seasons.flatMapIndexed { si, s -> s.episodes.mapIndexed { ei, e -> At(si, ei, e, s.season) } }
+    val played = { a: At -> a.ep.files.any { it.playback?.let { p -> p.watched || p.resumeAt > 0 } == true } }
+    val latest = all.indexOfFirst { a -> justPlayed != null && a.ep.files.any { it.path == justPlayed } }.takeIf { it >= 0 }
+        ?: all.indices.filter { played(all[it]) }.maxByOrNull { i -> all[i].ep.files.maxOf { it.playback?.updatedAt ?: 0L } }
+        ?: return null
+    val at = all[latest]
+    val finished = at.ep.files.any { it.playback?.watched == true } && at.ep.files.none { (it.playback?.resumeAt ?: 0.0) > 0 && it.playback?.watched != true }
+    val next = if (!finished) at else
+        all.drop(latest + 1).firstOrNull { it.number != 0 || at.number == 0 } ?: at
+    return next.season to next.episode
+}

@@ -952,9 +952,14 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             ?.takeIf { it.state == com.vargon.weirdstreamer.downloads.DownloadItem.State.DONE }
             ?.localFile?.takeIf { java.io.File(it).exists() }?.let { "file://$it" }
 
+    /** The server path of the video played last, so a title page comes back to its season and episode. */
+    var lastPlayedFile by mutableStateOf<String?>(null)
+        private set
+
     fun stopPlayback(lastViewedPath: String? = null) {
         val viewed = if (lastViewedPath?.startsWith("file://") == true) localPlaybackOf else lastViewedPath
         viewed?.let { recordSelection(currentPath, it) }
+        viewed?.let { v -> lastPlayedFile = (playbackQueue.firstOrNull { it.path == v } ?: getFileItemForPath(v))?.originalPath }
         localPlaybackOf = null
         selectedVideoPath = null
         // The player's last report needs a moment to land before the new progress is fetched.

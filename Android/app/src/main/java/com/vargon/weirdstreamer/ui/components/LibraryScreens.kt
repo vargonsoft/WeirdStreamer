@@ -672,7 +672,10 @@ private fun SeasonsAndEpisodes(
     playRequester: FocusRequester
 ) {
     val seasons = title.seasons.orEmpty()
-    var selected by rememberSaveable(title.tmdbId) { mutableIntStateOf(0) }
+    // Start where the show picks up: the latest episode played if unfinished, else the next (back from
+    // the player, the one just played counts as the latest); else the first season.
+    val pick = remember(title) { upNext(seasons, viewModel.lastPlayedFile) }
+    var selected by rememberSaveable(title.tmdbId) { mutableIntStateOf(pick?.first ?: 0) }
     val season = seasons[selected.coerceIn(seasons.indices)]
     val queue = remember(season) { season.episodes.flatMap { it.files } }
 
@@ -731,13 +734,15 @@ private fun SeasonsAndEpisodes(
             Text(episodeCountText(season.episodes.size), style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
         }
+        // The episode focus starts on (and Down from the seasons reaches): where this season picks up.
+        val focusIndex = (if (selected == pick?.first) pick.second else upNext(listOf(season), null)?.second) ?: 0
         season.episodes.forEachIndexed { index, episode ->
             // Up from the first episode goes to the season picker (Compose's own search can pick the
             // cast instead, since the full-width row lines up with it too). Focused, the whole row
             // shows with its outline (the page's last otherwise stops flush with the bottom edge).
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.wholeInView()) {
                 Box(Modifier.weight(1f)) {
-                    EpisodeRow(viewModel, episode, queue, if (index == 0) playRequester else null,
+                    EpisodeRow(viewModel, episode, queue, if (index == focusIndex) playRequester else null,
                         up = if (index == 0) pickerRequester else null)
                 }
                 // Selecting the row resumes; these start over and mark it watched.
