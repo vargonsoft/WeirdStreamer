@@ -170,6 +170,7 @@ fun ServerSettingsTab(server: ServerRepository) {
     var port by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("") }
     var http2 by remember { mutableStateOf(false) }
+    var pauseJobs by remember { mutableStateOf(false) }
     var chunkSize by remember { mutableStateOf("") }
     var tmdbToken by remember { mutableStateOf("") }
     var openSubtitlesKey by remember { mutableStateOf("") }
@@ -211,6 +212,7 @@ fun ServerSettingsTab(server: ServerRepository) {
         }
         c.getAsJsonObject("streaming")?.let {
             http2 = it.get("enableHTTP2")?.asBoolean ?: false
+            pauseJobs = it.get("pauseJobsWhileStreaming")?.asBoolean ?: false
             chunkSize = it.get("chunkSize")?.asString ?: ""
         }
         c.getAsJsonObject("metadata")?.let {
@@ -245,6 +247,7 @@ fun ServerSettingsTab(server: ServerRepository) {
         }
         c.getAsJsonObject("streaming").apply {
             addProperty("enableHTTP2", http2)
+            addProperty("pauseJobsWhileStreaming", pauseJobs)
             chunkSize.trim().toIntOrNull()?.let { addProperty("chunkSize", it) }
         }
         val metadata = c.getAsJsonObject("metadata") ?: JsonObject().also { c.add("metadata", it) }
@@ -349,6 +352,15 @@ fun ServerSettingsTab(server: ServerRepository) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Enable HTTP/2", modifier = Modifier.weight(1f))
                     Switch(checked = http2, onCheckedChange = { http2 = it })
+                }
+                // Background jobs run while the server has room to spare; this has them wait whenever anyone streams.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Pause background jobs while anyone is streaming")
+                        Text("Finding intros and credits, trickplay frames, cleanup", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = pauseJobs, onCheckedChange = { pauseJobs = it })
                 }
                 OutlinedTextField(chunkSize, { chunkSize = it.filter(Char::isDigit) }, label = { Text("Chunk size (bytes)") },
                     singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

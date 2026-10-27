@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 )
 
@@ -116,6 +117,19 @@ func (a *SegmentAnalyzer) waitIdle(ctx context.Context) bool {
 	return waitForIdle(ctx, a.streams)
 }
 
+// Background jobs share one load monitor (set by SetLoadMonitor); without one, or without
+// readings (not Linux), they pause while anyone is streaming instead.
+var load *LoadMonitor
+
+// SetLoadMonitor has background jobs run by the machine's load.
+func SetLoadMonitor(m *LoadMonitor) { load = m }
+
+// pauseWhileStreaming: the admin's failsafe (Settings → Streaming), jobs waiting while anyone streams.
+func pauseWhileStreaming() bool {
+	c := config.GlobalConfig
+	return c != nil && c.Streaming.PauseJobsWhileStreaming
+}
+
 // streaming says whether anyone is playing or being sent a video now.
 func streaming(streams *StreamTracker) bool {
 	if streams == nil {
@@ -129,28 +143,41 @@ func streaming(streams *StreamTracker) bool {
 	return false
 }
 
-// waitForIdle waits while anyone is streaming (background jobs mustn't compete with playback);
+// busy says whether a background job should wait: the CPU or a disk too busy to share (or, with
+// no readings, anyone streaming).
+func busy(streams *StreamTracker) bool {
+	if pauseWhileStreaming() && streaming(streams) {
+		return true
+	}
+	if cpu, disk, ok := load.Readings(); ok {
+		return cpu > maxCPU || disk > maxDisk
+	}
+	return streaming(streams)
+}
+
+// overloaded says whether a job already running should stop: well past what busy allows (its own
+// work counts too), or, with no readings, anyone streaming.
+func overloaded(streams *StreamTracker) bool {
+	if pauseWhileStreaming() && streaming(streams) {
+		return true
+	}
+	if cpu, disk, ok := load.Readings(); ok {
+		return cpu > stopCPU || disk > 0.9
+	}
+	return streaming(streams)
+}
+
+// waitForIdle waits while the machine is busy (background jobs mustn't compete with playback);
 // false when ctx ends first.
 func waitForIdle(ctx context.Context, streams *StreamTracker) bool {
-	for {
-		busy := false
-		if streams != nil {
-			for _, s := range streams.List() {
-				if s.State == "playing" || s.State == "streaming" {
-					busy = true
-					break
-				}
-			}
-		}
-		if !busy {
-			return true
-		}
+	for busy(streams) {
 		select {
 		case <-ctx.Done():
 			return false
 		case <-time.After(30 * time.Second):
 		}
 	}
+	return ctx.Err() == nil
 }
 
 type analyzedVideo struct {
@@ -312,7 +339,7 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 			wait := func() bool { return waitForIdle(ctx, j.streams) }
 			var err error
 			if IsDiscImage(p) {
-				err = j.gen.generateDisc(ctx, p, wait, func() bool { return streaming(j.streams) })
+				err = j.gen.generateDisc(ctx, p, wait, func() bool { return overloaded(j.streams) })
 			} else {
 				err = j.gen.generate(ctx, p, wait)
 			}

@@ -173,6 +173,9 @@ type StreamingConfig struct {
 	ChunkSize         int  `json:"chunkSize"`
 	EnableHTTP2       bool `json:"enableHTTP2"`
 	AutoConvertImages bool `json:"autoConvertImages"`
+	// Background jobs (intros and credits, trickplay, cleanup) wait while anyone is streaming,
+	// whatever the machine's load: a failsafe
+	PauseJobsWhileStreaming bool `json:"pauseJobsWhileStreaming,omitempty"`
 }
 
 var GlobalConfig *Config

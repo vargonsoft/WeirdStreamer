@@ -55,8 +55,10 @@ func (h *MediaHandler) StartCleanup(ctx context.Context) {
 	go h.pruner.Run(ctx)
 }
 
-// StartSegmentAnalysis finds videos' intros and credits in the background until ctx ends.
+// StartSegmentAnalysis finds videos' intros and credits in the background until ctx ends. It and
+// the other background jobs run while the machine has room to spare (CPU and disk use).
 func (h *MediaHandler) StartSegmentAnalysis(ctx context.Context) {
+	media.SetLoadMonitor(media.NewLoadMonitor(ctx))
 	h.segments = media.NewSegmentAnalyzer(h.db, h.streams, func(path string) (string, bool) {
 		lib, found := libraryForPath(path)
 		return lib.Type, found
