@@ -594,7 +594,9 @@ function createDirectoryElement(dir) {
     return div;
 }
 
-function createMediaElement(item) {
+// [cornerButtons]: Fix and the watched/restart buttons over the thumbnail (a title page's files
+// have them in a row underneath instead).
+function createMediaElement(item, { cornerButtons = true } = {}) {
     const div = document.createElement('div');
     div.className = 'media-item';
     div.onclick = () => handleMediaClick(item);
@@ -636,12 +638,12 @@ function createMediaElement(item) {
     info.appendChild(size);
     const match = createMatchLabel(item.metadata);
     if (match) info.appendChild(match);
-    if (item.type === 'video' && canFixMatches()) {
+    if (item.type === 'video' && canFixMatches() && cornerButtons) {
         thumbnail.appendChild(createFixMatchButton({ path: item.path }, item.name));
     }
     if (item.type === 'video') {
         addProgressOverlay(thumbnail, item.playback, item.duration);
-        thumbnail.appendChild(createCardActions(item));
+        if (cornerButtons) thumbnail.appendChild(createCardActions(item));
         const left = timeLeftText(item);
         if (left) size.textContent += ` • ${left}`;
     }
@@ -3395,10 +3397,10 @@ async function showTitle(libId, kind, id, push = true, keepScroll = false) {
             container.appendChild(createFilesSection('Other files', t.other_files));
         }
     }
-    // A movie's files, marked watched together (a show's buttons are above its seasons).
+    // A movie with several files (versions, editions) marks them all at once; each file has its own too.
     const titleItems = kind === 'movie' || (t.files || []).length ? state.mediaItems : [];
-    if (titleItems.length) {
-        const mark = createWatchedToggle(titleItems, 'btn secondary icon-btn watched-btn');
+    if (titleItems.length > 1) {
+        const mark = createWatchedToggle(titleItems, 'btn watched-btn', { labelHtml: 'Mark All Watched' });
         hero.querySelector('.title-info').appendChild(mark);
     }
     if (keepScroll) window.scrollTo(0, scroll);
@@ -3512,8 +3514,13 @@ function createFilesSection(heading, files) {
         const item = libraryFileItem(f);
         const wrap = document.createElement('div');
         wrap.className = 'title-file';
-        wrap.appendChild(createMediaElement(item));
-        wrap.appendChild(createPlayButtons(item));
+        wrap.appendChild(createMediaElement(item, { cornerButtons: false }));
+        // Play, Fix and watched in a row under the video, as on the TV and in episode rows.
+        const actions = el('div', 'episode-actions');
+        actions.appendChild(createPlayButtons(item));
+        if (canFixMatches()) actions.appendChild(createFixIconButton(f));
+        actions.appendChild(createWatchedToggle([item], 'btn secondary icon-btn watched-btn'));
+        wrap.appendChild(actions);
         grid.appendChild(wrap);
     });
     section.appendChild(grid);
@@ -3592,6 +3599,17 @@ function seasonLabelHtml(se, label) {
     return `<span class="season-label">${named ? `<small>${escapeHtml(number)}</small>` : ''}<span>${escapeHtml(label)}</span></span>`;
 }
 
+// Fix for a title page's file: an icon button like the others, "Fix" on hover.
+function createFixIconButton(f) {
+    const fix = el('button', 'btn secondary icon-btn');
+    fix.type = 'button';
+    fix.title = 'Fix';
+    fix.setAttribute('aria-label', `Fix match for ${f.name}`);
+    fix.innerHTML = iconSvg('edit');
+    fix.onclick = (e) => { e.stopPropagation(); openMatchDialog({ path: f.path }, f.name); };
+    return fix;
+}
+
 function createEpisodeRow(ep) {
     const row = document.createElement('div');
     row.className = 'episode-row';
@@ -3630,16 +3648,7 @@ function createEpisodeRow(ep) {
         const item = libraryFileItem(f);
         const ext = f.name.split('.').pop().toUpperCase();
         actions.appendChild(createPlayButtons(item, ep.files.length > 1 ? ext : ''));
-        if (canFixMatches()) {
-            // An icon button like the others, "Fix" on hover.
-            const fix = el('button', 'btn secondary icon-btn');
-            fix.type = 'button';
-            fix.title = 'Fix';
-            fix.setAttribute('aria-label', `Fix match for ${f.name}`);
-            fix.innerHTML = iconSvg('edit');
-            fix.onclick = (e) => { e.stopPropagation(); openMatchDialog({ path: f.path }, f.name); };
-            actions.appendChild(fix);
-        }
+        if (canFixMatches()) actions.appendChild(createFixIconButton(f));
     });
     actions.appendChild(createWatchedToggle(ep.files.map(libraryFileItem), 'btn secondary icon-btn watched-btn'));
     // The buttons go under the description, left-aligned.

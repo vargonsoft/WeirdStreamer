@@ -464,10 +464,11 @@ private fun TitleHero(
     below: @Composable () -> Unit = {}
 ) {
     Row(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.width(160.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .width(160.dp)
+                .fillMaxWidth()
                 .aspectRatio(2f / 3f)
                 .clip(MaterialTheme.shapes.medium)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -475,6 +476,10 @@ private fun TitleHero(
             Icon(if (title.kind == "show") Icons.Default.Tv else Icons.Default.Movie, contentDescription = null,
                 modifier = Modifier.size(64.dp))
             viewModel.serverUrl(title.poster)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
+        }
+        // A movie with several files (versions, editions) marks them all at once; each file has its own too.
+        val files = title.files.orEmpty()
+        if (files.size > 1) TvWatchedButton(viewModel, files, label = "Mark All Watched", modifier = Modifier.fillMaxWidth())
         }
         Spacer(Modifier.width(28.dp))
         // The screen header already shows the title, so the hero starts with the details.

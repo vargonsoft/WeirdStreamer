@@ -2154,6 +2154,7 @@ header h1 {
 
 .title-info .watched-btn {
     margin-top: 14px;
+    align-self: flex-start;
 }
 
 .season-actions {

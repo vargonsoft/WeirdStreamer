@@ -635,17 +635,10 @@ private fun PhoneSeasonLabel(season: com.vargon.weirdstreamer.api.models.Library
     } else Text(label, maxLines = 1)
 }
 
-/** Marks the whole title (a movie's files, or every episode) watched or unwatched. */
+/** Marks all of a movie's files watched or unwatched: only for a movie with several (versions, editions). */
 @Composable
 private fun PhoneTitleWatched(viewModel: MediaViewModel, title: TitleDetail) {
-    val files = if (title.kind == "movie" || !title.files.isNullOrEmpty()) title.files.orEmpty()
-        else title.seasons.orEmpty().flatMap { s -> s.episodes.flatMap { it.files } }
-    if (files.isEmpty()) return
-    val watched = files.all { it.playback?.watched == true }
-    IconButton(onClick = { viewModel.setWatched(files.map { it.path }, !watched) },
-        modifier = Modifier.padding(horizontal = 4.dp)) {
-        Icon(if (watched) Icons.Default.CheckCircle else Icons.Outlined.CheckCircle,
-            contentDescription = if (watched) "Mark unwatched" else "Mark watched",
-            tint = if (watched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+    val files = title.files.orEmpty()
+    if (files.size < 2) return
+    Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { PhoneGroupWatchedButton(viewModel, files, "Mark All Watched") }
 }
