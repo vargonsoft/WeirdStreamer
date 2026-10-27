@@ -18,10 +18,16 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.takeOrElse
+import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+
+/** A focused item's outline, from the theme. */
+@Composable
+fun tvFocusBorderColor(): Color = WeirdStreamerTheme.spec.focusOutline.takeOrElse { Color.White }
 
 /**
  * Lightweight replacement for tv-material's clickable Surface: D-pad clickable, with a focus
@@ -33,7 +39,7 @@ fun Modifier.tvClickable(
     shape: Shape,
     focusedScale: Float,
     borderWidth: Dp,
-    borderColor: Color = Color.White,
+    borderColor: Color = tvFocusBorderColor(),
     onClick: () -> Unit
 ): Modifier {
     val scope = rememberCoroutineScope()

@@ -378,6 +378,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var continueItems by mutableStateOf<List<ContinueItem>>(emptyList())
         private set
 
+    /** False while the Continue Watching row is being asked for, so the TV can start focus on it. */
+    var continueReady by mutableStateOf(true)
+        private set
+
     /** The user's progress in a video by its player path (server results, or offline play). */
     fun playbackFor(path: String): Playback? {
         val item = getFileItemForPath(path) ?: return null
@@ -417,11 +421,17 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { syncLocalProgress(repo) }
         if (!isLibraryView && repo.getParentPath(currentPath) != null) {
             continueItems = emptyList()
+            continueReady = true
             return
         }
+        continueReady = false
         viewModelScope.launch {
             // Offline, the row keeps what it had.
-            repo.continueWatching(libraryId).getOrNull()?.let { continueItems = it }
+            try {
+                repo.continueWatching(libraryId).getOrNull()?.let { continueItems = it }
+            } finally {
+                continueReady = true
+            }
         }
     }
 
@@ -789,6 +799,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** The header's line for an open server: its name (else its address) and the account in use. */
+    fun headerLine(source: MediaSource): String {
+        val name = (if (source.typeId == "SERVER") serverName(source.serverAddress) else null) ?: source.displayName()
+        return name + (currentAccount?.let { " · $it" } ?: "")
+    }
+
     /** A server's accounts on this device, for its row on the source list and in Settings. */
     fun accountsOf(provider: SourceProvider, address: String): List<CredentialManager.ServerAccount> =
         if (provider.typeId == "SMB") credentialManager.getSmbAccounts(address) else credentialManager.getServerAccounts(address)
@@ -813,6 +829,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun chooseServerAccount(provider: SourceProvider, address: String, username: String) {
         lastServer = address
         currentRepository = null // the account's own libraries, not the last account's
+        continueItems = emptyList() // nor the last account's videos in progress
+        selectionMap.clear() // a fresh start, on Continue Watching
         val ready = if (provider.typeId == "SMB") credentialManager.useSmbAccount(address, username)
             else credentialManager.useServerAccount(address, username)
         if (ready) {

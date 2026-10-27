@@ -81,7 +81,7 @@ fun PdfThumbnailGrid(
                 scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
                 border = ClickableSurfaceDefaults.border(
                     focusedBorder = Border(
-                        border = BorderStroke(4.dp, Color.White),
+                        border = BorderStroke(4.dp, tvFocusBorderColor()),
                         inset = 0.dp,
                         shape = MaterialTheme.shapes.medium
                     )

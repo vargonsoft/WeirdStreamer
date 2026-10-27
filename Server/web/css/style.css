@@ -310,7 +310,23 @@ header {
 }
 
 header h1 {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    display: flex;
+    flex-wrap: wrap; /* the server line goes under the wordmark when there's no room */
+    align-items: center;
+    gap: 4px 16px;
+    min-width: 0;
+}
+
+/* The server and user after the wordmark */
+.header-server {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--muted-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 
 .header-controls {
@@ -1890,6 +1906,7 @@ header h1 {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    padding: 10px; /* icons only: their names are tooltips */
 }
 
 .header-controls .btn svg {

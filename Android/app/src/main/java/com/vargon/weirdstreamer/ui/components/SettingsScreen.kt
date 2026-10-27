@@ -11,7 +11,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Switch
@@ -128,7 +127,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     ),
                     border = ClickableSurfaceDefaults.border(
                         focusedBorder = Border(
-                            border = BorderStroke(2.dp, Color.White),
+                            border = BorderStroke(2.dp, tvFocusBorderColor()),
                             inset = 0.dp,
                             shape = MaterialTheme.shapes.small
                         )
@@ -211,7 +210,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     ),
                     border = ClickableSurfaceDefaults.border(
                         focusedBorder = Border(
-                            border = BorderStroke(2.dp, Color.White),
+                            border = BorderStroke(2.dp, tvFocusBorderColor()),
                             inset = 0.dp,
                             shape = MaterialTheme.shapes.small
                         )
@@ -247,7 +246,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     ),
                     border = ClickableSurfaceDefaults.border(
                         focusedBorder = Border(
-                            border = BorderStroke(2.dp, Color.White),
+                            border = BorderStroke(2.dp, tvFocusBorderColor()),
                             inset = 0.dp,
                             shape = MaterialTheme.shapes.small
                         )
@@ -280,7 +279,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     ),
                     border = ClickableSurfaceDefaults.border(
                         focusedBorder = Border(
-                            border = BorderStroke(2.dp, Color.White),
+                            border = BorderStroke(2.dp, tvFocusBorderColor()),
                             inset = 0.dp,
                             shape = MaterialTheme.shapes.small
                         )
@@ -314,7 +313,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     ),
                     border = ClickableSurfaceDefaults.border(
                         focusedBorder = Border(
-                            border = BorderStroke(2.dp, Color.White),
+                            border = BorderStroke(2.dp, tvFocusBorderColor()),
                             inset = 0.dp,
                             shape = MaterialTheme.shapes.small
                         )
@@ -363,7 +362,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                                 modifier = Modifier.padding(horizontal = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(24.dp))
+                                Icon(serverIcon(provider), contentDescription = null, modifier = Modifier.size(24.dp))
                                 Spacer(modifier = Modifier.width(16.dp))
                                 // A server's accounts are chosen on the source list; here they're only listed.
                                 val users = authStateRefresh.let {

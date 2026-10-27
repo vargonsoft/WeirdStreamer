@@ -26,7 +26,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Stream
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -69,6 +71,14 @@ private fun serverLines(viewModel: MediaViewModel, provider: SourceProvider, add
     if (provider.typeId == "SMB") address to "smb://$address"
     else (viewModel.serverName(address) ?: MediaSource(provider.typeId, address).displayName()) to address
 
+/** The kind of server, on its card's last line. */
+private fun serverKind(provider: SourceProvider) = if (provider.typeId == "SMB") "SMB" else "Weird Streamer"
+
+/** A server's icon: Stream for WeirdStreamer servers, SMB Share for SMB ones. */
+@Composable
+fun serverIcon(provider: SourceProvider): Painter =
+    if (provider.typeId == "SMB") painterResource(R.drawable.ic_smb_share) else rememberVectorPainter(Icons.Default.Stream)
+
 /** A WeirdStreamer server card's background: the logo, faded, filling the card. */
 @Composable
 private fun BoxScope.ServerLogoBackdrop(provider: SourceProvider) {
@@ -103,16 +113,19 @@ fun TvServerAccountsRow(
     LaunchedEffect(address) { if (provider.typeId == "SERVER") viewModel.refreshServerName(address) }
     val (name, full) = serverLines(viewModel, provider, address)
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.width(280.dp).height(116.dp).clip(RoundedCornerShape(12.dp))
+        Box(Modifier.width(280.dp).height(132.dp).clip(RoundedCornerShape(12.dp))
             .background(androidx.tv.material3.MaterialTheme.colorScheme.surfaceVariant)) {
         ServerLogoBackdrop(provider)
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center) {
-            androidx.tv.material3.Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(32.dp),
+            androidx.tv.material3.Icon(serverIcon(provider), contentDescription = null, modifier = Modifier.size(32.dp),
                 tint = WeirdStreamerTheme.spec.serverIconTint.takeOrElse { androidx.tv.material3.LocalContentColor.current })
             androidx.tv.material3.Text(name, style = androidx.tv.material3.MaterialTheme.typography.titleMedium,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
             if (full != name) androidx.tv.material3.Text(full, style = androidx.tv.material3.MaterialTheme.typography.bodySmall,
                 color = androidx.tv.material3.MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            androidx.tv.material3.Text(serverKind(provider), style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
+                color = WeirdStreamerTheme.spec.headingColor.takeOrElse { androidx.tv.material3.MaterialTheme.colorScheme.onSurfaceVariant },
+                maxLines = 1)
         }
         }
         LazyRow(
@@ -272,22 +285,29 @@ fun PhoneServerAccountsRow(
     accounts: List<ServerAccount>,
 ) {
     LaunchedEffect(address) { if (provider.typeId == "SERVER") viewModel.refreshServerName(address) }
-    val (name, _) = serverLines(viewModel, provider, address)
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.padding(start = 12.dp).width(112.dp).height(108.dp).clip(RoundedCornerShape(12.dp))
+    val (name, full) = serverLines(viewModel, provider, address)
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Box(Modifier.padding(horizontal = 12.dp).fillMaxWidth().height(96.dp).clip(RoundedCornerShape(12.dp))
             .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant)) {
         ServerLogoBackdrop(provider)
-        Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.Center) {
-            androidx.compose.material3.Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(24.dp),
+        Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.Icon(serverIcon(provider), contentDescription = null, modifier = Modifier.size(32.dp),
                 tint = WeirdStreamerTheme.spec.serverIconTint.takeOrElse { androidx.compose.material3.LocalContentColor.current })
-            androidx.compose.material3.Text(name, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
-                maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+            Column(Modifier.padding(start = 16.dp)) {
+                androidx.compose.material3.Text(name, style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (full != name) androidx.compose.material3.Text(full, style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                androidx.compose.material3.Text(serverKind(provider), style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                    color = WeirdStreamerTheme.spec.headingColor.takeOrElse { androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant },
+                    maxLines = 1)
+            }
         }
         }
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(horizontal = 12.dp),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
         ) {
             items(accounts, key = { it.username }) { account ->
                 var menu by remember { mutableStateOf(false) }

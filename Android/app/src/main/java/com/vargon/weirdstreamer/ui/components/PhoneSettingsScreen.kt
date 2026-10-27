@@ -10,7 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -221,7 +220,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                         ListItem(
                             headlineContent = { Text(address) },
                             supportingContent = { Text(serverUsersText(users)) },
-                            leadingContent = { Icon(Icons.Default.Dns, contentDescription = null) },
+                            leadingContent = { Icon(serverIcon(provider), contentDescription = null) },
                             trailingContent = {
                                 IconButton(onClick = { confirmRemove = true }) {
                                     Icon(Icons.Default.Delete, contentDescription = "Remove")

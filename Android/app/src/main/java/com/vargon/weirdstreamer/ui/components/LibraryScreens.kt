@@ -101,9 +101,12 @@ private const val POSTER_COLUMNS = 6
 fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequester, contentEntry: ContentEntry) {
     val listing = viewModel.libraryListing
     TvResumeDialog(viewModel) // held Continue Watching cards
+    // A first visit waits for the row; coming back from a title goes straight back to it.
+    val settled = continueSettled(viewModel, viewModel.currentLibraryId) ||
+        viewModel.libraryReturn?.libraryId == viewModel.currentLibraryId
     when {
         listing == null && viewModel.libraryError != null -> CenteredMessage("Error: ${viewModel.libraryError}")
-        listing == null -> CenteredMessage("Loading…")
+        listing == null || !settled -> CenteredMessage("Loading…")
         listing.titles.isEmpty() && listing.unmatched.isEmpty() ->
             CenteredMessage("Nothing matched yet. Titles appear here as they are looked up.")
         else -> {

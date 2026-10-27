@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
@@ -56,17 +58,23 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
 
     Scaffold(
         topBar = {
-            PhoneTopBarPanel {
+            PhoneTopBarPanel(above = currentSource?.let { source ->
+                {
+                    Text(
+                        text = viewModel.headerLine(source),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)
+                    )
+                }
+            }) {
             TopAppBar(
                 windowInsets = panelTopBarInsets(),
                 title = {
                     Column {
                         if (currentSource != null) {
-                            Text(
-                                text = "${currentSource.typeId}: ${currentSource.displayName()}" + (viewModel.currentAccount?.let { " · $it" } ?: ""),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
                             val display = when {
                                 viewModel.openTitle != null -> viewModel.openTitle!!.title
                                 viewModel.isLibraryView -> viewModel.libraryListing?.libraryName ?: "Library"
@@ -160,7 +168,10 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             }
         }
     ) { padding ->
-        PhoneContentPanel(modifier = Modifier.fillMaxSize().padding(padding)) {
+        // The source list boxes each server on its own.
+        val serverList = currentSource == null && !viewModel.isLoading && viewModel.errorMessage == null &&
+            viewModel.authRequiredSource == null
+        PhoneContentPanel(modifier = Modifier.fillMaxSize().padding(padding), boxed = !serverList) {
             // Background image from theme spec
             val themeSpec = WeirdStreamerTheme.spec
             themeSpec.backgroundImage?.let { bgRes ->
@@ -262,34 +273,24 @@ private fun PhoneSourceSelectionScreen(viewModel: MediaViewModel) {
     val serversByProvider = remember(viewModel.sourceProviders, viewModel.authStateRefreshTrigger) {
         viewModel.sourceProviders.associateWith { it.getServers() }
     }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        viewModel.sourceProviders.forEach { provider ->
-            item {
-                Text(
-                    text = provider.displayName,
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(16.dp)
-                )
+    // One list of every server, WeirdStreamer servers first; each card says which kind it is.
+    val servers = viewModel.sourceProviders.flatMap { p -> serversByProvider[p].orEmpty().map { p to it } }
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
+        if (servers.isEmpty()) item {
+            Text(
+                text = "No servers yet. Use + to add one.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(16.dp)
+            )
+        }
+        itemsIndexed(servers, key = { _, (p, a) -> "${p.typeId}:$a" }) { i, (provider, address) ->
+            if (i > 0 && !hasPanels) HorizontalDivider() // themes without boxes
+            val accounts = remember(address, viewModel.authStateRefreshTrigger) { viewModel.accountsOf(provider, address) }
+            Panel(Modifier.fillMaxWidth(), margin = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                contentPadding = PaddingValues(0.dp), clip = true) {
+                PhoneServerAccountsRow(viewModel, provider, address, accounts)
             }
-            
-            val servers = serversByProvider[provider].orEmpty()
-            if (servers.isEmpty()) {
-                item {
-                    Text(
-                        text = "No ${provider.displayName}s found.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
-            } else {
-                items(servers) { address ->
-                    val accounts = remember(address, viewModel.authStateRefreshTrigger) { viewModel.accountsOf(provider, address) }
-                    PhoneServerAccountsRow(viewModel, provider, address, accounts)
-                }
-            }
-            
-            item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
         }
     }
 }

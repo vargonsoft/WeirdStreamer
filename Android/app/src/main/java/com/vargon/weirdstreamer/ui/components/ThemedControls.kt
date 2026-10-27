@@ -1,6 +1,7 @@
 package com.vargon.weirdstreamer.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.WindowInsets
@@ -45,12 +46,21 @@ fun Panel(
     )
 }
 
-/** A phone screen's top bar, in a box in themes that draw them: its TopAppBar takes panelTopBarInsets(). */
+/**
+ * A phone screen's top bar, in a box in themes that draw them: its TopAppBar takes panelTopBarInsets().
+ * [above] goes over it, on the background (the open server and user).
+ */
 @Composable
-fun PhoneTopBarPanel(content: @Composable () -> Unit) {
+fun PhoneTopBarPanel(above: (@Composable () -> Unit)? = null, content: @Composable () -> Unit) {
     if (hasPanels) {
-        Panel(Modifier.statusBarsPadding(), margin = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp),
-            contentPadding = PaddingValues(0.dp), clip = true) { content() }
+        Column(Modifier.statusBarsPadding()) {
+            above?.invoke()
+            Panel(margin = PaddingValues(start = 8.dp, top = if (above != null) 4.dp else 8.dp, end = 8.dp),
+                contentPadding = PaddingValues(0.dp), clip = true) { content() }
+        }
+    } else if (above != null) {
+        // The column takes the status bar, so the TopAppBar's own insets leave nothing more.
+        Column(Modifier.statusBarsPadding()) { above(); content() }
     } else content()
 }
 
@@ -61,8 +71,9 @@ fun panelTopBarInsets(): WindowInsets = if (hasPanels) WindowInsets(0) else andr
 
 /** A phone screen's content, in a box in themes that draw them (else a plain Box). */
 @Composable
-fun PhoneContentPanel(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) =
-    Panel(modifier, margin = PaddingValues(8.dp), contentPadding = PaddingValues(0.dp), clip = true, content = content)
+fun PhoneContentPanel(modifier: Modifier = Modifier, boxed: Boolean = true, content: @Composable BoxScope.() -> Unit) =
+    if (boxed) Panel(modifier, margin = PaddingValues(8.dp), contentPadding = PaddingValues(0.dp), clip = true, content = content)
+    else Box(modifier, content = content) // the content draws its own boxes
 
 /** Whether the theme draws boxes (Panel), for layouts that change around them. */
 val hasPanels: Boolean

@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
@@ -133,8 +134,8 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 Wordmark(MaterialTheme.colorScheme.onSurface, Modifier.height(20.dp))
                 Spacer(Modifier.width(16.dp))
                 Text(
-                    text = "${currentSource.typeId}: ${currentSource.displayName()}" + (viewModel.currentAccount?.let { " · $it" } ?: ""),
-                    style = MaterialTheme.typography.titleSmall,
+                    text = viewModel.headerLine(currentSource),
+                    style = MaterialTheme.typography.titleMedium, // as the clock's
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -251,12 +252,14 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Content area: a box to the bottom
+            // Content area: a box to the bottom (the source list boxes each server on its own instead)
+            val serverList = currentSource == null && !viewModel.isLoading && viewModel.errorMessage == null &&
+                viewModel.authRequiredSource == null
             Panel(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 margin = PaddingValues(bottom = 24.dp),
-                contentPadding = PaddingValues(16.dp),
-                alpha = panelAlpha
+                contentPadding = PaddingValues(if (serverList) 0.dp else 16.dp),
+                alpha = if (serverList) 0f else panelAlpha
             ) {
             when {
                 viewModel.isLoading -> {
@@ -395,74 +398,18 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
     LaunchedEffect(firstServer, viewModel.isGridView) {
         if (firstServer != null) runCatching { firstRequester.requestFocus() }
     }
-    if (viewModel.isGridView) {
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(4),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            viewModel.sourceProviders.forEach { provider ->
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(
-                        provider.displayName,
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                }
-                
-                val servers = serversByProvider[provider].orEmpty()
-                if (servers.isEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Text("No ${provider.displayName}s found. Use 'Add Source' to add manually.", 
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.Gray,
-                            modifier = Modifier.padding(bottom = 32.dp))
-                    }
-                } else {
-                    items(servers, span = { GridItemSpan(maxLineSpan) }) { address ->
-                        TvServerAccountsRow(viewModel, provider, address, accounts[provider to address].orEmpty(), first(provider, address), focusAccount)
-                    }
-                }
-
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Spacer(modifier = Modifier.height(32.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(32.dp))
-                }
+    // One list of every server, WeirdStreamer servers first; each card says which kind it is.
+    val servers = viewModel.sourceProviders.flatMap { p -> serversByProvider[p].orEmpty().map { p to it } }
+    LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (servers.isEmpty()) item {
+            Panel(Modifier.fillMaxWidth()) {
+                Text("No servers yet. Use Add Source to add one.", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
             }
         }
-    } else {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            viewModel.sourceProviders.forEach { provider ->
-                item {
-                    Text(
-                        provider.displayName,
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                }
-                
-                val servers = serversByProvider[provider].orEmpty()
-                if (servers.isEmpty()) {
-                    item {
-                        Text("No ${provider.displayName}s found. Use 'Add Source' to add manually.", 
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.Gray,
-                            modifier = Modifier.padding(bottom = 32.dp))
-                    }
-                } else {
-                    items(servers) { address ->
-                        TvServerAccountsRow(viewModel, provider, address, accounts[provider to address].orEmpty(), first(provider, address), focusAccount)
-                    }
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(32.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(32.dp))
-                }
+        itemsIndexed(servers, key = { _, (p, a) -> "${p.typeId}:$a" }) { i, (provider, address) ->
+            if (i > 0 && !hasPanels) HorizontalDivider() // themes without boxes
+            Panel(Modifier.fillMaxWidth()) {
+                TvServerAccountsRow(viewModel, provider, address, accounts[provider to address].orEmpty(), first(provider, address), focusAccount)
             }
         }
     }
@@ -616,6 +563,9 @@ private fun FileBrowserScreen(
         onDispose { if (contentEntry.focusTop === focusTop) contentEntry.focusTop = null }
     }
     TvResumeDialog(viewModel)
+    // A first visit waits for the row; a return goes straight back to what was selected.
+    val settled = continueSettled(viewModel, currentPath)
+    if (!settled && viewModel.getSelection(currentPath) == null) return
     // A card removed from Continue Watching took focus with it: onto the row's first card, or
     // the folder when the row is gone.
     LaunchedEffect(viewModel.continueRemovals) {

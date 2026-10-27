@@ -229,6 +229,7 @@ function showMainScreen() {
     
     // Update regenerate thumbnails button visibility
     updateRegenerateThumbnailsButton();
+    updateHeaderServer();
 
     // Load config for friendly path names for all users
     if (!state.currentConfig) {
@@ -351,6 +352,18 @@ async function handleLogin(e) {
         console.error('Login failed:', error);
         loginError.textContent = error.message || 'Login failed. Please try again.';
     }
+}
+
+// After the wordmark: the server's name (else its address) and who's signed in, as on Android.
+async function updateHeaderServer() {
+    const el = document.getElementById('header-server');
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    let name = '';
+    try {
+        const info = await (await fetch('/api/info', { cache: 'no-cache' })).json();
+        name = info.name || '';
+    } catch (e) { /* an older server: its address */ }
+    el.textContent = [name || location.host, user.username].filter(Boolean).join(' · ');
 }
 
 function handleLogout() {
@@ -1535,6 +1548,8 @@ let seekDragging = false;
 
 // Material icons (Apache License 2.0), inlined so the page loads no icon font.
 const MATERIAL_ICONS = {
+    // Material Symbols' feature_search, in its 960-unit grid (see iconSvg)
+    featureSearch: { viewBox: '0 -960 960 960', d: 'm772-604 128 128-56 56-128-128q-21 12-45 20t-51 8q-75 0-127.5-52.5T440-700q0-75 52.5-127.5T620-880q75 0 127.5 52.5T800-700q0 27-8 51t-20 45Zm-81-25q29-29 29-71t-29-71q-29-29-71-29t-71 29q-29 29-29 71t29 71q29 29 71 29t71-29ZM160-80q-33 0-56.5-23.5T80-160v-560q0-33 23.5-56.5T160-800h220q-11 25-15 51.5t-4 52.5q0 109 77 182t183 73q19 0 38-2.5t39-8.5l102 102v190q0 33-23.5 56.5T720-80H160Z' },
     subtitles: 'M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM4 12h4v2H4v-2zm10 6H4v-2h10v2zm6 0h-4v-2h4v2zm0-4H10v-2h10v2z',
     play: 'M8 5v14l11-7z',
     pause: 'M6 19h4V5H6v14zm8-14v14h4V5h-4z',
@@ -1627,12 +1642,16 @@ function setupSecretToggles() {
 function setButtonLabel(btn, text) {
     const label = btn.querySelector('.btn-label');
     if (label) label.textContent = text;
+    else if (btn.querySelector('svg')) { btn.title = text; btn.setAttribute('aria-label', text); } // icon only: its tooltip
     else btn.textContent = text;
 }
 
 function iconSvg(name, { mirrored = false } = {}) {
+    const icon = MATERIAL_ICONS[name];
+    // Most are Material Icons paths on a 24-unit grid; a few are Material Symbols, with their own.
+    const { viewBox, d } = typeof icon === 'string' ? { viewBox: '0 0 24 24', d: icon } : icon;
     const flip = mirrored ? ' transform="matrix(-1 0 0 1 24 0)"' : '';
-    return `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor"${flip} d="${MATERIAL_ICONS[name]}"/></svg>`;
+    return `<svg viewBox="${viewBox}" width="20" height="20" aria-hidden="true"><path fill="currentColor"${flip} d="${d}"/></svg>`;
 }
 
 function setIcon(id, name, label) {
@@ -2232,6 +2251,7 @@ async function handleSaveSettings() {
             updateAvailableGroups();
         }
         messageEl.textContent = (result && result.message) ? result.message : 'Configuration updated.';
+        updateHeaderServer(); // a new name
         messageEl.style.color = '#27ae60';
         
         setTimeout(() => {

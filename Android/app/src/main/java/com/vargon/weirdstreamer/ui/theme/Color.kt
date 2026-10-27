@@ -20,6 +20,9 @@ data class ThemePalette(
     val onAccent: Color, // text on the accent
     val secondary: Color, // a second accent, rarely used
     val panelAlpha: Float = 1f, // below 1: boxes let the background image show through
+    val focusOutline: Color = Color.White, // the outline around a focused tile or row (TV)
+    val focus: Color = accent, // a focused button (TV), when the accent wouldn't stand out
+    val onFocus: Color = onAccent,
 )
 
 // Ember (the default): the Weird Streamer logo's aubergine, gold and cream
@@ -65,6 +68,10 @@ val LightPalette = ThemePalette(
     accent = Color(0xFF6750A4),
     onAccent = Color(0xFFFFFFFF),
     secondary = Color(0xFF625B71),
+    // Focus in a deep purple: white wouldn't show on the white boxes, nor the buttons' purple on them
+    focusOutline = Color(0xFF381E72),
+    focus = Color(0xFF381E72),
+    onFocus = Color(0xFFFFFFFF),
 )
 
 // Cinema Blue: a theater's deep navy and gold. The boxes are see-through, over the film reel.

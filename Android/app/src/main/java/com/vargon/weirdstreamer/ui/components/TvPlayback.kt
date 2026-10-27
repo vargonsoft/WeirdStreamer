@@ -19,6 +19,10 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -168,4 +172,15 @@ fun TvResumeDialog(viewModel: MediaViewModel) {
         androidx.compose.runtime.withFrameNanos { }
         runCatching { resumeRequester.requestFocus() }
     }
+}
+
+/**
+ * Whether a page with a Continue Watching row can show: once the row has loaded (or after a few
+ * seconds without an answer), so focus starts on the row instead of jumping there from the folders.
+ */
+@Composable
+fun continueSettled(viewModel: MediaViewModel, page: Any?): Boolean {
+    var waited by remember(page) { mutableStateOf(false) }
+    LaunchedEffect(page) { delay(3_000); waited = true }
+    return viewModel.continueReady || viewModel.continueItems.isNotEmpty() || waited
 }
