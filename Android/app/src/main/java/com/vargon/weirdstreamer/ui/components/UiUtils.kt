@@ -136,6 +136,24 @@ object VideoDecoders {
 }
 
 /**
+ * Stereo audio for transcodes (the stream's channels=2): some decoders fail on the 5.1 AAC a
+ * transcode of surround audio carries. Set the first time one fails, and kept while the app
+ * runs, so later videos start in stereo instead of failing first.
+ */
+object AudioFallback {
+    @Volatile var stereo = false
+
+    /** Whether [error] is the audio decoder failing (the cue to retry in stereo). */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    fun isAudioDecoderFailure(error: androidx.media3.common.PlaybackException): Boolean {
+        val decoder = error.errorCode in androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..
+            androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED
+        val format = (error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat
+        return decoder && androidx.media3.common.MimeTypes.isAudio(format?.sampleMimeType)
+    }
+}
+
+/**
  * The query for a transcoded stream in [mode]: its bitrate, and a resolution no taller than the
  * hardware decodes (the server never scales up, so a small video keeps its size).
  */

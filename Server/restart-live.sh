@@ -45,7 +45,7 @@ if [ "$active" -gt 0 ] && [ "$force" = 0 ]; then
     python3 -c '
 import json, sys
 for s in json.load(sys.stdin)["streams"]:
-    print(f"  {s[\"user\"]} on {s[\"client\"]}: {s[\"state\"]} ({s[\"mode\"]}), {s[\"seconds_since_activity\"]}s since activity")
+    print("  %s on %s: %s (%s), %ss since activity" % (s["user"], s["client"], s["state"], s["mode"], s["seconds_since_activity"]))
 ' <<<"$streams"
     exit 2
 fi

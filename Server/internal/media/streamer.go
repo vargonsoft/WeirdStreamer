@@ -380,6 +380,11 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 		"-pix_fmt", "yuv420p", // 8-bit 4:2:0, which every hardware H.264 decoder plays
 		"-c:a", "aac",
 		"-b:a", "128k",
+	)
+	if tracks.Stereo {
+		args = append(args, "-ac", "2")
+	}
+	args = append(args,
 		"-movflags", "frag_keyframe+empty_moov",
 		"-f", "mp4",
 		"pipe:1",
@@ -488,6 +493,9 @@ func describeTranscode(args []string, startTime, bitrate, resolution, reason str
 		video += ", " + vf
 	}
 	info.Video = video + ")"
+	if opt["-ac"] == "2" {
+		info.Audio += ", stereo"
+	}
 	return info
 }
 

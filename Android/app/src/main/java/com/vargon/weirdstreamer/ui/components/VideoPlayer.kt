@@ -78,6 +78,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     // burned into a transcode. SMB files and discs keep the player's own tracks.
     val serverSubs = remember(path) { if (isSmbSource || isDisc) null else ServerSubtitles.forStream(path) }
     val burnIn = serverSubs?.burnIn ?: -1
+    // Stereo audio in transcodes, once a surround one has failed to decode (AudioFallback)
+    var stereoAudio by remember(path) { mutableStateOf(AudioFallback.stereo) }
 
     // Transcode state
     // A video too big for this box's hardware decoder (4K on a 1080p box) starts transcoded,
@@ -101,12 +103,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var fullDuration by remember { mutableLongStateOf(0L) }
 
     // Build the actual video URL with transcode parameters
-    val videoUrl = remember(path, selectedTranscodeModeIndex, discQuery, burnIn) {
+    val videoUrl = remember(path, selectedTranscodeModeIndex, discQuery, burnIn, stereoAudio) {
         if (!isSmbSource && !currentTranscodeMode.isOriginal) {
             var url = if (path.contains("?")) "$path&transcode=1" else "$path?transcode=1"
             url += transcodeQuery(currentTranscodeMode) // no taller than the hardware decodes
             url += discQuery
             if (burnIn >= 0) url += "&subtitle=$burnIn"
+            if (stereoAudio) url += "&channels=2"
             if (transcodeStartOffset > 0) {
                 url += "&start=${transcodeStartOffset / 1000f}"
             }
@@ -352,7 +355,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 val decoderProblem = error.errorCode in androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..
                     androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED
-                if (decoderProblem && currentTranscodeMode.isOriginal && !isSmbSource) {
+                if (AudioFallback.isAudioDecoderFailure(error) && !currentTranscodeMode.isOriginal && !isSmbSource && !stereoAudio) {
+                    // The transcode's surround audio didn't decode: again from here, in stereo.
+                    AudioFallback.stereo = true
+                    transcodeStartOffset = playbackPosition
+                    stereoAudio = true
+                    android.widget.Toast.makeText(context, "This device can't play the surround audio. Switching to stereo.",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                } else if (decoderProblem && currentTranscodeMode.isOriginal && !isSmbSource) {
                     transcodeStartOffset = playbackPosition
                     selectedTranscodeModeIndex = 1
                     android.widget.Toast.makeText(context, "This device can't play the original. Transcoding it.",

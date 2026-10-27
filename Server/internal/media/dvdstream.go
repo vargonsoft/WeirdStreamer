@@ -9,10 +9,11 @@ import (
 
 // DiscOptions picks what to play from a disc image; from the stream URL's query.
 type DiscOptions struct {
-	Title    int // 0: the main title
-	Angle    int // from 1
-	Audio    int // audio track index, from 0
-	Subtitle int // subtitle track index burned into the picture; -1 for none
+	Title    int  // 0: the main title
+	Angle    int  // from 1
+	Audio    int  // audio track index, from 0
+	Subtitle int  // subtitle track index burned into the picture; -1 for none
+	Stereo   bool // downmix the audio (channels=2)
 }
 
 // ParseDiscOptions reads title, angle, audio and subtitle from a stream request's query.
@@ -24,7 +25,8 @@ func ParseDiscOptions(r *http.Request) DiscOptions {
 		}
 		return def
 	}
-	return DiscOptions{Title: num("title", 0), Angle: num("angle", 1), Audio: num("audio", 0), Subtitle: num("subtitle", -1)}
+	return DiscOptions{Title: num("title", 0), Angle: num("angle", 1), Audio: num("audio", 0), Subtitle: num("subtitle", -1),
+		Stereo: StereoRequested(r)}
 }
 
 // discBaseBitrate is what percentage bitrates ("80%") are taken of: about a DVD's video bitrate.
@@ -134,8 +136,11 @@ func DiscTranscodeArgs(filePath string, opt DiscOptions, startTime, bitrate, res
 	if resolution != "" {
 		videoDesc += ", " + resolution + "p"
 	}
-	args = append(args, "-c:a", "aac", "-b:a", "192k",
-		"-movflags", "frag_keyframe+empty_moov", "-f", "mp4", "pipe:1")
+	args = append(args, "-c:a", "aac", "-b:a", "192k")
+	if opt.Stereo {
+		args = append(args, "-ac", "2")
+	}
+	args = append(args, "-movflags", "frag_keyframe+empty_moov", "-f", "mp4", "pipe:1")
 
 	reason := fmt.Sprintf("DVD disc image: title %d", t.Number)
 	if t.Number == info.MainTitle {

@@ -187,6 +187,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     // into a transcode. SMB files, downloads on this phone and discs have none.
     val serverSubs = remember(path) { if (isSmbSource || isLocal || isDisc) null else ServerSubtitles.forStream(path) }
     val burnIn = serverSubs?.burnIn ?: -1
+    // Stereo audio in transcodes, once a surround one has failed to decode (AudioFallback)
+    var stereoAudio by remember(path) { mutableStateOf(AudioFallback.stereo) }
     var showSubtitleMenu by remember { mutableStateOf(false) }
     var showSubtitleSearch by remember { mutableStateOf(false) }
     val subtitleVideo = remember(path) { sourceItem?.originalPath ?: path.substringBefore("&") }
@@ -293,7 +295,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     }
 
     // Handle MediaItem updates when path or transcode mode changes
-    LaunchedEffect(path, enableTranscode, transcodeModeIndex, discQuery, burnIn) {
+    LaunchedEffect(path, enableTranscode, transcodeModeIndex, discQuery, burnIn, stereoAudio) {
         // Capture current position if available
         val currentPos = discRestartAt?.also { discRestartAt = null } ?: if (exoPlayer.mediaItemCount > 0) {
             if (transcodeStartOffset > 0) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
@@ -307,7 +309,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             val base = path.substringBefore("?")
             val pathParam = path.substringAfter("path=").substringBefore("&")
             "$base?path=$pathParam&auto-transcode=0&transcode=1&start=$startTimeSeconds$discQuery" +
-                transcodeQuery(transcodeModes[transcodeModeIndex]) + (if (burnIn >= 0) "&subtitle=$burnIn" else "")
+                transcodeQuery(transcodeModes[transcodeModeIndex]) + (if (burnIn >= 0) "&subtitle=$burnIn" else "") +
+                (if (stereoAudio) "&channels=2" else "")
         } else {
             transcodeStartOffset = 0L
             path
@@ -338,7 +341,14 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 val decoderProblem = error.errorCode in androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..
                     androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED
-                if (decoderProblem && !enableTranscode && !isSmbSource && !isLocal) {
+                if (AudioFallback.isAudioDecoderFailure(error) && enableTranscode && !isSmbSource && !isLocal && !stereoAudio) {
+                    // The transcode's surround audio didn't decode: again from here, in stereo
+                    // (the stream restarts where the player is).
+                    AudioFallback.stereo = true
+                    stereoAudio = true
+                    android.widget.Toast.makeText(context, "This phone can't play the surround audio. Switching to stereo.",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                } else if (decoderProblem && !enableTranscode && !isSmbSource && !isLocal) {
                     playbackPosition = exoPlayer.currentPosition.takeIf { it > 0 } ?: playbackPosition
                     chooseTranscodeMode(1)
                     android.widget.Toast.makeText(context, "This phone can't play the original. Transcoding it.",

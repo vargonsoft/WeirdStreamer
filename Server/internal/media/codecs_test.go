@@ -13,6 +13,8 @@ func TestParseTrackOptions(t *testing.T) {
 		"audio=1&subtitle=0":    {Audio: 1, Subtitle: 0},
 		"audio=x&subtitle=-3":   {Audio: -1, Subtitle: -1},
 		"subtitle=4&title=1&a=": {Audio: -1, Subtitle: 4},
+		"channels=2":            {Audio: -1, Subtitle: -1, Stereo: true},
+		"channels=6":            {Audio: -1, Subtitle: -1},
 	}
 	for query, want := range cases {
 		r := httptest.NewRequest("GET", "/api/media/stream?"+query, nil)

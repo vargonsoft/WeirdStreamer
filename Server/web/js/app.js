@@ -985,12 +985,17 @@ function seekTo(t) {
     }
 }
 
+// Whether a stream can seek to t (seconds into the stream) without restarting: it has arrived,
+// and the browser can seek there. A streamed transcode's buffer isn't always seekable (Chromium
+// can report nothing seekable for one), and seeking there would jump to its start instead.
 function inBuffer(t) {
-    const b = videoPlayer.buffered;
-    for (let i = 0; i < b.length; i++) {
-        if (t >= b.start(i) && t <= b.end(i) - 0.5) return true;
-    }
-    return false;
+    const within = (ranges, end) => {
+        for (let i = 0; i < ranges.length; i++) {
+            if (t >= ranges.start(i) && t <= ranges.end(i) - end) return true;
+        }
+        return false;
+    };
+    return within(videoPlayer.buffered, 0.5) && within(videoPlayer.seekable, 0);
 }
 
 function playerDuration() {

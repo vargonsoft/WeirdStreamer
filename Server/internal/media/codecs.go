@@ -126,12 +126,17 @@ func (c *Codecs) BrowserVideo() bool {
 }
 
 // TrackOptions picks a file's tracks for a transcode: Audio is an index among its audio tracks
-// (-1: the default one), Subtitle one among its subtitle tracks to burn in (-1: none).
+// (-1: the default one), Subtitle one among its subtitle tracks to burn in (-1: none). Stereo
+// downmixes the audio (channels=2): for players whose decoder fails on surround AAC.
 type TrackOptions struct {
 	Audio, Subtitle int
+	Stereo          bool
 }
 
-// ParseTrackOptions reads the audio= and subtitle= params of a stream request.
+// StereoRequested reports whether a stream request asks for stereo audio (channels=2).
+func StereoRequested(r *http.Request) bool { return r.URL.Query().Get("channels") == "2" }
+
+// ParseTrackOptions reads the audio=, subtitle= and channels= params of a stream request.
 func ParseTrackOptions(r *http.Request) TrackOptions {
 	q := r.URL.Query()
 	num := func(key string) int {
@@ -140,7 +145,7 @@ func ParseTrackOptions(r *http.Request) TrackOptions {
 		}
 		return -1
 	}
-	return TrackOptions{Audio: num("audio"), Subtitle: num("subtitle")}
+	return TrackOptions{Audio: num("audio"), Subtitle: num("subtitle"), Stereo: StereoRequested(r)}
 }
 
 // audioIndex is the audio track to play: the chosen one if the file has it, else the default.
