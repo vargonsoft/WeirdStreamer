@@ -79,6 +79,10 @@ fun PhoneContentPanel(modifier: Modifier = Modifier, boxed: Boolean = true, cont
 val hasPanels: Boolean
     @Composable get() = WeirdStreamerTheme.spec.panelColor.isSpecified
 
+/** A phone pop-up menu's edge, so it stands apart from a dialog or bar of the same colour. */
+@Composable
+fun phoneMenuBorder() = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.material3.MaterialTheme.colorScheme.outline)
+
 /** Buttons' shape on TV and phone: square corners, as on the web (its .btn's 5px). */
 val AppButtonShape = RoundedCornerShape(5.dp)
 

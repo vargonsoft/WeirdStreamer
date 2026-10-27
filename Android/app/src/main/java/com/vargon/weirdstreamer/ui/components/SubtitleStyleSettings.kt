@@ -65,6 +65,9 @@ private fun subtitleStyleRows(s: SubtitleStyleSetting): List<SubtitleStyleRow> {
             custom.copy(opacity = SUBTITLE_OPACITIES.step(SUBTITLE_OPACITIES.minBy { kotlin.math.abs(it - s.opacity) }, by))
         },
         SubtitleStyleRow("Text", s.foreground.label, true) { by -> custom.copy(foreground = SubtitleForeground.entries.step(s.foreground, by)) },
+        SubtitleStyleRow("Text opacity", opacityLabel(s.textOpacity), true) { by ->
+            custom.copy(textOpacity = SUBTITLE_OPACITIES.step(SUBTITLE_OPACITIES.minBy { kotlin.math.abs(it - s.textOpacity) }, by))
+        },
         SubtitleStyleRow("Outline", if (s.outline) "On" else "Off", s.background != SubtitleBackground.NONE) { custom.copy(outline = !s.outline) },
         SubtitleStyleRow("Font", s.font.label, true) { by -> custom.copy(font = SubtitleFont.entries.step(s.font, by)) },
         SubtitleStyleRow("Size", s.size.label, true) { by -> custom.copy(size = SubtitleSize.entries.step(s.size, by)) },
@@ -166,7 +169,7 @@ fun PhoneSubtitleStyleDialog(onDismiss: () -> Unit) {
                             modifier = Modifier.alpha(if (!row.applies || (setting.system && i > 0)) 0.5f else 1f)
                                 .clickable { open = true }
                         )
-                        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                        androidx.compose.material3.DropdownMenu(border = phoneMenuBorder(), expanded = open, onDismissRequest = { open = false }) {
                             options.forEach { (label, value) ->
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { androidx.compose.material3.Text(label) },
@@ -190,8 +193,9 @@ private fun phoneChoices(s: SubtitleStyleSetting, i: Int): List<Pair<String, Sub
         1 -> SubtitleBackground.entries.map { it.label to c.copy(background = it) }
         2 -> SUBTITLE_OPACITIES.map { opacityLabel(it) to c.copy(opacity = it) }
         3 -> SubtitleForeground.entries.map { it.label to c.copy(foreground = it) }
-        4 -> listOf("Off" to c.copy(outline = false), "On" to c.copy(outline = true))
-        5 -> SubtitleFont.entries.map { it.label to c.copy(font = it) }
+        4 -> SUBTITLE_OPACITIES.map { opacityLabel(it) to c.copy(textOpacity = it) }
+        5 -> listOf("Off" to c.copy(outline = false), "On" to c.copy(outline = true))
+        6 -> SubtitleFont.entries.map { it.label to c.copy(font = it) }
         else -> SubtitleSize.entries.map { it.label to c.copy(size = it) }
     }
 }

@@ -470,7 +470,7 @@ private fun LibraryTypeMenu(type: String, onChange: (String) -> Unit) {
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
-        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        ExposedDropdownMenu(border = phoneMenuBorder(), expanded = open, onDismissRequest = { open = false }) {
             libraryTypes.forEach { (value, label) ->
                 DropdownMenuItem(text = { Text(label) }, onClick = { onChange(value); open = false })
             }
@@ -637,7 +637,7 @@ private fun GroupMenu(group: String, groups: List<String>, modifier: Modifier, o
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
-        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        ExposedDropdownMenu(border = phoneMenuBorder(), expanded = open, onDismissRequest = { open = false }) {
             groups.forEach { g ->
                 DropdownMenuItem(text = { Text(g) }, onClick = { open = false; if (g != group) onChange(g) })
             }

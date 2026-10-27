@@ -129,7 +129,7 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                 PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 14.dp)
                 // Long press: Play from start, and Mark watched (server videos).
                 if (playback != null || (item.originalPath != null && viewModel.isVideo(item.path))) {
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenu(border = phoneMenuBorder(), expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         if ((playback?.resumeAt ?: 0.0) > 0) {
                             DropdownMenuItem(text = { Text("Play from start") }, onClick = {
                                 menuOpen = false

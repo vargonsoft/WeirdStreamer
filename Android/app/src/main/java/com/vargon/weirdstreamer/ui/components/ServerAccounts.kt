@@ -319,7 +319,7 @@ fun PhoneServerAccountsRow(
                         onClick = { viewModel.chooseServerAccount(provider, address, account.username) }
                     ) { color -> androidx.compose.material3.Text(initialOf(accountLabel(account.username)), color = color,
                         style = androidx.compose.material3.MaterialTheme.typography.headlineSmall) }
-                    androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    androidx.compose.material3.DropdownMenu(border = phoneMenuBorder(), expanded = menu, onDismissRequest = { menu = false }) {
                         androidx.compose.material3.DropdownMenuItem(
                             text = { androidx.compose.material3.Text("Sign out ${accountLabel(account.username)}") },
                             onClick = { menu = false; viewModel.signOutServerAccount(provider, address, account.username) }

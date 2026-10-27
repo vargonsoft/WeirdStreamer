@@ -1169,7 +1169,7 @@ async function chooseSubtitleResult(p, r, button) {
 // (white on translucent black); Custom sets colours, outline, font and size for the player's cues
 // (video::cue) and the preview.
 const SUBTITLE_STYLE_DEFAULTS = { mode: 'default', background: 'black', opacity: 0.5, foreground: 'white',
-    outline: false, font: 'default', size: 'normal' };
+    textOpacity: 1, outline: false, font: 'default', size: 'normal' };
 const SUBTITLE_SIZES = { tiny: 0.6, small: 0.8, normal: 1, large: 1.3, huge: 1.6 };
 const SUBTITLE_FONTS = {
     default: 'sans-serif',
@@ -1211,10 +1211,12 @@ function subtitleCss(style) {
     const box = theme.getPropertyValue('--surface-color') || '#321b2f';
     const text = style.foreground === 'themed' ? accent : named[style.foreground] || '#ffffff';
     const back = style.background === 'themed' ? box : named[style.background];
-    const css = { color: withAlpha(text, 1), background: 'transparent', 'text-shadow': 'none',
+    // The text's opacity applies to its outline too (else the outline shows through the letters).
+    const textAlpha = Number(style.textOpacity) || 1;
+    const css = { color: withAlpha(text, textAlpha), background: 'transparent', 'text-shadow': 'none',
         'font-family': SUBTITLE_FONTS[style.font] || SUBTITLE_FONTS.default, scale: SUBTITLE_SIZES[style.size] || 1 };
     if (back && style.outline) {
-        const o = withAlpha(back, 1);
+        const o = withAlpha(back, textAlpha);
         css['text-shadow'] = [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1.5], [0, 1.5], [-1.5, 0], [1.5, 0]]
             .map(([x, y]) => `${x}px ${y}px 0 ${o}`).join(', ');
     } else if (back) {
@@ -1245,7 +1247,7 @@ function applySubtitleStyle() {
 
 function setupSubtitleStyle() {
     const fields = { background: 'subtitle-background', opacity: 'subtitle-opacity', foreground: 'subtitle-foreground',
-        font: 'subtitle-font', size: 'subtitle-size' };
+        textOpacity: 'subtitle-text-opacity', font: 'subtitle-font', size: 'subtitle-size' };
     const render = () => {
         const style = subtitleStyle();
         document.querySelectorAll('input[name="subtitle-mode"]').forEach(r => { r.checked = r.value === style.mode; });
@@ -1267,7 +1269,7 @@ function setupSubtitleStyle() {
         r.onchange = () => save({ mode: r.value });
     });
     Object.entries(fields).forEach(([key, id]) => {
-        document.getElementById(id).onchange = (e) => save({ [key]: key === 'opacity' ? Number(e.target.value) : e.target.value });
+        document.getElementById(id).onchange = (e) => save({ [key]: key === 'opacity' || key === 'textOpacity' ? Number(e.target.value) : e.target.value });
     });
     document.getElementById('subtitle-outline').onchange = (e) => save({ outline: e.target.checked });
     // Themed colours follow the theme.

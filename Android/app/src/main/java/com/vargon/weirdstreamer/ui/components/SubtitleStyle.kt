@@ -17,6 +17,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeJoin
@@ -51,6 +53,7 @@ data class SubtitleStyleSetting(
     val background: SubtitleBackground = SubtitleBackground.BLACK,
     val opacity: Float = 0.5f,
     val foreground: SubtitleForeground = SubtitleForeground.WHITE,
+    val textOpacity: Float = 1f, // the text's (and its outline's)
     val outline: Boolean = false, // the background colour outlines the text instead of a box
     val font: SubtitleFont = SubtitleFont.DEFAULT,
     val size: SubtitleSize = SubtitleSize.NORMAL,
@@ -75,6 +78,7 @@ object SubtitleStyleStore {
                 background = read("background", SubtitleBackground.entries.toTypedArray(), d.background),
                 opacity = p.getFloat("opacity", d.opacity),
                 foreground = read("foreground", SubtitleForeground.entries.toTypedArray(), d.foreground),
+                textOpacity = p.getFloat("text_opacity", d.textOpacity),
                 outline = p.getBoolean("outline", d.outline),
                 font = read("font", SubtitleFont.entries.toTypedArray(), d.font),
                 size = read("size", SubtitleSize.entries.toTypedArray(), d.size),
@@ -88,7 +92,7 @@ object SubtitleStyleStore {
         loaded = true
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean("system", s.system).putString("background", s.background.name).putFloat("opacity", s.opacity)
-            .putString("foreground", s.foreground.name).putBoolean("outline", s.outline)
+            .putString("foreground", s.foreground.name).putFloat("text_opacity", s.textOpacity).putBoolean("outline", s.outline)
             .putString("font", s.font.name).putString("size", s.size.name).apply()
     }
 }
@@ -101,6 +105,7 @@ data class ResolvedSubtitleStyle(
     val shadow: Boolean,
     val font: FontFamily,
     val scale: Float,
+    val textAlpha: Float = 1f, // the text and its outline, faded together
 )
 
 private fun fontFamily(font: SubtitleFont): FontFamily = when (font) {
@@ -151,6 +156,7 @@ fun resolvedSubtitleStyle(setting: SubtitleStyleSetting = SubtitleStyleStore.get
         shadow = false,
         font = fontFamily(setting.font),
         scale = setting.size.scale,
+        textAlpha = setting.textOpacity,
     )
 }
 
@@ -163,12 +169,18 @@ fun StyledSubtitleText(text: AnnotatedString, style: ResolvedSubtitleStyle, font
     val boxed = if (style.box != null) Modifier.background(style.box, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 4.dp)
         else Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
     Box(modifier.then(boxed), contentAlignment = Alignment.Center) {
-        style.outline?.let { outline ->
-            val width = with(LocalDensity.current) { size.toPx() * 0.14f }
-            androidx.compose.material3.Text(text, style = base.copy(color = outline, shadow = null,
-                drawStyle = Stroke(width = width, join = StrokeJoin.Round)))
+        // The text and its outline fade as one (faded apart, the outline would show through the letters).
+        Box(Modifier.graphicsLayer {
+            alpha = style.textAlpha
+            compositingStrategy = if (style.textAlpha < 1f) CompositingStrategy.Offscreen else CompositingStrategy.Auto
+        }, contentAlignment = Alignment.Center) {
+            style.outline?.let { outline ->
+                val width = with(LocalDensity.current) { size.toPx() * 0.14f }
+                androidx.compose.material3.Text(text, style = base.copy(color = outline, shadow = null,
+                    drawStyle = Stroke(width = width, join = StrokeJoin.Round)))
+            }
+            androidx.compose.material3.Text(text, style = base)
         }
-        androidx.compose.material3.Text(text, style = base)
     }
 }
 

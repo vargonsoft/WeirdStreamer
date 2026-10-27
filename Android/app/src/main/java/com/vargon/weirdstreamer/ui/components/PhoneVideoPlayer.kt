@@ -630,7 +630,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                     tint = if (enableTranscode) Color.Green else Color.White
                                 )
                             }
-                            DropdownMenu(expanded = showTranscodeMenu, onDismissRequest = { showTranscodeMenu = false }) {
+                            DropdownMenu(border = phoneMenuBorder(), expanded = showTranscodeMenu, onDismissRequest = { showTranscodeMenu = false }) {
                                 transcodeModes.forEachIndexed { index, mode ->
                                     val unavailable = mode.isOriginal && (isDisc || tooBigToDecode)
                                     DropdownMenuItem(
@@ -662,7 +662,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                 Icon(Icons.Default.ClosedCaption, contentDescription = "Subtitles",
                                     tint = if (subs.selected >= 0) Color.Green else Color.White)
                             }
-                            DropdownMenu(expanded = showSubtitleMenu, onDismissRequest = { showSubtitleMenu = false }) {
+                            DropdownMenu(border = phoneMenuBorder(), expanded = showSubtitleMenu, onDismissRequest = { showSubtitleMenu = false }) {
                                 val labels = subs.labels
                                 (listOf("Off") + labels).forEachIndexed { i, label ->
                                     val index = i - 1
