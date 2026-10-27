@@ -133,11 +133,13 @@ for name in "Onn" "Galaxy Fold 7" "Moto G"; do
         continue
     fi
     echo "== Installing on $name ($model)"
-    if "$ADB" -s "$serial" install -r "$APK" 2>&1 | tail -1 | grep -q Success; then
+    result=$("$ADB" -s "$serial" install -r "$APK" 2>&1) || true
+    if grep -q Success <<<"$result"; then
         echo "   ok"
         installed=$((installed + 1))
     else
-        echo "   FAILED on $name" >&2
+        echo "   FAILED on $name:" >&2
+        tail -3 <<<"$result" | sed 's/^/     /' >&2
         failed=1
     fi
 done
