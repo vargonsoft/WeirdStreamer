@@ -1858,6 +1858,9 @@ function formatDuration(seconds) {
 // Settings Functions
 async function showSettings() {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
+    // The account signed in (watch status is kept per account)
+    document.getElementById('account-signed-in').textContent =
+        user.username ? `Signed in as ${user.username}${user.is_admin ? ' (admin)' : ''}` : '';
 
     // Hide admin tabs for non-admin users
     const serverTabBtn = document.querySelector('.settings-tab[data-tab="server"]');

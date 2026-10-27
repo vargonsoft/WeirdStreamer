@@ -355,9 +355,15 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                             ) {
                                 Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(24.dp))
                                 Spacer(modifier = Modifier.width(16.dp))
-                                Text(address, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-
                                 val isServer = provider.typeId == "SERVER"
+                                // The account signed in (watch status is kept per account)
+                                val account = if (isServer) authStateRefresh.let { viewModel.credentialManager.getServerAccount(address) } else null
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(address, style = MaterialTheme.typography.titleMedium)
+                                    if (isServer) Text(account?.let { "Signed in as $it" } ?: "Not signed in",
+                                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+
                                 // Access authStateRefresh here to ensure recomposition when it changes
                                 val hasToken = if (isServer) {
                                     authStateRefresh.let { viewModel.credentialManager.getServerToken(address) != null }

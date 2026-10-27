@@ -219,8 +219,13 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                             authStateRefresh.let { viewModel.credentialManager.getServerToken(address) != null }
                         } else false
 
+                        // The account signed in (watch status is kept per account)
+                        val account = if (isServer) authStateRefresh.let { viewModel.credentialManager.getServerAccount(address) } else null
                         ListItem(
                             headlineContent = { Text(address) },
+                            supportingContent = if (isServer) {
+                                { Text(account?.let { "Signed in as $it" } ?: "Not signed in") }
+                            } else null,
                             leadingContent = { Icon(Icons.Default.Dns, contentDescription = null) },
                             trailingContent = {
                                 Row {

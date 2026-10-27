@@ -124,6 +124,20 @@ class CredentialManager(context: Context) {
         return null
     }
 
+    /**
+     * The account signed in to a server: the username in its token (a JWT, whose middle part is
+     * the claims as base64url JSON), so sign-ins from before this was shown have it too. Null when
+     * signed out.
+     */
+    fun getServerAccount(serverUrl: String): String? {
+        val token = getServerToken(serverUrl) ?: return null
+        return runCatching {
+            val claims = android.util.Base64.decode(token.split(".")[1],
+                android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
+            org.json.JSONObject(String(claims)).optString("username").ifEmpty { null }
+        }.getOrNull()
+    }
+
     fun clearServerToken(serverUrl: String) {
         tokenCache.remove(serverUrl)
         sharedPreferences.edit().apply {
