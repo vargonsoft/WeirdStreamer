@@ -1885,6 +1885,7 @@ async function showSettings() {
             updateAvailableGroups();
 
             // Populate form fields
+            document.getElementById('server-name').value = config.server.name || '';
             document.getElementById('server-port').value = config.server.port;
             document.getElementById('server-host').value = config.server.host;
             document.getElementById('enable-http2').checked = config.streaming.enableHTTP2;
@@ -2212,6 +2213,7 @@ async function handleSaveSettings() {
     
     try {
         // Update config object with form values
+        state.currentConfig.server.name = document.getElementById('server-name').value.trim();
         state.currentConfig.server.port = parseInt(document.getElementById('server-port').value);
         state.currentConfig.server.host = document.getElementById('server-host').value;
         state.currentConfig.streaming.enableHTTP2 = document.getElementById('enable-http2').checked;

@@ -98,8 +98,15 @@ class CredentialManager(context: Context) {
     fun removeSavedServer(address: String) {
         val servers = getSavedServers().toMutableSet()
         servers.remove(address)
-        sharedPreferences.edit().putStringSet("saved_servers", servers).remove("${address}_smb_accounts").apply()
+        sharedPreferences.edit().putStringSet("saved_servers", servers).remove("${address}_smb_accounts").remove("${address}_name").apply()
         clearCredentials(address)
+    }
+
+    /** A WeirdStreamer server's name, as it last said (null if never asked; blank if it has none). */
+    fun getServerName(address: String): String? = sharedPreferences.getString("${address}_name", null)
+
+    fun setServerName(address: String, name: String) {
+        sharedPreferences.edit().putString("${address}_name", name).apply()
     }
 
     fun getSavedServers(): Set<String> {

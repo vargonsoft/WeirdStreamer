@@ -766,6 +766,29 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+    // WeirdStreamer servers' names, as they last said, so a server shows its name when it's offline
+    private val serverNames = mutableStateMapOf<String, String>()
+
+    /** The name a WeirdStreamer server gave itself, or null when it has none (or hasn't said). */
+    fun serverName(address: String): String? =
+        (serverNames[address] ?: credentialManager.getServerName(address))?.takeIf { it.isNotBlank() }
+
+    /** Asks a WeirdStreamer server for its name (no sign-in needed), keeping what it says. */
+    fun refreshServerName(address: String) {
+        viewModelScope.launch {
+            val name = withContext(Dispatchers.IO) {
+                runCatching {
+                    val request = okhttp3.Request.Builder().url(address.trimEnd('/') + "/api/info").build()
+                    com.vargon.weirdstreamer.api.ApiClient.probeClient().newCall(request).execute().use { response ->
+                        if (response.isSuccessful) org.json.JSONObject(response.body?.string() ?: "").optString("name").trim() else null
+                    }
+                }.getOrNull()
+            } ?: return@launch
+            credentialManager.setServerName(address, name)
+            serverNames[address] = name
+        }
+    }
+
     /** A server's accounts on this device, for its row on the source list and in Settings. */
     fun accountsOf(provider: SourceProvider, address: String): List<CredentialManager.ServerAccount> =
         if (provider.typeId == "SMB") credentialManager.getSmbAccounts(address) else credentialManager.getServerAccounts(address)

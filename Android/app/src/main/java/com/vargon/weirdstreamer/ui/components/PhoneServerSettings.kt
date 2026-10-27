@@ -166,6 +166,7 @@ fun ServerSettingsTab(server: ServerRepository) {
     var config by remember { mutableStateOf<JsonObject?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     val paths = remember { mutableStateListOf<PathEdit>() }
+    var serverName by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("") }
     var http2 by remember { mutableStateOf(false) }
@@ -204,7 +205,10 @@ fun ServerSettingsTab(server: ServerRepository) {
         }
         groupNames.clear()
         c.getAsJsonArray("groups")?.forEach { groupNames.add(it.asString) }
-        c.getAsJsonObject("server")?.let { port = it.get("port")?.asString ?: ""; host = it.get("host")?.asString ?: "" }
+        c.getAsJsonObject("server")?.let {
+            serverName = it.get("name")?.asString ?: ""
+            port = it.get("port")?.asString ?: ""; host = it.get("host")?.asString ?: ""
+        }
         c.getAsJsonObject("streaming")?.let {
             http2 = it.get("enableHTTP2")?.asBoolean ?: false
             chunkSize = it.get("chunkSize")?.asString ?: ""
@@ -235,6 +239,7 @@ fun ServerSettingsTab(server: ServerRepository) {
         c.getAsJsonObject("media").add("paths", array)
         c.add("groups", jsonNames(groupNames))
         c.getAsJsonObject("server").apply {
+            addProperty("name", serverName.trim())
             port.trim().toIntOrNull()?.let { addProperty("port", it) }
             addProperty("host", host.trim())
         }
@@ -331,6 +336,8 @@ fun ServerSettingsTab(server: ServerRepository) {
             }
             item { SectionTitle("Server") }
             item {
+                OutlinedTextField(serverName, { serverName = it }, label = { Text("Name") }, singleLine = true,
+                    supportingText = { Text("Shown in the apps' server lists") }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(port, { port = it.filter(Char::isDigit) }, label = { Text("Port") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))

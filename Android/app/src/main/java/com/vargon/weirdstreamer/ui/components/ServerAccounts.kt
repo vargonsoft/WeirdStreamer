@@ -2,7 +2,13 @@ package com.vargon.weirdstreamer.ui.components
 
 import com.vargon.weirdstreamer.accountLabel
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.vargon.weirdstreamer.R
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,9 +64,18 @@ import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 /** The circle's letter for an account (a profile picture, later). */
 private fun initialOf(name: String) = name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "?"
 
-/** The server as its row shows it: host (and port), and the address in full. */
-private fun serverLines(provider: SourceProvider, address: String): Pair<String, String> =
-    if (provider.typeId == "SMB") address to "smb://$address" else MediaSource(provider.typeId, address).displayName() to address
+/** The server as its row shows it: its name (else host and port), and the address in full. */
+private fun serverLines(viewModel: MediaViewModel, provider: SourceProvider, address: String): Pair<String, String> =
+    if (provider.typeId == "SMB") address to "smb://$address"
+    else (viewModel.serverName(address) ?: MediaSource(provider.typeId, address).displayName()) to address
+
+/** A WeirdStreamer server card's background: the logo, faded, filling the card. */
+@Composable
+private fun BoxScope.ServerLogoBackdrop(provider: SourceProvider) {
+    if (provider.typeId != "SERVER") return
+    Image(painterResource(R.drawable.ws_logo_mark), contentDescription = null, contentScale = ContentScale.Crop,
+        alpha = 0.12f, modifier = Modifier.matchParentSize())
+}
 
 /** Settings' line for a server: who's signed in to it on this device. */
 fun serverUsersText(users: List<String>) = if (users.isEmpty()) "No users" else "Users: " + users.joinToString(", ")
@@ -85,20 +100,20 @@ fun TvServerAccountsRow(
 ) {
     val focused = accounts.firstOrNull { it.username == focusAccount } ?: accounts.firstOrNull()
     var signOutChoice by remember { mutableStateOf<String?>(null) }
-    val (name, full) = serverLines(provider, address)
+    LaunchedEffect(address) { if (provider.typeId == "SERVER") viewModel.refreshServerName(address) }
+    val (name, full) = serverLines(viewModel, provider, address)
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(
-            Modifier.width(280.dp).height(116.dp)
-                .background(androidx.tv.material3.MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Center
-        ) {
+        Box(Modifier.width(280.dp).height(116.dp).clip(RoundedCornerShape(12.dp))
+            .background(androidx.tv.material3.MaterialTheme.colorScheme.surfaceVariant)) {
+        ServerLogoBackdrop(provider)
+        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center) {
             androidx.tv.material3.Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(32.dp),
                 tint = WeirdStreamerTheme.spec.serverIconTint.takeOrElse { androidx.tv.material3.LocalContentColor.current })
             androidx.tv.material3.Text(name, style = androidx.tv.material3.MaterialTheme.typography.titleMedium,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
             if (full != name) androidx.tv.material3.Text(full, style = androidx.tv.material3.MaterialTheme.typography.bodySmall,
                 color = androidx.tv.material3.MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         }
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(24.dp),
@@ -256,18 +271,18 @@ fun PhoneServerAccountsRow(
     address: String,
     accounts: List<ServerAccount>,
 ) {
-    val (name, _) = serverLines(provider, address)
+    LaunchedEffect(address) { if (provider.typeId == "SERVER") viewModel.refreshServerName(address) }
+    val (name, _) = serverLines(viewModel, provider, address)
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(
-            Modifier.padding(start = 12.dp).width(112.dp).height(108.dp)
-                .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-                .padding(10.dp),
-            verticalArrangement = Arrangement.Center
-        ) {
+        Box(Modifier.padding(start = 12.dp).width(112.dp).height(108.dp).clip(RoundedCornerShape(12.dp))
+            .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant)) {
+        ServerLogoBackdrop(provider)
+        Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.Center) {
             androidx.compose.material3.Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(24.dp),
                 tint = WeirdStreamerTheme.spec.serverIconTint.takeOrElse { androidx.compose.material3.LocalContentColor.current })
             androidx.compose.material3.Text(name, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
                 maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        }
         }
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),

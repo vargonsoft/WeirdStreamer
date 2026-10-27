@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"mime"
@@ -112,6 +113,11 @@ func main() {
 	// Public routes
 	r.HandleFunc("/api/auth/login", authHandler.Login).Methods("POST")
 	r.HandleFunc("/api/auth/logout", authHandler.Logout).Methods("POST")
+	// What the apps show for a server before signing in to it
+	r.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"name": config.GlobalConfig.Server.Name})
+	}).Methods("GET")
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))

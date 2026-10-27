@@ -31,6 +31,8 @@ type MetadataConfig struct {
 }
 
 type ServerConfig struct {
+	// The server's name, which apps show for it (empty: they show its address)
+	Name string `json:"name"`
 	Port int    `json:"port"`
 	Host string `json:"host"`
 }
@@ -106,6 +108,7 @@ func (c *Config) CheckGroupName(name string) error {
 
 // Validate checks values that can't be expressed by the JSON structure alone.
 func (c *Config) Validate() error {
+	c.Server.Name = strings.TrimSpace(c.Server.Name)
 	// Groups: each a valid name, none twice (in any case)
 	groups := c.Groups
 	c.Groups = nil
