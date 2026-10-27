@@ -110,7 +110,8 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                             Icon(Icons.Default.Add, contentDescription = "Add Source")
                         }
                     }
-                    IconButton(onClick = { viewModel.toggleViewMode() }) {
+                    // Not on the server list, which has one layout.
+                    if (currentSource != null) IconButton(onClick = { viewModel.toggleViewMode() }) {
                         // Shows the mode it switches to: list -> grid -> library (movie/tv libraries) -> list
                         Icon(
                             when {
@@ -205,7 +206,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(text = "Error: ${viewModel.errorMessage}", color = MaterialTheme.colorScheme.error)
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(colors = phoneButtonColors(), onClick = { 
+                            Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = { 
                                 currentSource?.let { viewModel.loadPath(it, viewModel.currentPath) }
                             }) {
                                 Text("Retry")
@@ -237,9 +238,9 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             title = { Text("Regenerate thumbnails?") },
             text = { Text("Thumbnails for this folder are made again on the server.") },
             confirmButton = {
-                TextButton(onClick = { showRegenerateDialog = false; viewModel.regenerateThumbnails() }) { Text("Regenerate") }
+                TextButton(shape = AppButtonShape, onClick = { showRegenerateDialog = false; viewModel.regenerateThumbnails() }) { Text("Regenerate") }
             },
-            dismissButton = { TextButton(onClick = { showRegenerateDialog = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(shape = AppButtonShape, onClick = { showRegenerateDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -430,13 +431,13 @@ private fun PhoneAddSourceDialog(
         },
         confirmButton = {
             if (selectedProvider != null) {
-                TextButton(onClick = { if (address.isNotBlank()) onAdd(selectedProvider!!, address) }) {
+                TextButton(shape = AppButtonShape, onClick = { if (address.isNotBlank()) onAdd(selectedProvider!!, address) }) {
                     Text("Add")
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = {
+            TextButton(shape = AppButtonShape, onClick = {
                 if (selectedProvider == null) onDismiss()
                 else selectedProvider = null
             }) {
@@ -484,12 +485,12 @@ private fun PhoneAuthDialog(host: String, onDismiss: () -> Unit, initialUsername
             }
         },
         confirmButton = {
-            TextButton(onClick = { onLogin(username, password, savePassword) }) {
+            TextButton(shape = AppButtonShape, onClick = { onLogin(username, password, savePassword) }) {
                 Text("Login")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(shape = AppButtonShape, onClick = onDismiss) {
                 Text("Cancel")
             }
         }

@@ -156,14 +156,14 @@ fun PhonePdfViewer(viewModel: MediaViewModel, initialPath: String, onBack: (Stri
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(
+                        TextButton(shape = AppButtonShape, 
                             onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } }, 
                             enabled = pagerState.currentPage > 0
                         ) {
                             Text("Previous")
                         }
                         Text("${pagerState.currentPage + 1} / $pageCount")
-                        TextButton(
+                        TextButton(shape = AppButtonShape, 
                             onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } }, 
                             enabled = pagerState.currentPage < pageCount - 1
                         ) {

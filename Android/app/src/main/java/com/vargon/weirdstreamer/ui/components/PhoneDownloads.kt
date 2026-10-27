@@ -155,14 +155,14 @@ private fun RemoveDownloadDialog(download: DownloadItem, onDismiss: () -> Unit) 
             title = { Text("Download failed") },
             text = { Text("$name\n\n${download.error ?: "Unknown error"}") },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(shape = AppButtonShape, onClick = {
                     DownloadStore.update(download.id) { it.copy(state = DownloadItem.State.QUEUED, error = null, progress = 0f) }
                     DownloadWorker.schedule(context)
                     onDismiss()
                 }) { Text("Retry") }
             },
             dismissButton = {
-                TextButton(onClick = { DownloadStore.remove(download.id); onDismiss() }) { Text("Remove") }
+                TextButton(shape = AppButtonShape, onClick = { DownloadStore.remove(download.id); onDismiss() }) { Text("Remove") }
             }
         )
         else -> {
@@ -175,11 +175,11 @@ private fun RemoveDownloadDialog(download: DownloadItem, onDismiss: () -> Unit) 
                     else "$name will stop downloading.")
                 },
                 confirmButton = {
-                    TextButton(onClick = { DownloadStore.remove(download.id); onDismiss() }) {
+                    TextButton(shape = AppButtonShape, onClick = { DownloadStore.remove(download.id); onDismiss() }) {
                         Text(if (done) "Delete" else "Cancel download", color = MaterialTheme.colorScheme.error)
                     }
                 },
-                dismissButton = { TextButton(onClick = onDismiss) { Text(if (done) "Keep" else "Keep downloading") } }
+                dismissButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text(if (done) "Keep" else "Keep downloading") } }
             )
         }
     }
@@ -240,13 +240,13 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
                     Text("Size", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(90, 75, 50, 25).forEach { pct ->
-                            FilterChip(selected = sizePct == pct, onClick = { sizePct = pct }, label = { Text("$pct%") })
+                            FilterChip(shape = AppButtonShape, selected = sizePct == pct, onClick = { sizePct = pct }, label = { Text("$pct%") })
                         }
                     }
                     Text("Resolution", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(100 to "Original", 75 to "75%", 50 to "50%").forEach { (s, label) ->
-                            FilterChip(selected = scale == s, onClick = { scale = s }, label = { Text(label) })
+                            FilterChip(shape = AppButtonShape, selected = scale == s, onClick = { scale = s }, label = { Text(label) })
                         }
                     }
                 }
@@ -263,7 +263,7 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
         },
         confirmButton = {
             if (pending.isNotEmpty()) {
-                TextButton(onClick = {
+                TextButton(shape = AppButtonShape, onClick = {
                     DownloadStore.add(pending.map { r ->
                         DownloadItem(
                             serverAddress = server.address,
@@ -287,7 +287,7 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
                 }) { Text("Download") }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(if (pending.isEmpty()) "OK" else "Cancel") } }
+        dismissButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text(if (pending.isEmpty()) "OK" else "Cancel") } }
     )
 }
 
@@ -511,13 +511,13 @@ fun DownloadFolderDialog(viewModel: MediaViewModel, onDismiss: () -> Unit) {
             title = { Text("Finding videos…") },
             text = { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+            dismissButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text("Cancel") } }
         )
         requests.isEmpty() -> AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text("No videos here") },
             text = { Text("This folder has no videos to download.") },
-            confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } }
+            confirmButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text("OK") } }
         )
         else -> DownloadQualityDialog(viewModel, requests, onDismiss)
     }

@@ -234,10 +234,10 @@ private fun TvSignOutDialog(user: String, server: String, onDismiss: () -> Unit,
                 androidx.tv.material3.Text(user, style = androidx.tv.material3.MaterialTheme.typography.titleLarge)
                 androidx.tv.material3.Text("Signed in to $server", style = androidx.tv.material3.MaterialTheme.typography.bodyMedium,
                     color = androidx.tv.material3.MaterialTheme.colorScheme.onSurfaceVariant)
-                androidx.tv.material3.Button(colors = tvButtonColors(), onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
+                androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
                     androidx.tv.material3.Text("Sign out")
                 }
-                androidx.tv.material3.Button(colors = tvButtonColors(), onClick = onDismiss,
+                androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth().focusRequester(cancelRequester)) {
                     androidx.tv.material3.Text("Cancel")
                 }
@@ -259,10 +259,10 @@ fun TvRemoveServerDialog(address: String, users: List<String>, onDismiss: () -> 
             Column(Modifier.padding(28.dp).width(480.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 androidx.tv.material3.Text("Remove server?", style = androidx.tv.material3.MaterialTheme.typography.titleLarge)
                 androidx.tv.material3.Text(removeServerWarning(address, users), style = androidx.tv.material3.MaterialTheme.typography.bodyMedium)
-                androidx.tv.material3.Button(colors = tvButtonColors(), onClick = onRemove, modifier = Modifier.fillMaxWidth()) {
+                androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onRemove, modifier = Modifier.fillMaxWidth()) {
                     androidx.tv.material3.Text("Remove")
                 }
-                androidx.tv.material3.Button(colors = tvButtonColors(), onClick = onDismiss,
+                androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth().focusRequester(cancelRequester)) {
                     androidx.tv.material3.Text("Cancel")
                 }

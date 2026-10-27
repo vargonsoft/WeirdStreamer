@@ -99,7 +99,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(colors = tvButtonColors(),
+                    Button(shape = tvButtonShape(), colors = tvButtonColors(),
                         onClick = onBack,
                         modifier = Modifier
                             .focusRequester(backFocus)
@@ -167,7 +167,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         val themes = AppTheme.entries.map { Triple(it.name, it.label, themeButtonFocus[it.ordinal]) }
                         
                         themes.forEachIndexed { index, (themeKey, themeName, focusReq) ->
-                            Button(
+                            Button(shape = tvButtonShape(), 
                                 onClick = {
                                     viewModel.credentialManager.setAppTheme(themeKey)
                                     onThemeChanged?.invoke()
@@ -373,7 +373,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                                     Text(serverUsersText(users),
                                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                Button(
+                                Button(shape = tvButtonShape(), 
                                     onClick = { removeChoice = Triple(provider, address, users) },
                                     colors = ButtonDefaults.colors(
                                         containerColor = Color.Red.copy(alpha = 0.2f),

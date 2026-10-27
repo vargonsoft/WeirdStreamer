@@ -145,7 +145,7 @@ private fun LibraryGroups(all: List<String>, selected: MutableList<String>) {
             modifier = Modifier.align(Alignment.CenterVertically))
         all.forEach { g ->
             val on = g in selected
-            FilterChip(selected = on, label = { Text(g) }, onClick = {
+            FilterChip(shape = AppButtonShape, selected = on, label = { Text(g) }, onClick = {
                 if (on) selected.remove(g) else selected.add(g)
                 val order = all.filter { it in selected } // keep the groups' order
                 selected.clear(); selected.addAll(order)
@@ -282,7 +282,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(newGroupName, { newGroupName = it }, label = { Text("New group") }, singleLine = true,
                         modifier = Modifier.weight(1f))
-                    OutlinedButton(onClick = {
+                    OutlinedButton(shape = AppButtonShape, onClick = {
                         val name = newGroupName.trim()
                         if (name.isEmpty()) return@OutlinedButton
                         scope.launch {
@@ -317,7 +317,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                     OutlinedTextField(newPath, { newPath = it }, label = { Text("New path on the server") },
                         placeholder = { Text("/path/to/media") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     LibraryTypeMenu(newType) { newType = it }
-                    OutlinedButton(onClick = {
+                    OutlinedButton(shape = AppButtonShape, onClick = {
                         val path = newPath.trim()
                         when {
                             path.isEmpty() -> message = "Enter a path" to true
@@ -391,7 +391,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(top = 8.dp).fillMaxWidth().height(IntrinsicSize.Min)
                 ) {
-                    Button(colors = phoneButtonColors(), enabled = !saving, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = {
+                    Button(shape = AppButtonShape, colors = phoneButtonColors(), enabled = !saving, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = {
                         val body = buildConfig() ?: return@Button
                         saving = true
                         scope.launch {
@@ -408,7 +408,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                         Icon(Icons.Default.Save, contentDescription = null)
                         Spacer(Modifier.width(6.dp)); ButtonLabel(if (saving) "Saving…" else "Save settings")
                     }
-                    OutlinedButton(modifier = Modifier.weight(1f).fillMaxHeight(), onClick = {
+                    OutlinedButton(shape = AppButtonShape, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = {
                         scope.launch {
                             val (_, err) = attempt { server.api.scanMedia() }
                             message = (err ?: "Scan started.") to (err != null)
@@ -429,7 +429,7 @@ fun ServerSettingsTab(server: ServerRepository) {
             title = { Text("Rename $old") },
             text = { OutlinedTextField(name, { name = it }, label = { Text("New name") }, singleLine = true) },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(shape = AppButtonShape, onClick = {
                     val new = name.trim()
                     renaming = null
                     if (new.isEmpty() || new == old) return@TextButton
@@ -444,7 +444,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                     }
                 }) { Text("Rename") }
             },
-            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(shape = AppButtonShape, onClick = { renaming = null }) { Text("Cancel") } }
         )
     }
 
@@ -453,8 +453,8 @@ fun ServerSettingsTab(server: ServerRepository) {
             onDismissRequest = { removing = null },
             title = { Text("Remove ${p.name.ifEmpty { "this path" }}?") },
             text = { Text("It's removed from the server's libraries when you save. The files aren't touched.") },
-            confirmButton = { TextButton(onClick = { paths.remove(p); removing = null; message = "Removed. Save to apply." to false }) { Text("Remove") } },
-            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } }
+            confirmButton = { TextButton(shape = AppButtonShape, onClick = { paths.remove(p); removing = null; message = "Removed. Save to apply." to false }) { Text("Remove") } },
+            dismissButton = { TextButton(shape = AppButtonShape, onClick = { removing = null }) { Text("Cancel") } }
         )
     }
 }
@@ -524,7 +524,7 @@ fun UsersTab(server: ServerRepository) {
                     Checkbox(checked = newAdmin, onCheckedChange = { newAdmin = it })
                     Text("Administrator")
                 }
-                Button(colors = phoneButtonColors(), onClick = {
+                Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = {
                     if (newName.isBlank() || newPassword.isEmpty()) {
                         message = "Enter a username and password" to true; return@Button
                     }
@@ -557,8 +557,8 @@ fun UsersTab(server: ServerRepository) {
                     Column(Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(user.username, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            if (user.isAdmin) AssistChip(onClick = {}, label = { Text("Admin") }, modifier = Modifier.padding(start = 8.dp))
-                            if (isMe) AssistChip(onClick = {}, label = { Text("You") }, modifier = Modifier.padding(start = 6.dp))
+                            if (user.isAdmin) AssistChip(shape = AppButtonShape, onClick = {}, label = { Text("Admin") }, modifier = Modifier.padding(start = 8.dp))
+                            if (isMe) AssistChip(shape = AppButtonShape, onClick = {}, label = { Text("You") }, modifier = Modifier.padding(start = 6.dp))
                             Spacer(Modifier.weight(1f))
                             if (!isMe) IconButton(onClick = { deleting = user }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Delete ${user.username}", tint = MaterialTheme.colorScheme.error)
@@ -587,7 +587,7 @@ fun UsersTab(server: ServerRepository) {
             title = { Text("New group") },
             text = { OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true) },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(shape = AppButtonShape, onClick = {
                     val new = name.trim()
                     creatingGroup = false
                     if (new.isEmpty()) return@TextButton
@@ -597,7 +597,7 @@ fun UsersTab(server: ServerRepository) {
                     }
                 }) { Text("Add") }
             },
-            dismissButton = { TextButton(onClick = { creatingGroup = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(shape = AppButtonShape, onClick = { creatingGroup = false }) { Text("Cancel") } }
         )
     }
 
@@ -607,7 +607,7 @@ fun UsersTab(server: ServerRepository) {
             title = { Text("Delete ${user.username}?") },
             text = { Text("They won't be able to sign in any more.") },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(shape = AppButtonShape, onClick = {
                     deleting = null
                     scope.launch {
                         val (_, err) = attempt { server.api.deleteUser(user.username) }
@@ -616,7 +616,7 @@ fun UsersTab(server: ServerRepository) {
                     }
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(shape = AppButtonShape, onClick = { deleting = null }) { Text("Cancel") } }
         )
     }
 }
@@ -673,7 +673,7 @@ fun AccountTab(server: ServerRepository) {
                 OutlinedTextField(confirm, { confirm = it }, label = { Text("Confirm password") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                 Message(message?.first, message?.second ?: false)
-                Button(colors = phoneButtonColors(), onClick = {
+                Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = {
                     when {
                         current.isEmpty() -> message = "Enter your current password" to true
                         password.isEmpty() -> message = "Enter a new password" to true

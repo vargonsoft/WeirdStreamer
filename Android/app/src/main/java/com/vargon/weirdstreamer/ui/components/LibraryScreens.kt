@@ -58,6 +58,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -613,7 +616,7 @@ private fun FileRow(
                     // Play (an icon), or Resume with where it picks up; Play from start; Mark watched.
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         val resumeAt = file.playback?.resumeAt ?: 0.0
-                        Button(colors = tvButtonColors(),
+                        Button(shape = tvButtonShape(), colors = tvButtonColors(),
                             onClick = { viewModel.playLibraryFile(file, queue) },
                             modifier = if (index == 0 && firstRequester != null) Modifier.focusRequester(firstRequester) else Modifier
                         ) {
@@ -624,7 +627,7 @@ private fun FileRow(
                             }
                         }
                         if (resumeAt > 0) {
-                            Button(colors = tvButtonColors(), onClick = { viewModel.playLibraryFile(file, queue, fromStart = true) }) {
+                            Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { viewModel.playLibraryFile(file, queue, fromStart = true) }) {
                                 Icon(Icons.Default.Replay, contentDescription = "Play from start")
                             }
                         }
@@ -674,24 +677,27 @@ private fun SeasonsAndEpisodes(
         // end of the season row, many seasons pushed them off screen); with either row focused,
         // both rows show.
         Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.wholeInView()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                TvWatchedButton(viewModel, season.episodes.flatMap { it.files }, label = season.name, season = season)
-                TvWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, label = "Whole show")
+            // Each row's buttons share the tallest one's height (a named season's label has two lines).
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
+                TvWatchedButton(viewModel, season.episodes.flatMap { it.files }, label = season.name, season = season,
+                    modifier = Modifier.fillMaxHeight())
+                TvWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, label = "Whole show",
+                    modifier = Modifier.fillMaxHeight())
             }
-            LazyRow(
+            // A scrolling Row rather than a LazyRow, so its buttons can share a height (seasons are few).
+            Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(horizontal = FocusBleed),
-                modifier = Modifier.focusBleed()
+                modifier = Modifier.focusBleed().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = FocusBleed).height(IntrinsicSize.Min)
             ) {
-                itemsIndexed(seasons, key = { _, s -> s.season }) { index, s ->
+                seasons.forEachIndexed { index, s ->
                     val isSelected = index == selected
-                    Button(
+                    Button(shape = tvButtonShape(), 
                         onClick = { selected = index },
-                        modifier = if (isSelected) Modifier.focusRequester(pickerRequester) else Modifier,
-                        shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)), // square-cornered, as the phone's chips
+                        modifier = Modifier.fillMaxHeight().then(if (isSelected) Modifier.focusRequester(pickerRequester) else Modifier),
                         // The others outlined, as the phone's are (its chips' outlineVariant is the palette's raised color)
                         border = if (isSelected) ButtonDefaults.border() else ButtonDefaults.border(
-                            border = Border(BorderStroke(1.dp, MaterialTheme.colorScheme.borderVariant), shape = RoundedCornerShape(8.dp))
+                            border = Border(BorderStroke(1.dp, MaterialTheme.colorScheme.borderVariant), shape = AppButtonShape)
                         ),
                         // The season shown: a button among plain labels (themed buttons, as on the web),
                         // or in the primary color.
@@ -705,16 +711,20 @@ private fun SeasonsAndEpisodes(
                             else -> tvButtonColors()
                         }
                     ) {
-                        // Episodes watched (any of an episode's files), with a check once they all are.
+                        // Episodes watched (any of an episode's files), as a ring after the name.
                         val watched = s.episodes.count { e -> e.files.any { it.playback?.watched == true } }
-                        SeasonLabel(s, if (watched > 0) "${s.name} ($watched/${s.episodes.size})" else "${s.name} (${s.episodes.size})")
-                        if (watched == s.episodes.size) {
-                            Spacer(Modifier.width(6.dp))
-                            Icon(Icons.Default.Check, contentDescription = "Watched", modifier = Modifier.size(18.dp))
+                        // Centered in the height the row gives it (the Button's own row keeps to the top).
+                        Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                            SeasonLabel(s, s.name)
+                            Spacer(Modifier.width(10.dp))
+                            SeasonProgressRing(if (s.episodes.isEmpty()) 0f else watched.toFloat() / s.episodes.size,
+                                androidx.tv.material3.LocalContentColor.current, size = 20.dp)
                         }
                     }
                 }
             }
+            Text(episodeCountText(season.episodes.size), style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
         }
         season.episodes.forEachIndexed { index, episode ->
             // Up from the first episode goes to the season picker (Compose's own search can pick the
@@ -729,7 +739,7 @@ private fun SeasonsAndEpisodes(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 12.dp)) {
                     val first = episode.files.firstOrNull()
                     if (first != null && (first.playback?.resumeAt ?: 0.0) > 0) {
-                        Button(colors = tvButtonColors(), onClick = { viewModel.playLibraryFile(first, queue, fromStart = true) }) {
+                        Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { viewModel.playLibraryFile(first, queue, fromStart = true) }) {
                             Icon(Icons.Default.Replay, contentDescription = "Play from start")
                         }
                     }
@@ -808,16 +818,20 @@ private fun EpisodeRow(
  */
 @Composable
 private fun TvWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>, label: String? = null, iconOnly: Boolean = false,
-                            season: LibrarySeason? = null) {
+                            season: LibrarySeason? = null, modifier: Modifier = Modifier) {
     if (files.isEmpty()) return
     val watched = files.all { it.playback?.watched == true }
     // A check: solid once watched, dimmed until then (button colors alone don't tell them apart).
-    Button(colors = tvButtonColors(), onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
-        Icon(Icons.Default.CheckCircle, contentDescription = if (watched) "Mark unwatched" else "Mark watched",
-            modifier = Modifier.alpha(if (watched) 1f else 0.35f))
-        if (!iconOnly && label != null) {
-            Spacer(Modifier.width(6.dp))
-            if (season != null) SeasonLabel(season, label) else Text(label)
+    Button(shape = tvButtonShape(), colors = tvButtonColors(), modifier = modifier,
+        onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
+        // Centered in the height a row may give it (the Button's own row keeps to the top).
+        Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.CheckCircle, contentDescription = if (watched) "Mark unwatched" else "Mark watched",
+                modifier = Modifier.alpha(if (watched) 1f else 0.35f))
+            if (!iconOnly && label != null) {
+                Spacer(Modifier.width(6.dp))
+                if (season != null) SeasonLabel(season, label) else Text(label)
+            }
         }
     }
 }

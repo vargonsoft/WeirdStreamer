@@ -180,13 +180,13 @@ fun PhoneResumeDialog(viewModel: MediaViewModel) {
                     Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp))
                 }
-                androidx.compose.material3.FilledTonalButton(onClick = { viewModel.chooseResume(false) },
+                androidx.compose.material3.FilledTonalButton(shape = AppButtonShape, onClick = { viewModel.chooseResume(false) },
                     modifier = Modifier.fillMaxWidth()) {
                     Icon(androidx.compose.material.icons.Icons.Default.PlayArrow, contentDescription = null)
                     androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
                     Text("Resume from ${clockText(resumeAt)}")
                 }
-                androidx.compose.material3.OutlinedButton(onClick = { viewModel.chooseResume(true) },
+                androidx.compose.material3.OutlinedButton(shape = AppButtonShape, onClick = { viewModel.chooseResume(true) },
                     modifier = Modifier.fillMaxWidth()) {
                     Icon(androidx.compose.material.icons.Icons.Default.Replay, contentDescription = null)
                     androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
@@ -195,6 +195,35 @@ fun PhoneResumeDialog(viewModel: MediaViewModel) {
             }
         },
         confirmButton = {},
-        dismissButton = { androidx.compose.material3.TextButton(onClick = { viewModel.chooseResume(null) }) { Text("Cancel") } }
+        dismissButton = { androidx.compose.material3.TextButton(shape = AppButtonShape, onClick = { viewModel.chooseResume(null) }) { Text("Cancel") } }
     )
 }
+
+/**
+ * A season's progress as a ring in [color]: dimmed and dashed while none of it is watched, then a
+ * solid track with an arc for the share watched ([fraction], 0 to 1), whole once it all is.
+ */
+@Composable
+fun SeasonProgressRing(fraction: Float, color: Color, modifier: Modifier = Modifier, size: Dp = 18.dp) {
+    androidx.compose.foundation.Canvas(modifier.size(size)) {
+        val width = this.size.minDimension * 0.14f
+        val inset = width / 2
+        val arcSize = androidx.compose.ui.geometry.Size(this.size.width - width, this.size.height - width)
+        val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
+        if (fraction <= 0f) {
+            // Six long dashes, evenly around from the top (the circumference divides into them exactly), as on the web
+            val segment = (Math.PI * arcSize.width).toFloat() / 6
+            drawArc(color.copy(alpha = 0.45f), -90f, 360f, false, topLeft, arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width,
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(segment * 0.7f, segment * 0.3f))))
+        } else {
+            drawArc(color.copy(alpha = 0.3f), 0f, 360f, false, topLeft, arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width))
+            drawArc(color, -90f, 360f * fraction.coerceAtMost(1f), false, topLeft, arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        }
+    }
+}
+
+/** "10 Episodes", or "1 Episode". */
+fun episodeCountText(count: Int) = if (count == 1) "1 Episode" else "$count Episodes"

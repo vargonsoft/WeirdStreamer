@@ -1454,6 +1454,8 @@ header h1 {
     color: var(--text-color);
     border-radius: 5px; /* as .btn's */
     padding: 6px 14px;
+    display: inline-flex; /* centers a two-line label (as a block, it sat on the text baseline) */
+    align-items: center;
     font: inherit;
     cursor: pointer;
 }
@@ -1533,17 +1535,18 @@ header h1 {
     overflow: hidden;
 }
 
-/* Play, Fix and watched, left-aligned under the description */
+/* Play, Fix and watched, left-aligned under the description, all one height (a Resume button's
+   label can make it the tallest) */
 .episode-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    align-items: center;
+    align-items: stretch;
     margin-top: 8px;
 }
 
 .episode-actions .btn.icon-btn {
-    align-self: center;
+    align-self: stretch;
 }
 
 @media (max-width: 640px) {
@@ -2160,8 +2163,15 @@ header h1 {
     margin: 24px 0 0;
 }
 
-.season-picker button.all-watched::after {
-    content: ' ✓';
+.season-ring {
+    flex: none;
+    margin-left: 10px;
+}
+
+/* Under the seasons: how many episodes the one shown has */
+.episode-count {
+    color: var(--muted-text);
+    margin: 0 0 12px;
 }
 
 /* Continue Watching: a scrolling row of videos in progress */

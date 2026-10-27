@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -384,7 +385,7 @@ private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: Li
             FlowRow(verticalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
                 val resumeAt = file.playback?.resumeAt ?: 0.0
                 if (resumeAt > 0) {
-                    FilledTonalButton(onClick = { viewModel.playLibraryFile(file, queue) },
+                    FilledTonalButton(shape = AppButtonShape, onClick = { viewModel.playLibraryFile(file, queue) },
                         contentPadding = PaddingValues(horizontal = 12.dp)) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
@@ -394,7 +395,7 @@ private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: Li
                         Icon(Icons.Default.Replay, contentDescription = "Play from start")
                     }
                 } else {
-                    FilledTonalIconButton(onClick = { viewModel.playLibraryFile(file, queue) }) {
+                    FilledTonalIconButton(shape = AppButtonShape, onClick = { viewModel.playLibraryFile(file, queue) }) {
                         Icon(Icons.Default.PlayArrow, contentDescription = "Play")
                     }
                 }
@@ -429,36 +430,45 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
     val queue = remember(season) { season.episodes.flatMap { it.files } }
     Column {
         // Watched buttons for the season shown and the whole show, above the seasons (as on the TV).
+        // Each row's buttons share the tallest one's height (a named season's label has two lines).
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 8.dp)) {
-            PhoneGroupWatchedButton(viewModel, season.episodes.flatMap { it.files }, season.name, season)
-            PhoneGroupWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, "Whole show")
+            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 8.dp)
+                .height(IntrinsicSize.Min)) {
+            PhoneGroupWatchedButton(viewModel, season.episodes.flatMap { it.files }, season.name, season, Modifier.fillMaxHeight())
+            PhoneGroupWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, "Whole show",
+                modifier = Modifier.fillMaxHeight())
         }
-        LazyRow(
+        Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)
+                .height(IntrinsicSize.Min)
         ) {
-            itemsIndexed(seasons, key = { _, s -> s.season }) { index, s ->
-                // Episodes watched (any of an episode's files), with a check once they all are.
+            seasons.forEachIndexed { index, s ->
+                // Episodes watched (any of an episode's files), as a ring after the name.
                 val watched = s.episodes.count { e -> e.files.any { it.playback?.watched == true } }
-                FilterChip(selected = index == selected, onClick = { selected = index },
-                    label = { PhoneSeasonLabel(s, if (watched > 0) "${s.name} ($watched/${s.episodes.size})" else "${s.name} (${s.episodes.size})") },
-                    trailingIcon = if (watched == s.episodes.size) {
-                        { Icon(Icons.Default.Check, contentDescription = "Watched", modifier = Modifier.size(16.dp)) }
-                    } else null)
+                FilterChip(shape = AppButtonShape, selected = index == selected, onClick = { selected = index },
+                    modifier = Modifier.fillMaxHeight(),
+                    // Padded so a two-line label ("Season 1" over the name) clears the chip's edges.
+                    label = { Box(Modifier.padding(vertical = 6.dp)) { PhoneSeasonLabel(s, s.name) } },
+                    trailingIcon = {
+                        SeasonProgressRing(if (s.episodes.isEmpty()) 0f else watched.toFloat() / s.episodes.size,
+                            androidx.compose.material3.LocalContentColor.current, size = 16.dp)
+                    })
             }
         }
+        Text(episodeCountText(season.episodes.size), style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
         var downloading by remember { mutableStateOf<List<DownloadRequest>?>(null) }
         // The downloads scroll sideways when they don't fit.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            FilledTonalButton(onClick = { downloading = episodeDownloads(viewModel, title, listOf(season)) }) {
+            FilledTonalButton(shape = AppButtonShape, onClick = { downloading = episodeDownloads(viewModel, title, listOf(season)) }) {
                 Icon(Icons.Default.Download, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
                 Text("Download season")
             }
             if (seasons.size > 1) {
-                FilledTonalButton(onClick = { downloading = episodeDownloads(viewModel, title, seasons) }) {
+                FilledTonalButton(shape = AppButtonShape, onClick = { downloading = episodeDownloads(viewModel, title, seasons) }) {
                     Icon(Icons.Default.Download, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Whole show")
@@ -602,10 +612,10 @@ private fun WatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>) {
  */
 @Composable
 private fun PhoneGroupWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>, label: String,
-                                    season: com.vargon.weirdstreamer.api.models.LibrarySeason? = null) {
+                                    season: com.vargon.weirdstreamer.api.models.LibrarySeason? = null, modifier: Modifier = Modifier) {
     if (files.isEmpty()) return
     val watched = files.all { it.playback?.watched == true }
-    FilledTonalButton(onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
+    FilledTonalButton(shape = AppButtonShape, onClick = { viewModel.setWatched(files.map { it.path }, !watched) }, modifier = modifier) {
         Icon(Icons.Default.CheckCircle, contentDescription = if (watched) "Mark unwatched" else "Mark watched",
             modifier = Modifier.size(18.dp).alpha(if (watched) 1f else 0.35f))
         Spacer(Modifier.width(6.dp))

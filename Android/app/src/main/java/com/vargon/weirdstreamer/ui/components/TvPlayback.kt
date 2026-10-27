@@ -147,19 +147,19 @@ fun TvResumeDialog(viewModel: MediaViewModel) {
                 timeLeftText(viewModel.playbackFor(item.path), item.duration)?.let {
                     Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                androidx.tv.material3.Button(colors = tvButtonColors(), onClick = { viewModel.chooseResume(false) },
+                androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { viewModel.chooseResume(false) },
                     modifier = Modifier.fillMaxWidth().focusRequester(resumeRequester)) {
                     Icon(androidx.compose.material.icons.Icons.Default.PlayArrow, contentDescription = null)
                     androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
                     Text("Resume from ${clockText(resumeAt)}")
                 }
-                androidx.tv.material3.Button(colors = tvButtonColors(), onClick = { viewModel.chooseResume(true) }, modifier = Modifier.fillMaxWidth()) {
+                androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { viewModel.chooseResume(true) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(androidx.compose.material.icons.Icons.Default.Replay, contentDescription = null)
                     androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
                     Text("Play from start")
                 }
                 if (viewModel.continueChoice != null) {
-                    androidx.tv.material3.Button(colors = tvButtonColors(), onClick = { viewModel.removeChoice() }, modifier = Modifier.fillMaxWidth()) {
+                    androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { viewModel.removeChoice() }, modifier = Modifier.fillMaxWidth()) {
                         Icon(androidx.compose.material.icons.Icons.Default.Close, contentDescription = null)
                         androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
                         Text("Remove from Continue Watching")

@@ -3536,6 +3536,7 @@ function createSeasonsSection(t) {
 
     // Watched buttons for the season shown and the whole show, above the seasons (as on Android).
     const seasonActions = el('div', 'season-actions');
+    const count = el('div', 'episode-count'); // under the seasons: the one shown's
     const seasonItems = (se) => se.episodes.flatMap(ep => ep.files.map(libraryFileItem));
     const select = (index) => {
         state.seasonIndex = index;
@@ -3545,6 +3546,8 @@ function createSeasonsSection(t) {
         });
         list.innerHTML = '';
         seasons[index].episodes.forEach(ep => list.appendChild(createEpisodeRow(ep)));
+        const n = seasons[index].episodes.length;
+        count.textContent = n === 1 ? '1 Episode' : `${n} Episodes`;
         seasonActions.innerHTML = '';
         seasonActions.append(
             createWatchedToggle(seasonItems(seasons[index]), 'btn watched-btn',
@@ -3555,20 +3558,31 @@ function createSeasonsSection(t) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.setAttribute('role', 'tab');
-        // An episode is watched when any of its files is.
+        // An episode is watched when any of its files is; the ring after the name shows their share.
         const watched = se.episodes.filter(ep => ep.files.some(f => f.playback && f.playback.watched)).length;
-        btn.innerHTML = seasonLabelHtml(se, watched
-            ? `${se.name} (${watched}/${se.episodes.length})` : `${se.name} (${se.episodes.length})`);
-        if (watched === se.episodes.length) btn.classList.add('all-watched');
+        btn.innerHTML = seasonLabelHtml(se, se.name) + progressRingSvg(se.episodes.length ? watched / se.episodes.length : 0);
+        btn.title = `${watched} of ${se.episodes.length} watched`;
         btn.onclick = () => select(i);
         picker.appendChild(btn);
     });
-    section.append(seasonActions, picker, list);
+    section.append(seasonActions, picker, count, list);
     // A refresh (after playing or marking) stays on the season that was showing.
     const keep = state.titleSeasonFor === t.tmdb_id ? state.seasonIndex : 0;
     state.titleSeasonFor = t.tmdb_id;
     select(Math.min(keep || 0, seasons.length - 1));
     return section;
+}
+
+// A season's progress: a dimmed dashed ring while none is watched, then a fainter track with an
+// arc for the share watched.
+function progressRingSvg(fraction) {
+    const r = 8, c = 2 * Math.PI * r;
+    const ring = fraction > 0
+        ? `<circle cx="10" cy="10" r="${r}" opacity="0.3"/>` +
+          `<circle cx="10" cy="10" r="${r}" stroke-linecap="round" stroke-dasharray="${(Math.min(fraction, 1) * c).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 10 10)"/>`
+        // Six long dashes, evenly around (the circumference divides into them exactly)
+        : `<circle cx="10" cy="10" r="${r}" opacity="0.45" stroke-dasharray="${(c / 6 * 0.7).toFixed(2)} ${(c / 6 * 0.3).toFixed(2)}" transform="rotate(-90 10 10)"/>`;
+    return `<svg class="season-ring" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4">${ring}</svg>`;
 }
 
 // A season's label, with "Season N" small above it when the season has a name of its own ("Blood and Sand").

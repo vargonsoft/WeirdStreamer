@@ -859,7 +859,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Aspect Ratio button
-                        TextButton(onClick = {
+                        TextButton(shape = AppButtonShape, onClick = {
                             lastInteractionTime = System.currentTimeMillis()
                             currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size
                             currentAspectRatio = aspectRatioValues[currentAspectRatioIndex]
@@ -872,7 +872,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         Spacer(Modifier.width(16.dp))
                         
                         // Speed button
-                        TextButton(onClick = {
+                        TextButton(shape = AppButtonShape, onClick = {
                             lastInteractionTime = System.currentTimeMillis()
                             showSpeedDialog = true
                         }) {
@@ -970,7 +970,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                 .padding(top = 16.dp),
                             horizontalArrangement = Arrangement.End
                         ) {
-                            TextButton(onClick = { showSpeedDialog = false }) {
+                            TextButton(shape = AppButtonShape, onClick = { showSpeedDialog = false }) {
                                 Text("Cancel")
                             }
                         }
@@ -1144,6 +1144,6 @@ private fun PhoneSubtitleSearchDialog(subs: ServerSubtitles, onDismiss: () -> Un
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text("Close") } }
     )
 }

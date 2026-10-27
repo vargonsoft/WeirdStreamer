@@ -207,7 +207,7 @@ fun ToolbarButton(
     Column(
         modifier = Modifier
             .width(92.dp) // nine buttons (with Disc) fit across a TV screen
-            .clip(RoundedCornerShape(8.dp))
+            .clip(AppButtonShape)
             .background(
                 if (isFocused) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.3f)
             )

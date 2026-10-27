@@ -76,7 +76,7 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, initialUsername: String? = n
                 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Button(colors = tvButtonColors(),
+                Button(shape = tvButtonShape(), colors = tvButtonColors(),
                     onClick = { onLogin(username, password, savePassword) },
                     modifier = Modifier.align(Alignment.End)
                 ) {
@@ -121,9 +121,9 @@ fun ManualAddressDialog(initialAddress: String, onDismiss: () -> Unit, onConnect
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(colors = tvButtonColors(), onClick = onDismiss) { Text("Cancel") }
+                    Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onDismiss) { Text("Cancel") }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(colors = tvButtonColors(), onClick = { onConnect(address) }) { Text("Connect") }
+                    Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { onConnect(address) }) { Text("Connect") }
                 }
             }
         }

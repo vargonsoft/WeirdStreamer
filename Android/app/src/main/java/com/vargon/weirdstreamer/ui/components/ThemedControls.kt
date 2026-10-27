@@ -79,6 +79,17 @@ fun PhoneContentPanel(modifier: Modifier = Modifier, boxed: Boolean = true, cont
 val hasPanels: Boolean
     @Composable get() = WeirdStreamerTheme.spec.panelColor.isSpecified
 
+/** Buttons' shape on TV and phone: square corners, as on the web (its .btn's 5px). */
+val AppButtonShape = RoundedCornerShape(5.dp)
+
+/** A TV Button's shape (pass as shape =). */
+@Composable
+fun tvButtonShape() = androidx.tv.material3.ButtonDefaults.shape(AppButtonShape)
+
+/** A TV IconButton's shape (pass as shape =). */
+@Composable
+fun tvIconButtonShape() = androidx.tv.material3.IconButtonDefaults.shape(AppButtonShape)
+
 /** TV button colors: the theme's button and focus colors, or containerColor/contentColor given. */
 @Composable
 fun tvButtonColors(
