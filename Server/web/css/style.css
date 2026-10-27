@@ -1444,14 +1444,15 @@ header h1 {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin: 24px 0 12px;
+    margin: 12px 0;
 }
 
+/* As on Android: square-cornered (as the buttons are), the season shown filled, the others outlined in the raised color */
 .season-picker button {
-    border: 1px solid var(--primary-color);
+    border: 1px solid var(--placeholder-bg);
     background: transparent;
-    color: var(--primary-color);
-    border-radius: 999px;
+    color: var(--text-color);
+    border-radius: 5px; /* as .btn's */
     padding: 6px 14px;
     font: inherit;
     cursor: pointer;
@@ -1459,7 +1460,25 @@ header h1 {
 
 .season-picker button.active {
     background: var(--button-bg, var(--primary-color));
+    border-color: var(--button-bg, var(--primary-color));
     color: var(--button-text, white);
+}
+
+.season-picker button:hover {
+    border-color: var(--button-focus, var(--button-bg, var(--primary-color)));
+}
+
+/* "Season 1" small above a season's own name */
+.season-label {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.2;
+    text-align: left;
+}
+
+.season-label small {
+    font-size: 11px;
 }
 
 .episode-list {
@@ -1470,7 +1489,7 @@ header h1 {
 
 .episode-row {
     display: grid;
-    grid-template-columns: 200px 1fr auto;
+    grid-template-columns: 200px 1fr;
     gap: 16px;
     align-items: center;
     background: var(--panel-bg);
@@ -1514,19 +1533,17 @@ header h1 {
     overflow: hidden;
 }
 
+/* Play, Fix and watched, left-aligned under the description */
 .episode-actions {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 6px;
-    align-items: stretch;
+    align-items: center;
+    margin-top: 8px;
 }
 
-.fix-match-btn.inline {
-    position: static;
-    opacity: 1;
-    justify-content: center;
-    box-shadow: none;
-    border: 1px solid var(--border-color);
+.episode-actions .btn.icon-btn {
+    align-self: center;
 }
 
 @media (max-width: 640px) {
@@ -2127,9 +2144,9 @@ header h1 {
     align-self: flex-start;
 }
 
-.watched-btn.is-watched {
-    background: var(--button-bg, var(--primary-color));
-    color: var(--button-text, white);
+/* The check: solid once watched, dimmed until then */
+.watched-btn:not(.is-watched) svg {
+    opacity: 0.35;
 }
 
 .title-info .watched-btn {
@@ -2137,7 +2154,10 @@ header h1 {
 }
 
 .season-actions {
-    margin: 0 0 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 24px 0 0;
 }
 
 .season-picker button.all-watched::after {

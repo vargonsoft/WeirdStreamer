@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Theaters
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.FilterChip
@@ -62,6 +63,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -427,7 +431,7 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
         // Watched buttons for the season shown and the whole show, above the seasons (as on the TV).
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 8.dp)) {
-            PhoneGroupWatchedButton(viewModel, season.episodes.flatMap { it.files }, season.name)
+            PhoneGroupWatchedButton(viewModel, season.episodes.flatMap { it.files }, season.name, season)
             PhoneGroupWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, "Whole show")
         }
         LazyRow(
@@ -438,7 +442,7 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
                 // Episodes watched (any of an episode's files), with a check once they all are.
                 val watched = s.episodes.count { e -> e.files.any { it.playback?.watched == true } }
                 FilterChip(selected = index == selected, onClick = { selected = index },
-                    label = { Text(if (watched > 0) "${s.name} ($watched/${s.episodes.size})" else "${s.name} (${s.episodes.size})") },
+                    label = { PhoneSeasonLabel(s, if (watched > 0) "${s.name} ($watched/${s.episodes.size})" else "${s.name} (${s.episodes.size})") },
                     trailingIcon = if (watched == s.episodes.size) {
                         { Icon(Icons.Default.Check, contentDescription = "Watched", modifier = Modifier.size(16.dp)) }
                     } else null)
@@ -455,6 +459,8 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
             }
             if (seasons.size > 1) {
                 FilledTonalButton(onClick = { downloading = episodeDownloads(viewModel, title, seasons) }) {
+                    Icon(Icons.Default.Download, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
                     Text("Whole show")
                 }
             }
@@ -467,20 +473,24 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
 @Composable
 private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, queue: List<LibraryFile>, showTitle: String) {
     val first = episode.files.firstOrNull() ?: return
+    var showDetails by remember { mutableStateOf(false) }
+    if (showDetails) PhoneEpisodeDetails(episode) { showDetails = false }
     Row(
         verticalAlignment = Alignment.Top,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { viewModel.playLibraryFile(first, queue) }
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
+        // The thumbnail with its buttons beneath, leaving the text the rest of the width.
+        Column(Modifier.width(144.dp)) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .width(128.dp)
+                .fillMaxWidth()
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(6.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable { viewModel.playLibraryFile(first, queue) } // the thumbnail plays (resumes)
         ) {
             Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(28.dp))
             (viewModel.serverUrl(episode.still) ?: viewModel.serverUrl(first.thumbnailUrl))?.let {
@@ -488,8 +498,19 @@ private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, 
             }
             PlaybackOverlay(first.playback, first.duration, badgeSize = 18.dp)
         }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            if ((first.playback?.resumeAt ?: 0.0) > 0) {
+                IconButton(onClick = { viewModel.playLibraryFile(first, queue, fromStart = true) }) {
+                    Icon(Icons.Default.Replay, contentDescription = "Play from start")
+                }
+            }
+            WatchedButton(viewModel, episode.files)
+            episode.files.forEach { f -> DownloadButton(viewModel, DownloadRequest.of(viewModel, f, episodeLabel(showTitle, episode), episode.still)) }
+        }
+        }
         Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        // The text opens in full (the description is cut short here).
+        Column(modifier = Modifier.weight(1f).clickable { showDetails = true }) {
             // The file (or files) on disk, then a blank line, then the episode it shows as.
             Text(episode.files.joinToString("\n") { it.name }, style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -508,21 +529,41 @@ private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, 
                 Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp))
             }
-            // Tapping the row resumes from here; the button beside it starts over.
+            // Tapping the thumbnail resumes from here; the button under it starts over.
             val resumeAt = first.playback?.resumeAt ?: 0.0
             if (resumeAt > 0) {
                 Text("Resumes at ${clockText(resumeAt)}", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         }
-        Column {
-            if ((first.playback?.resumeAt ?: 0.0) > 0) {
-                IconButton(onClick = { viewModel.playLibraryFile(first, queue, fromStart = true) }) {
-                    Icon(Icons.Default.Replay, contentDescription = "Play from start")
+    }
+}
+
+/** An episode's text in full, to read: the files, title, date and length, and the whole description. Back or X closes it. */
+@Composable
+private fun PhoneEpisodeDetails(episode: LibraryEpisode, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Box {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp).padding(end = 28.dp)) {
+                    Text(episode.files.joinToString("\n") { it.name }, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(10.dp))
+                    Text(String.format(Locale.US, "S%02dE%02d · %s", episode.season, episode.episode, episode.title),
+                        style = MaterialTheme.typography.titleMedium)
+                    val meta = listOfNotNull(episode.airDate, episode.runtime?.takeIf { it > 0 }?.let { "$it min" })
+                    if (meta.isNotEmpty()) {
+                        Text(meta.joinToString(" · "), style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    episode.overview?.takeIf { it.isNotEmpty() }?.let {
+                        Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 10.dp))
+                    }
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd)) {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
                 }
             }
-            WatchedButton(viewModel, episode.files)
-            episode.files.forEach { f -> DownloadButton(viewModel, DownloadRequest.of(viewModel, f, episodeLabel(showTitle, episode), episode.still)) }
         }
     }
 }
@@ -560,15 +601,28 @@ private fun WatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>) {
  * named [label], with a check that's solid once they all are watched and dimmed until then.
  */
 @Composable
-private fun PhoneGroupWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>, label: String) {
+private fun PhoneGroupWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>, label: String,
+                                    season: com.vargon.weirdstreamer.api.models.LibrarySeason? = null) {
     if (files.isEmpty()) return
     val watched = files.all { it.playback?.watched == true }
     FilledTonalButton(onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
         Icon(Icons.Default.CheckCircle, contentDescription = if (watched) "Mark unwatched" else "Mark watched",
             modifier = Modifier.size(18.dp).alpha(if (watched) 1f else 0.35f))
         Spacer(Modifier.width(6.dp))
-        Text(label, maxLines = 1)
+        if (season != null) PhoneSeasonLabel(season, label) else Text(label, maxLines = 1)
     }
+}
+
+/** A season's label, with "Season N" small above it when the season has a name of its own ("Blood and Sand"), as on the TV. */
+@Composable
+private fun PhoneSeasonLabel(season: com.vargon.weirdstreamer.api.models.LibrarySeason, label: String) {
+    val number = "Season ${season.season}"
+    if (season.season > 0 && !season.name.equals(number, ignoreCase = true)) {
+        Column {
+            Text(number, style = MaterialTheme.typography.labelSmall)
+            Text(label, maxLines = 1)
+        }
+    } else Text(label, maxLines = 1)
 }
 
 /** Marks the whole title (a movie's files, or every episode) watched or unwatched. */

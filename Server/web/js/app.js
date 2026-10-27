@@ -1549,6 +1549,8 @@ let seekDragging = false;
 // Material icons (Apache License 2.0), inlined so the page loads no icon font.
 const MATERIAL_ICONS = {
     // Material Symbols' feature_search, in its 960-unit grid (see iconSvg)
+    checkCircle: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z',
+    edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
     featureSearch: { viewBox: '0 -960 960 960', d: 'm772-604 128 128-56 56-128-128q-21 12-45 20t-51 8q-75 0-127.5-52.5T440-700q0-75 52.5-127.5T620-880q75 0 127.5 52.5T800-700q0 27-8 51t-20 45Zm-81-25q29-29 29-71t-29-71q-29-29-71-29t-71 29q-29 29-29 71t29 71q29 29 71 29t71-29ZM160-80q-33 0-56.5-23.5T80-160v-560q0-33 23.5-56.5T160-800h220q-11 25-15 51.5t-4 52.5q0 109 77 182t183 73q19 0 38-2.5t39-8.5l102 102v190q0 33-23.5 56.5T720-80H160Z' },
     subtitles: 'M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM4 12h4v2H4v-2zm10 6H4v-2h10v2zm6 0h-4v-2h4v2zm0-4H10v-2h10v2z',
     play: 'M8 5v14l11-7z',
@@ -3393,9 +3395,8 @@ async function showTitle(libId, kind, id, push = true, keepScroll = false) {
             container.appendChild(createFilesSection('Other files', t.other_files));
         }
     }
-    // The whole title: a movie's files, or every episode of a show.
-    const titleItems = kind === 'movie' || (t.files || []).length ? state.mediaItems
-        : state.mediaItems.filter(i => !(t.other_files || []).some(f => f.path === i.path));
+    // A movie's files, marked watched together (a show's buttons are above its seasons).
+    const titleItems = kind === 'movie' || (t.files || []).length ? state.mediaItems : [];
     if (titleItems.length) {
         const mark = createWatchedToggle(titleItems, 'btn secondary icon-btn watched-btn');
         hero.querySelector('.title-info').appendChild(mark);
@@ -3533,6 +3534,7 @@ function createSeasonsSection(t) {
     const list = document.createElement('div');
     list.className = 'episode-list';
 
+    // Watched buttons for the season shown and the whole show, above the seasons (as on Android).
     const seasonActions = el('div', 'season-actions');
     const seasonItems = (se) => se.episodes.flatMap(ep => ep.files.map(libraryFileItem));
     const select = (index) => {
@@ -3544,9 +3546,10 @@ function createSeasonsSection(t) {
         list.innerHTML = '';
         seasons[index].episodes.forEach(ep => list.appendChild(createEpisodeRow(ep)));
         seasonActions.innerHTML = '';
-        const toggle = createWatchedToggle(seasonItems(seasons[index]), 'btn secondary icon-btn watched-btn');
-        toggle.title = toggle.title.replace('Mark', 'Mark season');
-        seasonActions.appendChild(toggle);
+        seasonActions.append(
+            createWatchedToggle(seasonItems(seasons[index]), 'btn watched-btn',
+                { labelHtml: seasonLabelHtml(seasons[index], seasons[index].name) }),
+            createWatchedToggle(seasons.flatMap(seasonItems), 'btn watched-btn', { labelHtml: 'Whole show' }));
     };
     seasons.forEach((se, i) => {
         const btn = document.createElement('button');
@@ -3554,18 +3557,25 @@ function createSeasonsSection(t) {
         btn.setAttribute('role', 'tab');
         // An episode is watched when any of its files is.
         const watched = se.episodes.filter(ep => ep.files.some(f => f.playback && f.playback.watched)).length;
-        btn.textContent = watched
-            ? `${se.name} (${watched}/${se.episodes.length})` : `${se.name} (${se.episodes.length})`;
+        btn.innerHTML = seasonLabelHtml(se, watched
+            ? `${se.name} (${watched}/${se.episodes.length})` : `${se.name} (${se.episodes.length})`);
         if (watched === se.episodes.length) btn.classList.add('all-watched');
         btn.onclick = () => select(i);
         picker.appendChild(btn);
     });
-    section.append(picker, seasonActions, list);
+    section.append(seasonActions, picker, list);
     // A refresh (after playing or marking) stays on the season that was showing.
     const keep = state.titleSeasonFor === t.tmdb_id ? state.seasonIndex : 0;
     state.titleSeasonFor = t.tmdb_id;
     select(Math.min(keep || 0, seasons.length - 1));
     return section;
+}
+
+// A season's label, with "Season N" small above it when the season has a name of its own ("Blood and Sand").
+function seasonLabelHtml(se, label) {
+    const number = `Season ${se.season}`;
+    const named = se.season > 0 && se.name.toLowerCase() !== number.toLowerCase();
+    return `<span class="season-label">${named ? `<small>${escapeHtml(number)}</small>` : ''}<span>${escapeHtml(label)}</span></span>`;
 }
 
 function createEpisodeRow(ep) {
@@ -3607,13 +3617,20 @@ function createEpisodeRow(ep) {
         const ext = f.name.split('.').pop().toUpperCase();
         actions.appendChild(createPlayButtons(item, ep.files.length > 1 ? ext : ''));
         if (canFixMatches()) {
-            const fix = createFixMatchButton({ path: f.path }, f.name);
-            fix.classList.add('inline');
+            // An icon button like the others, "Fix" on hover.
+            const fix = el('button', 'btn secondary icon-btn');
+            fix.type = 'button';
+            fix.title = 'Fix';
+            fix.setAttribute('aria-label', `Fix match for ${f.name}`);
+            fix.innerHTML = iconSvg('edit');
+            fix.onclick = (e) => { e.stopPropagation(); openMatchDialog({ path: f.path }, f.name); };
             actions.appendChild(fix);
         }
     });
     actions.appendChild(createWatchedToggle(ep.files.map(libraryFileItem), 'btn secondary icon-btn watched-btn'));
-    row.append(still, text, actions);
+    // The buttons go under the description, left-aligned.
+    text.appendChild(actions);
+    row.append(still, text);
     return row;
 }
 
@@ -3684,7 +3701,7 @@ function isWatched(items) {
 }
 
 // A button that marks files watched, or unwatched if they all are.
-function createWatchedToggle(items, className, { label = false } = {}) {
+function createWatchedToggle(items, className, { label = false, labelHtml = '' } = {}) {
     const btn = el('button', className);
     btn.type = 'button';
     const watched = isWatched(items);
@@ -3692,7 +3709,9 @@ function createWatchedToggle(items, className, { label = false } = {}) {
     btn.title = text;
     btn.setAttribute('aria-label', text);
     btn.classList.toggle('is-watched', watched);
-    btn.innerHTML = iconSvg('check') + (label ? `<span>${text}</span>` : '');
+    // Watched buttons have a check in a circle, solid once watched and dimmed until then (as on Android).
+    const icon = className.includes('watched-btn') ? 'checkCircle' : 'check';
+    btn.innerHTML = iconSvg(icon) + (labelHtml || (label ? `<span>${text}</span>` : ''));
     btn.onclick = async (e) => {
         e.stopPropagation();
         try {

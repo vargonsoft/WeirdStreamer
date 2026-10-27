@@ -42,7 +42,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.PlayArrow
@@ -77,6 +76,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -686,6 +688,11 @@ private fun SeasonsAndEpisodes(
                     Button(
                         onClick = { selected = index },
                         modifier = if (isSelected) Modifier.focusRequester(pickerRequester) else Modifier,
+                        shape = ButtonDefaults.shape(RoundedCornerShape(8.dp)), // square-cornered, as the phone's chips
+                        // The others outlined, as the phone's are (its chips' outlineVariant is the palette's raised color)
+                        border = if (isSelected) ButtonDefaults.border() else ButtonDefaults.border(
+                            border = Border(BorderStroke(1.dp, MaterialTheme.colorScheme.borderVariant), shape = RoundedCornerShape(8.dp))
+                        ),
                         // The season shown: a button among plain labels (themed buttons, as on the web),
                         // or in the primary color.
                         colors = when {
@@ -804,13 +811,10 @@ private fun TvWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>,
                             season: LibrarySeason? = null) {
     if (files.isEmpty()) return
     val watched = files.all { it.playback?.watched == true }
-    // Watched: a filled check; not yet: an empty circle (button colors alone don't tell them apart).
-    // A season's or the show's (labelled) has the check either way: solid, or dimmed until then.
+    // A check: solid once watched, dimmed until then (button colors alone don't tell them apart).
     Button(colors = tvButtonColors(), onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
-        val description = if (watched) "Mark unwatched" else "Mark watched"
-        if (label != null && !iconOnly) Icon(Icons.Default.CheckCircle, contentDescription = description,
+        Icon(Icons.Default.CheckCircle, contentDescription = if (watched) "Mark unwatched" else "Mark watched",
             modifier = Modifier.alpha(if (watched) 1f else 0.35f))
-        else Icon(if (watched) Icons.Default.CheckCircle else Icons.Outlined.Circle, contentDescription = description)
         if (!iconOnly && label != null) {
             Spacer(Modifier.width(6.dp))
             if (season != null) SeasonLabel(season, label) else Text(label)
