@@ -46,6 +46,7 @@ function naturalCompare(s1, s2) {
 function init() {
     // Apply saved theme
     applyTheme();
+    setupSubtitleStyle();
     
     if (api.isAuthenticated()) {
         showMainScreen();
@@ -1149,6 +1150,116 @@ async function chooseSubtitleResult(p, r, button) {
     if (got.quota) console.info(`OpenSubtitles: ${got.quota.remaining} downloads left today`);
 }
 
+// Subtitle style (Settings → Subtitles), kept per browser: Default is the browser's own look
+// (white on translucent black); Custom sets colours, outline, font and size for the player's cues
+// (video::cue) and the preview.
+const SUBTITLE_STYLE_DEFAULTS = { mode: 'default', background: 'black', opacity: 0.5, foreground: 'white',
+    outline: false, font: 'default', size: 'normal' };
+const SUBTITLE_SIZES = { tiny: 0.6, small: 0.8, normal: 1, large: 1.3, huge: 1.6 };
+const SUBTITLE_FONTS = {
+    default: 'sans-serif',
+    serif: 'Georgia, "Times New Roman", serif',
+    monospace: '"Courier New", "DejaVu Sans Mono", monospace',
+    casual: '"Comic Neue", "Comic Sans MS", "Segoe Print", cursive',
+    condensed: '"Roboto Condensed", "Arial Narrow", "DejaVu Sans Condensed", sans-serif',
+};
+
+function subtitleStyle() {
+    try {
+        return { ...SUBTITLE_STYLE_DEFAULTS, ...JSON.parse(localStorage.getItem('subtitleStyle') || '{}') };
+    } catch (e) {
+        return { ...SUBTITLE_STYLE_DEFAULTS };
+    }
+}
+
+// A colour with alpha, from the hex or rgb() a theme variable holds.
+function withAlpha(color, alpha) {
+    const c = color.trim();
+    let r, g, b;
+    if (c.startsWith('#')) {
+        const hex = c.length === 4 ? c.slice(1).split('').map(x => x + x).join('') : c.slice(1, 7);
+        [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
+    } else {
+        [r, g, b] = (c.match(/[\d.]+/g) || [0, 0, 0]).map(Number);
+    }
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// The CSS a style gives the subtitle text (in em-free units, so the cue and the preview share it).
+function subtitleCss(style) {
+    if (style.mode !== 'custom') {
+        return { color: '#fff', background: 'rgba(0, 0, 0, 0.8)', 'font-family': SUBTITLE_FONTS.default, 'text-shadow': 'none', scale: 1 };
+    }
+    const theme = getComputedStyle(document.documentElement);
+    const named = { white: '#ffffff', black: '#000000' };
+    const accent = theme.getPropertyValue('--progress-color') || '#f6c445';
+    const box = theme.getPropertyValue('--surface-color') || '#321b2f';
+    const text = style.foreground === 'themed' ? accent : named[style.foreground] || '#ffffff';
+    const back = style.background === 'themed' ? box : named[style.background];
+    const css = { color: withAlpha(text, 1), background: 'transparent', 'text-shadow': 'none',
+        'font-family': SUBTITLE_FONTS[style.font] || SUBTITLE_FONTS.default, scale: SUBTITLE_SIZES[style.size] || 1 };
+    if (back && style.outline) {
+        const o = withAlpha(back, 1);
+        css['text-shadow'] = [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1.5], [0, 1.5], [-1.5, 0], [1.5, 0]]
+            .map(([x, y]) => `${x}px ${y}px 0 ${o}`).join(', ');
+    } else if (back) {
+        css.background = withAlpha(back, Number(style.opacity) || 1);
+    }
+    return css;
+}
+
+// Applies the saved style to the player's cues and the preview.
+function applySubtitleStyle() {
+    const css = subtitleCss(subtitleStyle());
+    let sheet = document.getElementById('subtitle-style-sheet');
+    if (!sheet) {
+        sheet = document.createElement('style');
+        sheet.id = 'subtitle-style-sheet';
+        document.head.appendChild(sheet);
+    }
+    const rules = [`color: ${css.color}`, `background: ${css.background}`, `text-shadow: ${css['text-shadow']}`,
+        `font-family: ${css['font-family']}`];
+    sheet.textContent = subtitleStyle().mode === 'custom'
+        ? `#video-player::cue { ${rules.join('; ')}; font-size: ${Math.round(css.scale * 100)}%; }` : '';
+    const preview = document.getElementById('subtitle-preview-text');
+    if (preview) {
+        rules.forEach(r => { const [k, v] = r.split(': '); preview.style.setProperty(k, v); });
+        preview.style.fontSize = `${(22 * css.scale).toFixed(1)}px`;
+    }
+}
+
+function setupSubtitleStyle() {
+    const fields = { background: 'subtitle-background', opacity: 'subtitle-opacity', foreground: 'subtitle-foreground',
+        font: 'subtitle-font', size: 'subtitle-size' };
+    const render = () => {
+        const style = subtitleStyle();
+        document.querySelectorAll('input[name="subtitle-mode"]').forEach(r => { r.checked = r.value === style.mode; });
+        Object.entries(fields).forEach(([key, id]) => { document.getElementById(id).value = String(style[key]); });
+        document.getElementById('subtitle-outline').checked = style.outline;
+        // Translucency is for a box: not with no background, nor with an outline.
+        document.getElementById('subtitle-opacity').disabled = style.background === 'none' || style.outline;
+        document.getElementById('subtitle-outline').disabled = style.background === 'none';
+        document.querySelector('.subtitle-style-options').classList.toggle('disabled', style.mode !== 'custom');
+        applySubtitleStyle();
+    };
+    const save = (change) => {
+        // Changing any option makes the style Custom.
+        const style = { ...subtitleStyle(), mode: 'custom', ...change };
+        try { localStorage.setItem('subtitleStyle', JSON.stringify(style)); } catch (e) { /* not kept */ }
+        render();
+    };
+    document.querySelectorAll('input[name="subtitle-mode"]').forEach(r => {
+        r.onchange = () => save({ mode: r.value });
+    });
+    Object.entries(fields).forEach(([key, id]) => {
+        document.getElementById(id).onchange = (e) => save({ [key]: key === 'opacity' ? Number(e.target.value) : e.target.value });
+    });
+    document.getElementById('subtitle-outline').onchange = (e) => save({ outline: e.target.checked });
+    // Themed colours follow the theme.
+    new MutationObserver(applySubtitleStyle).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    render();
+}
+
 // Trickplay frames, for the picture over the seek bar: [{ time, url }] by time.
 async function loadTrickplay(p) {
     if (!p.item.id) return;
@@ -1424,6 +1535,7 @@ let seekDragging = false;
 
 // Material icons (Apache License 2.0), inlined so the page loads no icon font.
 const MATERIAL_ICONS = {
+    subtitles: 'M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM4 12h4v2H4v-2zm10 6H4v-2h10v2zm6 0h-4v-2h4v2zm0-4H10v-2h10v2z',
     play: 'M8 5v14l11-7z',
     pause: 'M6 19h4V5H6v14zm8-14v14h4V5h-4z',
     volumeUp: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',

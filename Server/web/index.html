@@ -79,6 +79,7 @@
                     <button class="settings-tab active" data-tab="server">Server & Media</button>
                     <button class="settings-tab" data-tab="users">User Management</button>
                     <button class="settings-tab" data-tab="account">My Account</button>
+                    <button class="settings-tab" data-tab="subtitles">Subtitles</button>
                 </div>
 
                 <!-- Server & Media Tab -->
@@ -161,6 +162,41 @@
                 </div>
 
                 <!-- My Account Tab -->
+                <!-- Subtitles: how they look in this browser's player -->
+                <div id="subtitles-tab" class="settings-tab-content">
+                    <div class="settings-group subtitle-style">
+                        <h3 class="icon-heading" data-icon="subtitles">Subtitle style</h3>
+                        <p class="subtitle-style-note">For this browser. Text subtitles only: picture ones (Blu-ray, DVD) keep their own look.</p>
+                        <div id="subtitle-preview" class="subtitle-preview" aria-label="Preview">
+                            <span id="subtitle-preview-text">The quick brown fox<br>jumps over the lazy dog.</span>
+                        </div>
+                        <div class="subtitle-style-mode" role="radiogroup" aria-label="Style">
+                            <label><input type="radio" name="subtitle-mode" value="default"> Default</label>
+                            <label><input type="radio" name="subtitle-mode" value="custom"> Custom</label>
+                        </div>
+                        <div class="subtitle-style-options">
+                            <label>Background <select id="subtitle-background">
+                                <option value="black">Black</option><option value="white">White</option>
+                                <option value="themed">Themed</option><option value="none">None</option></select></label>
+                            <label id="subtitle-opacity-label">Translucency <select id="subtitle-opacity">
+                                <option value="0.25">25% (very see-through)</option><option value="0.5">50%</option>
+                                <option value="0.75">75%</option><option value="1">Solid</option></select></label>
+                            <label>Text <select id="subtitle-foreground">
+                                <option value="white">White</option><option value="black">Black</option>
+                                <option value="themed">Themed</option></select></label>
+                            <label class="subtitle-outline-label"><input type="checkbox" id="subtitle-outline"> Outline (the background colour outlines the text instead of a box behind it)</label>
+                            <label>Font <select id="subtitle-font">
+                                <option value="default">Default</option><option value="serif">Serif</option>
+                                <option value="monospace">Monospace</option><option value="casual">Casual</option>
+                                <option value="condensed">Condensed</option></select></label>
+                            <label>Size <select id="subtitle-size">
+                                <option value="tiny">Tiny</option><option value="small">Small</option>
+                                <option value="normal">Normal</option><option value="large">Large</option>
+                                <option value="huge">Huge</option></select></label>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="account-tab" class="settings-tab-content">
                     <div class="settings-group">
                         <h3 class="icon-heading" data-icon="palette">Theme</h3>

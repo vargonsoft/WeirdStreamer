@@ -267,12 +267,9 @@ fun SubtitleOverlay(subtitles: ServerSubtitles?, position: () -> Long, fontSize:
         }
     }
     val shown = text ?: return
+    // In this device's subtitle style (Settings → Subtitle style); fontSize is Normal's.
+    val style = resolvedSubtitleStyle()
     Box(modifier.fillMaxSize().padding(bottom = bottomPadding, start = 48.dp, end = 48.dp), contentAlignment = Alignment.BottomCenter) {
-        androidx.compose.material3.Text(
-            shown,
-            modifier = Modifier.background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
-            style = TextStyle(color = Color.White, fontSize = fontSize, textAlign = TextAlign.Center,
-                shadow = Shadow(Color.Black, blurRadius = 4f)),
-        )
+        StyledSubtitleText(shown, style, fontSize)
     }
 }

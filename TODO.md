@@ -17,3 +17,11 @@ Requests saved for later, newest last.
   - [ ] Swipe left or right to seek back or forward.
   - [ ] Swipe up or down on the left side for brightness.
   - [ ] Swipe up or down on the right side for volume.
+- [ ] **Styled ASS/SSA subtitles.** Subtitles now come from the server as WebVTT, which keeps only
+      italics, bold and underline, so ASS/SSA tracks lose their positions, colours and sizes. On
+      the TV and phone, when playing the original file, let the player draw a video's own ASS/SSA
+      tracks itself (styled) as the default for those tracks, falling back to the server's plain
+      version on transcodes (which carry no subtitles). Open questions:
+  - Also offer a plain version of each ASS track in the Subtitles box?
+  - Style ASS files beside the video (`Movie.en.ass`) too, by loading them alongside the video?
+  - Web: draw ASS styling with a JavaScript renderer (such as JASSUB, libass for the browser)?

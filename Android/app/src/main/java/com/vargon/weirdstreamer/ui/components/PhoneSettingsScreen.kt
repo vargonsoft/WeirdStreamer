@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.ui.graphics.Color
 import com.vargon.weirdstreamer.update.AppUpdater
 import com.vargon.weirdstreamer.update.UpdateState
@@ -162,6 +163,18 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                     trailingContent = { Icon(Icons.Default.DeleteSweep, contentDescription = null) },
                     modifier = Modifier.clickable { viewModel.clearThumbnailCache(context) }
                 )
+            }
+
+            // Subtitle style: Android's caption settings, or our own
+            item {
+                var showSubtitleStyle by remember { mutableStateOf(false) }
+                ListItem(
+                    headlineContent = { Text("Subtitle style") },
+                    supportingContent = { Text(subtitleStyleSummary(SubtitleStyleStore.get(context))) },
+                    trailingContent = { Icon(Icons.Default.ClosedCaption, contentDescription = null) },
+                    modifier = Modifier.clickable { showSubtitleStyle = true }
+                )
+                if (showSubtitleStyle) PhoneSubtitleStyleDialog(onDismiss = { showSubtitleStyle = false })
             }
 
             // App update, from the APK a server publishes
