@@ -21,18 +21,19 @@ import androidx.tv.material3.*
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Boolean) -> Unit) {
-    var username by remember { mutableStateOf("") }
+fun AuthDialog(host: String, onDismiss: () -> Unit, initialUsername: String? = null, title: String? = null, hint: String? = null, onLogin: (String, String, Boolean) -> Unit) {
+    var username by remember { mutableStateOf(initialUsername.orEmpty()) }
     var password by remember { mutableStateOf("") }
     var savePassword by remember { mutableStateOf(true) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
+    val passwordRequester = remember { FocusRequester() }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Surface(modifier = Modifier.width(400.dp)) {
             Column(modifier = Modifier.padding(24.dp)) {
-                Text("Authentication Required", style = MaterialTheme.typography.headlineSmall)
+                Text(title ?: "Authentication Required", style = MaterialTheme.typography.headlineSmall)
                 Text("Host: $host", style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.height(16.dp))
                 
@@ -57,7 +58,7 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Bo
                     onValueChange = { password = it },
                     label = { FieldText("Password") },
                     visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(passwordRequester),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
@@ -71,10 +72,7 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Bo
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = savePassword, onCheckedChange = { savePassword = it })
-                    Text("Save credentials")
-                }
+                hint?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -89,7 +87,8 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Bo
     }
 
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        // An account signing in again starts at its password.
+        if (initialUsername.isNullOrEmpty()) focusRequester.requestFocus() else passwordRequester.requestFocus()
     }
 }
 

@@ -568,6 +568,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             isLoading = true
             errorMessage = null
             authRequiredSource = null
+            authTitle = null
             
             try {
                 val provider = sourceProviders.find { it.typeId == source.typeId } ?: throw Exception("Unknown source type")
@@ -583,8 +584,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     val authResult = repository.authenticate(user, pass)
                     if (authResult.isFailure) throw authResult.exceptionOrNull() ?: Exception("Authentication failed")
                     
-                    if (save && source.typeId == "SMB") {
-                        credentialManager.saveCredentials(source.serverAddress, user, pass)
+                    // SMB signs in by browsing with the account's credentials (blank: guest).
+                    if (source.typeId == "SMB") {
+                        if (user.isBlank()) credentialManager.clearCredentials(source.serverAddress)
+                        else credentialManager.saveCredentials(source.serverAddress, user.trim(), pass)
                     }
                     // Trigger UI update for auth status
                     authStateRefreshTrigger++
@@ -597,12 +600,19 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val result = repository.browse(path)
+                // Left (Back to the source list, or another folder) while it loaded: drop it.
+                if (currentSource != source || currentPath != path) return@launch
                 
                 if (result.isSuccess) {
                     val items = result.getOrNull() ?: emptyList()
                     
                     // Auto-save successful servers
                     provider.addServer(source.serverAddress)
+                    // An SMB account that signed in joins the server's accounts.
+                    if (source.typeId == "SMB" && user != null && pass != null) {
+                        credentialManager.addSmbAccount(source.serverAddress, user.trim(), if (user.isBlank()) "" else pass)
+                        authStateRefreshTrigger++
+                    }
 
                     // Unified "Share level" logic
                     fileList = if (repository.getParentPath(path) != null || path != repository.getInitialPath()) {
@@ -630,7 +640,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                errorMessage = e.localizedMessage ?: "Failed to load content"
+                if (currentSource == source) errorMessage = e.localizedMessage ?: "Failed to load content"
             } finally {
                 isLoading = false
             }
@@ -734,12 +744,82 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         stopThumbnailUpdates()
     }
 
-    fun logout(serverUrl: String) {
-        credentialManager.clearServerToken(serverUrl)
-        authStateRefreshTrigger++
-        if (currentSource?.serverAddress == serverUrl && currentSource?.typeId == "SERVER") {
-            returnToSourceSelection()
+    // ---- Accounts: each WeirdStreamer server keeps the accounts signed in to it on this device ----
+
+    /** The username the sign-in dialog starts with: an account whose sign-in expired. */
+    var authUsername by mutableStateOf<String?>(null)
+        private set
+
+    /** The server opened last, so the source list can return to its account. */
+    var lastServer by mutableStateOf<String?>(null)
+        private set
+
+    /** The account in use on the current server, for the header. */
+    val currentAccount: String?
+        get() = currentSource?.let {
+            authStateRefreshTrigger.let { _ ->
+                when (it.typeId) {
+                    "SERVER" -> credentialManager.getServerAccount(it.serverAddress)
+                    "SMB" -> accountLabel(credentialManager.getSmbAccount(it.serverAddress))
+                    else -> null
+                }
+            }
         }
+
+    /** A server's accounts on this device, for its row on the source list and in Settings. */
+    fun accountsOf(provider: SourceProvider, address: String): List<CredentialManager.ServerAccount> =
+        if (provider.typeId == "SMB") credentialManager.getSmbAccounts(address) else credentialManager.getServerAccounts(address)
+
+    /** The account in use on a server: the one its row focuses. */
+    fun accountInUse(provider: SourceProvider, address: String): String? =
+        if (provider.typeId == "SMB") credentialManager.getSmbAccount(address) else credentialManager.getServerAccount(address)
+
+    /** Saves a server without signing in to it; its accounts are added on its row. */
+    fun addServer(provider: SourceProvider, address: String) {
+        viewModelScope.launch {
+            val clean = if (provider.typeId == "SMB") address.trim().removePrefix("smb://").substringBefore("/")
+                else provider.normalizeAddress(address)
+            if (clean.isBlank()) return@launch
+            provider.addServer(clean)
+            lastServer = clean
+            authStateRefreshTrigger++
+        }
+    }
+
+    /** Opens a server as one of its accounts, or asks for its password when its sign-in has expired. */
+    fun chooseServerAccount(provider: SourceProvider, address: String, username: String) {
+        lastServer = address
+        currentRepository = null // the account's own libraries, not the last account's
+        val ready = if (provider.typeId == "SMB") credentialManager.useSmbAccount(address, username)
+            else credentialManager.useServerAccount(address, username)
+        if (ready) {
+            authStateRefreshTrigger++
+            selectSource(provider, address)
+        } else askToSignIn(provider, address, username)
+    }
+
+    /** Signs another account in to a server, then opens it. */
+    fun addServerAccount(provider: SourceProvider, address: String) {
+        lastServer = address
+        currentRepository = null
+        askToSignIn(provider, address, null)
+    }
+
+    /** The sign-in dialog's title, when it's for an account chosen on the source list. */
+    var authTitle by mutableStateOf<String?>(null)
+        private set
+
+    private fun askToSignIn(provider: SourceProvider, address: String, username: String?) {
+        authUsername = username
+        authTitle = if (username == null) "Add user" else "Sign in again"
+        currentPath = if (provider.typeId == "SMB") "smb://$address/" else "" // where signing in opens
+        authRequiredSource = MediaSource(provider.typeId, address)
+    }
+
+    fun signOutServerAccount(provider: SourceProvider, address: String, username: String) {
+        if (provider.typeId == "SMB") credentialManager.signOutSmbAccount(address, username)
+        else credentialManager.signOutServerAccount(address, username)
+        authStateRefreshTrigger++
     }
 
     fun removeServer(provider: SourceProvider, address: String) {
@@ -1044,3 +1124,6 @@ private fun TitleDetail.withThumbnail(path: String, thumbnailUrl: String): Title
     )
     return if (changed) updated else this
 }
+
+/** How an account is shown: its username, or Guest for SMB guest access. */
+fun accountLabel(username: String) = username.ifEmpty { "Guest" }

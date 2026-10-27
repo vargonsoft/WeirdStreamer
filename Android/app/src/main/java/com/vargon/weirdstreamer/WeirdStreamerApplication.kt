@@ -43,6 +43,8 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
         instance = this
         com.vargon.weirdstreamer.downloads.DownloadStore.init(this)
         com.vargon.weirdstreamer.downloads.LocalProgress.init(this)
+        val accounts = CredentialManager(this)
+        com.vargon.weirdstreamer.downloads.LocalProgress.accountOf = { accounts.getServerAccount(it) }
         if (com.vargon.weirdstreamer.downloads.DownloadStore.items.value.any { it.isActive }) {
             com.vargon.weirdstreamer.downloads.DownloadWorker.schedule(this)
         }

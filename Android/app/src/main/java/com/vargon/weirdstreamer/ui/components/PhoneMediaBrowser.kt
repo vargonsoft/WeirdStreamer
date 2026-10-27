@@ -63,7 +63,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     Column {
                         if (currentSource != null) {
                             Text(
-                                text = "${currentSource.typeId}: ${currentSource.displayName()}",
+                                text = "${currentSource.typeId}: ${currentSource.displayName()}" + (viewModel.currentAccount?.let { " · $it" } ?: ""),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.secondary
                             )
@@ -232,7 +232,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             onDismiss = { showMainAddDialog = false },
             onAdd = { provider, address ->
                 showMainAddDialog = false
-                viewModel.selectSource(provider, address)
+                viewModel.addServer(provider, address)
             }
         )
     }
@@ -241,6 +241,9 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         val source = viewModel.authRequiredSource!!
         PhoneAuthDialog(
             host = source.displayName(),
+            initialUsername = viewModel.authUsername,
+            title = viewModel.authTitle,
+            hint = if (source.typeId == "SMB") "Leave both blank for guest access." else null,
             onDismiss = { 
                 showAuthDialog = false
                 viewModel.returnToSourceSelection()
@@ -255,6 +258,10 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
 
 @Composable
 private fun PhoneSourceSelectionScreen(viewModel: MediaViewModel) {
+    // Saved servers, read again when one is added or removed.
+    val serversByProvider = remember(viewModel.sourceProviders, viewModel.authStateRefreshTrigger) {
+        viewModel.sourceProviders.associateWith { it.getServers() }
+    }
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         viewModel.sourceProviders.forEach { provider ->
             item {
@@ -265,7 +272,7 @@ private fun PhoneSourceSelectionScreen(viewModel: MediaViewModel) {
                 )
             }
             
-            val servers = provider.getServers()
+            val servers = serversByProvider[provider].orEmpty()
             if (servers.isEmpty()) {
                 item {
                     Text(
@@ -277,9 +284,8 @@ private fun PhoneSourceSelectionScreen(viewModel: MediaViewModel) {
                 }
             } else {
                 items(servers) { address ->
-                    PhoneHostRowItem(address) {
-                        viewModel.selectSource(provider, address)
-                    }
+                    val accounts = remember(address, viewModel.authStateRefreshTrigger) { viewModel.accountsOf(provider, address) }
+                    PhoneServerAccountsRow(viewModel, provider, address, accounts)
                 }
             }
             
@@ -431,14 +437,14 @@ private fun PhoneAddSourceDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PhoneAuthDialog(host: String, onDismiss: () -> Unit, onLogin: (String, String, Boolean) -> Unit) {
-    var username by remember { mutableStateOf("") }
+private fun PhoneAuthDialog(host: String, onDismiss: () -> Unit, initialUsername: String? = null, title: String? = null, hint: String? = null, onLogin: (String, String, Boolean) -> Unit) {
+    var username by remember { mutableStateOf(initialUsername.orEmpty()) }
     var password by remember { mutableStateOf("") }
     var savePassword by remember { mutableStateOf(true) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Authentication Required") },
+        title = { Text(title ?: "Authentication Required") },
         text = {
             Column {
                 Text("Host: $host", style = MaterialTheme.typography.bodySmall)
@@ -460,12 +466,9 @@ private fun PhoneAuthDialog(host: String, onDismiss: () -> Unit, onLogin: (Strin
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { savePassword = !savePassword }
-                ) {
-                    Checkbox(checked = savePassword, onCheckedChange = { savePassword = it })
-                    Text("Save credentials")
+                hint?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp))
                 }
             }
         },

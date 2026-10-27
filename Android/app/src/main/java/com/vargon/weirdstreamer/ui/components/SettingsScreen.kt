@@ -1,5 +1,7 @@
 package com.vargon.weirdstreamer.ui.components
 
+import com.vargon.weirdstreamer.accountLabel
+import com.vargon.weirdstreamer.repository.SourceProvider
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
@@ -7,8 +9,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Login
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
@@ -52,6 +52,16 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     val subtitleStyleFocus = remember { FocusRequester() }
     var showSubtitleStyle by remember { mutableStateOf(false) }
     if (showSubtitleStyle) TvSubtitleStyleDialog(onDismiss = { showSubtitleStyle = false })
+    // Remove asks first, naming the accounts that go with the server.
+    var removeChoice by remember { mutableStateOf<Triple<SourceProvider, String, List<String>>?>(null) }
+    removeChoice?.let { (provider, address, users) ->
+        TvRemoveServerDialog(address, users, onDismiss = { removeChoice = null }) {
+            removeChoice = null
+            val isCurrent = address == viewModel.currentSource?.serverAddress
+            viewModel.removeServer(provider, address)
+            if (isCurrent) onBack()
+        }
+    }
 
     // Observe auth state changes
     val authStateRefresh = viewModel.authStateRefreshTrigger
@@ -355,65 +365,17 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                             ) {
                                 Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(24.dp))
                                 Spacer(modifier = Modifier.width(16.dp))
-                                val isServer = provider.typeId == "SERVER"
-                                // The account signed in (watch status is kept per account)
-                                val account = if (isServer) authStateRefresh.let { viewModel.credentialManager.getServerAccount(address) } else null
+                                // A server's accounts are chosen on the source list; here they're only listed.
+                                val users = authStateRefresh.let {
+                                    viewModel.accountsOf(provider, address).map { accountLabel(it.username) }
+                                }
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(address, style = MaterialTheme.typography.titleMedium)
-                                    if (isServer) Text(account?.let { "Signed in as $it" } ?: "Not signed in",
+                                    Text(serverUsersText(users),
                                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-
-                                // Access authStateRefresh here to ensure recomposition when it changes
-                                val hasToken = if (isServer) {
-                                    authStateRefresh.let { viewModel.credentialManager.getServerToken(address) != null }
-                                } else false
-
-                                // Connect Button - Show for SMB or logged in Server
-                                if (!isServer || hasToken) {
-                                    Button(colors = tvButtonColors(),
-                                        onClick = { 
-                                            viewModel.selectSource(provider, address)
-                                            onBack() 
-                                        },
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    ) {
-                                        Text("Connect")
-                                    }
-                                }
-
-                                if (isServer) {
-                                    Button(colors = tvButtonColors(),
-                                        onClick = { 
-                                            if (hasToken) {
-                                                viewModel.logout(address)
-                                            } else {
-                                                viewModel.selectSource(provider, address)
-                                                onBack()
-                                            }
-                                        },
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    ) {
-                                        if (hasToken) {
-                                            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null)
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text("Logout")
-                                        } else {
-                                            Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null)
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text("Login")
-                                        }
-                                    }
-                                }
-
                                 Button(
-                                    onClick = {
-                                        val isCurrent = (address == viewModel.currentSource?.serverAddress)
-                                        viewModel.removeServer(provider, address)
-                                        if (isCurrent) {
-                                            onBack()
-                                        }
-                                    },
+                                    onClick = { removeChoice = Triple(provider, address, users) },
                                     colors = ButtonDefaults.colors(
                                         containerColor = Color.Red.copy(alpha = 0.2f),
                                         contentColor = Color.Red

@@ -133,7 +133,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 Wordmark(MaterialTheme.colorScheme.onSurface, Modifier.height(20.dp))
                 Spacer(Modifier.width(16.dp))
                 Text(
-                    text = "${currentSource.typeId}: ${currentSource.displayName()}",
+                    text = "${currentSource.typeId}: ${currentSource.displayName()}" + (viewModel.currentAccount?.let { " · $it" } ?: ""),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -310,7 +310,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             onDismiss = { showMainAddDialog = false },
             onAdd = { provider, address ->
                 showMainAddDialog = false
-                viewModel.selectSource(provider, address)
+                viewModel.addServer(provider, address)
             }
         )
     }
@@ -320,6 +320,9 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         val source = viewModel.authRequiredSource!!
         AuthDialog(
             host = source.displayName(),
+            initialUsername = viewModel.authUsername,
+            title = viewModel.authTitle,
+            hint = if (source.typeId == "SMB") "Leave both blank for guest access." else null,
             onDismiss = { 
                 showAuthDialog = false
                 viewModel.returnToSourceSelection()
@@ -376,8 +379,15 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
     val serversByProvider = remember(viewModel.sourceProviders, refreshTrigger) {
         viewModel.sourceProviders.associateWith { it.getServers() }
     }
-    // Focus starts on the first saved server (the WeirdStreamer servers come first).
-    val firstServer = viewModel.sourceProviders.firstNotNullOfOrNull { p -> serversByProvider[p].orEmpty().firstOrNull()?.let { p to it } }
+    // The accounts signed in to each server, for its row.
+    val accounts = remember(serversByProvider, refreshTrigger) {
+        serversByProvider.flatMap { (p, list) -> list.map { p to it } }.associateWith { (p, a) -> viewModel.accountsOf(p, a) }
+    }
+    // Focus starts on the server opened last (on the account in use), else the first saved server
+    // (the WeirdStreamer servers come first).
+    val firstServer = viewModel.lastServer?.let { last -> serversByProvider.entries.firstOrNull { last in it.value }?.let { it.key to last } }
+        ?: viewModel.sourceProviders.firstNotNullOfOrNull { p -> serversByProvider[p].orEmpty().firstOrNull()?.let { p to it } }
+    val focusAccount = firstServer?.let { (p, a) -> viewModel.accountInUse(p, a) }
     val firstRequester = remember { FocusRequester() }
     val first = { provider: SourceProvider, address: String ->
         if (firstServer == provider to address) Modifier.focusRequester(firstRequester) else Modifier
@@ -411,10 +421,8 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
                             modifier = Modifier.padding(bottom = 32.dp))
                     }
                 } else {
-                    items(servers) { address ->
-                        HostTileItem(address, first(provider, address)) {
-                            viewModel.selectSource(provider, address)
-                        }
+                    items(servers, span = { GridItemSpan(maxLineSpan) }) { address ->
+                        TvServerAccountsRow(viewModel, provider, address, accounts[provider to address].orEmpty(), first(provider, address), focusAccount)
                     }
                 }
 
@@ -446,9 +454,7 @@ private fun SourceSelectionScreen(viewModel: MediaViewModel) {
                     }
                 } else {
                     items(servers) { address ->
-                        HostRowItem(address, first(provider, address)) {
-                            viewModel.selectSource(provider, address)
-                        }
+                        TvServerAccountsRow(viewModel, provider, address, accounts[provider to address].orEmpty(), first(provider, address), focusAccount)
                     }
                 }
 

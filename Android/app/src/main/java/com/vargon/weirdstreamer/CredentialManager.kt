@@ -49,6 +49,46 @@ class CredentialManager(context: Context) {
         }
     }
 
+    // SMB servers keep their accounts' usernames and passwords (SMB has no tokens); the one chosen
+    // last is the host's credentials, which browsing, thumbnails and playback use. A blank username
+    // is guest access.
+    private fun smbAccounts(host: String): List<Pair<String, String>> {
+        val json = sharedPreferences.getString("${host}_smb_accounts", null) ?: return emptyList()
+        return runCatching {
+            val array = org.json.JSONArray(json)
+            (0 until array.length()).map { i -> array.getJSONObject(i).let { it.getString("username") to it.getString("password") } }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun saveSmbAccounts(host: String, accounts: List<Pair<String, String>>) {
+        val array = org.json.JSONArray()
+        accounts.forEach { (u, p) -> array.put(org.json.JSONObject().put("username", u).put("password", p)) }
+        sharedPreferences.edit().putString("${host}_smb_accounts", array.toString()).apply()
+    }
+
+    /** An SMB server's accounts ("" is guest access); they don't expire. */
+    fun getSmbAccounts(host: String): List<ServerAccount> = smbAccounts(host).map { ServerAccount(it.first, true) }
+
+    /** Makes an SMB account the host's credentials. */
+    fun useSmbAccount(host: String, username: String): Boolean {
+        val (user, pass) = smbAccounts(host).firstOrNull { it.first == username } ?: return false
+        if (user.isEmpty()) clearCredentials(host) else saveCredentials(host, user, pass)
+        return true
+    }
+
+    /** Keeps an SMB account that signed in (replacing its old password). */
+    fun addSmbAccount(host: String, username: String, password: String) {
+        saveSmbAccounts(host, smbAccounts(host).filter { it.first != username } + (username to password))
+    }
+
+    fun signOutSmbAccount(host: String, username: String) {
+        saveSmbAccounts(host, smbAccounts(host).filter { it.first != username })
+        if ((getCredentials(host).first ?: "") == username) clearCredentials(host)
+    }
+
+    /** The SMB account in use: its username, "" for guest. */
+    fun getSmbAccount(host: String): String = getCredentials(host).first ?: ""
+
     fun addSavedServer(address: String) {
         val servers = getSavedServers().toMutableSet()
         servers.add(address)
@@ -58,7 +98,7 @@ class CredentialManager(context: Context) {
     fun removeSavedServer(address: String) {
         val servers = getSavedServers().toMutableSet()
         servers.remove(address)
-        sharedPreferences.edit().putStringSet("saved_servers", servers).apply()
+        sharedPreferences.edit().putStringSet("saved_servers", servers).remove("${address}_smb_accounts").apply()
         clearCredentials(address)
     }
 
@@ -100,7 +140,17 @@ class CredentialManager(context: Context) {
     }
 
     // Server API token management
+    /** Signs in an account: it joins the server's accounts (replacing an older sign-in) and becomes the one in use. */
     fun saveServerToken(serverUrl: String, token: String, expiresAt: Long) {
+        val username = usernameIn(token)
+        if (username != null) {
+            val accounts = storedAccounts(serverUrl).filter { it.username != username } + StoredAccount(username, token, expiresAt)
+            saveAccounts(serverUrl, accounts)
+        }
+        setActiveToken(serverUrl, token, expiresAt)
+    }
+
+    private fun setActiveToken(serverUrl: String, token: String, expiresAt: Long) {
         tokenCache[serverUrl] = CachedToken(token, expiresAt)
         sharedPreferences.edit().apply {
             putString("${serverUrl}_token", token)
@@ -108,6 +158,56 @@ class CredentialManager(context: Context) {
             apply()
         }
     }
+
+    // Each server keeps the accounts signed in to it on this device, each with its own token; the
+    // one chosen last is in use (its token is the server's token, which every request sends).
+    private class StoredAccount(val username: String, val token: String, val expiresAt: Long)
+
+    /** An account signed in to a server; [signedIn] is false once its sign-in has expired. */
+    data class ServerAccount(val username: String, val signedIn: Boolean)
+
+    private fun storedAccounts(serverUrl: String): List<StoredAccount> {
+        val json = sharedPreferences.getString("${serverUrl}_accounts", null) ?: return emptyList()
+        return runCatching {
+            val array = org.json.JSONArray(json)
+            (0 until array.length()).map { i ->
+                val o = array.getJSONObject(i)
+                StoredAccount(o.getString("username"), o.getString("token"), o.getLong("expiresAt"))
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun saveAccounts(serverUrl: String, accounts: List<StoredAccount>) {
+        val array = org.json.JSONArray()
+        accounts.forEach { array.put(org.json.JSONObject().put("username", it.username).put("token", it.token).put("expiresAt", it.expiresAt)) }
+        sharedPreferences.edit().putString("${serverUrl}_accounts", array.toString()).apply()
+    }
+
+    /** The accounts signed in to a server, in the order they were first added. */
+    fun getServerAccounts(serverUrl: String): List<ServerAccount> {
+        val now = System.currentTimeMillis() / 1000
+        return storedAccounts(serverUrl).map { ServerAccount(it.username, now < it.expiresAt) }
+    }
+
+    /** Makes [username] the account in use on a server. False when its sign-in has expired. */
+    fun useServerAccount(serverUrl: String, username: String): Boolean {
+        val account = storedAccounts(serverUrl).firstOrNull { it.username == username } ?: return false
+        if (System.currentTimeMillis() / 1000 >= account.expiresAt) return false
+        setActiveToken(serverUrl, account.token, account.expiresAt)
+        return true
+    }
+
+    /** Signs an account out of a server and off this device's list; the server is then signed out if it was in use. */
+    fun signOutServerAccount(serverUrl: String, username: String) {
+        saveAccounts(serverUrl, storedAccounts(serverUrl).filter { it.username != username })
+        if (getServerAccount(serverUrl) == username) clearActiveToken(serverUrl)
+    }
+
+    private fun usernameIn(token: String): String? = runCatching {
+        val claims = android.util.Base64.decode(token.split(".")[1],
+            android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
+        org.json.JSONObject(String(claims)).optString("username").ifEmpty { null }
+    }.getOrNull()
 
     fun getServerToken(serverUrl: String): String? {
         val cached = tokenCache.getOrPut(serverUrl) {
@@ -129,16 +229,15 @@ class CredentialManager(context: Context) {
      * the claims as base64url JSON), so sign-ins from before this was shown have it too. Null when
      * signed out.
      */
-    fun getServerAccount(serverUrl: String): String? {
-        val token = getServerToken(serverUrl) ?: return null
-        return runCatching {
-            val claims = android.util.Base64.decode(token.split(".")[1],
-                android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
-            org.json.JSONObject(String(claims)).optString("username").ifEmpty { null }
-        }.getOrNull()
+    fun getServerAccount(serverUrl: String): String? = getServerToken(serverUrl)?.let(::usernameIn)
+
+    /** Signs out every account of a server (when it's removed). */
+    fun clearServerToken(serverUrl: String) {
+        sharedPreferences.edit().remove("${serverUrl}_accounts").apply()
+        clearActiveToken(serverUrl)
     }
 
-    fun clearServerToken(serverUrl: String) {
+    private fun clearActiveToken(serverUrl: String) {
         tokenCache.remove(serverUrl)
         sharedPreferences.edit().apply {
             remove("${serverUrl}_token")

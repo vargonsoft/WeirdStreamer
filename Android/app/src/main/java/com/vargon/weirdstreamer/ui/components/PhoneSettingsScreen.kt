@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.ui.components
 
+import com.vargon.weirdstreamer.accountLabel
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -7,8 +8,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Login
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
@@ -214,49 +213,37 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                     }
                 } else {
                     items(servers) { address ->
-                        val isServer = provider.typeId == "SERVER"
-                        val hasToken = if (isServer) {
-                            authStateRefresh.let { viewModel.credentialManager.getServerToken(address) != null }
-                        } else false
-
-                        // The account signed in (watch status is kept per account)
-                        val account = if (isServer) authStateRefresh.let { viewModel.credentialManager.getServerAccount(address) } else null
+                        // A server's accounts are chosen on the source list; here they're only listed.
+                        val users = authStateRefresh.let {
+                            viewModel.accountsOf(provider, address).map { accountLabel(it.username) }
+                        }
+                        var confirmRemove by remember { mutableStateOf(false) }
                         ListItem(
                             headlineContent = { Text(address) },
-                            supportingContent = if (isServer) {
-                                { Text(account?.let { "Signed in as $it" } ?: "Not signed in") }
-                            } else null,
+                            supportingContent = { Text(serverUsersText(users)) },
                             leadingContent = { Icon(Icons.Default.Dns, contentDescription = null) },
                             trailingContent = {
-                                Row {
-                                    if (isServer) {
-                                        IconButton(onClick = {
-                                            if (hasToken) {
-                                                viewModel.logout(address)
-                                            } else {
-                                                viewModel.selectSource(provider, address)
-                                                onBack()
-                                            }
-                                        }) {
-                                            if (hasToken) {
-                                                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout")
-                                            } else {
-                                                Icon(Icons.AutoMirrored.Filled.Login, contentDescription = "Login")
-                                            }
-                                        }
-                                    }
-                                    IconButton(onClick = {
-                                        val isCurrent = (address == viewModel.currentSource?.serverAddress)
-                                        viewModel.removeServer(provider, address)
-                                        if (isCurrent) {
-                                            onBack()
-                                        }
-                                    }) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Delete")
-                                    }
+                                IconButton(onClick = { confirmRemove = true }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Remove")
                                 }
                             }
                         )
+                        if (confirmRemove) {
+                            AlertDialog(
+                                onDismissRequest = { confirmRemove = false },
+                                title = { Text("Remove server?") },
+                                text = { Text(removeServerWarning(address, users)) },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        confirmRemove = false
+                                        val isCurrent = address == viewModel.currentSource?.serverAddress
+                                        viewModel.removeServer(provider, address)
+                                        if (isCurrent) onBack()
+                                    }) { Text("Remove") }
+                                },
+                                dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancel") } }
+                            )
+                        }
                     }
                 }
             }
