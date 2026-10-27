@@ -59,6 +59,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -804,9 +805,12 @@ private fun TvWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>,
     if (files.isEmpty()) return
     val watched = files.all { it.playback?.watched == true }
     // Watched: a filled check; not yet: an empty circle (button colors alone don't tell them apart).
+    // A season's or the show's (labelled) has the check either way: solid, or dimmed until then.
     Button(colors = tvButtonColors(), onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
-        Icon(if (watched) Icons.Default.CheckCircle else Icons.Outlined.Circle,
-            contentDescription = if (watched) "Mark unwatched" else "Mark watched")
+        val description = if (watched) "Mark unwatched" else "Mark watched"
+        if (label != null && !iconOnly) Icon(Icons.Default.CheckCircle, contentDescription = description,
+            modifier = Modifier.alpha(if (watched) 1f else 0.35f))
+        else Icon(if (watched) Icons.Default.CheckCircle else Icons.Outlined.Circle, contentDescription = description)
         if (!iconOnly && label != null) {
             Spacer(Modifier.width(6.dp))
             if (season != null) SeasonLabel(season, label) else Text(label)

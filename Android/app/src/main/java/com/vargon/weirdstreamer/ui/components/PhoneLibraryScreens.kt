@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -211,7 +214,8 @@ fun PhoneTitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "header") { PhoneTitleHeader(viewModel, title) }
         item(key = "details") { PhoneTitleDetails(title) }
-        item(key = "watched") { PhoneTitleWatched(viewModel, title) }
+        // A show's watched buttons are above its seasons, as on the TV.
+        if (title.kind == "movie" || !title.files.isNullOrEmpty()) item(key = "watched") { PhoneTitleWatched(viewModel, title) }
         title.cast?.takeIf { it.isNotEmpty() }?.let { cast ->
             item(key = "cast") { PhoneCastRow(viewModel, cast) }
         }
@@ -420,6 +424,12 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
     val season = seasons[selected.coerceIn(seasons.indices)]
     val queue = remember(season) { season.episodes.flatMap { it.files } }
     Column {
+        // Watched buttons for the season shown and the whole show, above the seasons (as on the TV).
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 8.dp)) {
+            PhoneGroupWatchedButton(viewModel, season.episodes.flatMap { it.files }, season.name)
+            PhoneGroupWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, "Whole show")
+        }
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -435,8 +445,9 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
             }
         }
         var downloading by remember { mutableStateOf<List<DownloadRequest>?>(null) }
+        // The downloads scroll sideways when they don't fit.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 16.dp)) {
+            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             FilledTonalButton(onClick = { downloading = episodeDownloads(viewModel, title, listOf(season)) }) {
                 Icon(Icons.Default.Download, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
@@ -447,7 +458,6 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
                     Text("Whole show")
                 }
             }
-            WatchedButton(viewModel, season.episodes.flatMap { it.files }) // the season
         }
         downloading?.let { DownloadQualityDialog(viewModel, it) { downloading = null } }
         season.episodes.forEach { PhoneEpisodeRow(viewModel, it, queue, title.title) }
@@ -542,6 +552,22 @@ private fun WatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>) {
             contentDescription = if (watched) "Mark unwatched" else "Mark watched",
             tint = if (watched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/**
+ * Marks [files] (a season's, or the whole show's) watched, or unwatched when they all are: a button
+ * named [label], with a check that's solid once they all are watched and dimmed until then.
+ */
+@Composable
+private fun PhoneGroupWatchedButton(viewModel: MediaViewModel, files: List<LibraryFile>, label: String) {
+    if (files.isEmpty()) return
+    val watched = files.all { it.playback?.watched == true }
+    FilledTonalButton(onClick = { viewModel.setWatched(files.map { it.path }, !watched) }) {
+        Icon(Icons.Default.CheckCircle, contentDescription = if (watched) "Mark unwatched" else "Mark watched",
+            modifier = Modifier.size(18.dp).alpha(if (watched) 1f else 0.35f))
+        Spacer(Modifier.width(6.dp))
+        Text(label, maxLines = 1)
     }
 }
 
