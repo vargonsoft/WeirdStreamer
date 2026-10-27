@@ -42,6 +42,7 @@ import com.vargon.weirdstreamer.api.models.SubtitleHit
 import com.vargon.weirdstreamer.WeirdStreamerApplication
 import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
+import com.vargon.weirdstreamer.api.models.forDiscTitle
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.delay
@@ -162,7 +163,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var lastControlsHideTime by remember { mutableLongStateOf(0L) }
 
     // Trickplay state
-    var trickplayInfo by remember { mutableStateOf<TrickplayInfo?>(null) }
+    var loadedTrickplay by remember { mutableStateOf<TrickplayInfo?>(null) }
+    // A disc's frames are for its main feature: none while another title plays.
+    val trickplayInfo = loadedTrickplay?.forDiscTitle(discTitle, discInfo?.mainTitle)
     var isTrickplayVisible by remember { mutableStateOf(false) }
     var selectedTrickplayIndex by remember { mutableIntStateOf(-1) }
     var trickplayScrollRequest by remember { mutableIntStateOf(-1) }
@@ -248,7 +251,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 disc.title(discTitle)?.let { fullDuration = (it.duration * 1000).toLong() }
                             }
                         }
-                        viewModel.getFileItemForPath(path)?.let { viewModel.fetchTrickplayInfo(it) }?.let { trickplayInfo = it }
+                        viewModel.getFileItemForPath(path)?.let { viewModel.fetchTrickplayInfo(it) }?.let { loadedTrickplay = it }
                     }
                 }
             } catch (e: Exception) { Log.e("VideoPlayer", "Failed to load metadata", e) }
@@ -542,6 +545,31 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         updateInteraction()
     }
 
+    // Skip Intro / Skip Credits (SkipSegments.kt): the intro to its end, the credits to the next video.
+    fun seekAbsolute(target: Long) {
+        if (!isSmbSource && !currentTranscodeMode.isOriginal) {
+            var newUrl = path.substringBefore("?") + "?path=" + path.substringAfter("path=").substringBefore("&") + "&transcode=1"
+            currentTranscodeMode.bitrate?.let { newUrl += "&bitrate=$it" }
+            currentTranscodeMode.resolution?.let { newUrl += "&resolution=$it" }
+            newUrl += discQuery
+            newUrl += "&start=${target / 1000f}"
+            transcodeStartOffset = target
+            exoPlayer.setMediaItem(MediaItem.fromUri(newUrl))
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+        } else {
+            exoPlayer.seekTo(target)
+        }
+    }
+    val doSkip: (SkipPrompt, com.vargon.weirdstreamer.api.models.MediaSegments) -> Unit = { prompt, segments ->
+        if (!prompt.credits) seekAbsolute((prompt.segment.end * 1000).toLong())
+        else {
+            ended = true // reported as finished just below; no report after it
+            if (!viewModel.playAfterCredits(path, playbackPosition, segments.next)) onBack(path)
+        }
+    }
+    val skip = if (isSmbSource || isDisc) null else rememberSkipPrompt(viewModel, path, playbackPosition, showControls, doSkip)
+
     val handleBackAction = {
         val now = System.currentTimeMillis()
         if (isTrickplayVisible) {
@@ -626,7 +654,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 true
                             } else {
                                 lastConfirmEventTime = now
-                            if (isTrickplayVisible) {
+                            if (skip != null && !showControls && !showZoomToolbar && !isTrickplayVisible && !isZoomMode) {
+                                doSkip(skip.first, skip.second) // the Skip button shows as focused
+                                true
+                            } else if (isTrickplayVisible) {
                                 val frames = trickplayInfo?.frames
                                 if (frames != null && selectedTrickplayIndex >= 0 && selectedTrickplayIndex < frames.size) {
                                     val target = frames[selectedTrickplayIndex].time.toLong() * 1000
@@ -769,6 +800,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (isBuffering) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = WeirdStreamerTheme.spec.spinnerColor.takeOrElse { MaterialTheme.colorScheme.primary })
 
         FilenameOverlay(show = showControls, filename = filename, modifier = Modifier.align(Alignment.TopStart))
+        skip?.let { (prompt, _) ->
+            TvSkipButton(prompt, Modifier.align(Alignment.BottomEnd)
+                .padding(end = 56.dp, bottom = if (showControls || showZoomToolbar) 210.dp else 64.dp))
+        }
         SkipFeedbackOverlay(feedback = skipFeedback)
         SpeedFeedbackOverlay(speed = speedFeedback)
         SubtitleOverlay(serverSubs, position = {

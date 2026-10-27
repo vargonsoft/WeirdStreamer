@@ -445,6 +445,12 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
             PhoneGroupWatchedButton(viewModel, season.episodes.flatMap { it.files }, season.name, season, Modifier.fillMaxHeight())
             PhoneGroupWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, "Whole show",
                 modifier = Modifier.fillMaxHeight())
+            // The players skip this show's intros and credits by themselves (for this user).
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxHeight()
+                .clickable { viewModel.setAutoSkip(title.tmdbId, !title.autoSkip) }.padding(end = 8.dp)) {
+                androidx.compose.material3.Checkbox(checked = title.autoSkip, onCheckedChange = { viewModel.setAutoSkip(title.tmdbId, it) })
+                Text("Auto Skip")
+            }
         }
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),

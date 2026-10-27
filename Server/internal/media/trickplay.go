@@ -1,12 +1,16 @@
 package media
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
@@ -23,6 +27,25 @@ func NewTrickplayGenerator(db *database.DB) *TrickplayGenerator {
 }
 
 func (tg *TrickplayGenerator) Generate(videoPath string) error {
+	return tg.generate(context.Background(), videoPath, nil)
+}
+
+// trickplayDone marks a video's frames as all made (a folder without it was stopped part way).
+const trickplayDone = ".done"
+
+// HasTrickplay says whether all of a video's frames have been made.
+func HasTrickplay(videoPath string) bool {
+	dir := config.GlobalConfig.Media.TrickplayPath
+	if dir == "" {
+		return true // nowhere to put them
+	}
+	_, err := os.Stat(filepath.Join(dir, GenerateThumbnailHash(videoPath), trickplayDone))
+	return err == nil
+}
+
+// generate makes a video's frames, calling wait (when given) before each one so a background
+// job can pause; it stops when ctx ends or wait says so, and marks the video done when finished.
+func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wait func() bool) error {
 	fmt.Printf("Generating trickplay frames for %s\n", videoPath)
 
 	duration, codec, err := tg.getVideoInfo(videoPath)
@@ -45,9 +68,15 @@ func (tg *TrickplayGenerator) Generate(videoPath string) error {
 	// Generate frames every 10 seconds.
 	// Stop 1 second before the end to avoid empty output issues with input seeking.
 	for i := 0; i <= int(duration)-1; i += 10 {
-		if err := tg.generateFrame(videoPath, trickplayVideoDir, float64(i), i, codec); err != nil {
+		if ctx.Err() != nil || (wait != nil && !wait()) {
+			return ctx.Err()
+		}
+		if err := tg.generateFrame(ctx, videoPath, trickplayVideoDir, float64(i), i, codec); err != nil {
 			fmt.Printf("Warning: failed to generate frame at %ds: %v\n", i, err)
 		}
+	}
+	if err := os.WriteFile(filepath.Join(trickplayVideoDir, trickplayDone), nil, 0644); err != nil {
+		return err
 	}
 
 	fmt.Printf("Finished generating trickplay frames for %s\n", videoPath)
@@ -157,25 +186,26 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, e
 		return 0, "", fmt.Errorf("ffprobe failed: %s", string(output))
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) < 2 {
-		return 0, "", fmt.Errorf("ffprobe returned insufficient data")
-	}
-
-	codec := strings.TrimSpace(lines[0])
-	duration, err := strconv.ParseFloat(strings.TrimSpace(lines[1]), 64)
-	if err != nil {
-		codec = strings.TrimSpace(lines[1])
-		duration, err = strconv.ParseFloat(strings.TrimSpace(lines[0]), 64)
-		if err != nil {
-			return 0, "", fmt.Errorf("failed to parse duration: %w", err)
+	// The codec and the duration, in whatever order and with whatever repeats ffprobe prints them
+	// (a transport stream can list its video stream more than once).
+	var codec string
+	var duration float64
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		line = strings.TrimSpace(line)
+		if d, err := strconv.ParseFloat(line, 64); err == nil {
+			duration = d
+		} else if codec == "" && line != "" && line != "N/A" {
+			codec = line
 		}
+	}
+	if duration <= 0 {
+		return 0, "", fmt.Errorf("ffprobe gave no duration")
 	}
 
 	return duration, codec, nil
 }
 
-func (tg *TrickplayGenerator) generateFrame(videoPath, outputDir string, seekTime float64, frameIndex int, codec string) error {
+func (tg *TrickplayGenerator) generateFrame(ctx context.Context, videoPath, outputDir string, seekTime float64, frameIndex int, codec string) error {
 	framePath := filepath.Join(outputDir, fmt.Sprintf("frame-%d.jpg", frameIndex))
 
 	if _, err := os.Stat(framePath); err == nil {
@@ -191,7 +221,7 @@ func (tg *TrickplayGenerator) generateFrame(videoPath, outputDir string, seekTim
 	}
 	args = append(args, "-ss", timestamp, "-noaccurate_seek", "-i", videoPath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-strict", "unofficial", "-y", framePath)
 
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	if err := cmd.Run(); err == nil {
 		if info, statErr := os.Stat(framePath); statErr == nil && info.Size() > 0 {
 			return nil
@@ -199,15 +229,118 @@ func (tg *TrickplayGenerator) generateFrame(videoPath, outputDir string, seekTim
 	}
 
 	// Simple fallback without BSF or format flags.
-	cmdFallback := exec.Command("ffmpeg", "-ss", timestamp, "-i", videoPath, "-vf", "scale=320:-1", "-frames:v", "1", "-strict", "unofficial", "-y", framePath)
+	cmdFallback := exec.CommandContext(ctx, "ffmpeg", "-ss", timestamp, "-i", videoPath, "-vf", "scale=320:-1", "-frames:v", "1", "-strict", "unofficial", "-y", framePath)
 	if errFallback := cmdFallback.Run(); errFallback == nil {
 		return nil
 	}
 
 	return fmt.Errorf("failed to extract frame %d", frameIndex)
 }
+
 // isMacFile checks if a filename is a Mac-specific file that should be ignored
 func isMacFile(path string) bool {
 	baseName := filepath.Base(path)
 	return baseName == ".DS_Store" || strings.HasPrefix(baseName, "._")
+}
+
+// errInterrupted: a disc's frames were stopped part way (someone started streaming); try later.
+var errInterrupted = errors.New("interrupted")
+
+// generateDisc makes frames for a disc image's main title. Seeking into a title means decoding from
+// the start of its part (program chain), so each part is decoded once instead, keyframes only, with
+// a frame kept every 10 seconds; frames are named by their time in the title. busy (when given) is
+// checked while decoding, and stops it. The .done marker holds the title's number.
+func (tg *TrickplayGenerator) generateDisc(ctx context.Context, path string, wait, busy func() bool) error {
+	info, err := LoadDisc(path)
+	if err != nil {
+		return err
+	}
+	title := info.Title(0)
+	if title == nil || len(title.Segments) == 0 {
+		return errors.New("no main title")
+	}
+	trickplayDir := config.GlobalConfig.Media.TrickplayPath
+	if trickplayDir == "" {
+		return fmt.Errorf("trickplay path is not configured")
+	}
+	dir := filepath.Join(trickplayDir, GenerateThumbnailHash(path))
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	for i, seg := range title.Segments {
+		if ctx.Err() != nil || (wait != nil && !wait()) {
+			return ctx.Err()
+		}
+		if err := tg.discSegmentFrames(ctx, path, title, i, seg, dir, busy); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(filepath.Join(dir, trickplayDone), []byte(strconv.Itoa(title.Number)), 0644)
+}
+
+func (tg *TrickplayGenerator) discSegmentFrames(ctx context.Context, path string, title *DiscTitle, i int, seg DiscSegment, dir string, busy func() bool) error {
+	tmp, err := os.MkdirTemp(dir, "part")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	run, cancel := context.WithCancel(ctx)
+	defer cancel()
+	interrupted := false
+	if busy != nil {
+		go func() {
+			for run.Err() == nil {
+				if busy() {
+					interrupted = true
+					cancel()
+					return
+				}
+				select {
+				case <-run.Done():
+				case <-time.After(5 * time.Second):
+				}
+			}
+		}()
+	}
+	input, _ := title.InputArgs(path, i, 1, 0)
+	args := append([]string{"-hide_banner", "-loglevel", "error", "-nostdin", "-skip_frame", "nokey"}, input...)
+	args = append(args, "-map", "0:v:0", "-vf", "fps=1/10,scale=320:-1,format=yuvj420p", "-strict", "unofficial",
+		filepath.Join(tmp, "%d.jpg"))
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(run, "ffmpeg", args...)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if interrupted {
+			return errInterrupted
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("disc frames: %w (%s)", err, strings.TrimSpace(stderr.String()))
+	}
+	// n.jpg (from 1) is the frame 10*(n-1) seconds into the part.
+	entries, _ := os.ReadDir(tmp)
+	for _, e := range entries {
+		n, err := strconv.Atoi(strings.TrimSuffix(e.Name(), ".jpg"))
+		if err != nil {
+			continue
+		}
+		at := int(seg.Start + float64(n-1)*10)
+		os.Rename(filepath.Join(tmp, e.Name()), filepath.Join(dir, fmt.Sprintf("frame-%d.jpg", at)))
+	}
+	return nil
+}
+
+// TrickplayTitle is the disc title a disc image's frames are for (0 for a video file, or none yet).
+func TrickplayTitle(videoPath string) int {
+	dir := config.GlobalConfig.Media.TrickplayPath
+	if dir == "" {
+		return 0
+	}
+	b, err := os.ReadFile(filepath.Join(dir, GenerateThumbnailHash(videoPath), trickplayDone))
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	return n
 }

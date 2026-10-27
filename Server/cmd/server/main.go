@@ -104,6 +104,12 @@ func main() {
 		}
 	}
 	go metadataService.SyncAll(context.Background())
+	// Intros and credits, for the players' Skip buttons, found in the background.
+	mediaHandler.StartSegmentAnalysis(context.Background())
+	// Records of files that are gone (removed, or in a library no longer configured), forgotten.
+	mediaHandler.StartCleanup(context.Background())
+	// Trickplay frames (the pictures over the seek bars) for videos without them.
+	mediaHandler.StartTrickplay(context.Background())
 	// A token or library change saved through Settings starts a sync without a restart
 	configHandler.OnUpdate(func() { go metadataService.SyncAll(context.Background()) })
 
@@ -148,6 +154,9 @@ func main() {
 	api.HandleFunc("/media/disc", mediaHandler.GetDisc).Methods("GET")
 	api.HandleFunc("/media/codecs", mediaHandler.GetCodecs).Methods("GET")
 	api.HandleFunc("/media/seekpoint", mediaHandler.GetSeekPoint).Methods("GET")
+	api.HandleFunc("/media/segments", mediaHandler.GetSegments).Methods("GET")
+	api.HandleFunc("/media/segments", mediaHandler.SetSegment).Methods("PUT")
+	api.HandleFunc("/library/autoskip", mediaHandler.SetAutoSkip).Methods("PUT")
 	api.HandleFunc("/media/subtitles", mediaHandler.GetSubtitles).Methods("GET")
 	api.HandleFunc("/media/subtitles/search", mediaHandler.SearchSubtitles).Methods("GET")
 	api.HandleFunc("/media/subtitles/download", mediaHandler.DownloadSubtitle).Methods("POST")

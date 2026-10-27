@@ -42,6 +42,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.PlayArrow
@@ -691,6 +693,16 @@ private fun SeasonsAndEpisodes(
                     modifier = Modifier.fillMaxHeight())
                 TvWatchedButton(viewModel, seasons.flatMap { s -> s.episodes.flatMap { it.files } }, label = "Whole show",
                     modifier = Modifier.fillMaxHeight())
+                // The players skip this show's intros and credits by themselves (for this user).
+                Button(shape = tvButtonShape(), colors = tvButtonColors(), modifier = Modifier.fillMaxHeight(),
+                    onClick = { viewModel.setAutoSkip(title.tmdbId, !title.autoSkip) }) {
+                    Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (title.autoSkip) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                            contentDescription = if (title.autoSkip) "Auto Skip on" else "Auto Skip off")
+                        Spacer(Modifier.width(6.dp))
+                        Text("Auto Skip")
+                    }
+                }
             }
             // A scrolling Row rather than a LazyRow, so its buttons can share a height (seasons are few).
             Row(

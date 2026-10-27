@@ -85,6 +85,7 @@ type TrickplayFrame struct {
 
 type TrickplayInfo struct {
 	Frames []TrickplayFrame `json:"frames"`
+	Title  int              `json:"title,omitempty"` // a disc image's frames: the title they're for
 }
 
 type Directory struct {
@@ -163,6 +164,7 @@ type TitleDetail struct {
 	Files      []LibraryFile   `json:"files,omitempty"`       // movies
 	Seasons    []LibrarySeason `json:"seasons,omitempty"`     // shows: seasons with episodes on disk
 	OtherFiles []LibraryFile   `json:"other_files,omitempty"` // shows: files that aren't episodes
+	AutoSkip   bool            `json:"auto_skip,omitempty"`   // shows: the user has intros and credits skipped by themselves
 }
 
 type LibrarySeason struct {

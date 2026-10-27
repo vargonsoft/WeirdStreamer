@@ -7,6 +7,8 @@ import com.vargon.weirdstreamer.api.ApiClient
 import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.api.models.StreamProgress
 import com.vargon.weirdstreamer.api.models.ContinueItem
+import com.vargon.weirdstreamer.api.models.MediaSegments
+import com.vargon.weirdstreamer.api.models.AutoSkipRequest
 import com.vargon.weirdstreamer.api.models.PlaybackSync
 import com.vargon.weirdstreamer.api.models.SyncedPlayback
 import com.vargon.weirdstreamer.api.models.WatchedRequest
@@ -122,6 +124,19 @@ class ServerRepository(
                            tmdbId: Int? = null): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val r = apiService.setWatched(WatchedRequest(originalPaths.map(::encode), watched, library, kind, tmdbId))
+            if (!r.isSuccessful) throw Exception("Server error: ${r.code()}")
+        }
+    }
+
+    /** A video's intro and credits (by its library path), or null when the server can't say. */
+    suspend fun segments(originalPath: String): MediaSegments? = withContext(Dispatchers.IO) {
+        runCatching { apiService.getSegments(encode(originalPath)).body() }.getOrNull()
+    }
+
+    /** Has the players skip a show's intros and credits by themselves (or not). */
+    suspend fun setAutoSkip(tmdbId: Int, on: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.setAutoSkip(AutoSkipRequest(tmdbId, on))
             if (!r.isSuccessful) throw Exception("Server error: ${r.code()}")
         }
     }

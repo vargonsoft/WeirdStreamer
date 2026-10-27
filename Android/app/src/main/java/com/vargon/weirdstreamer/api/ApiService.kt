@@ -2,6 +2,8 @@ package com.vargon.weirdstreamer.api
 
 import com.vargon.weirdstreamer.api.models.Directory
 import com.vargon.weirdstreamer.api.models.DiscInfo
+import com.vargon.weirdstreamer.api.models.MediaSegments
+import com.vargon.weirdstreamer.api.models.AutoSkipRequest
 import com.vargon.weirdstreamer.api.models.CodecsInfo
 import com.vargon.weirdstreamer.api.models.SubtitleSearch
 import com.vargon.weirdstreamer.api.models.SubtitleDownload
@@ -142,6 +144,12 @@ interface ApiService {
 
     @POST("/api/playback/watched")
     suspend fun setWatched(@Body request: WatchedRequest): Response<Unit>
+
+    @GET("/api/media/segments")
+    suspend fun getSegments(@Query("path") path: String): Response<MediaSegments>
+
+    @PUT("/api/library/autoskip")
+    suspend fun setAutoSkip(@Body request: AutoSkipRequest): Response<Unit>
 
     @POST("/api/playback/sync")
     suspend fun syncPlayback(@Body request: PlaybackSync): Response<Unit>

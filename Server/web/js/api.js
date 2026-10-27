@@ -261,6 +261,24 @@ class MediaAPI {
     }
 
     // Marks files watched or unwatched for the signed-in user.
+    // A video's intro and credits ({ intro, credits, auto_skip, show_id, next }).
+    async getSegments(path) {
+        return this.request(`/api/media/segments?path=${encodeURIComponent(this.encodePath(path))}`);
+    }
+
+    // Admins: sets (or clears) a video's intro or credits by hand; returns its segments.
+    async setSegment(path, kind, start, end, clear = false) {
+        return this.request('/api/media/segments', {
+            method: 'PUT',
+            body: JSON.stringify({ path: this.encodePath(path), kind, start, end, clear }),
+        });
+    }
+
+    // Skips a show's intros and credits by themselves (or not), for this user.
+    async setAutoSkip(tmdbId, on) {
+        return this.request('/api/library/autoskip', { method: 'PUT', body: JSON.stringify({ tmdb_id: tmdbId, on }) });
+    }
+
     async setWatched(paths, watched) {
         return this.request('/api/playback/watched', {
             method: 'POST',

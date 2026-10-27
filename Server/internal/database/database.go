@@ -103,6 +103,9 @@ func (db *DB) initSchema() error {
 	if err := db.initPlaybackSchema(); err != nil {
 		return err
 	}
+	if err := db.initSegmentSchema(); err != nil {
+		return err
+	}
 
 	return nil
 }

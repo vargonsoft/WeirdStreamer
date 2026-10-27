@@ -60,6 +60,7 @@ import com.vargon.weirdstreamer.WeirdStreamerApplication
 import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
+import com.vargon.weirdstreamer.api.models.forDiscTitle
 import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -148,7 +149,9 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     }
 
     // Trickplay state
-    var trickplayInfo by remember { mutableStateOf<TrickplayInfo?>(null) }
+    var loadedTrickplay by remember { mutableStateOf<TrickplayInfo?>(null) }
+    // A disc's frames are for its main feature: none while another title plays.
+    val trickplayInfo = loadedTrickplay?.forDiscTitle(discTitle, discInfo?.mainTitle)
     val trickplayListState = rememberLazyListState()
     val isTrickplayDragged by trickplayListState.interactionSource.collectIsDraggedAsState()
     val isTrickplayPressed by trickplayListState.interactionSource.collectIsPressedAsState()
@@ -250,7 +253,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         // Fetch trickplay info
                         val item = viewModel.getFileItemForPath(path)
                         if (item != null) {
-                            trickplayInfo = viewModel.fetchTrickplayInfo(item)
+                            loadedTrickplay = viewModel.fetchTrickplayInfo(item)
                         }
                     }
                 }
@@ -422,6 +425,16 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             exoPlayer.seekTo(targetPos)
         }
     }
+
+    // Skip Intro / Skip Credits (SkipSegments.kt): the intro to its end, the credits to the next video.
+    val doSkip: (SkipPrompt, com.vargon.weirdstreamer.api.models.MediaSegments) -> Unit = { prompt, segments ->
+        if (!prompt.credits) seekPlayer((prompt.segment.end * 1000).toLong())
+        else {
+            ended = true // reported as finished just below; no report after it
+            if (!viewModel.playAfterCredits(path, playbackPosition, segments.next)) onBack(path)
+        }
+    }
+    val skip = if (isSmbSource || isDisc) null else rememberSkipPrompt(viewModel, path, playbackPosition, showControls, doSkip)
 
     LaunchedEffect(exoPlayer) {
         while (true) {
@@ -912,6 +925,12 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     }
                 }
             }
+        }
+
+        // Over the picture's lower right, above the controls when they show
+        skip?.let { (prompt, segments) ->
+            PhoneSkipButton(prompt, onClick = { doSkip(prompt, segments) },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = if (showControls) 150.dp else 40.dp))
         }
 
         // Speed Selection Dialog

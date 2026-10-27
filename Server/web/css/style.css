@@ -2425,3 +2425,32 @@ body.has-az #main-screen .content { padding-right: 28px; }
 .subtitle-style-options.disabled { opacity: 0.55; }
 
 .account-signed-in { margin-top: 20px; font-size: 15px; color: var(--muted-text); }
+
+/* Skip Intro / Skip Credits: over the picture's lower right, above the controls */
+#player-modal .modal-content {
+    position: relative;
+}
+
+.player-skip {
+    position: absolute;
+    right: 32px;
+    bottom: 150px;
+    z-index: 5;
+    padding: 12px 22px;
+    font-size: 16px;
+    font-weight: 600;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+#player-modal .modal-content:fullscreen .player-skip {
+    bottom: 110px;
+}
+
+/* Auto Skip, beside a show's watched buttons */
+.auto-skip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    cursor: pointer;
+}

@@ -108,8 +108,14 @@ data class TrickplayFrame(
 )
 
 data class TrickplayInfo(
-    @SerializedName("frames") val frames: List<TrickplayFrame>
+    @SerializedName("frames") val frames: List<TrickplayFrame>,
+    // A disc image's frames: the title they were made from (its main feature)
+    @SerializedName("title") val title: Int = 0
 )
+
+/** The frames to show while [discTitle] of a disc plays (0: its main feature), or all of a video's. */
+fun TrickplayInfo.forDiscTitle(discTitle: Int, mainTitle: Int?): TrickplayInfo? =
+    takeIf { title == 0 || discTitle == title || (discTitle == 0 && (mainTitle == null || mainTitle == title)) }
 
 data class Directory(
     // `path` JSON key now carries the root ID or the relative id-based path
@@ -324,7 +330,30 @@ data class TitleDetail(
     @SerializedName("cast") val cast: List<CreditInfo>? = null,
     @SerializedName("files") val files: List<LibraryFile>? = null,
     @SerializedName("seasons") val seasons: List<LibrarySeason>? = null,
-    @SerializedName("other_files") val otherFiles: List<LibraryFile>? = null
+    @SerializedName("other_files") val otherFiles: List<LibraryFile>? = null,
+    // Shows: the user has the players skip intros and credits by themselves
+    @SerializedName("auto_skip") val autoSkip: Boolean = false
+)
+
+/** A part of a video, in seconds, and where it was found ("chapters", "fingerprint", "black", "manual"). */
+data class SegmentSpan(
+    @SerializedName("start") val start: Double,
+    @SerializedName("end") val end: Double,
+    @SerializedName("source") val source: String? = null
+)
+
+/** A video's intro and credits, for the players' Skip buttons, and the episode after it. */
+data class MediaSegments(
+    @SerializedName("intro") val intro: SegmentSpan? = null,
+    @SerializedName("credits") val credits: SegmentSpan? = null,
+    @SerializedName("auto_skip") val autoSkip: Boolean = false,
+    @SerializedName("show_id") val showId: Int = 0,
+    @SerializedName("next") val next: ContinueItem? = null
+)
+
+data class AutoSkipRequest(
+    @SerializedName("tmdb_id") val tmdbId: Int,
+    @SerializedName("on") val on: Boolean
 )
 
 data class LoginRequest(

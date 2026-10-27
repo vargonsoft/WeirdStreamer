@@ -72,6 +72,9 @@ func (h *MediaHandler) GetLibraryTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	annotateTitle(detail, h.requestPlayback(r))
+	if uid, ok := userID(r); ok && kind == "show" {
+		detail.AutoSkip = h.db.AutoSkip(uid, id)
+	}
 	respondJSON(w, http.StatusOK, detail)
 }
 

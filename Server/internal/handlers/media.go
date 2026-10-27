@@ -35,6 +35,33 @@ type MediaHandler struct {
 	meta               *metadata.Service // nil until SetMetadata
 	streams            *media.StreamTracker
 	downloads          *media.DownloadManager // nil until SetDownloads
+	segments           *media.SegmentAnalyzer // nil until StartSegmentAnalysis
+	pruner             *media.Pruner          // nil until StartCleanup
+	trickplay          *media.TrickplayJob    // nil until StartTrickplay
+}
+
+// StartTrickplay makes missing trickplay frames in the background until ctx ends.
+func (h *MediaHandler) StartTrickplay(ctx context.Context) {
+	h.trickplay = media.NewTrickplayJob(h.db, h.streams, func(path string) bool {
+		_, found := libraryForPath(path)
+		return found
+	})
+	go h.trickplay.Run(ctx)
+}
+
+// StartCleanup forgets files that are gone, in the background until ctx ends.
+func (h *MediaHandler) StartCleanup(ctx context.Context) {
+	h.pruner = media.NewPruner(h.db)
+	go h.pruner.Run(ctx)
+}
+
+// StartSegmentAnalysis finds videos' intros and credits in the background until ctx ends.
+func (h *MediaHandler) StartSegmentAnalysis(ctx context.Context) {
+	h.segments = media.NewSegmentAnalyzer(h.db, h.streams, func(path string) (string, bool) {
+		lib, found := libraryForPath(path)
+		return lib.Type, found
+	})
+	go h.segments.Run(ctx)
 }
 
 // SetMetadata enables TMDB metadata for movie and tv libraries.
@@ -208,6 +235,7 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 
 	info := models.TrickplayInfo{
 		Frames: frames,
+		Title:  media.TrickplayTitle(item.Path), // a disc image's: the title they're for
 	}
 
 	respondJSON(w, http.StatusOK, info)
@@ -573,7 +601,18 @@ func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go h.scanner.ScanMediaPaths()
+	go func() {
+		h.scanner.ScanMediaPaths()
+		if h.segments != nil {
+			h.segments.Wake() // new videos' intros and credits
+		}
+		if h.pruner != nil {
+			h.pruner.Wake() // and forget those gone
+		}
+		if h.trickplay != nil {
+			h.trickplay.Wake() // and new videos' seek-bar pictures
+		}
+	}()
 	if h.meta != nil {
 		go h.meta.SyncAll(context.Background())
 	}

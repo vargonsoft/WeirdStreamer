@@ -454,6 +454,42 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Marks videos (server paths) watched or unwatched, then shows it. */
+    /** A playing video's intro and credits (by its player path), or null (SMB, downloads, offline). */
+    suspend fun segmentsFor(path: String): com.vargon.weirdstreamer.api.models.MediaSegments? {
+        val repo = serverRepository ?: return null
+        val original = getFileItemForPath(path)?.originalPath ?: return null
+        return repo.segments(original)
+    }
+
+    /**
+     * Skip Credits: this video counts as finished, then the next plays (the queue's, else the
+     * show's next episode). False when there's none, for the player to close.
+     */
+    fun playAfterCredits(path: String, positionMs: Long, next: ContinueItem?): Boolean {
+        reportPlayback(path, positionMs, paused = true, ended = true)
+        val videos = getVideosInCurrentFolder()
+        val i = videos.indexOf(path)
+        if (i != -1 && i < videos.size - 1) {
+            playVideo(videos[i + 1])
+            return true
+        }
+        if (next != null) {
+            playContinue(next)
+            return true
+        }
+        return false
+    }
+
+    /** Has the players skip a show's intros and credits by themselves, then shows the change. */
+    fun setAutoSkip(tmdbId: Int, on: Boolean) {
+        val repo = serverRepository ?: return
+        viewModelScope.launch {
+            if (repo.setAutoSkip(tmdbId, on).isSuccess) {
+                openTitle = openTitle?.takeIf { it.tmdbId == tmdbId }?.copy(autoSkip = on) ?: openTitle
+            }
+        }
+    }
+
     fun setWatched(originalPaths: List<String>, watched: Boolean) {
         val repo = serverRepository ?: return
         viewModelScope.launch {

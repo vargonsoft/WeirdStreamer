@@ -731,6 +731,7 @@ async function playVideo(item, forceTranscode = false, startAt = 0) {
         mode: forceTranscode ? 'auto' : 'original', encode: false, failed: false, start: startAt };
     player = p;
     openPlayer(item.name);
+    loadSegments(p);
     try {
         p.codecs = await api.getCodecs(item.path);
     } catch (error) {
@@ -948,6 +949,7 @@ function attachStream(url, item, seekOnLoad = 0) {
     videoPlayer.ontimeupdate = () => {
         updatePlayerPosition();
         keepSubtitlesAhead(playerPosition());
+        updateSkipButton();
     };
     videoPlayer.onclick = togglePlay;
     videoPlayer.ondblclick = togglePlayerFullscreen;
@@ -1278,11 +1280,15 @@ function setupSubtitleStyle() {
 }
 
 // Trickplay frames, for the picture over the seek bar: [{ time, url }] by time.
+// For a video playing (player) or a disc (disc): a disc's are for one title (framesTitle).
 async function loadTrickplay(p) {
     if (!p.item.id) return;
     try {
         const info = await api.request(`/api/media/trickplay/${p.item.id}`);
-        if (player === p) p.frames = info.frames || [];
+        if (player === p || disc === p) {
+            p.frames = info.frames || [];
+            p.framesTitle = info.title || 0;
+        }
     } catch (e) { /* none yet */ }
 }
 
@@ -1444,6 +1450,94 @@ function isDiscImage(item) {
     return /\.iso$/i.test(item.path || item.name || '');
 }
 
+// ---------------------------------------------------------------------------------------------
+// Skip Intro / Skip Credits: the server finds each video's intro and credits (chapters, a
+// season's shared audio, dark frames) or an admin marks them. The button shows for the first 10
+// seconds of either (and while fullscreen controls show during it); with the show's Auto Skip on,
+// the player skips by itself. Skipping credits goes on to the next episode, else closes.
+
+const SKIP_SHOWN_MS = 10000;
+
+async function loadSegments(p) {
+    try {
+        const segments = await api.getSegments(p.item.path);
+        if (player === p) p.segments = segments;
+    } catch (e) { /* no Skip button */ }
+    const mark = document.getElementById('player-mark-label');
+    if (mark) mark.hidden = !canFixMatches();
+}
+
+function updateSkipButton() {
+    const p = player, btn = document.getElementById('player-skip');
+    const s = p && p.segments;
+    const t = s ? playerPosition() : 0;
+    const kind = !s ? null : ['intro', 'credits'].find(k => s[k] && t >= s[k].start && t < s[k].end - 0.5);
+    if (!kind) {
+        btn.hidden = true;
+        if (p) p.skipFor = null;
+        return;
+    }
+    const seg = s[kind];
+    const key = `${kind}:${seg.start}`;
+    if (p.skipFor !== key) { // just entered it
+        p.skipFor = key;
+        p.skipShownAt = Date.now();
+        p.autoSkipped = p.autoSkipped || {};
+        if (s.auto_skip && !p.autoSkipped[key]) {
+            p.autoSkipped[key] = true;
+            skipSegment(kind);
+            return;
+        }
+    }
+    const box = playerModal.querySelector('.modal-content');
+    const controlsShown = document.fullscreenElement === box && !box.classList.contains('controls-hidden');
+    btn.textContent = kind === 'intro' ? 'Skip Intro' : 'Skip Credits';
+    btn.hidden = !(Date.now() - p.skipShownAt < SKIP_SHOWN_MS || controlsShown);
+    btn.onclick = (e) => { e.stopPropagation(); skipSegment(kind); };
+}
+
+function skipSegment(kind) {
+    const p = player;
+    if (!p || !p.segments) return;
+    document.getElementById('player-skip').hidden = true;
+    if (kind === 'intro') {
+        seekTo(p.segments.intro.end);
+        return;
+    }
+    // Credits: this one's watched; on to the next episode, or done.
+    api.setWatched([p.item.path], true).catch(() => {});
+    const next = p.segments.next;
+    if (next) playVideo(next, false, resumePosition(next));
+    else playerModal.querySelector('.close').click();
+}
+
+// Admins: the Mark menu sets the intro and credits at the current position.
+async function markSegment(action) {
+    const p = player;
+    if (!p) return;
+    const t = playerPosition();
+    const s = p.segments || {};
+    try {
+        let result;
+        if (action === 'intro-start') {
+            p.introStart = t; // saved with "Intro ends here"
+            document.getElementById('player-status').textContent = `Intro starts at ${clock(t)}; now mark where it ends.`;
+            return;
+        } else if (action === 'intro-end') {
+            const start = p.introStart ?? (s.intro ? s.intro.start : 0);
+            result = await api.setSegment(p.item.path, 'intro', start, t);
+        } else if (action === 'credits-start') {
+            result = await api.setSegment(p.item.path, 'credits', t, Math.max(p.duration || 0, t + 1));
+        } else if (action === 'clear-intro' || action === 'clear-credits') {
+            result = await api.setSegment(p.item.path, action.slice(6), 0, 0, true);
+        }
+        if (result && player === p) p.segments = result;
+        document.getElementById('player-status').textContent = 'Saved.';
+    } catch (e) {
+        document.getElementById('player-status').textContent = 'Could not save: ' + e.message;
+    }
+}
+
 // Stops what's playing and its subtitles, and leaves fullscreen.
 function resetPlayer() {
     videoPlayer.pause();
@@ -1453,6 +1547,7 @@ function resetPlayer() {
     hidePreview();
     document.getElementById('player-controls').hidden = true;
     document.getElementById('player-status').textContent = '';
+    document.getElementById('player-skip').hidden = true;
     videoPlayer.onclick = videoPlayer.ondblclick = null;
     videoPlayer.onplay = videoPlayer.onpause = videoPlayer.onvolumechange = null;
     videoPlayer.ontimeupdate = videoPlayer.onerror = videoPlayer.onloadedmetadata = null;
@@ -1473,6 +1568,7 @@ async function playDisc(item, startAt = 0) {
     if (!disc || disc.item !== item) return; // closed or replaced meanwhile
     disc.info = info;
     disc.title = info.main_title;
+    loadTrickplay(disc);
     playerTitle.textContent = item.name;
     renderDiscControls();
     loadDiscStream(startAt); // progress is kept for the main title, which plays first
@@ -1703,7 +1799,9 @@ function togglePlayerFullscreen() {
 
 // The trickplay frame nearest t seconds, for the picture over the seek bar.
 function trickplayFrame(t) {
-    const frames = player && player.frames;
+    // A disc's frames show only while the title they were made from plays.
+    const from = player || (disc && disc.framesTitle === disc.title ? disc : null);
+    const frames = from && from.frames;
     if (!frames || !frames.length) return null;
     let best = frames[0];
     for (const f of frames) {
@@ -1740,6 +1838,8 @@ function setupPlayerControls() {
     // Circular arrows: back (counterclockwise) for -10s, mirrored forward for +30s.
     document.getElementById('player-back').innerHTML = iconSvg('replay') + '<span>−10s</span>';
     document.getElementById('player-forward').innerHTML = iconSvg('replay', { mirrored: true }) + '<span>+30s</span>';
+    const mark = document.getElementById('player-mark');
+    mark.onchange = () => { const action = mark.value; mark.value = ''; markSegment(action); };
     document.addEventListener('fullscreenchange', () => {
         if (disc || player) updatePlayerButtons();
         playerActivity();
@@ -3352,7 +3452,8 @@ function createUnmatchedCard(f) {
 }
 
 function libraryFileItem(f) {
-    return { path: f.path, name: f.name, type: 'video', size: f.size || 0, duration: f.duration || 0,
+    // id: for its trickplay frames (the pictures over the seek bar)
+    return { id: f.id, path: f.path, name: f.name, type: 'video', size: f.size || 0, duration: f.duration || 0,
              thumbnail_url: f.thumbnail_url || '', metadata: f.match || null, playback: f.playback || null };
 }
 
@@ -3561,7 +3662,8 @@ function createSeasonsSection(t) {
         seasonActions.append(
             createWatchedToggle(seasonItems(seasons[index]), 'btn watched-btn',
                 { labelHtml: seasonLabelHtml(seasons[index], seasons[index].name) }),
-            createWatchedToggle(seasons.flatMap(seasonItems), 'btn watched-btn', { labelHtml: 'Whole show' }));
+            createWatchedToggle(seasons.flatMap(seasonItems), 'btn watched-btn', { labelHtml: 'Whole show' }),
+            autoSkipToggle(t));
     };
     seasons.forEach((se, i) => {
         const btn = document.createElement('button');
@@ -3618,6 +3720,26 @@ function upNext(seasons) {
         !at.ep.files.some(f => f.playback && !f.playback.watched && f.playback.position >= MIN_RESUME);
     const next = !finished ? at : (all.slice(latest + 1).find(a => a.number !== 0 || at.number === 0) || at);
     return { season: next.si, episode: next.ei };
+}
+
+// Auto Skip: the players skip this show's intros and credits by themselves (for this user).
+function autoSkipToggle(t) {
+    const label = el('label', 'auto-skip');
+    label.title = "Skip this show's intros and credits without asking";
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !!t.auto_skip;
+    box.onchange = async () => {
+        try {
+            await api.setAutoSkip(t.tmdb_id, box.checked);
+            t.auto_skip = box.checked;
+        } catch (e) {
+            box.checked = !box.checked;
+            alert('Could not save: ' + e.message);
+        }
+    };
+    label.append(box, document.createTextNode(' Auto Skip'));
+    return label;
 }
 
 // A season's label, with "Season N" small above it when the season has a name of its own ("Blood and Sand").

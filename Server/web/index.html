@@ -249,6 +249,8 @@
                 <span class="close">&times;</span>
                 <h2 id="player-title"></h2>
                 <video id="video-player"></video>
+                <!-- Skip Intro / Skip Credits, over the picture's lower right -->
+                <button type="button" id="player-skip" class="btn player-skip" hidden></button>
                 <!-- The player's own controls, for every video -->
                 <div id="player-controls" class="player-controls" hidden>
                     <!-- The whole file (or disc title): a transcoded stream only covers what has arrived -->
@@ -270,6 +272,13 @@
                     <label id="disc-angle-label" class="disc-only">Angle <select id="disc-angle"></select></label>
                     <label id="player-audio-label">Audio <select id="player-audio"></select></label>
                     <label id="player-subtitle-label">Subtitles <select id="player-subtitle"></select></label>
+                    <!-- Admins: mark the intro and credits by hand, at the current position -->
+                    <label id="player-mark-label" hidden>Mark <select id="player-mark">
+                        <option value="">Intro / credits…</option>
+                        <option value="intro-start">Intro starts here</option><option value="intro-end">Intro ends here</option>
+                        <option value="credits-start">Credits start here</option>
+                        <option value="clear-intro">Clear intro</option><option value="clear-credits">Clear credits</option>
+                    </select></label>
                     <span id="player-status" class="player-status"></span>
                 </div>
                 <!-- Subtitles online (OpenSubtitles), from the Subtitles menu -->

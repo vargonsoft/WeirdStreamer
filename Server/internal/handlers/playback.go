@@ -308,8 +308,8 @@ func (h *MediaHandler) ContinueWatching(w http.ResponseWriter, r *http.Request) 
 		sort.SliceStable(paths, func(i, j int) bool { return pb[paths[i]].UpdatedAt > pb[paths[j]].UpdatedAt })
 	}
 	items := []continueItem{}
-	listed := map[string]bool{} // paths on the list
-	shows := map[int]bool{}     // shows with an entry already (a newer one than the rows that follow)
+	listed := map[string]bool{}         // paths on the list
+	shows := map[int]bool{}             // shows with an entry already (a newer one than the rows that follow)
 	var all map[string]*models.Playback // every record, read when an up-next episode needs checking
 	for _, path := range paths {
 		if len(items) >= limit {
