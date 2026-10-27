@@ -23,6 +23,16 @@ android {
         versionName = "0.0.1.$buildNumber"
     }
 
+    signingConfigs {
+        // One key for every build, whoever runs it. The default debug key's place depends on the
+        // environment ($XDG_CONFIG_HOME/.android when it's set, else ~/.android), and this machine
+        // has a different key in each: an update signed with the other key won't install. This
+        // is the one the phones, emulators and published builds have.
+        getByName("debug") {
+            storeFile = file("${System.getProperty("user.home")}/.config/.android/debug.keystore")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
