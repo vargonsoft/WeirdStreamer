@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
@@ -61,6 +62,7 @@ import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.Locale
@@ -179,6 +181,28 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     }
     var transcodeStartOffset by remember { mutableLongStateOf(0L) }
     var fullDuration by remember { mutableLongStateOf(0L) }
+
+    // Subtitles from the server, as on the TV and the web: the video's own tracks, then files
+    // beside it and downloads, drawn over the video whatever the stream. A picture track is burned
+    // into a transcode. SMB files, downloads on this phone and discs have none.
+    val serverSubs = remember(path) { if (isSmbSource || isLocal || isDisc) null else ServerSubtitles.forStream(path) }
+    val burnIn = serverSubs?.burnIn ?: -1
+    var showSubtitleMenu by remember { mutableStateOf(false) }
+    var showSubtitleSearch by remember { mutableStateOf(false) }
+    val subtitleVideo = remember(path) { sourceItem?.originalPath ?: path.substringBefore("&") }
+    fun chooseServerSubtitle(index: Int) {
+        val subs = serverSubs ?: return
+        subs.select(index)
+        // The original can't show a picture track: it's burned into a transcode.
+        if (subs.burnIn >= 0 && !enableTranscode) chooseTranscodeMode(1)
+    }
+    LaunchedEffect(serverSubs) {
+        val subs = serverSubs ?: return@LaunchedEffect
+        subs.load()
+        val index = SubtitleMemory.get(context, subtitleVideo)?.let { SubtitleMemory.resolve(it, subs.labels) }
+            ?: subs.tracks.indexOfFirst { it.forced && it.text }
+        if (index >= 0) chooseServerSubtitle(index)
+    }
     var rotation by remember { mutableFloatStateOf(0f) }
     
     // Pinch to zoom state
@@ -260,11 +284,16 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                 }
             }
             .build()
-            .apply { trackSelectionParameters = subtitlesOffByDefault(trackSelectionParameters) }
+            .apply {
+                // The server's subtitles are drawn over the video, so the stream's own stay off.
+                trackSelectionParameters = if (serverSubs != null) trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, true).build()
+                else subtitlesOffByDefault(trackSelectionParameters)
+            }
     }
 
     // Handle MediaItem updates when path or transcode mode changes
-    LaunchedEffect(path, enableTranscode, transcodeModeIndex, discQuery) {
+    LaunchedEffect(path, enableTranscode, transcodeModeIndex, discQuery, burnIn) {
         // Capture current position if available
         val currentPos = discRestartAt?.also { discRestartAt = null } ?: if (exoPlayer.mediaItemCount > 0) {
             if (transcodeStartOffset > 0) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
@@ -278,7 +307,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             val base = path.substringBefore("?")
             val pathParam = path.substringAfter("path=").substringBefore("&")
             "$base?path=$pathParam&auto-transcode=0&transcode=1&start=$startTimeSeconds$discQuery" +
-                transcodeQuery(transcodeModes[transcodeModeIndex])
+                transcodeQuery(transcodeModes[transcodeModeIndex]) + (if (burnIn >= 0) "&subtitle=$burnIn" else "")
         } else {
             transcodeStartOffset = 0L
             path
@@ -409,9 +438,9 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }
     }
 
-    LaunchedEffect(showControls, showSpeedDialog, showTranscodeMenu, isTrickplayDragged, isTrickplayPressed, trickplayListState.isScrollInProgress, isSliderDragged, isSliderPressed, lastInteractionTime) {
+    LaunchedEffect(showControls, showSpeedDialog, showTranscodeMenu, showSubtitleMenu, showSubtitleSearch, isTrickplayDragged, isTrickplayPressed, trickplayListState.isScrollInProgress, isSliderDragged, isSliderPressed, lastInteractionTime) {
         // Not while the transcode menu is open: it closes with the controls.
-        if (showControls && !showSpeedDialog && !showTranscodeMenu && !isTrickplayDragged && !isTrickplayPressed && !trickplayListState.isScrollInProgress && !isSliderDragged && !isSliderPressed) {
+        if (showControls && !showSpeedDialog && !showTranscodeMenu && !showSubtitleMenu && !showSubtitleSearch && !isTrickplayDragged && !isTrickplayPressed && !trickplayListState.isScrollInProgress && !isSliderDragged && !isSliderPressed) {
             delay(5000)
             if (!showSpeedDialog) showControls = false
         }
@@ -526,6 +555,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             }
         }
 
+        SubtitleOverlay(serverSubs, position = {
+            if (transcodeStartOffset > 0) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
+        }, fontSize = 18.sp, bottomPadding = if (showControls) 160.dp else 32.dp)
+
         // Loading Spinner
         if (isBuffering) {
             CircularProgressIndicator(
@@ -609,6 +642,43 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         }
                     }
                     
+                    // Subtitles: the server's tracks, and searching OpenSubtitles through it
+                    serverSubs?.let { subs ->
+                        Box {
+                            IconButton(onClick = {
+                                lastInteractionTime = System.currentTimeMillis()
+                                showSubtitleMenu = true
+                            }) {
+                                Icon(Icons.Default.ClosedCaption, contentDescription = "Subtitles",
+                                    tint = if (subs.selected >= 0) Color.Green else Color.White)
+                            }
+                            DropdownMenu(expanded = showSubtitleMenu, onDismissRequest = { showSubtitleMenu = false }) {
+                                val labels = subs.labels
+                                (listOf("Off") + labels).forEachIndexed { i, label ->
+                                    val index = i - 1
+                                    DropdownMenuItem(
+                                        text = { Text(label) },
+                                        trailingIcon = if (index == subs.selected) {
+                                            { Icon(Icons.Default.Check, contentDescription = "Selected") }
+                                        } else null,
+                                        onClick = {
+                                            showSubtitleMenu = false
+                                            lastInteractionTime = System.currentTimeMillis()
+                                            chooseServerSubtitle(index)
+                                            SubtitleMemory.set(context, subtitleVideo, index, labels.getOrNull(index))
+                                        }
+                                    )
+                                }
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Search online…") },
+                                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                    onClick = { showSubtitleMenu = false; showSubtitleSearch = true }
+                                )
+                            }
+                        }
+                    }
+
                     // Rotation
                     IconButton(onClick = { 
                         lastInteractionTime = System.currentTimeMillis()
@@ -925,6 +995,15 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         )
     }
 
+    if (showSubtitleSearch && serverSubs != null) {
+        PhoneSubtitleSearchDialog(serverSubs, onDismiss = { showSubtitleSearch = false }, onChosen = { index ->
+            showSubtitleSearch = false
+            // The download selected itself; an original can't show a picture track.
+            if (serverSubs.burnIn >= 0 && !enableTranscode) chooseTranscodeMode(1)
+            SubtitleMemory.set(context, subtitleVideo, index, serverSubs.labels.getOrNull(index))
+        })
+    }
+
     fun formatTime(ms: Long): String {
         val totalSeconds = ms / 1000
         val hours = totalSeconds / 3600
@@ -1002,4 +1081,59 @@ private fun PhoneDiscSheet(
             }
         }
     }
+}
+
+/** Subtitles found online (OpenSubtitles, through the server); choosing one downloads it there. */
+@Composable
+private fun PhoneSubtitleSearchDialog(subs: ServerSubtitles, onDismiss: () -> Unit, onChosen: (Int) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var results by remember { mutableStateOf<List<com.vargon.weirdstreamer.api.models.SubtitleHit>>(emptyList()) }
+    var note by remember { mutableStateOf<String?>("Searching…") }
+    var busy by remember { mutableStateOf(true) }
+    LaunchedEffect(subs) {
+        try {
+            val found = subs.search(deviceSubtitleLanguages())
+            results = found.results
+            val q = found.query
+            val what = listOfNotNull(q?.title, q?.year?.takeIf { it > 0 }?.toString(),
+                if ((q?.season ?: 0) > 0 || (q?.episode ?: 0) > 0) "S%02dE%02d".format(q?.season, q?.episode) else null).joinToString(" ")
+            note = if (found.results.isEmpty()) "Nothing found for $what in ${q?.languages?.joinToString(", ")}."
+                else "${found.results.size} found for $what${if (q?.tmdb == true) " (by its TMDB match)" else ""}."
+        } catch (e: Exception) {
+            note = e.message ?: "Search failed"
+        } finally {
+            busy = false
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Subtitles online") },
+        text = {
+            Column {
+                note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.padding(top = 8.dp).heightIn(max = 420.dp)) {
+                    items(results.size) { i ->
+                        val hit = results[i]
+                        ListItem(
+                            headlineContent = { Text(hit.release, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                            supportingContent = { Text(subtitleHitDetails(hit)) },
+                            modifier = Modifier.clickable(enabled = !busy) {
+                                busy = true
+                                note = if (hit.downloaded) "Loading…" else "Downloading…"
+                                scope.launch {
+                                    try {
+                                        onChosen(subs.download(hit))
+                                    } catch (e: Exception) {
+                                        note = e.message ?: "Download failed"
+                                        busy = false
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
 }

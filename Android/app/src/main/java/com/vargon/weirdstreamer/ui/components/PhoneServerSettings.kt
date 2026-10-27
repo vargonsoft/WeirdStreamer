@@ -171,6 +171,8 @@ fun ServerSettingsTab(server: ServerRepository) {
     var http2 by remember { mutableStateOf(false) }
     var chunkSize by remember { mutableStateOf("") }
     var tmdbToken by remember { mutableStateOf("") }
+    var openSubtitlesKey by remember { mutableStateOf("") }
+    var showSubtitlesKey by remember { mutableStateOf(false) }
     var showToken by remember { mutableStateOf(false) }
     var language by remember { mutableStateOf("") }
     var newPath by remember { mutableStateOf("") }
@@ -209,6 +211,7 @@ fun ServerSettingsTab(server: ServerRepository) {
         }
         c.getAsJsonObject("metadata")?.let {
             tmdbToken = it.get("tmdbAccessToken")?.asString ?: ""
+            openSubtitlesKey = it.get("openSubtitlesApiKey")?.asString ?: ""
             language = it.get("language")?.asString ?: ""
         }
     }
@@ -241,6 +244,7 @@ fun ServerSettingsTab(server: ServerRepository) {
         }
         val metadata = c.getAsJsonObject("metadata") ?: JsonObject().also { c.add("metadata", it) }
         metadata.addProperty("tmdbAccessToken", tmdbToken.trim())
+        metadata.addProperty("openSubtitlesApiKey", openSubtitlesKey.trim())
         metadata.addProperty("language", language.trim())
         return c
     }
@@ -345,7 +349,7 @@ fun ServerSettingsTab(server: ServerRepository) {
             }
             item { SectionTitle("Metadata") }
             item {
-                Text("Used for libraries with a Movies or TV Shows type.", style = MaterialTheme.typography.bodySmall,
+                Text("TMDB is used for libraries with a Movies or TV Shows type.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(
                     tmdbToken, { tmdbToken = it }, label = { Text("TMDB API read access token") }, singleLine = true,
@@ -354,6 +358,18 @@ fun ServerSettingsTab(server: ServerRepository) {
                         IconButton(onClick = { showToken = !showToken }) {
                             Icon(if (showToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                                 contentDescription = if (showToken) "Hide token" else "Show token")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                OutlinedTextField(
+                    openSubtitlesKey, { openSubtitlesKey = it }, label = { Text("OpenSubtitles API key") }, singleLine = true,
+                    supportingText = { Text("For searching subtitles online") },
+                    visualTransformation = if (showSubtitlesKey) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { showSubtitlesKey = !showSubtitlesKey }) {
+                            Icon(if (showSubtitlesKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (showSubtitlesKey) "Hide key" else "Show key")
                         }
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)

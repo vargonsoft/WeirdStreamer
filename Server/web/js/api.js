@@ -223,6 +223,20 @@ class MediaAPI {
         return this.request(`/api/media/codecs?path=${encodeURIComponent(this.encodePath(path))}`);
     }
 
+    // Subtitles for a video on OpenSubtitles: { query, results }. languages: two-letter codes.
+    async searchSubtitles(path, languages) {
+        return this.request(`/api/media/subtitles/search?path=${encodeURIComponent(this.encodePath(path))}` +
+            `&languages=${encodeURIComponent(languages.join(','))}`);
+    }
+
+    // Downloads a search result for a video (or reuses it): { subtitles, index, quota }.
+    async downloadSubtitle(path, result) {
+        return this.request('/api/media/subtitles/download', {
+            method: 'POST',
+            body: JSON.stringify({ path: this.encodePath(path), result }),
+        });
+    }
+
     // Where a stream that copies the video starts when asked to start at start (a string, exactly
     // as in the stream URL): { start: seconds }
     async getSeekPoint(path, start) {

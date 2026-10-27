@@ -143,6 +143,8 @@ func main() {
 	api.HandleFunc("/media/codecs", mediaHandler.GetCodecs).Methods("GET")
 	api.HandleFunc("/media/seekpoint", mediaHandler.GetSeekPoint).Methods("GET")
 	api.HandleFunc("/media/subtitles", mediaHandler.GetSubtitles).Methods("GET")
+	api.HandleFunc("/media/subtitles/search", mediaHandler.SearchSubtitles).Methods("GET")
+	api.HandleFunc("/media/subtitles/download", mediaHandler.DownloadSubtitle).Methods("POST")
 	api.HandleFunc("/downloads/options", mediaHandler.DownloadOptions).Methods("GET")
 	api.HandleFunc("/downloads", mediaHandler.CreateDownload).Methods("POST")
 	api.HandleFunc("/downloads/{id}", mediaHandler.GetDownload).Methods("GET")

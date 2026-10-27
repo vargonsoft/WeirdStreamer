@@ -24,7 +24,6 @@
 # Gson-deserialized models (reflection on field names / no-arg construction)
 -keep class com.vargon.weirdstreamer.api.models.** { *; }
 -keep class com.vargon.weirdstreamer.api.ThumbnailUpdate { *; }
--keep class com.vargon.weirdstreamer.SubtitleInfo { *; }
 
 # Retrofit suspend functions need generic signatures
 -keepattributes Signature, InnerClasses, EnclosingMethod, *Annotation*

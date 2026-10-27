@@ -15,6 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Search
+import java.util.Locale
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
@@ -30,8 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.*
-import com.vargon.weirdstreamer.OpenSubtitlesClient
-import com.vargon.weirdstreamer.SubtitleInfo
+import com.vargon.weirdstreamer.api.models.SubtitleHit
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import java.io.File
 import java.util.*
@@ -192,7 +193,8 @@ fun SubtitleDialog(
     selectedSubtitleIndex: Int,
     onDismiss: () -> Unit,
     onSubtitleSelected: (Int) -> Unit,
-    onDownloadRequested: () -> Unit
+    // Search OpenSubtitles through the server (videos from a WeirdStreamer server only)
+    onDownloadRequested: (() -> Unit)?
 ) {
     if (!show) return
     Dialog(
@@ -250,13 +252,13 @@ fun SubtitleDialog(
                     HorizontalDivider(color = Color.White.copy(alpha = 0.3f), thickness = 1.dp)
                 }
 
-                Text(
-                    text = "Download Subtitles",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White.copy(alpha = 0.8f)
-                )
-                SubtitleRow("OpenSubtitles.org / .com", selected = false, icon = Icons.Default.Download,
-                    requester = if (availableSubtitles.isEmpty()) currentRequester else null) { onDownloadRequested() }
+                if (onDownloadRequested != null) {
+                    SubtitleRow("Search online (OpenSubtitles)", selected = false, icon = Icons.Default.Search,
+                        requester = if (availableSubtitles.isEmpty()) currentRequester else null) { onDownloadRequested() }
+                } else if (availableSubtitles.isEmpty()) {
+                    Text("This video has no subtitles.", color = Color.White.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodyLarge)
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -273,14 +275,19 @@ fun SubtitleDialog(
     }
 }
 
+/**
+ * Subtitles found online (OpenSubtitles, through the server), best first; choosing one downloads
+ * it to the server, which keeps it for next time.
+ */
 @Composable
-fun DownloadSubtitlesDialog(
+fun OnlineSubtitlesDialog(
     show: Boolean,
     isSearching: Boolean,
-    downloadStatus: String?,
-    downloadingSubtitles: List<SubtitleInfo>,
+    status: String?,
+    note: String?,
+    results: List<SubtitleHit>,
     onDismiss: () -> Unit,
-    onSubtitleSelected: (SubtitleInfo) -> Unit
+    onChosen: (SubtitleHit) -> Unit
 ) {
     if (!show) return
     Dialog(
@@ -289,116 +296,63 @@ fun DownloadSubtitlesDialog(
     ) {
         Surface(
             modifier = Modifier
-                .width(600.dp)
+                .width(760.dp)
+                .heightIn(max = 600.dp)
                 .background(Color.Black.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
                 .border(2.dp, Color.White, RoundedCornerShape(16.dp)),
             color = Color.Black.copy(alpha = 0.9f)
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "Download Subtitles",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White
-                )
-
-                if (isSearching) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = Color.Blue,
-                            modifier = Modifier.size(40.dp)
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = "Searching...",
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                Text("Subtitles online", style = MaterialTheme.typography.headlineSmall, color = Color.White)
+                val line = status ?: note
+                if (isSearching || line != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isSearching) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(12.dp))
+                        }
+                        Text(line ?: "Searching…", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyLarge)
                     }
-                } else if (!downloadStatus.isNullOrEmpty()) {
-                    Text(
-                        text = downloadStatus,
-                        color = if (downloadStatus.startsWith("Error")) Color.Red else Color.Yellow,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                } else if (downloadingSubtitles.isNotEmpty()) {
-                    Text(
-                        text = "Found ${downloadingSubtitles.size} subtitle(s)",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Color.White.copy(alpha = 0.8f)
-                    )
-
+                }
+                val firstRequester = remember { FocusRequester() }
+                LaunchedEffect(results) { if (results.isNotEmpty()) runCatching { firstRequester.requestFocus() } }
+                if (results.isNotEmpty()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 300.dp)
+                            .weight(1f, fill = false)
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        downloadingSubtitles.forEach { subtitle ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color.Gray.copy(alpha = 0.2f))
-                                    .clickable { onSubtitleSelected(subtitle) }
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = subtitle.filename,
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "${subtitle.language} | Rating: ${
-                                            String.format(
-                                                Locale.US,
-                                                "%.1f",
-                                                subtitle.rating.toDouble()
-                                            )
-                                        } | Downloads: ${subtitle.downloads}",
-                                        color = Color.White.copy(alpha = 0.7f),
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-                                Icon(
-                                    Icons.Default.PlayArrow,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                        results.forEachIndexed { i, hit ->
+                            SubtitleRow(hit.release, selected = false, icon = Icons.Default.Download,
+                                requester = if (i == 0) firstRequester else null,
+                                detail = subtitleHitDetails(hit)) { onChosen(hit) }
                         }
                     }
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Button(colors = tvButtonColors(),
-                        onClick = onDismiss
-                    ) {
-                        Text("Close")
-                    }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    Button(colors = tvButtonColors(), onClick = onDismiss) { Text("Close") }
                 }
             }
         }
     }
 }
 
+/** A search result's language and marks: "English · 140,606 downloads · trusted · SDH". */
+fun subtitleHitDetails(hit: SubtitleHit): String = listOfNotNull(
+    languageName(hit.languageCode) ?: hit.language,
+    "%,d downloads".format(Locale.getDefault(), hit.downloads),
+    if (hit.hashMatch) "made for this file" else null,
+    if (hit.trusted) "trusted" else null,
+    if (hit.hearingImpaired) "SDH" else null,
+    if (hit.foreignPartsOnly) "foreign parts only" else null,
+    if (hit.machineTranslated) "machine translated" else null,
+    if (hit.downloaded) "already downloaded" else null,
+).joinToString(" · ")
 
 /**
  * A subtitle choice: solid white with dark text while the remote is on it, a check when it's the
@@ -410,6 +364,7 @@ private fun SubtitleRow(
     selected: Boolean,
     requester: FocusRequester?,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    detail: String? = null,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -435,8 +390,11 @@ private fun SubtitleRow(
             Icon(it, contentDescription = null, tint = content, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))
         }
-        Text(label, color = content, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f),
-            fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else null)
+        Column(Modifier.weight(1f)) {
+            Text(label, color = content, style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else null)
+            detail?.let { Text(it, color = content.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall) }
+        }
         if (selected) {
             Icon(Icons.Default.Check, contentDescription = "In use", tint = content, modifier = Modifier.size(24.dp))
         }

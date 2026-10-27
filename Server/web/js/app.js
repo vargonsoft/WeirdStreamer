@@ -704,6 +704,7 @@ let player = null;
 let playRequest = 0; // the latest playVideo call: an older one still checking codecs gives up
 
 async function playVideo(item, forceTranscode = false, startAt = 0) {
+    closeSubtitleSearch();
     const request = ++playRequest;
     resetPlayer();
     if (isDiscImage(item)) {
@@ -1006,6 +1007,8 @@ function trackDescription(track) {
     parts.push(track.codec);
     if (track.channels) parts.push(track.channels === 6 ? '5.1' : track.channels === 8 ? '7.1' : track.channels === 2 ? 'stereo' : track.channels === 1 ? 'mono' : `${track.channels} ch`);
     if (track.forced) parts.push('forced');
+    if (track.hearing_impaired) parts.push('SDH');
+    if (track.external === 'opensubtitles') parts.push('downloaded');
     return `${track.index + 1}: ${parts.join(' · ')}`;
 }
 
@@ -1019,9 +1022,9 @@ function renderFileControls() {
     fillSelect(document.getElementById('player-audio'),
         codecs.audio.length ? codecs.audio.map(a => [a.index, trackDescription(a) + (a.default ? ' (default)' : '')]) : [[-1, 'None']],
         track ? track.index : -1);
-    document.getElementById('player-subtitle-label').hidden = !codecs.subtitles.length;
+    document.getElementById('player-subtitle-label').hidden = false;
     fillSelect(document.getElementById('player-subtitle'), [[-1, 'Off'], ...codecs.subtitles.map(s =>
-        [s.index, trackDescription(s) + (s.text ? '' : ' (burned in)')])], p.subtitle);
+        [s.index, trackDescription(s) + (s.text ? '' : ' (burned in)')]), ['search', 'Search online…']], p.subtitle);
     document.getElementById('player-status').textContent = streamNote(p);
 }
 
@@ -1056,6 +1059,89 @@ function saveTracks(p) {
     try {
         localStorage.setItem('tracks:' + p.item.path, JSON.stringify({ audio: p.audio, subtitle: p.subtitle }));
     } catch (e) { /* not kept */ }
+}
+
+// Subtitles online: OpenSubtitles results for the playing video, kept on the server once chosen.
+function subtitleLanguages() {
+    try {
+        const saved = localStorage.getItem('subtitleLanguages');
+        if (saved) return saved.split(',').map(l => l.trim()).filter(Boolean);
+    } catch (e) { /* none saved */ }
+    const langs = [...new Set((navigator.languages || [navigator.language || 'en']).map(l => l.slice(0, 2).toLowerCase()))];
+    return langs.length ? langs : ['en'];
+}
+
+function openSubtitleSearch() {
+    if (!player) return;
+    document.getElementById('subtitle-languages').value = subtitleLanguages().join(', ');
+    document.getElementById('subtitle-search').hidden = false;
+    runSubtitleSearch();
+}
+
+function closeSubtitleSearch() {
+    document.getElementById('subtitle-search').hidden = true;
+}
+
+async function runSubtitleSearch() {
+    const p = player;
+    const note = document.getElementById('subtitle-search-note');
+    const list = document.getElementById('subtitle-results');
+    const languages = document.getElementById('subtitle-languages').value.split(/[,\s]+/).map(l => l.trim()).filter(Boolean);
+    try { localStorage.setItem('subtitleLanguages', languages.join(',')); } catch (e) { /* not kept */ }
+    note.textContent = 'Searching…';
+    list.innerHTML = '';
+    let found;
+    try {
+        found = await api.searchSubtitles(p.item.path, languages);
+    } catch (error) {
+        if (player === p) note.textContent = error.message;
+        return;
+    }
+    if (player !== p) return;
+    const q = found.query;
+    const what = [q.title, q.year, q.season || q.episode ? `S${String(q.season).padStart(2, '0')}E${String(q.episode).padStart(2, '0')}` : '']
+        .filter(Boolean).join(' ');
+    note.textContent = found.results.length
+        ? `${found.results.length} found for ${what}${q.tmdb ? ' (by its TMDB match)' : ''}. Best matches first.`
+        : `Nothing found for ${what} in ${(q.languages || []).join(', ')}.`;
+    found.results.forEach(r => list.appendChild(subtitleResultButton(p, r)));
+}
+
+function subtitleResultButton(p, r) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'subtitle-hit';
+    const name = document.createElement('span');
+    name.className = 'subtitle-hit-name';
+    name.textContent = r.release;
+    const details = document.createElement('span');
+    details.className = 'subtitle-hit-details';
+    details.textContent = [r.language, `${r.downloads.toLocaleString()} downloads`,
+        r.hash_match && 'made for this file', r.trusted && 'trusted', r.hearing_impaired && 'SDH',
+        r.foreign_parts_only && 'foreign parts only', r.machine_translated && 'machine translated',
+        r.downloaded && 'already downloaded'].filter(Boolean).join(' · ');
+    b.append(name, details);
+    b.onclick = () => chooseSubtitleResult(p, r, b);
+    return b;
+}
+
+async function chooseSubtitleResult(p, r, button) {
+    const note = document.getElementById('subtitle-search-note');
+    document.querySelectorAll('.subtitle-hit').forEach(el => { el.disabled = true; });
+    note.textContent = r.downloaded ? 'Loading…' : 'Downloading…';
+    let got;
+    try {
+        got = await api.downloadSubtitle(p.item.path, r);
+    } catch (error) {
+        note.textContent = error.message;
+        document.querySelectorAll('.subtitle-hit').forEach(el => { el.disabled = false; });
+        return;
+    }
+    if (player !== p) return;
+    closeSubtitleSearch();
+    p.codecs.subtitles = got.subtitles;
+    changeFileStream(q => { q.subtitle = got.index; chooseCompatibility(q); });
+    if (got.quota) console.info(`OpenSubtitles: ${got.quota.remaining} downloads left today`);
 }
 
 // Trickplay frames, for the picture over the seek bar: [{ time, url }] by time.
@@ -1507,6 +1593,8 @@ function hidePreview() {
 }
 
 function setupPlayerControls() {
+    document.getElementById('subtitle-search-close').onclick = closeSubtitleSearch;
+    document.getElementById('subtitle-search-form').onsubmit = (e) => { e.preventDefault(); runSubtitleSearch(); };
     // Circular arrows: back (counterclockwise) for -10s, mirrored forward for +30s.
     document.getElementById('player-back').innerHTML = iconSvg('replay') + '<span>−10s</span>';
     document.getElementById('player-forward').innerHTML = iconSvg('replay', { mirrored: true }) + '<span>+30s</span>';
@@ -1577,6 +1665,11 @@ function setupPlayerControls() {
         changeFileStream(p => { p.audio = a; chooseCompatibility(p); });
     });
     on('player-subtitle', (value) => {
+        if (value === 'search') {
+            document.getElementById('player-subtitle').value = String(player ? player.subtitle : -1);
+            openSubtitleSearch();
+            return;
+        }
         const s = Number(value);
         if (disc && disc.info) { disc.subtitle = s; loadDiscStream(playerPosition()); return; }
         changeFileStream(p => {
@@ -1678,6 +1771,7 @@ async function showSettings() {
             document.getElementById('chunk-size').value = config.streaming.chunkSize;
             const metadata = config.metadata || {};
             document.getElementById('tmdb-token').value = metadata.tmdbAccessToken || '';
+            document.getElementById('opensubtitles-key').value = metadata.openSubtitlesApiKey || '';
             document.getElementById('metadata-language').value = metadata.language || '';
 
             // Render the groups and media paths
@@ -2005,6 +2099,7 @@ async function handleSaveSettings() {
         state.currentConfig.metadata = {
             ...(state.currentConfig.metadata || {}),
             tmdbAccessToken: document.getElementById('tmdb-token').value.trim(),
+            openSubtitlesApiKey: document.getElementById('opensubtitles-key').value.trim(),
             language: document.getElementById('metadata-language').value.trim(),
         };
         

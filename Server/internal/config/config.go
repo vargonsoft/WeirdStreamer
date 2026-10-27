@@ -26,6 +26,8 @@ type Config struct {
 type MetadataConfig struct {
 	TMDBAccessToken string `json:"tmdbAccessToken"` // TMDB API read access token (Bearer)
 	Language        string `json:"language"`        // e.g. "en-US"; empty means en-US
+	// OpenSubtitles.com API key, for searching and downloading subtitles (empty: no online search)
+	OpenSubtitlesAPIKey string `json:"openSubtitlesApiKey,omitempty"`
 }
 
 type ServerConfig struct {
@@ -152,6 +154,7 @@ type MediaConfig struct {
 	TrickplayPath         string      `json:"trickplayPath,omitempty"`
 	ArtworkPath           string      `json:"artworkPath,omitempty"`  // Downloaded TMDB posters, backdrops, etc.
 	DownloadPath          string      `json:"downloadPath,omitempty"` // Temporary encodes for offline downloads
+	SubtitlePath          string      `json:"subtitlePath,omitempty"` // Subtitles downloaded from OpenSubtitles
 	SupportedVideoFormats []string    `json:"supportedVideoFormats"`
 	SupportedImageFormats []string    `json:"supportedImageFormats"`
 	SupportedDocFormats   []string    `json:"supportedDocFormats"`

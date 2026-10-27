@@ -12,6 +12,7 @@ import (
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/models"
+	"github.com/weirdstreamer/server/internal/subtitles"
 )
 
 // Active streams: tracked as they're served, listed for admins on the Streams page.
@@ -226,7 +227,23 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	}
 	start, _ := strconv.ParseFloat(r.URL.Query().Get("start"), 64)
 	duration, _ := strconv.ParseFloat(r.URL.Query().Get("duration"), 64)
-	media.ServeSubtitles(w, r, path, track, max(start, 0), max(duration, 0))
+	start, duration = max(start, 0), max(duration, 0)
+	// Tracks past the video's own are its subtitle files, in the codecs report's order.
+	own := 0
+	if c, err := media.ProbeCodecs(path); err == nil {
+		own = len(c.Subtitles)
+	}
+	if track >= own {
+		external := externalSubtitles(path)
+		if track-own >= len(external) {
+			respondError(w, http.StatusNotFound, "No such subtitle track")
+			return
+		}
+		file := external[track-own].Path
+		media.ServeSubtitleFile(w, r, file, subtitles.Charset(file), start, duration)
+		return
+	}
+	media.ServeSubtitles(w, r, path, track, start, duration)
 }
 
 // GetSeekPoint reports where a stream that copies the video (transcode=audio) starts when asked to
@@ -274,5 +291,6 @@ func (h *MediaHandler) GetCodecs(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnprocessableEntity, "Could not read the file's codecs")
 		return
 	}
+	addExternalSubtitles(codecs, externalSubtitles(path))
 	respondJSON(w, http.StatusOK, codecs)
 }

@@ -45,6 +45,10 @@ type SubtitleCodec struct {
 	// Text tracks are sent to players as WebVTT (ServeSubtitles); picture ones (PGS, DVD, DVB)
 	// can only be burned into a transcode.
 	Text bool `json:"text"`
+	// Subtitle files outside the video, listed after its own tracks: "file" (beside it) or
+	// "opensubtitles" (downloaded). Always text.
+	External        string `json:"external,omitempty"`
+	HearingImpaired bool   `json:"hearing_impaired,omitempty"`
 }
 
 // IsTextSubtitle reports whether ffmpeg can turn a subtitle codec into WebVTT.
@@ -268,10 +272,32 @@ func SubtitleArgs(filePath string, track int, start, duration float64) []string 
 	return append(args, "-map", "0:s:"+strconv.Itoa(track), "-c:s", "webvtt", "-f", "webvtt", "pipe:1")
 }
 
+// SubtitleFileArgs are SubtitleArgs for a subtitle file (beside the video, or downloaded), read in
+// charset. A subtitle file can't seek: the cues before start are dropped as they're read instead.
+func SubtitleFileArgs(filePath, charset string, start, duration float64) []string {
+	args := []string{"-v", "error", "-sub_charenc", charset, "-i", filePath, "-copyts"}
+	if start > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(start, 'f', 3, 64))
+	}
+	if duration > 0 {
+		args = append(args, "-to", strconv.FormatFloat(start+duration, 'f', 3, 64))
+	}
+	return append(args, "-map", "0:s:0", "-c:s", "webvtt", "-f", "webvtt", "pipe:1")
+}
+
 // ServeSubtitles streams a text subtitle track as WebVTT (see SubtitleArgs), cue by cue as ffmpeg
 // reads them.
 func ServeSubtitles(w http.ResponseWriter, r *http.Request, filePath string, track int, start, duration float64) error {
-	cmd := exec.CommandContext(r.Context(), "ffmpeg", SubtitleArgs(filePath, track, start, duration)...)
+	return serveWebVTT(w, r, SubtitleArgs(filePath, track, start, duration))
+}
+
+// ServeSubtitleFile streams a subtitle file as WebVTT, as ServeSubtitles does a video's track.
+func ServeSubtitleFile(w http.ResponseWriter, r *http.Request, filePath, charset string, start, duration float64) error {
+	return serveWebVTT(w, r, SubtitleFileArgs(filePath, charset, start, duration))
+}
+
+func serveWebVTT(w http.ResponseWriter, r *http.Request, args []string) error {
+	cmd := exec.CommandContext(r.Context(), "ffmpeg", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

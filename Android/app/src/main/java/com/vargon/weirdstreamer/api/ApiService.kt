@@ -2,6 +2,10 @@ package com.vargon.weirdstreamer.api
 
 import com.vargon.weirdstreamer.api.models.Directory
 import com.vargon.weirdstreamer.api.models.DiscInfo
+import com.vargon.weirdstreamer.api.models.CodecsInfo
+import com.vargon.weirdstreamer.api.models.SubtitleSearch
+import com.vargon.weirdstreamer.api.models.SubtitleDownload
+import com.vargon.weirdstreamer.api.models.SubtitleDownloadRequest
 import com.vargon.weirdstreamer.api.models.LibraryListing
 import com.vargon.weirdstreamer.api.models.TitleDetail
 import com.vargon.weirdstreamer.api.models.LoginRequest
@@ -61,6 +65,21 @@ interface ApiService {
 
     @GET("/api/media/disc")
     suspend fun getDisc(@Query("path") path: String): Response<DiscInfo>
+
+    // Subtitles: a video's tracks (its own, then files beside it and downloads), a text track as
+    // WebVTT (a window at a time), and OpenSubtitles search and download through the server.
+    @GET("/api/media/codecs")
+    suspend fun getCodecs(@Query("path") path: String): Response<CodecsInfo>
+
+    @GET("/api/media/subtitles")
+    suspend fun getSubtitles(@Query("path") path: String, @Query("track") track: Int,
+                             @Query("start") start: Double, @Query("duration") duration: Double): Response<ResponseBody>
+
+    @GET("/api/media/subtitles/search")
+    suspend fun searchSubtitles(@Query("path") path: String, @Query("languages") languages: String): Response<SubtitleSearch>
+
+    @POST("/api/media/subtitles/download")
+    suspend fun downloadSubtitle(@Body request: SubtitleDownloadRequest): Response<SubtitleDownload>
 
     // Server administration (admins), as in the web UI's Settings. The config is kept as raw
     // JSON, so fields this app doesn't edit go back to the server untouched.

@@ -340,3 +340,72 @@ data class ErrorResponse(
     @SerializedName("error") val error: String,
     @SerializedName("message") val message: String? = null
 )
+
+/** A video's subtitle tracks from GET /api/media/codecs: its own, then files beside it and downloads. */
+data class CodecsInfo(
+    @SerializedName("duration") val duration: Double = 0.0,
+    @SerializedName("subtitles") val subtitles: List<SubtitleTrack>? = null,
+)
+
+data class SubtitleTrack(
+    @SerializedName("index") val index: Int,
+    @SerializedName("codec") val codec: String = "",
+    @SerializedName("language") val language: String? = null, // ISO 639-2: eng, spa…
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("default") val isDefault: Boolean = false,
+    @SerializedName("forced") val forced: Boolean = false,
+    // Text tracks come as WebVTT from /api/media/subtitles; picture ones are burned into a transcode.
+    @SerializedName("text") val text: Boolean = false,
+    @SerializedName("external") val external: String? = null, // "file" (beside the video) or "opensubtitles"
+    @SerializedName("hearing_impaired") val hearingImpaired: Boolean = false,
+)
+
+/** GET /api/media/subtitles/search: OpenSubtitles results for a video, best first. */
+data class SubtitleSearch(
+    @SerializedName("query") val query: SubtitleSearchQuery? = null,
+    @SerializedName("results") val results: List<SubtitleHit> = emptyList(),
+)
+
+data class SubtitleSearchQuery(
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("year") val year: Int = 0,
+    @SerializedName("season") val season: Int = 0,
+    @SerializedName("episode") val episode: Int = 0,
+    @SerializedName("tmdb") val tmdb: Boolean = false,
+    @SerializedName("languages") val languages: List<String>? = null,
+)
+
+/** A search result; sent back as is to download it. */
+data class SubtitleHit(
+    @SerializedName("file_id") val fileId: Int,
+    @SerializedName("language") val language: String = "",
+    @SerializedName("release") val release: String = "",
+    @SerializedName("downloads") val downloads: Int = 0,
+    @SerializedName("rating") val rating: Double = 0.0,
+    @SerializedName("hearing_impaired") val hearingImpaired: Boolean = false,
+    @SerializedName("foreign_parts_only") val foreignPartsOnly: Boolean = false,
+    @SerializedName("hash_match") val hashMatch: Boolean = false,
+    @SerializedName("trusted") val trusted: Boolean = false,
+    @SerializedName("machine_translated") val machineTranslated: Boolean = false,
+    @SerializedName("fps") val fps: Double = 0.0,
+    @SerializedName("uploaded") val uploaded: String? = null,
+    @SerializedName("language_code") val languageCode: String? = null,
+    @SerializedName("downloaded") val downloaded: Boolean = false, // kept already: no download used
+)
+
+data class SubtitleDownloadRequest(
+    @SerializedName("path") val path: String, // base64, as in the stream URL
+    @SerializedName("result") val result: SubtitleHit,
+)
+
+/** POST /api/media/subtitles/download: the video's tracks now, and the new one's index. */
+data class SubtitleDownload(
+    @SerializedName("subtitles") val subtitles: List<SubtitleTrack> = emptyList(),
+    @SerializedName("index") val index: Int = -1,
+    @SerializedName("quota") val quota: SubtitleQuota? = null,
+)
+
+data class SubtitleQuota(
+    @SerializedName("remaining") val remaining: Int = 0,
+    @SerializedName("reset") val reset: String? = null,
+)

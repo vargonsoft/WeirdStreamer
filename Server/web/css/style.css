@@ -2312,3 +2312,47 @@ body.has-az #main-screen .content { padding-right: 28px; }
     pointer-events: none;
 }
 .az-bubble[hidden] { display: none; }
+
+/* Subtitles online: a panel over the player (inside it, so it shows in fullscreen too) */
+.subtitle-search {
+    position: absolute;
+    top: 50px;
+    right: 20px;
+    bottom: 20px;
+    width: min(520px, calc(100% - 40px));
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+.subtitle-search[hidden] { display: none; }
+.subtitle-search-head { display: flex; align-items: center; justify-content: space-between; }
+.subtitle-search-head h3 { margin: 0; color: var(--heading-color, var(--primary-color)); }
+.subtitle-search-head .match-close { position: static; background: none; border: none; }
+.subtitle-search-form { display: flex; gap: 8px; align-items: center; }
+.subtitle-search-form label { display: flex; gap: 8px; align-items: center; flex: 1; }
+.subtitle-search-form input { flex: 1; min-width: 0; }
+.subtitle-search-note { margin: 0; font-size: 13px; color: var(--muted-text); }
+.subtitle-results { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; }
+.subtitle-hit {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+    background: var(--panel-bg, var(--card-bg));
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+}
+.subtitle-hit:hover:not(:disabled), .subtitle-hit:focus-visible { border-color: var(--primary-color); background: var(--hover-bg); }
+.subtitle-hit:disabled { opacity: 0.6; cursor: default; }
+.subtitle-hit-name { overflow-wrap: anywhere; }
+.subtitle-hit-details { font-size: 12px; color: var(--muted-text); }

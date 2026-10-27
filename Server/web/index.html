@@ -122,11 +122,17 @@
 
                     <div class="settings-group">
                         <h3>Metadata</h3>
-                        <p style="font-size: 13px; color: var(--muted-text); margin-bottom: 10px;">Used for libraries with a Movies or TV Shows type.</p>
+                        <p style="font-size: 13px; color: var(--muted-text); margin-bottom: 10px;">TMDB is used for libraries with a Movies or TV Shows type.</p>
                         <label>TMDB API Read Access Token:<br>
                             <span class="secret-field" style="width: calc(100% - 20px);">
                                 <input type="password" id="tmdb-token" class="settings-input" autocomplete="off" placeholder="From themoviedb.org → Settings → API">
                                 <button type="button" class="secret-toggle" data-for="tmdb-token" title="Show token" aria-label="Show token" aria-pressed="false"></button>
+                            </span>
+                        </label><br><br>
+                        <label>OpenSubtitles API Key (for searching subtitles online):<br>
+                            <span class="secret-field" style="width: calc(100% - 20px);">
+                                <input type="password" id="opensubtitles-key" class="settings-input" autocomplete="off" placeholder="From opensubtitles.com → API consumers">
+                                <button type="button" class="secret-toggle" data-for="opensubtitles-key" title="Show key" aria-label="Show key" aria-pressed="false"></button>
                             </span>
                         </label><br><br>
                         <label>Language: <input type="text" id="metadata-language" class="settings-input" style="width: 100px;" placeholder="en-US"></label>
@@ -223,6 +229,19 @@
                     <label id="player-audio-label">Audio <select id="player-audio"></select></label>
                     <label id="player-subtitle-label">Subtitles <select id="player-subtitle"></select></label>
                     <span id="player-status" class="player-status"></span>
+                </div>
+                <!-- Subtitles online (OpenSubtitles), from the Subtitles menu -->
+                <div id="subtitle-search" class="subtitle-search" hidden>
+                    <div class="subtitle-search-head">
+                        <h3>Subtitles online</h3>
+                        <button type="button" id="subtitle-search-close" class="match-close" aria-label="Close">&times;</button>
+                    </div>
+                    <form id="subtitle-search-form" class="subtitle-search-form">
+                        <label>Languages <input type="text" id="subtitle-languages" class="settings-input" placeholder="en, es" autocomplete="off"></label>
+                        <button type="submit" class="btn btn-small">Search</button>
+                    </form>
+                    <p id="subtitle-search-note" class="subtitle-search-note"></p>
+                    <div id="subtitle-results" class="subtitle-results"></div>
                 </div>
             </div>
         </div>

@@ -23,6 +23,8 @@ import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.*
 import androidx.media3.common.util.UnstableApi
@@ -36,8 +38,7 @@ import androidx.tv.material3.*
 import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.SmbDataSourceFactory
 import com.vargon.weirdstreamer.MediaViewModel
-import com.vargon.weirdstreamer.OpenSubtitlesClient
-import com.vargon.weirdstreamer.SubtitleInfo
+import com.vargon.weirdstreamer.api.models.SubtitleHit
 import com.vargon.weirdstreamer.WeirdStreamerApplication
 import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
@@ -72,6 +73,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var showDiscDialog by remember { mutableStateOf(false) }
     val discQuery = if (isDisc) "&title=$discTitle&angle=$discAngle&audio=$discAudio&subtitle=$discSubtitle" else ""
 
+    // Subtitles from the server, as on the web: the video's own tracks, then files beside it and
+    // downloads, drawn over the video whatever the stream (SubtitleOverlay). A picture track is
+    // burned into a transcode. SMB files and discs keep the player's own tracks.
+    val serverSubs = remember(path) { if (isSmbSource || isDisc) null else ServerSubtitles.forStream(path) }
+    val burnIn = serverSubs?.burnIn ?: -1
+
     // Transcode state
     // A video too big for this box's hardware decoder (4K on a 1080p box) starts transcoded,
     // like a disc; it's decided per video, so the next one starts on its own terms.
@@ -94,11 +101,12 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var fullDuration by remember { mutableLongStateOf(0L) }
 
     // Build the actual video URL with transcode parameters
-    val videoUrl = remember(path, selectedTranscodeModeIndex, discQuery) {
+    val videoUrl = remember(path, selectedTranscodeModeIndex, discQuery, burnIn) {
         if (!isSmbSource && !currentTranscodeMode.isOriginal) {
             var url = if (path.contains("?")) "$path&transcode=1" else "$path?transcode=1"
             url += transcodeQuery(currentTranscodeMode) // no taller than the hardware decodes
             url += discQuery
+            if (burnIn >= 0) url += "&subtitle=$burnIn"
             if (transcodeStartOffset > 0) {
                 url += "&start=${transcodeStartOffset / 1000f}"
             }
@@ -130,7 +138,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             .build()
 
         player.apply {
-            trackSelectionParameters = subtitlesOffByDefault(trackSelectionParameters)
+            // The server's subtitles are drawn over the video, so the stream's own stay off.
+            trackSelectionParameters = if (serverSubs != null) trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+            else subtitlesOffByDefault(trackSelectionParameters)
             val mediaItem = MediaItem.fromUri(videoUrl)
             // A direct stream seeks to the resume point; a transcoded one starts there.
             if (resumePending && currentTranscodeMode.isOriginal) setMediaItem(mediaItem, startAtMs) else setMediaItem(mediaItem)
@@ -179,11 +190,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     
     var availableSubtitles by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedSubtitleIndex by remember { mutableIntStateOf(-1) }
-    var downloadingSubtitles by remember { mutableStateOf<List<SubtitleInfo>>(emptyList()) }
+    var subtitleResults by remember { mutableStateOf<List<SubtitleHit>>(emptyList()) }
+    var subtitleSearchNote by remember { mutableStateOf<String?>(null) }
     var isSearchingSubtitles by remember { mutableStateOf(false) }
     var downloadStatus by remember { mutableStateOf<String?>(null) }
-
-    val openSubtitlesClient = remember { OpenSubtitlesClient(context) }
 
     // This video's remembered subtitle choice is applied once per player (a transcode switch
     // makes a new player, whose tracks arrive again).
@@ -216,49 +226,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         }
     }
 
-    fun searchAndDownloadSubtitles() {
-        if (!openSubtitlesClient.hasApiKey()) {
-            downloadStatus = "OpenSubtitles API key not configured."
-            return
-        }
-        isSearchingSubtitles = true
-        downloadStatus = "Searching subtitles..."
-        Thread {
-            try {
-                val filename = path.substringAfterLast("/").substringBefore("?")
-                val results = openSubtitlesClient.searchByFilename(filename)
-                if (results.isNotEmpty()) {
-                    downloadingSubtitles = results.take(10)
-                    downloadStatus = null
-                    isSearchingSubtitles = false
-                } else {
-                    downloadStatus = "No subtitles found"
-                    isSearchingSubtitles = false
-                }
-            } catch (e: Exception) {
-                downloadStatus = "Error: ${e.message}"
-                isSearchingSubtitles = false
-            }
-        }.start()
-    }
-
-    fun downloadAndApplySubtitle(subtitle: SubtitleInfo) {
-        downloadStatus = "Downloading ${subtitle.filename}..."
-        Thread {
-            try {
-                val cacheDir = openSubtitlesClient.getSubtitleCacheDir()
-                val outputFile = File(cacheDir, subtitle.filename)
-                if (openSubtitlesClient.downloadSubtitle(subtitle, outputFile)) {
-                    downloadStatus = "Downloaded successfully"
-                } else {
-                    downloadStatus = "Download failed"
-                }
-            } catch (e: Exception) {
-                downloadStatus = "Error: ${e.message}"
-            }
-        }.start()
-    }
-
     // Fetch metadata
     LaunchedEffect(path) {
         if (!isSmbSource) {
@@ -287,6 +254,72 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     var isSeekingSlider by remember { mutableStateOf(false) }
     var playbackPosition by remember(path) { mutableLongStateOf(startAtMs) }
+
+    /** Chooses a server subtitle track: a picture one is burned into a transcode, from here. */
+    fun chooseServerSubtitle(index: Int, atMs: Long = playbackPosition) {
+        val subs = serverSubs ?: return
+        val before = subs.burnIn
+        subs.select(index)
+        if (subs.burnIn == before) return
+        if (currentTranscodeMode.isOriginal) {
+            if (subs.burnIn < 0) return
+            transcodeStartOffset = atMs
+            selectedTranscodeModeIndex = 1 // Compatibility (Auto)
+        } else transcodeStartOffset = atMs
+    }
+
+    fun searchSubtitlesOnline() {
+        val subs = serverSubs ?: return
+        isSearchingSubtitles = true
+        downloadStatus = null
+        subtitleResults = emptyList()
+        scope.launch {
+            try {
+                val found = subs.search(deviceSubtitleLanguages())
+                subtitleResults = found.results
+                val q = found.query
+                val what = listOfNotNull(q?.title, q?.year?.takeIf { it > 0 }?.toString(),
+                    if ((q?.season ?: 0) > 0 || (q?.episode ?: 0) > 0) "S%02dE%02d".format(q?.season, q?.episode) else null).joinToString(" ")
+                subtitleSearchNote = if (found.results.isEmpty()) "Nothing found for $what in ${q?.languages?.joinToString(", ")}."
+                    else "${found.results.size} found for $what${if (q?.tmdb == true) " (by its TMDB match)" else ""}. Best matches first."
+            } catch (e: Exception) {
+                downloadStatus = e.message ?: "Search failed"
+            } finally {
+                isSearchingSubtitles = false
+            }
+        }
+    }
+
+    fun downloadSubtitle(hit: SubtitleHit) {
+        val subs = serverSubs ?: return
+        downloadStatus = if (hit.downloaded) "Loading…" else "Downloading…"
+        scope.launch {
+            try {
+                val before = subs.burnIn
+                val index = subs.download(hit)
+                // The download selected itself; a burned-in picture track before it ends here.
+                if (before >= 0 && !currentTranscodeMode.isOriginal) transcodeStartOffset = playbackPosition
+                SubtitleMemory.set(context, subtitleVideo, index, subs.labels.getOrNull(index))
+                showDownloadDialog = false
+                subtitleResults = emptyList()
+                downloadStatus = null
+            } catch (e: Exception) {
+                downloadStatus = e.message ?: "Download failed"
+            }
+        }
+    }
+
+    // The server's subtitle tracks, and the one chosen for this video last time (or its forced
+    // subtitles, as the web player does).
+    LaunchedEffect(serverSubs) {
+        val subs = serverSubs ?: return@LaunchedEffect
+        subs.load()
+        val labels = subs.labels
+        val index = SubtitleMemory.get(context, subtitleVideo)?.let { SubtitleMemory.resolve(it, labels) }
+            ?: subs.tracks.indexOfFirst { it.forced && it.text }
+        if (index >= 0) chooseServerSubtitle(index, if (playbackPosition > 0) playbackPosition else startAtMs)
+    }
+
     var duration by remember { mutableLongStateOf(0L) }
     var skipFeedback by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
     var speedFeedback by remember { mutableStateOf<Float?>(null) }
@@ -354,6 +387,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 if (videoSize.width > 0 && videoSize.height > 0) videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
             }
             override fun onTracksChanged(tracks: Tracks) {
+                if (serverSubs != null) return // the server's subtitles, not the stream's
                 val formats = mutableListOf<androidx.media3.common.Format>()
                 for (group in tracks.groups) {
                     if (group.type == C.TRACK_TYPE_TEXT) {
@@ -727,6 +761,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         FilenameOverlay(show = showControls, filename = filename, modifier = Modifier.align(Alignment.TopStart))
         SkipFeedbackOverlay(feedback = skipFeedback)
         SpeedFeedbackOverlay(speed = speedFeedback)
+        SubtitleOverlay(serverSubs, position = {
+            if (!currentTranscodeMode.isOriginal) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
+        }, fontSize = 26.sp, bottomPadding = if (showControls || showZoomToolbar) 190.dp else 48.dp)
+
         FrameFeedbackOverlay(feedback = frameFeedback)
 
         TrickplayOverlay(
@@ -799,10 +837,15 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             onSubtitle = { s -> showDiscDialog = false; if (s != discSubtitle) { transcodeStartOffset = playbackPosition; discSubtitle = s } },
             onDismiss = { showDiscDialog = false }
         )
-        SubtitleDialog(show = showSubtitleDialog, availableSubtitles = availableSubtitles, selectedSubtitleIndex = selectedSubtitleIndex, onDismiss = { showSubtitleDialog = false }, onSubtitleSelected = {
-            selectSubtitleTrack(it)
-            if (!isDisc) SubtitleMemory.set(context, subtitleVideo, it, availableSubtitles.getOrNull(it))
-        }, onDownloadRequested = { showDownloadDialog = true; searchAndDownloadSubtitles() })
-        DownloadSubtitlesDialog(show = showDownloadDialog, isSearching = isSearchingSubtitles, downloadStatus = downloadStatus, downloadingSubtitles = downloadingSubtitles, onDismiss = { showDownloadDialog = false; downloadingSubtitles = emptyList(); downloadStatus = null }, onSubtitleSelected = { downloadAndApplySubtitle(it) })
+        val subtitleLabels = serverSubs?.labels ?: availableSubtitles
+        SubtitleDialog(show = showSubtitleDialog, availableSubtitles = subtitleLabels,
+            selectedSubtitleIndex = serverSubs?.selected ?: selectedSubtitleIndex, onDismiss = { showSubtitleDialog = false }, onSubtitleSelected = {
+            if (serverSubs != null) chooseServerSubtitle(it) else selectSubtitleTrack(it)
+            if (!isDisc) SubtitleMemory.set(context, subtitleVideo, it, subtitleLabels.getOrNull(it))
+        }, onDownloadRequested = if (serverSubs == null) null else ({ showSubtitleDialog = false; showDownloadDialog = true; searchSubtitlesOnline() }))
+        OnlineSubtitlesDialog(show = showDownloadDialog, isSearching = isSearchingSubtitles, status = downloadStatus,
+            note = subtitleSearchNote, results = subtitleResults,
+            onDismiss = { showDownloadDialog = false; subtitleResults = emptyList(); downloadStatus = null; subtitleSearchNote = null },
+            onChosen = { downloadSubtitle(it) })
     }
 }
