@@ -122,9 +122,37 @@ func (db *DB) RecentPlayback(userID int64, minPosition float64, limit int) ([]st
 	return paths, out, rows.Err()
 }
 
+// RecentFinished returns a user's records of videos finished (watched, with no position to resume
+// from), most recent first, for the episodes that follow them on Continue Watching.
+func (db *DB) RecentFinished(userID int64, minPosition float64, limit int) ([]string, map[string]*models.Playback, error) {
+	rows, err := db.userConn.Query(`
+		SELECT path, position, duration, watched, updated_at FROM playback
+		WHERE user_id = ? AND watched = 1 AND position < ? ORDER BY updated_at DESC LIMIT ?`, userID, minPosition, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var paths []string
+	out := map[string]*models.Playback{}
+	for rows.Next() {
+		var path string
+		p := &models.Playback{}
+		if err := rows.Scan(&path, &p.Position, &p.Duration, &p.Watched, &p.UpdatedAt); err != nil {
+			return nil, nil, err
+		}
+		paths = append(paths, path)
+		out[path] = p
+	}
+	return paths, out, rows.Err()
+}
+
 // ClearPosition forgets where a user stopped in a video (keeping whether it was watched), for
-// Continue Watching's remove.
+// Continue Watching's remove. A video with no record gets one (no position, not watched): an
+// up-next episode removed that way stays off the list until the show is watched further.
 func (db *DB) ClearPosition(userID int64, path string) error {
-	_, err := db.userConn.Exec(`UPDATE playback SET position = 0 WHERE user_id = ? AND path = ?`, userID, path)
+	_, err := db.userConn.Exec(`
+		INSERT INTO playback (user_id, path, position, duration, watched, updated_at) VALUES (?, ?, 0, 0, 0, ?)
+		ON CONFLICT(user_id, path) DO UPDATE SET position = 0, updated_at = excluded.updated_at`,
+		userID, path, time.Now().UnixMilli())
 	return err
 }

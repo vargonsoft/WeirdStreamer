@@ -3887,7 +3887,8 @@ function createContinueCard(item) {
     const { title, subtitle } = continueTitle(item);
     card.append(thumb, el('div', 'continue-title', title));
     if (subtitle) card.appendChild(el('div', 'continue-subtitle', subtitle));
-    const left = timeLeftText(item);
+    // The episode after one finished says so; one in progress, how long is left.
+    const left = item.up_next ? 'Up next' : timeLeftText(item);
     if (left) card.appendChild(el('div', 'continue-subtitle', left));
     const play = () => playVideo(item, false, resumePosition(item));
     card.onclick = play;

@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 
@@ -274,6 +276,7 @@ type continueItem struct {
 	models.MediaItem
 	LibraryID   string `json:"library_id"`
 	LibraryType string `json:"library_type,omitempty"`
+	UpNext      bool   `json:"up_next,omitempty"` // the episode after one just finished, not started yet
 }
 
 // ContinueWatching lists the user's videos in progress, most recent first, optionally in one
@@ -289,39 +292,168 @@ func (h *MediaHandler) ContinueWatching(w http.ResponseWriter, r *http.Request) 
 	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n < continueLimit {
 		limit = n
 	}
-	// Some rows may be filtered out (other libraries, removed files): read a few extra.
+	// Some rows may be filtered out (other libraries, removed files): read a few extra. Finished
+	// videos are read apart (so a run of them can't crowd out those in progress) and merged in by
+	// time: a finished episode hands over to the next one.
 	paths, pb, err := h.db.RecentPlayback(uid, minResumePosition, limit*4)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to load progress")
 		return
 	}
+	if done, donePB, err := h.db.RecentFinished(uid, minResumePosition, limit*4); err == nil {
+		for path, p := range donePB {
+			pb[path] = p
+		}
+		paths = append(paths, done...)
+		sort.SliceStable(paths, func(i, j int) bool { return pb[paths[i]].UpdatedAt > pb[paths[j]].UpdatedAt })
+	}
 	items := []continueItem{}
+	listed := map[string]bool{} // paths on the list
+	shows := map[int]bool{}     // shows with an entry already (a newer one than the rows that follow)
+	var all map[string]*models.Playback // every record, read when an up-next episode needs checking
 	for _, path := range paths {
 		if len(items) >= limit {
 			break
 		}
 		p := pb[path]
-		if p.Duration > 0 && playbackFinished(p.Position, p.Duration, false) {
-			continue
-		}
+		finished := (p.Watched && p.Position < minResumePosition) || (p.Duration > 0 && playbackFinished(p.Position, p.Duration, false))
 		lib, found := libraryForPath(path)
 		// A library's own page asks for its list (only); the home screen blends all libraries.
 		if !found || !lib.OnContinueWatching(only != "") || (only != "" && lib.ID != only) || !h.canAccessLibrary(r, lib) {
 			continue
 		}
-		item, err := h.db.GetMediaItem(path)
-		if err != nil || item.Type != "video" {
+		item := h.continueEntry(lib, path)
+		if item == nil {
 			continue
 		}
 		item.Playback = p
-		if h.meta != nil {
-			one := []models.MediaItem{*item}
-			h.meta.Annotate(lib, filepath.Dir(path), nil, one)
-			item = &one[0]
+		show := episodeShow(item)
+		if finished {
+			// A finished episode hands over to the next, so the show stays on the list; unless the
+			// show already has a newer entry, or the next has been watched or is listed already.
+			if show == 0 || shows[show] {
+				continue
+			}
+			shows[show] = true
+			if all == nil {
+				if all, err = h.db.UserPlayback(uid); err != nil {
+					all = map[string]*models.Playback{}
+				}
+			}
+			// The first episode after this one not watched yet (marking a season watched leaves
+			// its episodes in any order). One taken off the list since is left off.
+			next := ""
+			for _, candidate := range h.episodesAfter(r.Context(), lib, show, path) {
+				if np := all[candidate]; np == nil || !np.Watched {
+					if np == nil || np.UpdatedAt < p.UpdatedAt || np.Position >= minResumePosition {
+						next = candidate
+					}
+					break
+				}
+			}
+			if next == "" || listed[next] {
+				continue
+			}
+			nextItem := h.continueEntry(lib, next)
+			if nextItem == nil {
+				continue
+			}
+			nextItem.Playback = all[next]
+			listed[next] = true
+			items = append(items, continueItem{MediaItem: *nextItem, LibraryID: lib.ID, LibraryType: lib.Type, UpNext: true})
+			continue
 		}
+		if listed[path] {
+			continue
+		}
+		if show != 0 {
+			shows[show] = true
+		}
+		listed[path] = true
 		items = append(items, continueItem{MediaItem: *item, LibraryID: lib.ID, LibraryType: lib.Type})
 	}
 	respondJSON(w, http.StatusOK, items)
+}
+
+// continueEntry is a video for Continue Watching, with its TMDB summary, or nil when it isn't one.
+func (h *MediaHandler) continueEntry(lib config.MediaPath, path string) *models.MediaItem {
+	item, err := h.db.GetMediaItem(path)
+	if err != nil || item.Type != "video" {
+		return nil
+	}
+	if h.meta != nil {
+		one := []models.MediaItem{*item}
+		h.meta.Annotate(lib, filepath.Dir(path), nil, one)
+		item = &one[0]
+	}
+	return item
+}
+
+// episodeShow is the TMDB ID of the show an item is an episode of, or 0.
+func episodeShow(item *models.MediaItem) int {
+	if item.Metadata != nil && item.Metadata.Kind == "episode" {
+		return item.Metadata.TMDBID
+	}
+	return 0
+}
+
+// showEpisodes lists a show's episodes in order, each as its season number and its files' paths.
+func (h *MediaHandler) showEpisodes(ctx context.Context, lib config.MediaPath, show int) []showEpisode {
+	if h.meta == nil {
+		return nil
+	}
+	detail, err := h.meta.Title(ctx, lib, "show", show, func(path string) models.LibraryFile {
+		return models.LibraryFile{Path: path}
+	})
+	if err != nil {
+		return nil
+	}
+	var out []showEpisode
+	for _, s := range detail.Seasons {
+		for _, e := range s.Episodes {
+			ep := showEpisode{season: s.Season}
+			for _, f := range e.Files {
+				ep.paths = append(ep.paths, f.Path)
+			}
+			if len(ep.paths) > 0 {
+				out = append(out, ep)
+			}
+		}
+	}
+	return out
+}
+
+type showEpisode struct {
+	season int
+	paths  []string
+}
+
+func (e showEpisode) has(path string) bool {
+	for _, p := range e.paths {
+		if p == path {
+			return true
+		}
+	}
+	return false
+}
+
+// episodesAfter lists the first file of each episode after path's, in order (on into the next
+// season, skipping specials unless path is one).
+func (h *MediaHandler) episodesAfter(ctx context.Context, lib config.MediaPath, show int, path string) []string {
+	eps := h.showEpisodes(ctx, lib, show)
+	for i, e := range eps {
+		if !e.has(path) {
+			continue
+		}
+		var out []string
+		for _, n := range eps[i+1:] {
+			if n.season != 0 || e.season == 0 {
+				out = append(out, n.paths[0])
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // RemoveFromContinue forgets where the user stopped in a video, taking it off Continue

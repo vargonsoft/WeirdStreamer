@@ -56,7 +56,9 @@ data class ContinueItem(
     @SerializedName("duration") val duration: Double? = null,
     @SerializedName("library_id") val libraryId: String,
     @SerializedName("metadata") val metadata: ContinueMetadata? = null,
-    @SerializedName("playback") val playback: Playback? = null
+    @SerializedName("playback") val playback: Playback? = null,
+    // The episode after one just finished, not started yet
+    @SerializedName("up_next") val upNext: Boolean = false
 ) {
     /** "Example Show" and "S01E02 · Example Episode", or "Example Movie (2008)" and the file name. */
     val titleLines: Pair<String, String?>

@@ -110,7 +110,7 @@ fun TvContinueRow(
                     }
                     Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 8.dp))
-                    listOfNotNull(subtitle, timeLeftText(item.playback, item.duration)).forEach {
+                    listOfNotNull(subtitle, continueNote(item)).forEach {
                         Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

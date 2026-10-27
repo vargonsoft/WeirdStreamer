@@ -100,6 +100,9 @@ fun clockText(seconds: Double): String {
 }
 
 /** "23 min left", for a video in progress. */
+/** A Continue Watching card's last line: "Up next" for the episode after one finished, else the time left. */
+fun continueNote(item: ContinueItem): String? = if (item.upNext) "Up next" else timeLeftText(item.playback, item.duration)
+
 fun timeLeftText(playback: Playback?, duration: Double?): String? {
     val p = playback ?: return null
     val total = p.duration.takeIf { it > 0 } ?: duration ?: return null
@@ -155,7 +158,7 @@ private fun PhoneContinueCard(viewModel: MediaViewModel, item: ContinueItem) {
             Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        timeLeftText(item.playback, item.duration)?.let {
+        continueNote(item)?.let {
             Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
