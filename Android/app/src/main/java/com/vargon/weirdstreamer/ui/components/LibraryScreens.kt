@@ -315,6 +315,27 @@ private fun Modifier.gridEdges(index: Int, toolbar: FocusRequester, firstRow: Bo
     }
 }
 
+/**
+ * While anything in it has focus, scrolls this whole element into view with [margin] around it, for
+ * a focused tile's growth and outline.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Modifier.wholeInView(margin: Dp = 16.dp): Modifier {
+    val scope = rememberCoroutineScope()
+    val requester = remember { BringIntoViewRequester() }
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    val marginPx = with(LocalDensity.current) { margin.toPx() }
+    return this
+        .bringIntoViewRequester(requester)
+        .onSizeChanged { size = it }
+        .onFocusChanged {
+            if (it.hasFocus) scope.launch {
+                requester.bringIntoView(Rect(0f, -marginPx, size.width.toFloat(), size.height + marginPx))
+            }
+        }
+}
+
 /** A movie-poster-shaped (2:3) tile, so posters aren't cropped to squares. */
 @Composable
 fun PosterTile(
@@ -546,25 +567,13 @@ private fun FileRow(
     modifier: Modifier = Modifier,
     thumbnailWidth: Dp = 200.dp
 ) {
-    val scope = rememberCoroutineScope()
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         files.forEachIndexed { index, file ->
-            // With any of its buttons focused, the whole row shows, with room around it for the
-            // focused thumbnail's growth and outline: the page otherwise scrolls only as far as the
-            // focused button, leaving the taller thumbnail beside it cut off.
-            val wholeRow = remember { BringIntoViewRequester() }
-            var rowSize by remember { mutableStateOf(IntSize.Zero) }
-            val margin = with(LocalDensity.current) { 16.dp.toPx() }
+            // With any of its buttons focused, the whole row shows: the page otherwise scrolls only
+            // as far as the focused button, leaving the taller thumbnail beside it cut off.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .bringIntoViewRequester(wholeRow)
-                    .onSizeChanged { rowSize = it }
-                    .onFocusChanged {
-                        if (it.hasFocus) scope.launch {
-                            wholeRow.bringIntoView(Rect(0f, -margin, rowSize.width.toFloat(), rowSize.height + margin))
-                        }
-                    }
+                modifier = Modifier.wholeInView()
             ) {
                 Box(
                     contentAlignment = Alignment.Center,
@@ -698,8 +707,9 @@ private fun SeasonsAndEpisodes(
         }
         season.episodes.forEachIndexed { index, episode ->
             // Up from the first episode goes to the season picker (Compose's own search can pick the
-            // cast instead, since the full-width row lines up with it too).
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // cast instead, since the full-width row lines up with it too). Focused, the whole row
+            // shows with its outline (the page's last otherwise stops flush with the bottom edge).
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.wholeInView()) {
                 Box(Modifier.weight(1f)) {
                     EpisodeRow(viewModel, episode, queue, if (index == 0) playRequester else null,
                         up = if (index == 0) pickerRequester else null)
