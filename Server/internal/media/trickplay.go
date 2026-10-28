@@ -30,6 +30,9 @@ func (tg *TrickplayGenerator) Generate(videoPath string) error {
 	return tg.generate(context.Background(), videoPath, nil)
 }
 
+// maxFrameFailures is how many frames in a row may fail before a video is given up on.
+const maxFrameFailures = 10
+
 // trickplayDone marks a video's frames as all made (a folder without it was stopped part way).
 const trickplayDone = ".done"
 
@@ -68,12 +71,23 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 
 	// Generate frames every 10 seconds.
 	// Stop 1 second before the end to avoid empty output issues with input seeking.
+	failures := 0
 	for i := 0; i <= int(duration)-1; i += 10 {
 		if ctx.Err() != nil || (wait != nil && !wait()) {
 			return ctx.Err()
 		}
 		if err := tg.generateFrame(ctx, videoPath, trickplayVideoDir, float64(i), i, codec); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			fmt.Printf("Warning: failed to generate frame at %ds: %v\n", i, err)
+			// A file that can't be read there, or whose length is wrong (frames past its real
+			// end all fail): give up on it, keeping the frames made, and leave it unmarked.
+			if failures++; failures >= maxFrameFailures {
+				return fmt.Errorf("%d frames in a row failed (at %ds of %.0fs)", failures, i, duration)
+			}
+		} else {
+			failures = 0
 		}
 	}
 	if err := os.WriteFile(filepath.Join(trickplayVideoDir, trickplayDone), nil, 0644); err != nil {

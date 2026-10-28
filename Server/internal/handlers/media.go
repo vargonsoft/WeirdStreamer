@@ -486,7 +486,17 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if entry.IsDir() {
+		// A symlink is listed as what it points to: its size, and a folder as a folder.
+		isDir := entry.IsDir()
+		var linked os.FileInfo
+		if entry.Type()&os.ModeSymlink != 0 {
+			if info, err := os.Stat(entryPath); err == nil {
+				linked = info
+				isDir = info.IsDir()
+			}
+		}
+
+		if isDir {
 			dirs = append(dirs, models.Directory{
 				Path: relPath,
 				Name: entry.Name(),
@@ -494,6 +504,9 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Get file info
 			fileInfo, err := entry.Info()
+			if linked != nil {
+				fileInfo, err = linked, nil
+			}
 			if err != nil {
 				log.Printf("Failed to get file info for %s: %v", entryPath, err)
 				continue
@@ -545,7 +558,13 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 					go h.db.SaveMediaItem(item)
 				}
 			} else {
-				// Item found in database
+				// Item found in database. A size that's out of date (the file changed, or a
+				// symlink's own size was stored) is corrected.
+				if item.Size != fileInfo.Size() {
+					item.Size = fileInfo.Size()
+					fixed := *item // a copy: the thumbnail goroutine below may change item
+					go h.db.SaveMediaItem(&fixed)
+				}
 				// If thumbnail URL is empty, regenerate it in background
 				if item.ThumbnailURL == "" && (mediaType == "image" || mediaType == "video") {
 					go func(itemCopy *models.MediaItem) {

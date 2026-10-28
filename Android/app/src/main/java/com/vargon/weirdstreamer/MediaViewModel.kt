@@ -1005,6 +1005,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         viewed?.let { v -> lastPlayedFile = (playbackQueue.firstOrNull { it.path == v } ?: getFileItemForPath(v))?.originalPath }
         localPlaybackOf = null
         selectedVideoPath = null
+        // Back from the player, the folder selects what was played (not the toolbar, after a view toggle).
+        toolbarKeepsFocus = false
         // The player's last report needs a moment to land before the new progress is fetched.
         viewModelScope.launch {
             delay(400)
