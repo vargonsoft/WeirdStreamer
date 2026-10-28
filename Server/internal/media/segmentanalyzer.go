@@ -387,7 +387,8 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		var todo []string
 		total, already := 0, 0
 		for _, p := range paths {
-			if !j.InLibrary(p) {
+			// Gone files (cleanup forgets them) and a Mac's leftovers aren't videos to make frames for.
+			if !j.InLibrary(p) || IgnoredMacFile(p) || !exists(p) {
 				continue
 			}
 			total++

@@ -16,9 +16,10 @@ import (
 )
 
 // Pruner removes the records of media files that are gone: rows outside every library (one
-// removed or moved) and files no longer on disk, with their thumbnails, trickplay frames,
-// intros and credits, and disc info. A library whose folder can't be read (a share not mounted)
-// is left alone, as is one that would lose more than half its files at once (a share half there).
+// removed or moved), files no longer on disk and a Mac's leftovers (when those are ignored), with
+// their thumbnails, trickplay frames, intros and credits, and disc info. A library whose folder
+// can't be read (a share not mounted) is left alone, as is one that would lose more than half its
+// files at once (a share half there).
 type Pruner struct {
 	db   *database.DB
 	wake chan struct{}
@@ -85,6 +86,10 @@ func (p *Pruner) Prune(ctx context.Context, force bool) (int, error) {
 	byLibrary := make([][]database.MediaRecord, len(libraries))
 	var gone []database.MediaRecord
 	for _, r := range records {
+		if IgnoredMacFile(r.Path) {
+			gone = append(gone, r) // a Mac's leftover, which scans now skip
+			continue
+		}
 		if i := libraryIndex(libraries, r.Path); i >= 0 {
 			byLibrary[i] = append(byLibrary[i], r)
 		} else {

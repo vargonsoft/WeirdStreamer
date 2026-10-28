@@ -103,8 +103,11 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 			return nil
 		}
 
-		// Skip Mac-specific files if configured to ignore them
-		if config.GlobalConfig.Media.IgnoreMacFiles && s.isMacFile(path) {
+		// Skip Mac-specific files (and .AppleDouble folders) if configured to ignore them
+		if IgnoredMacFile(path) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
@@ -270,12 +273,6 @@ func (s *Scanner) getMimeType(path string) string {
 		return mime
 	}
 	return "application/octet-stream"
-}
-
-// isMacFile checks if a file is a Mac-specific file that should be ignored
-func (s *Scanner) isMacFile(path string) bool {
-	baseName := filepath.Base(path)
-	return baseName == ".DS_Store" || strings.HasPrefix(baseName, "._")
 }
 
 func (s *Scanner) getVideoMetadata(item *models.MediaItem) error {

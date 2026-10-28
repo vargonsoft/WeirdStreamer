@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"encoding/binary"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,5 +119,52 @@ func TestTrickplayStopsAtTheVideosEnd(t *testing.T) {
 	}
 	if !HasTrickplay(src) {
 		t.Error("not marked done")
+	}
+}
+
+// dataISO writes an ISO 9660 image whose root holds one file, README.TXT (no VIDEO_TS).
+func dataISO(t *testing.T, path string) {
+	img := make([]byte, 19*sectorSize)
+	pvd := img[16*sectorSize:]
+	pvd[0] = 1
+	copy(pvd[1:], "CD001")
+	root := pvd[156:190]
+	root[0] = 34
+	binary.LittleEndian.PutUint32(root[2:], 17)
+	binary.LittleEndian.PutUint32(root[10:], sectorSize)
+	root[25] = 2
+	rec := img[17*sectorSize:]
+	name := "README.TXT;1"
+	rec[0] = byte(33 + len(name) + 1)
+	binary.LittleEndian.PutUint32(rec[2:], 18)
+	binary.LittleEndian.PutUint32(rec[10:], 5)
+	rec[32] = byte(len(name))
+	copy(rec[33:], name)
+	copy(img[18*sectorSize:], "hello")
+	if err := os.WriteFile(path, img, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTrickplayDataDisc(t *testing.T) {
+	dir := t.TempDir()
+	iso := filepath.Join(dir, "installer.iso")
+	dataISO(t, iso)
+
+	old := config.GlobalConfig
+	defer func() { config.GlobalConfig = old }()
+	config.GlobalConfig = &config.Config{Media: config.MediaConfig{TrickplayPath: filepath.Join(dir, "trickplay")}}
+
+	if _, err := LoadDisc(iso); !IsNotVideoDisc(err) {
+		t.Fatalf("LoadDisc: %v, want not a video disc", err)
+	}
+	if _, err := LoadDisc(filepath.Join(dir, "gone.iso")); IsNotVideoDisc(err) {
+		t.Error("a missing image was taken for a data disc")
+	}
+	if err := NewTrickplayGenerator(nil).generateDisc(context.Background(), iso, nil, nil); err != nil {
+		t.Fatalf("generateDisc: %v", err)
+	}
+	if !HasTrickplay(iso) || TrickplayTitle(iso) != 0 {
+		t.Error("the data disc wasn't marked done without a title")
 	}
 }

@@ -593,6 +593,13 @@ func (fs *iso9660) list(lba, size uint32) ([]isoEntry, error) {
 	return entries, nil
 }
 
+// errNotOnDisc: a file a video DVD has isn't on the disc (its directory was read).
+var errNotOnDisc = errors.New("not found on the disc")
+
+// IsNotVideoDisc says whether LoadDisc's error means the image was read and isn't a video DVD (an
+// installer or data disc), as opposed to one that couldn't be read.
+func IsNotVideoDisc(err error) bool { return errors.Is(err, errNotOnDisc) }
+
 // readFile reads a file by its path components (case-insensitive), up to 16 MB.
 func (fs *iso9660) readFile(parts ...string) ([]byte, error) {
 	lba, size := fs.rootLBA, fs.rootSize
@@ -609,7 +616,7 @@ func (fs *iso9660) readFile(parts ...string) ([]byte, error) {
 			}
 		}
 		if !found {
-			return nil, fmt.Errorf("%s not found on the disc", strings.Join(parts, "/"))
+			return nil, fmt.Errorf("%s %w", strings.Join(parts, "/"), errNotOnDisc)
 		}
 	}
 	if size > 16<<20 {

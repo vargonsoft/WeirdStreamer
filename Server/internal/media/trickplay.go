@@ -118,7 +118,10 @@ func (tg *TrickplayGenerator) GenerateForDirectory(dirPath string) error {
 		}
 
 		// Skip Mac-specific files if configured to ignore them
-		if config.GlobalConfig.Media.IgnoreMacFiles && isMacFile(path) {
+		if IgnoredMacFile(path) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
@@ -297,10 +300,30 @@ func (tg *TrickplayGenerator) extractFrame(ctx context.Context, videoPath, out s
 	return false
 }
 
-// isMacFile checks if a filename is a Mac-specific file that should be ignored
-func isMacFile(path string) bool {
-	baseName := filepath.Base(path)
-	return baseName == ".DS_Store" || strings.HasPrefix(baseName, "._")
+// IsMacFile says whether a path is a Mac's leftover rather than media: .DS_Store, an AppleDouble
+// "._" file (a file's resource fork on a share), or anything in an .AppleDouble folder (Netatalk's).
+func IsMacFile(path string) bool {
+	base := filepath.Base(path)
+	if base == ".DS_Store" || strings.HasPrefix(base, "._") {
+		return true
+	}
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == ".AppleDouble" {
+			return true
+		}
+	}
+	return false
+}
+
+// exists says whether a file is there (following symlinks).
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// IgnoredMacFile says whether a path is a Mac's leftover and the settings say to ignore those.
+func IgnoredMacFile(path string) bool {
+	return config.GlobalConfig.Media.IgnoreMacFiles && IsMacFile(path)
 }
 
 // errInterrupted: a disc's frames were stopped part way (someone started streaming); try later.
@@ -312,6 +335,11 @@ var errInterrupted = errors.New("interrupted")
 // checked while decoding, and stops it. The .done marker holds the title's number.
 func (tg *TrickplayGenerator) generateDisc(ctx context.Context, path string, wait, busy func() bool) error {
 	info, err := LoadDisc(path)
+	if IsNotVideoDisc(err) {
+		// An installer or data disc: it never will have frames, so mark it done (with no title).
+		fmt.Printf("Not a video DVD, no frames to make: %s (%v)\n", path, err)
+		return markNoFrames(path)
+	}
 	if err != nil {
 		return err
 	}
@@ -390,6 +418,18 @@ func (tg *TrickplayGenerator) discSegmentFrames(ctx context.Context, path string
 		os.Rename(filepath.Join(tmp, e.Name()), filepath.Join(dir, fmt.Sprintf("frame-%d.jpg", at)))
 	}
 	return nil
+}
+
+// markNoFrames marks a video done without frames.
+func markNoFrames(path string) error {
+	if config.GlobalConfig.Media.TrickplayPath == "" {
+		return fmt.Errorf("trickplay path is not configured")
+	}
+	dir := filepath.Join(config.GlobalConfig.Media.TrickplayPath, GenerateThumbnailHash(path))
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, trickplayDone), nil, 0644)
 }
 
 // TrickplayTitle is the disc title a disc image's frames are for (0 for a video file, or none yet).

@@ -521,7 +521,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 		relPath := filepath.Join(relativePath, entry.Name())
 
 		// Skip Mac-specific files if configured to ignore them
-		if config.GlobalConfig.Media.IgnoreMacFiles && h.isMacFile(entry.Name()) {
+		if media.IgnoredMacFile(entry.Name()) {
 			continue
 		}
 
@@ -1000,9 +1000,4 @@ func (h *MediaHandler) notifyThumbnailReady(filePath, thumbnailURL string) {
 		return
 	}
 	h.thumbnailHub.broadcast(filePath, sseEvent{data: string(jsonData)})
-}
-
-// isMacFile checks if a filename is a Mac-specific file that should be ignored
-func (h *MediaHandler) isMacFile(filename string) bool {
-	return filename == ".DS_Store" || strings.HasPrefix(filename, "._")
 }

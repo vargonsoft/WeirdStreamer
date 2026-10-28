@@ -79,3 +79,46 @@ func TestPruneForgetsWhatIsGone(t *testing.T) {
 		t.Errorf("forced: %d left, want 7 (Kept, Offline, 5 episodes)", len(records))
 	}
 }
+
+func TestPruneForgetsMacFiles(t *testing.T) {
+	for _, p := range []string{"/m/.DS_Store", "/m/._Movie.mkv", "/m/Movie (2013)/.AppleDouble/Movie (2013).avi"} {
+		if !IsMacFile(p) {
+			t.Errorf("%s isn't taken for a Mac file", p)
+		}
+	}
+	for _, p := range []string{"/m/Movie.mkv", "/m/.hidden/Movie.mkv", "/m/Movie_.mkv", "/m/AppleDouble/Movie.mkv"} {
+		if IsMacFile(p) {
+			t.Errorf("%s is taken for a Mac file", p)
+		}
+	}
+
+	dir := t.TempDir()
+	db, err := database.New(filepath.Join(dir, "users.db"), filepath.Join(dir, "media.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	movies := filepath.Join(dir, "movies")
+	old := config.GlobalConfig
+	defer func() { config.GlobalConfig = old }()
+	config.GlobalConfig = &config.Config{Media: config.MediaConfig{Paths: []config.MediaPath{{Name: "Movies", Path: movies}}}}
+	for _, p := range []string{"Movie.mkv", "._Movie.mkv", ".AppleDouble/Movie.mkv"} {
+		path := filepath.Join(movies, p)
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		os.WriteFile(path, []byte("x"), 0o644) // all still on disk
+		if err := db.SaveMediaItem(&models.MediaItem{Path: path, Name: filepath.Base(path), Type: "video", MimeType: "video/mp4"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if n, _ := NewPruner(db).Prune(context.Background(), false); n != 0 {
+		t.Errorf("forgot %d with Mac files not ignored, want 0", n)
+	}
+	config.GlobalConfig.Media.IgnoreMacFiles = true
+	if n, _ := NewPruner(db).Prune(context.Background(), false); n != 2 {
+		t.Errorf("forgot %d, want the 2 Mac files", n)
+	}
+	if records, _ := db.MediaRecords(); len(records) != 1 || filepath.Base(records[0].Path) != "Movie.mkv" || filepath.Dir(records[0].Path) != movies {
+		t.Errorf("left %+v, want just Movie.mkv", records)
+	}
+}
