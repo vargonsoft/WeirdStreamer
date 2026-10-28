@@ -64,6 +64,7 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 	if err := os.MkdirAll(trickplayVideoDir, 0755); err != nil {
 		return fmt.Errorf("failed to create trickplay directory: %w", err)
 	}
+	removeParts(trickplayVideoDir)
 
 	// Generate frames every 10 seconds.
 	// Stop 1 second before the end to avoid empty output issues with input seeking.
@@ -208,9 +209,10 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, e
 func (tg *TrickplayGenerator) generateFrame(ctx context.Context, videoPath, outputDir string, seekTime float64, frameIndex int, codec string) error {
 	framePath := filepath.Join(outputDir, fmt.Sprintf("frame-%d.jpg", frameIndex))
 
-	if _, err := os.Stat(framePath); err == nil {
+	if info, err := os.Stat(framePath); err == nil && info.Size() > 0 {
 		return nil
 	}
+	part := partPath(framePath)
 
 	timestamp := fmt.Sprintf("%.3f", seekTime)
 
@@ -219,20 +221,23 @@ func (tg *TrickplayGenerator) generateFrame(ctx context.Context, videoPath, outp
 	if codec == "h264" || codec == "hevc" {
 		args = append(args, "-bsf:v", codec+"_metadata=matrix_coefficients=1")
 	}
-	args = append(args, "-ss", timestamp, "-noaccurate_seek", "-i", videoPath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-strict", "unofficial", "-y", framePath)
+	args = append(args, "-ss", timestamp, "-noaccurate_seek", "-i", videoPath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-strict", "unofficial", "-y", part)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	if err := cmd.Run(); err == nil {
-		if info, statErr := os.Stat(framePath); statErr == nil && info.Size() > 0 {
-			return nil
+		if info, statErr := os.Stat(part); statErr == nil && info.Size() > 0 {
+			return finishPart(framePath)
 		}
 	}
 
 	// Simple fallback without BSF or format flags.
-	cmdFallback := exec.CommandContext(ctx, "ffmpeg", "-ss", timestamp, "-i", videoPath, "-vf", "scale=320:-1", "-frames:v", "1", "-strict", "unofficial", "-y", framePath)
+	cmdFallback := exec.CommandContext(ctx, "ffmpeg", "-ss", timestamp, "-i", videoPath, "-vf", "scale=320:-1", "-frames:v", "1", "-strict", "unofficial", "-y", part)
 	if errFallback := cmdFallback.Run(); errFallback == nil {
-		return nil
+		if info, statErr := os.Stat(part); statErr == nil && info.Size() > 0 {
+			return finishPart(framePath)
+		}
 	}
+	os.Remove(part)
 
 	return fmt.Errorf("failed to extract frame %d", frameIndex)
 }
@@ -267,6 +272,7 @@ func (tg *TrickplayGenerator) generateDisc(ctx context.Context, path string, wai
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
+	removeParts(dir)
 	for i, seg := range title.Segments {
 		if ctx.Err() != nil || (wait != nil && !wait()) {
 			return ctx.Err()
@@ -343,4 +349,15 @@ func TrickplayTitle(videoPath string) int {
 	}
 	n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
 	return n
+}
+
+// removeParts clears what a stopped run left in a video's frames folder: pictures made part way
+// (*.part.jpg) and a disc's half-decoded parts (part* folders).
+func removeParts(dir string) {
+	for _, pattern := range []string{"*.part.jpg", "part*"} {
+		matches, _ := filepath.Glob(filepath.Join(dir, pattern))
+		for _, m := range matches {
+			os.RemoveAll(m)
+		}
+	}
 }

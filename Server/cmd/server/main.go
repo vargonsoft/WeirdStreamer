@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"mime"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/weirdstreamer/server/internal/auth"
@@ -39,6 +43,10 @@ import (
 // @description Type "Bearer" followed by a space and JWT token.
 
 func main() {
+	// A stop signal (a restart) cancels ctx: the background jobs stop and the server shuts down.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Load configuration
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
@@ -70,7 +78,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
 	media.SetDiscStore(db)
 	// Users can only be given defined groups; ones from before (or a group removed from
 	// config.json by hand) see nothing until moved to one.
@@ -95,7 +102,7 @@ func main() {
 	// TMDB metadata for "movie" and "tv" libraries, looked up in the background
 	metadataService := metadata.NewService(db, mediaHandler.NotifyMetadataReady)
 	mediaHandler.SetMetadata(metadataService)
-	metadataService.Start(context.Background())
+	metadataService.Start(ctx)
 	if config.GlobalConfig.Metadata.TMDBAccessToken == "" {
 		for _, lib := range config.GlobalConfig.Media.Paths {
 			if lib.Type != "" {
@@ -103,15 +110,15 @@ func main() {
 			}
 		}
 	}
-	go metadataService.SyncAll(context.Background())
+	go metadataService.SyncAll(ctx)
 	// Intros and credits, for the players' Skip buttons, found in the background.
-	mediaHandler.StartSegmentAnalysis(context.Background())
+	mediaHandler.StartSegmentAnalysis(ctx)
 	// Records of files that are gone (removed, or in a library no longer configured), forgotten.
-	mediaHandler.StartCleanup(context.Background())
+	mediaHandler.StartCleanup(ctx)
 	// Trickplay frames (the pictures over the seek bars) for videos without them.
-	mediaHandler.StartTrickplay(context.Background())
+	mediaHandler.StartTrickplay(ctx)
 	// A token or library change saved through Settings starts a sync without a restart
-	configHandler.OnUpdate(func() { go metadataService.SyncAll(context.Background()) })
+	configHandler.OnUpdate(func() { go metadataService.SyncAll(ctx) })
 
 	// Setup router
 	r := mux.NewRouter()
@@ -227,22 +234,49 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)
 	log.Printf("Starting server on %s", addr)
 
-	// Check if HTTP/2 is enabled and certificates exist
-	if config.GlobalConfig.Streaming.EnableHTTP2 {
-		certFile := "cert.pem"
-		keyFile := "key.pem"
+	srv := &http.Server{Addr: addr, Handler: r}
+	go func() {
+		var err error
+		// Check if HTTP/2 is enabled and certificates exist
+		if config.GlobalConfig.Streaming.EnableHTTP2 {
+			certFile := "cert.pem"
+			keyFile := "key.pem"
 
-		if _, err := os.Stat(certFile); os.IsNotExist(err) {
-			log.Printf("Warning: %s not found, falling back to HTTP", certFile)
-			log.Fatal(http.ListenAndServe(addr, r))
-		} else if _, err := os.Stat(keyFile); os.IsNotExist(err) {
-			log.Printf("Warning: %s not found, falling back to HTTP", keyFile)
-			log.Fatal(http.ListenAndServe(addr, r))
+			if _, statErr := os.Stat(certFile); os.IsNotExist(statErr) {
+				log.Printf("Warning: %s not found, falling back to HTTP", certFile)
+				err = srv.ListenAndServe()
+			} else if _, statErr := os.Stat(keyFile); os.IsNotExist(statErr) {
+				log.Printf("Warning: %s not found, falling back to HTTP", keyFile)
+				err = srv.ListenAndServe()
+			} else {
+				log.Printf("Using HTTPS/HTTP2")
+				err = srv.ListenAndServeTLS(certFile, keyFile)
+			}
 		} else {
-			log.Printf("Using HTTPS/HTTP2")
-			log.Fatal(http.ListenAndServeTLS(addr, certFile, keyFile, r))
+			err = srv.ListenAndServe()
 		}
-	} else {
-		log.Fatal(http.ListenAndServe(addr, r))
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	}()
+
+	<-ctx.Done()
+	shutdown(srv, db)
+}
+
+// shutdown stops the server cleanly: requests get a few seconds to finish (streams, which never
+// do, are then cut), the ffmpeg runs it started are stopped, and the databases are closed. It
+// stays well inside the 10 seconds restart-live.sh waits.
+func shutdown(srv *http.Server, db *database.DB) {
+	log.Printf("Shutting down")
+	wait, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(wait); err != nil {
+		srv.Close()
 	}
+	media.StopChildren(2 * time.Second)
+	if err := db.Close(); err != nil {
+		log.Printf("Closing the databases: %v", err)
+	}
+	log.Printf("Stopped")
 }

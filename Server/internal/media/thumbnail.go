@@ -112,6 +112,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		}
 
 		log.Printf("[THUMBNAIL] Generating video thumbnail for %s -> %s", filePath, thumbnailPath)
+		part := partPath(thumbnailPath)
 
 		// Try different seek positions: 1 minute, 30 seconds, 1 second
 		seekTimes := []string{"00:01:00.000", "00:00:30.000", "00:00:01.000"}
@@ -121,9 +122,9 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			// Disc images: a frame a tenth of the way into the main title
 			seekTimes = nil
 			if args, err := DiscFrameArgs(filePath, 0.1); err == nil {
-				args = append(args, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", thumbnailPath)
+				args = append(args, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
 				if err := exec.Command("ffmpeg", args...).Run(); err == nil {
-					if info, statErr := os.Stat(thumbnailPath); statErr == nil && info.Size() > 1024 {
+					if info, statErr := os.Stat(part); statErr == nil && info.Size() > 1024 {
 						success = true
 					}
 				}
@@ -139,33 +140,37 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			if codec == "h264" || codec == "hevc" {
 				args = append(args, "-bsf:v", codec+"_metadata=matrix_coefficients=1")
 			}
-			args = append(args, "-ss", seekTime, "-noaccurate_seek", "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", thumbnailPath)
+			args = append(args, "-ss", seekTime, "-noaccurate_seek", "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
 
 			cmd := exec.Command("ffmpeg", args...)
 			if err := cmd.Run(); err == nil {
-				if info, statErr := os.Stat(thumbnailPath); statErr == nil && info.Size() > 1024 {
+				if info, statErr := os.Stat(part); statErr == nil && info.Size() > 1024 {
 					success = true
 					break
 				} else if statErr == nil {
-					os.Remove(thumbnailPath)
+					os.Remove(part)
 				}
 			}
 
 			// Fallback without BSF if needed
-			cmdFallback := exec.Command("ffmpeg", "-ss", seekTime, "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", thumbnailPath)
+			cmdFallback := exec.Command("ffmpeg", "-ss", seekTime, "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
 			if errFallback := cmdFallback.Run(); errFallback == nil {
-				if info, statErr := os.Stat(thumbnailPath); statErr == nil && info.Size() > 1024 {
+				if info, statErr := os.Stat(part); statErr == nil && info.Size() > 1024 {
 					success = true
 					break
 				} else if statErr == nil {
-					os.Remove(thumbnailPath)
+					os.Remove(part)
 				}
 			}
 		}
 
 		// If all attempts failed, return error
 		if !success {
+			os.Remove(part)
 			return "", fmt.Errorf("thumbnail generation failed for %s", filePath)
+		}
+		if err := finishPart(thumbnailPath); err != nil {
+			return "", err
 		}
 
 		log.Printf("[THUMBNAIL] Successfully generated video thumbnail: %s", thumbnailPath)
@@ -246,7 +251,8 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 			return "", fmt.Errorf("failed to create thumbnail directory: %w", err)
 		}
 
-		out, err := os.Create(thumbnailPath)
+		part := partPath(thumbnailPath)
+		out, err := os.Create(part)
 		if err != nil {
 			return "", fmt.Errorf("failed to create thumbnail file: %w", err)
 		}
@@ -265,10 +271,13 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 		out.Close() // Ensure file is flushed
 
 		// Verify the thumbnail was created with valid size
-		if info, err := os.Stat(thumbnailPath); err != nil {
+		if info, err := os.Stat(part); err != nil {
 			return "", fmt.Errorf("thumbnail not created")
 		} else if info.Size() < 1024 {
+			os.Remove(part)
 			return "", fmt.Errorf("thumbnail too small: %d bytes", info.Size())
+		} else if err := finishPart(thumbnailPath); err != nil {
+			return "", err
 		} else {
 			log.Printf("[THUMBNAIL] Successfully generated image thumbnail: %s (%d bytes)", thumbnailPath, info.Size())
 		}
