@@ -179,6 +179,9 @@ func busyReason(streams *StreamTracker) (bool, string) {
 		if disk > maxDisk {
 			return true, fmt.Sprintf("Disk busy (%.0f%%)", disk*100)
 		}
+		if sh := load.Shares(); len(sh) > 0 && sh[0].Ms > maxShareMs {
+			return true, fmt.Sprintf("%s's share busy (reads take %.0f ms)", sh[0].Library, sh[0].Ms)
+		}
 		return false, ""
 	}
 	if streaming(streams) {
@@ -187,22 +190,25 @@ func busyReason(streams *StreamTracker) (bool, string) {
 	return false, ""
 }
 
-// LoadStatus is the machine's load as background jobs judge it, for the Jobs page.
+// LoadStatus is the machine's load as background jobs judge it, for the Jobs page. Shares are
+// each network share's read time (ms), slowest first; jobs wait above MaxShareMs.
 type LoadStatus struct {
-	Available           bool    `json:"available"`
-	CPU                 float64 `json:"cpu"`
-	Disk                float64 `json:"disk"`
-	MaxCPU              float64 `json:"max_cpu"`
-	MaxDisk             float64 `json:"max_disk"`
-	Streaming           bool    `json:"streaming"`
-	PauseWhileStreaming bool    `json:"pause_while_streaming"`
+	Available           bool        `json:"available"`
+	CPU                 float64     `json:"cpu"`
+	Disk                float64     `json:"disk"`
+	MaxCPU              float64     `json:"max_cpu"`
+	MaxDisk             float64     `json:"max_disk"`
+	Shares              []ShareLoad `json:"shares"`
+	MaxShareMs          float64     `json:"max_share_ms"`
+	Streaming           bool        `json:"streaming"`
+	PauseWhileStreaming bool        `json:"pause_while_streaming"`
 }
 
 // CurrentLoad returns the load readings and whether anyone is streaming.
 func CurrentLoad(streams *StreamTracker) LoadStatus {
 	cpu, disk, ok := load.Readings()
 	return LoadStatus{Available: ok, CPU: cpu, Disk: disk, MaxCPU: maxCPU, MaxDisk: maxDisk,
-		Streaming: streaming(streams), PauseWhileStreaming: pauseWhileStreaming()}
+		Shares: load.Shares(), MaxShareMs: maxShareMs, Streaming: streaming(streams), PauseWhileStreaming: pauseWhileStreaming()}
 }
 
 // overloaded says whether a job already running should stop: well past what busy allows (its own
@@ -212,7 +218,8 @@ func overloaded(streams *StreamTracker) bool {
 		return true
 	}
 	if cpu, disk, ok := load.Readings(); ok {
-		return cpu > stopCPU || disk > 0.9
+		sh := load.Shares()
+		return cpu > stopCPU || disk > 0.9 || len(sh) > 0 && sh[0].Ms > stopShareMs
 	}
 	return streaming(streams)
 }
@@ -375,13 +382,23 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		if err != nil {
 			log.Printf("trickplay: listing videos: %v", err)
 		}
+		// Progress is of every video in the libraries, counting those already done (or given up on
+		// until a restart), so it carries on from where the last run got to.
 		var todo []string
+		total, already := 0, 0
 		for _, p := range paths {
-			if !failed[p] && j.InLibrary(p) && !HasTrickplay(p) {
+			if !j.InLibrary(p) {
+				continue
+			}
+			total++
+			if failed[p] || HasTrickplay(p) {
+				already++
+			} else {
 				todo = append(todo, p)
 			}
 		}
-		j.job.SetTotal(len(todo))
+		j.job.SetTotal(total)
+		j.job.Step(already)
 		wait := func() bool { return j.job.Wait(ctx, func() (bool, string) { return busyReason(j.streams) }) }
 		// A disc's decode stops part way when the machine gets much busier, or the job is paused.
 		stop := func() bool { return overloaded(j.streams) || j.job.IsPaused() }

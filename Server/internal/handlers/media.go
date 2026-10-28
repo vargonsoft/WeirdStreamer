@@ -57,10 +57,42 @@ func (h *MediaHandler) StartCleanup(ctx context.Context) {
 	go h.pruner.Run(ctx)
 }
 
+// shareProbes names the biggest video of each library whose files are on a network share (by where
+// that video really is, so symlinks count; a library inside another is that library's), for the
+// load monitor to time reads from.
+func (h *MediaHandler) shareProbes() []media.ShareProbe {
+	libs := config.GlobalConfig.Media.Paths
+	var out []media.ShareProbe
+	for _, lib := range libs {
+		root, err := filepath.Abs(lib.Path)
+		if err != nil {
+			continue
+		}
+		nested := false
+		for _, other := range libs {
+			if o, err := filepath.Abs(other.Path); err == nil && o != root && strings.HasPrefix(root, o+string(filepath.Separator)) {
+				nested = true
+			}
+		}
+		if nested {
+			continue
+		}
+		p, err := h.db.LargestVideo(root)
+		if err != nil || p == "" {
+			continue
+		}
+		if real, err := filepath.EvalSymlinks(p); err == nil && media.IsNetworkShare(filepath.Dir(real)) {
+			out = append(out, media.ShareProbe{Library: lib.Name, Path: real})
+		}
+	}
+	return out
+}
+
 // StartSegmentAnalysis finds videos' intros and credits in the background until ctx ends. It and
-// the other background jobs run while the machine has room to spare (CPU and disk use).
+// the other background jobs run while the machine has room to spare (CPU and disk use, and how
+// long reads from network shares take).
 func (h *MediaHandler) StartSegmentAnalysis(ctx context.Context) {
-	media.SetLoadMonitor(media.NewLoadMonitor(ctx))
+	media.SetLoadMonitor(media.NewLoadMonitor(ctx, h.shareProbes))
 	h.segments = media.NewSegmentAnalyzer(h.db, h.streams, func(path string) (string, bool) {
 		lib, found := libraryForPath(path)
 		return lib.Type, found

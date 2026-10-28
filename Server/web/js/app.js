@@ -4230,6 +4230,9 @@ function renderJobs() {
         if (load.available) {
             loadText.push(`CPU ${pct(load.cpu)} (jobs wait above ${pct(load.max_cpu)})`,
                 `Disk ${pct(load.disk)} (above ${pct(load.max_disk)})`);
+            if (load.shares?.length) {
+                loadText.push(`Shares ${load.shares.map(sh => `${sh.library} ${Math.round(sh.ms)} ms`).join(', ')} (above ${load.max_share_ms} ms)`);
+            }
         } else {
             loadText.push('No load readings on this machine: jobs wait while anyone is streaming');
         }

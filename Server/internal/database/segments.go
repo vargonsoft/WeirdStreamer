@@ -165,6 +165,18 @@ func (db *DB) VideoPaths() ([]string, error) {
 	return out, rows.Err()
 }
 
+// LargestVideo returns the biggest video under a folder ("" if none).
+func (db *DB) LargestVideo(dir string) (string, error) {
+	var p string
+	// Paths from dir+"/" up to dir+"0" (the byte after '/') are the ones under it.
+	err := db.mediaConn.QueryRow(`SELECT path FROM media_items WHERE type = 'video' AND path >= ? AND path < ?
+		ORDER BY size DESC LIMIT 1`, dir+"/", dir+"0").Scan(&p)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return p, err
+}
+
 // AutoSkip says whether a user has a show's intros and credits skipped by themselves.
 func (db *DB) AutoSkip(userID int64, showID int) bool {
 	var one int

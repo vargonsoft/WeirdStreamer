@@ -243,8 +243,16 @@ data class JobLoad(
     @SerializedName("disk") val disk: Double = 0.0,
     @SerializedName("max_cpu") val maxCpu: Double = 0.0,
     @SerializedName("max_disk") val maxDisk: Double = 0.0,
+    @SerializedName("shares") val shares: List<ShareLoad>? = null,
+    @SerializedName("max_share_ms") val maxShareMs: Double = 0.0,
     @SerializedName("streaming") val streaming: Boolean = false,
     @SerializedName("pause_while_streaming") val pauseWhileStreaming: Boolean = false
+)
+
+/** A network share's read time (ms), from the Jobs load. */
+data class ShareLoad(
+    @SerializedName("library") val library: String = "",
+    @SerializedName("ms") val ms: Double = 0.0
 )
 
 /** A stream playing on the server, from its admin Streams list. */

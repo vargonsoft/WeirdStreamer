@@ -812,7 +812,7 @@ fun JobsTab(server: ServerRepository) {
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Text("Jobs wait while the CPU or a disk is busy (or, with the setting under Streaming, while anyone " +
+                Text("Jobs wait while the CPU, a disk or a network share is busy (or, with the setting under Streaming, while anyone " +
                     "is streaming). Pause holds a job until you resume it, or the server restarts.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 d.load?.let { Text(loadText(it), style = MaterialTheme.typography.bodySmall,
@@ -828,6 +828,10 @@ private fun loadText(l: JobLoad): String {
     fun pct(f: Double) = "${(f * 100).roundToInt()}%"
     val parts = mutableListOf<String>()
     if (l.available) parts += listOf("CPU ${pct(l.cpu)} (jobs wait above ${pct(l.maxCpu)})", "Disk ${pct(l.disk)} (above ${pct(l.maxDisk)})")
+    val shares = l.shares.orEmpty()
+    if (l.available && shares.isNotEmpty()) {
+        parts += "Shares ${shares.joinToString(", ") { "${it.library} ${it.ms.roundToInt()} ms" }} (above ${l.maxShareMs.roundToInt()} ms)"
+    }
     else parts += "No load readings: jobs wait while anyone is streaming"
     if (l.streaming) parts += "Someone is streaming"
     if (l.pauseWhileStreaming) parts += "Jobs pause while anyone streams"
