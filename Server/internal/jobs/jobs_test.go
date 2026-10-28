@@ -1,7 +1,11 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
+	"log"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -68,5 +72,18 @@ func TestEndRecordsTheRun(t *testing.T) {
 	s := status("test-end")
 	if s.State != Idle || s.LastResult != "3 done" || s.LastEnd == nil || s.Next == nil || s.Started != nil {
 		t.Fatalf("after a run: %+v", s)
+	}
+}
+
+func TestRunsAreLogged(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	j := Register("test-log", "Log test", "")
+	j.Begin(0)
+	j.End("2 things done")
+	out := buf.String()
+	if !strings.Contains(out, "jobs: Log test started") || !strings.Contains(out, "jobs: Log test finished in 0s: 2 things done") {
+		t.Errorf("log: %q", out)
 	}
 }

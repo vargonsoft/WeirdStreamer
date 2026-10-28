@@ -5,6 +5,7 @@ package jobs
 
 import (
 	"context"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -97,6 +98,7 @@ func (j *Job) Schedule(s string) {
 func (j *Job) Begin(total int) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	log.Printf("jobs: %s started", j.Name)
 	j.started, j.done, j.total, j.next = time.Now(), 0, total, time.Time{}
 	if !j.paused {
 		j.state, j.note = Running, ""
@@ -121,6 +123,11 @@ func (j *Job) Step(n int) {
 func (j *Job) End(result string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	took := ""
+	if !j.started.IsZero() {
+		took = " in " + time.Since(j.started).Round(time.Second).String()
+	}
+	log.Printf("jobs: %s finished%s: %s", j.Name, took, result)
 	j.lastStart, j.lastEnd, j.lastResult = j.started, time.Now(), result
 	j.started, j.done, j.total = time.Time{}, 0, 0
 	if !j.paused {
