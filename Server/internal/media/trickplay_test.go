@@ -243,7 +243,7 @@ func TestNoLengthInHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fillLength: %v", err)
 	}
-	if !strings.Contains(logged.String(), "trickplay: live.asf: length filled in (40s)") {
+	if !strings.Contains(logged.String(), "trickplay: "+src+": length filled in (40s)") {
 		t.Errorf("log: %q", logged.String())
 	}
 	if item, err := db.GetMediaItem(src); err != nil || item.Duration < 39.5 || item.Width != 160 {

@@ -312,10 +312,10 @@ func (tg *TrickplayGenerator) saveLength(videoPath string, duration float64, wid
 			item.Width, item.Height = width, height
 		}
 		if err := tg.db.SaveMediaItem(item); err != nil {
-			log.Printf("trickplay: %s: saving its length: %v", filepath.Base(videoPath), err)
+			log.Printf("trickplay: %s: saving its length: %v", videoPath, err)
 			return
 		}
-		log.Printf("trickplay: %s: length filled in (%s)", filepath.Base(videoPath),
+		log.Printf("trickplay: %s: length filled in (%s)", videoPath,
 			time.Duration(duration*float64(time.Second)).Round(time.Second))
 	}
 }

@@ -445,7 +445,7 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 						} else if ctx.Err() == nil { // not a read cut off by shutting down
 							failed[p] = true
 							skipped++
-							log.Printf("trickplay: %s: no length: %v", filepath.Base(p), err)
+							log.Printf("trickplay: %s: no length: %v", p, err)
 						}
 						mu.Unlock()
 						continue
@@ -464,7 +464,7 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 					} else if ctx.Err() == nil && !errors.Is(err, errInterrupted) {
 						failed[p] = true
 						skipped++
-						log.Printf("trickplay: %s: %v", filepath.Base(p), err)
+						log.Printf("trickplay: %s: %v", p, err)
 					}
 					mu.Unlock()
 				}
