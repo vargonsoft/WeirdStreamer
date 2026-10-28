@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -235,8 +236,15 @@ func TestNoLengthInHeader(t *testing.T) {
 	if err := db.SaveMediaItem(&models.MediaItem{Path: src, Name: "live.asf", Type: "video", MimeType: "video/x-ms-asf"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := NewTrickplayGenerator(db).fillLength(src); err != nil {
+	var logged bytes.Buffer
+	log.SetOutput(&logged)
+	err = NewTrickplayGenerator(db).fillLength(src)
+	log.SetOutput(os.Stderr)
+	if err != nil {
 		t.Fatalf("fillLength: %v", err)
+	}
+	if !strings.Contains(logged.String(), "trickplay: live.asf: length filled in (40s)") {
+		t.Errorf("log: %q", logged.String())
 	}
 	if item, err := db.GetMediaItem(src); err != nil || item.Duration < 39.5 || item.Width != 160 {
 		t.Errorf("after fillLength: %+v (%v), want 40s at 160 wide", item, err)
