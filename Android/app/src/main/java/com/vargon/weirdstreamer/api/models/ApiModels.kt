@@ -232,6 +232,7 @@ data class BackgroundJob(
     @SerializedName("about") val about: String = "",
     @SerializedName("state") val state: String = "idle", // idle, running, waiting, paused
     @SerializedName("note") val note: String? = null, // why it's waiting
+    @SerializedName("detail") val detail: String? = null, // how it's running ("2 of 3 runners")
     @SerializedName("done") val done: Int = 0,
     @SerializedName("total") val total: Int = 0,
     @SerializedName("started") val started: String? = null,

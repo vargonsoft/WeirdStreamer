@@ -335,8 +335,103 @@ func span(s *Segment, source string) *database.Span {
 	return &database.Span{Start: s.Start, End: s.End, Source: source}
 }
 
-// trickplayWorkers is how many videos the trickplay job makes frames for at once.
+// trickplayWorkers is how many videos the trickplay job makes frames for at once, at most.
 const trickplayWorkers = 3
+
+// runners scales how many trickplay workers work. The job's own ffmpegs are usually what makes
+// the CPU busy, so when it passes the limit one runner stops (after the frame it's on) instead of
+// all of them pausing; only with one runner left does a busy CPU pause the job. A drop is given
+// time to show in the (averaged) reading before another, and a runner is added back once the CPU
+// has stayed well under the limit for a while.
+type runners struct {
+	mu      sync.Mutex
+	active  int
+	changed time.Time
+	moved   chan struct{} // closed and remade when active changes
+	// Every video has been handed out: the runners holding one go on with it (else one parked
+	// mid-video would wait for runners that have all finished), and wait as jobs usually do.
+	draining bool
+}
+
+const (
+	runnerSettle = 20 * time.Second // after a drop, before another
+	runnerRaise  = time.Minute      // under raiseCPU this long since the last change, add one
+	raiseCPU     = 0.75 * maxCPU
+)
+
+func newRunners() *runners {
+	return &runners{active: trickplayWorkers, changed: time.Now(), moved: make(chan struct{})}
+}
+
+func (r *runners) set(n int) {
+	r.active, r.changed = n, time.Now()
+	close(r.moved)
+	r.moved = make(chan struct{})
+}
+
+// drain lets every runner finish the video it holds (called once all have been handed out).
+func (r *runners) drain() {
+	r.mu.Lock()
+	r.draining = true
+	r.set(trickplayWorkers)
+	r.mu.Unlock()
+}
+
+func (r *runners) detail() string {
+	return fmt.Sprintf("%d of %d runners", r.active, trickplayWorkers)
+}
+
+// wait is runner w's wait before each step: it parks while w is beyond the active count, scales
+// the count by the CPU, and otherwise waits as jobs do (paused, disk busy, streaming).
+func (r *runners) wait(ctx context.Context, j *jobs.Job, streams *StreamTracker, w int) bool {
+	for {
+		r.mu.Lock()
+		active, moved, draining := r.active, r.moved, r.draining
+		r.mu.Unlock()
+		if draining {
+			return j.Wait(ctx, func() (bool, string) { return busyReason(streams) })
+		}
+		if w >= active {
+			select {
+			case <-ctx.Done():
+				return false
+			case <-moved:
+			}
+			continue
+		}
+		ok := j.Wait(ctx, func() (bool, string) {
+			busy, why := busyReason(streams)
+			cpu, _, readings := load.Readings()
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if busy && readings && strings.HasPrefix(why, "CPU") && r.active > 1 {
+				// Too busy: one runner fewer, rather than a pause. Until the drop shows in the
+				// reading, the rest carry on.
+				if time.Since(r.changed) >= runnerSettle {
+					r.set(r.active - 1)
+					log.Printf("trickplay: %s, down to %s", why, r.detail())
+					j.SetDetail(r.detail() + " (CPU busy)")
+				}
+				return false, ""
+			}
+			if !busy && readings && cpu < raiseCPU && r.active < trickplayWorkers && time.Since(r.changed) >= runnerRaise {
+				r.set(r.active + 1)
+				log.Printf("trickplay: CPU at %.0f%%, up to %s", cpu*100, r.detail())
+				j.SetDetail(r.detail())
+			}
+			return busy, why
+		})
+		if !ok {
+			return false
+		}
+		r.mu.Lock()
+		still := w < r.active
+		r.mu.Unlock()
+		if still {
+			return true
+		}
+	}
+}
 
 // TrickplayJob makes trickplay frames (the pictures over the players' seek bars) in the
 // background for every video in a library that doesn't have them all yet, pausing while anyone
@@ -417,7 +512,8 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		todo = append(lengthOnly, todo...)
 		j.job.SetTotal(total)
 		j.job.Step(already)
-		wait := func() bool { return j.job.Wait(ctx, func() (bool, string) { return busyReason(j.streams) }) }
+		run := newRunners()
+		j.job.SetDetail(run.detail())
 		// A disc's decode stops part way when the machine gets much busier, or the job is paused.
 		stop := func() bool { return overloaded(j.streams) || j.job.IsPaused() }
 		// trickplayWorkers videos at once (one ffmpeg keeps only a few cores busy); discs one at a
@@ -428,6 +524,7 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		var wg sync.WaitGroup
 		for w := 0; w < trickplayWorkers; w++ {
 			wg.Add(1)
+			wait := func() bool { return run.wait(ctx, j.job, j.streams, w) }
 			go func() {
 				defer wg.Done()
 				for p := range next {
@@ -477,6 +574,7 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 			next <- p
 		}
 		close(next)
+		run.drain()
 		wg.Wait()
 		if ctx.Err() != nil {
 			return

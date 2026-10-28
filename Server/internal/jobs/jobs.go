@@ -29,6 +29,7 @@ type Job struct {
 	mu         sync.Mutex
 	state      string
 	note       string
+	detail     string // how it's running, shown while it runs ("2 of 3 runners")
 	done       int
 	total      int
 	started    time.Time
@@ -129,10 +130,17 @@ func (j *Job) End(result string) {
 	}
 	log.Printf("jobs: %s finished%s: %s", j.Name, took, result)
 	j.lastStart, j.lastEnd, j.lastResult = j.started, time.Now(), result
-	j.started, j.done, j.total = time.Time{}, 0, 0
+	j.started, j.done, j.total, j.detail = time.Time{}, 0, 0, ""
 	if !j.paused {
 		j.state, j.note = Idle, ""
 	}
+}
+
+// SetDetail says how the run is going, for the Jobs page ("2 of 3 runners"); cleared at the end.
+func (j *Job) SetDetail(detail string) {
+	j.mu.Lock()
+	j.detail = detail
+	j.mu.Unlock()
 }
 
 // NextIn records when the job runs next by its timer.
@@ -227,6 +235,7 @@ type Status struct {
 	About      string     `json:"about"`
 	State      string     `json:"state"`
 	Note       string     `json:"note,omitempty"`
+	Detail     string     `json:"detail,omitempty"`
 	Done       int        `json:"done"`
 	Total      int        `json:"total"`
 	Started    *time.Time `json:"started,omitempty"`
@@ -256,7 +265,7 @@ func All() []Status {
 	for _, j := range jobs {
 		j.mu.Lock()
 		out = append(out, Status{
-			ID: j.ID, Name: j.Name, About: j.About, State: j.state, Note: j.note,
+			ID: j.ID, Name: j.Name, About: j.About, State: j.state, Note: j.note, Detail: j.detail,
 			Done: j.done, Total: j.total, Started: timePtr(j.started),
 			LastStart: timePtr(j.lastStart), LastEnd: timePtr(j.lastEnd), LastResult: j.lastResult,
 			Next: timePtr(j.next), Schedule: j.schedule, Paused: j.paused, CanRun: j.runNow != nil,

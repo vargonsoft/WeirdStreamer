@@ -915,6 +915,7 @@ private fun JobCard(j: BackgroundJob, now: Long, control: (String, String) -> Un
                 }
                 val count = if (j.total > 0) String.format(Locale.US, "%,d of %,d · ", j.done, j.total) else ""
                 Text("${count}running for ${jobDuration(now - started)}", style = MaterialTheme.typography.bodySmall)
+                j.detail?.takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
             if (j.state == "waiting" && !j.note.isNullOrEmpty()) {
                 Text("Waiting: ${j.note}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)

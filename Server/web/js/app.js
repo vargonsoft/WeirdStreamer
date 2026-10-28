@@ -4288,6 +4288,7 @@ function renderJobs() {
                 progress.append(bar);
             }
             progress.append(el('div', 'job-line', '')); // filled by updateJobTimes
+            if (job.detail) progress.append(el('div', 'job-line job-detail', job.detail));
             card.append(progress);
         }
         if (job.state === 'waiting' && job.note) card.append(el('div', 'job-note', `Waiting: ${job.note}`));
