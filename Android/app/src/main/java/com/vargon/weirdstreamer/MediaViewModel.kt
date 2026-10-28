@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer
 
+import com.vargon.weirdstreamer.repository.normalizedServerUrl
 import android.app.Application
 import android.content.Context
 import android.util.Base64
@@ -1153,7 +1154,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     // Library view thumbnails are generated when a title page is first opened.
                     openTitle?.let { title -> openTitle = title.withThumbnail(update.path, update.thumbnailURL) }
                     val target = fileList.firstOrNull { it.originalPath == update.path } ?: return@collect
-                    val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) update.thumbnailURL else "$serverUrl${update.thumbnailURL}"
+                    val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) update.thumbnailURL else "${normalizedServerUrl(serverUrl)}${update.thumbnailURL}"
                     val thumbnailUrl = "$fullThumbnailUrl?t=${System.currentTimeMillis()}"
                     queueItemUpdate(target.path) { it.copy(thumbnailUrl = thumbnailUrl) }
                 }

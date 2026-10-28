@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.repository
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import android.util.Base64
 import okhttp3.Request
 import com.vargon.weirdstreamer.CredentialManager
@@ -27,6 +28,8 @@ class ServerRepository(
 ) : MediaRepository {
     
     private val apiService: ApiService = ApiClient.create(serverUrl, credentialManager)
+    /** The address for building media URLs (thumbnails, streams, trickplay frames). */
+    private val requestBase = normalizedServerUrl(serverUrl)
 
     private var shareMap = mutableMapOf<String, String>()
     // Library ID -> "movie" or "tv", learned from the root listing and browse responses
@@ -91,7 +94,7 @@ class ServerRepository(
         }.getOrDefault(null to false)
     }
 
-    fun absoluteUrl(url: String?): String? = url?.let { if (it.startsWith("http")) it else "$serverUrl$it" }
+    fun absoluteUrl(url: String?): String? = url?.let { if (it.startsWith("http")) it else "$requestBase$it" }
 
     /** A Library-view file as a playable [FileItem] (stream URL path, like browse items). */
     fun fileItemFor(file: LibraryFile): FileItem = FileItem(
@@ -224,7 +227,7 @@ class ServerRepository(
                                 size = mediaItem.size,
                                 mimeType = mediaItem.mimeType,
                                 thumbnailUrl = mediaItem.thumbnailUrl?.let { 
-                                    val baseUrl = if (it.startsWith("http")) it else "$serverUrl$it"
+                                    val baseUrl = if (it.startsWith("http")) it else "$requestBase$it"
                                     if (cacheVersion > 0) "$baseUrl?v=$cacheVersion" else baseUrl
                                 },
                                 duration = mediaItem.duration,
@@ -301,7 +304,7 @@ class ServerRepository(
     
     override fun getStreamUrl(path: String): String {
         val encodedPath = Base64.encodeToString(path.toByteArray(), Base64.NO_WRAP)
-        return "$serverUrl/api/media/stream?path=$encodedPath&auto-transcode=0"
+        return "$requestBase/api/media/stream?path=$encodedPath&auto-transcode=0"
     }
     
     override fun getThumbnailUrl(path: String): String? = null
@@ -354,7 +357,7 @@ class ServerRepository(
                 // Prepend server URL to frame URLs if they are relative
                 val absoluteFrames = info.frames.map { frame ->
                     if (frame.url.startsWith("http")) frame
-                    else frame.copy(url = "$serverUrl${if (frame.url.startsWith("/")) "" else "/"}${frame.url}")
+                    else frame.copy(url = "$requestBase${if (frame.url.startsWith("/")) "" else "/"}${frame.url}")
                 }
                 Result.success(TrickplayInfo(absoluteFrames))
             } else {
@@ -376,6 +379,15 @@ class ServerRepository(
     
     fun getToken(): String? = credentialManager.getServerToken(serverUrl)
 }
+
+/**
+ * A server address as requests are made to it: lower-case scheme and host, no default port and no
+ * trailing slash ("Https://Host:443/" becomes "https://host"). OkHttp rewrites request URLs this
+ * way, and Coil only fetches lower-case http(s), so URLs built from the address as typed (say, for
+ * a reverse proxy on 443) can fail to load or to find their sign-in.
+ */
+fun normalizedServerUrl(address: String): String =
+    address.trim().toHttpUrlOrNull()?.toString()?.trimEnd('/') ?: address
 
 class ServerSourceProvider(
     private val credentialManager: CredentialManager

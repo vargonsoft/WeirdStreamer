@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -268,6 +269,20 @@ class CredentialManager(context: Context) {
 
     fun getApiServers(): Set<String> {
         return sharedPreferences.getStringSet("api_servers", emptySet()) ?: emptySet()
+    }
+
+    /**
+     * The token of the saved server a request goes to, matched as URLs rather than text: OkHttp
+     * drops a default port and lowercases the host, so a server saved as "https://host:443" (a
+     * reverse proxy) is requested as "https://host/…" and its URLs no longer start with it.
+     */
+    fun serverTokenForUrl(url: okhttp3.HttpUrl): String? {
+        val server = getApiServers().firstOrNull { saved ->
+            val s = saved.toHttpUrlOrNull() ?: return@firstOrNull false
+            s.scheme == url.scheme && s.host == url.host && s.port == url.port &&
+                url.encodedPath.startsWith(s.encodedPath.trimEnd('/'))
+        } ?: return null
+        return getServerToken(server)
     }
 
     fun setAppTheme(theme: String) {

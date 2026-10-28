@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.downloads
 
+import com.vargon.weirdstreamer.repository.normalizedServerUrl
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -96,7 +97,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val url: String
         if (item.isOriginal) {
             options?.let { width = it.width; height = it.height }
-            url = "${item.serverAddress}/api/media/stream?path=${URLEncoder.encode(encodedPath, "UTF-8")}&auto-transcode=0"
+            url = "${normalizedServerUrl(item.serverAddress)}/api/media/stream?path=${URLEncoder.encode(encodedPath, "UTF-8")}&auto-transcode=0"
         } else {
             // The server encodes the copy first; its progress is shown as "Preparing".
             var jobId = item.jobId
@@ -126,7 +127,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 setForeground(foregroundInfo(item, job.progress.toFloat()))
                 delay(2000)
             }
-            url = "${item.serverAddress}/api/downloads/$jobId/file"
+            url = "${normalizedServerUrl(item.serverAddress)}/api/downloads/$jobId/file"
         }
 
         // Fetch the file, resuming a partial one.

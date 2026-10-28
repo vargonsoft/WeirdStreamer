@@ -78,6 +78,7 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
                 if (serverPath != null) {
                     val serverUrl = url.substringBefore(serverPath)
                     val token = credentialManager.getServerToken(serverUrl)
+                        ?: credentialManager.serverTokenForUrl(request.url)
                     
                     if (token != null) {
                         val authenticatedRequest = request.newBuilder()
