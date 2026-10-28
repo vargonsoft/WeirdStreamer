@@ -51,7 +51,7 @@ func (p *Pruner) Run(ctx context.Context) {
 	}
 	for {
 		p.job.Begin(len(config.GlobalConfig.Media.Paths))
-		if n, err := p.Prune(ctx); err != nil {
+		if n, err := p.Prune(ctx, false); err != nil {
 			log.Printf("cleanup: %v", err)
 			p.job.End("Failed: " + err.Error())
 		} else {
@@ -70,8 +70,10 @@ func (p *Pruner) Run(ctx context.Context) {
 	}
 }
 
-// Prune forgets the files that are gone, returning how many.
-func (p *Pruner) Prune(ctx context.Context) (int, error) {
+// Prune forgets the files that are gone, returning how many. force forgets them even from a
+// library that would lose more than half its files (one reorganised or moved to another kind of
+// share, so most of its old paths are gone); a library that can't be read is still left alone.
+func (p *Pruner) Prune(ctx context.Context, force bool) (int, error) {
 	records, err := p.db.MediaRecords()
 	if err != nil {
 		return 0, err
@@ -107,6 +109,11 @@ func (p *Pruner) Prune(ctx context.Context) (int, error) {
 			}
 		}
 		if len(missing) > 20 && len(missing)*2 > len(byLibrary[i]) {
+			if force {
+				log.Printf("cleanup: %s loses %d of %d files (forced)", lib.Name, len(missing), len(byLibrary[i]))
+				gone = append(gone, missing...)
+				continue
+			}
 			log.Printf("cleanup: %s would lose %d of %d files; leaving them (part of it not mounted?)",
 				lib.Name, len(missing), len(byLibrary[i]))
 			continue

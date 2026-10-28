@@ -43,7 +43,7 @@ func TestPruneForgetsWhatIsGone(t *testing.T) {
 	}
 	db.SaveAnalysis(filepath.Join(movies, "Deleted.mkv"), &database.Span{Start: 1, End: 2, Source: "chapters"}, nil, 1)
 
-	n, err := NewPruner(db).Prune(context.Background())
+	n, err := NewPruner(db).Prune(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,5 +69,13 @@ func TestPruneForgetsWhatIsGone(t *testing.T) {
 	}
 	if s, _ := db.GetSegments(filepath.Join(movies, "Deleted.mkv")); s.Intro != nil || s.Analyzed != 0 {
 		t.Errorf("its segments are still there: %+v", s)
+	}
+
+	// Forced: the 25 missing episodes go too, but the library that can't be read is still kept.
+	if n, err := NewPruner(db).Prune(context.Background(), true); err != nil || n != 25 {
+		t.Errorf("forced: forgot %d (%v), want 25", n, err)
+	}
+	if records, _ := db.MediaRecords(); len(records) != 7 {
+		t.Errorf("forced: %d left, want 7 (Kept, Offline, 5 episodes)", len(records))
 	}
 }

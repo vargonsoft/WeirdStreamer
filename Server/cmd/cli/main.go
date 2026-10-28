@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -61,6 +62,8 @@ func main() {
 		handleConfigCommand(os.Args[2:])
 	case "trickplay":
 		handleTrickplayCommand(db, os.Args[2:])
+	case "cleanup":
+		handleCleanupCommand(db, os.Args[2:])
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printUsage()
@@ -83,6 +86,8 @@ func printUsage() {
 	fmt.Println("      --library <name>                                   - Generate for a specific media library")
 	fmt.Println("      (no options)                                       - Generate for all videos in database")
 	fmt.Println("  cli trickplay clean                                    - Remove trickplay images for non-existent paths")
+	fmt.Println("  cli cleanup [--force]                                  - Forget files that are gone (thumbnails, frames too)")
+	fmt.Println("      --force                                            - Even from a library losing more than half its files")
 	fmt.Println("  cli config add-path <path>                             - Add media directory")
 	fmt.Println("  cli config list-paths                                  - List media directories")
 }
@@ -314,6 +319,23 @@ func handleTrickplayCommand(db *database.DB, args []string) {
 		fmt.Println("Invalid arguments for trickplay command.")
 		printUsage()
 	}
+}
+
+func handleCleanupCommand(db *database.DB, args []string) {
+	force := false
+	for _, a := range args {
+		if a != "--force" {
+			fmt.Printf("Unknown cleanup option: %s\n", a)
+			printUsage()
+			os.Exit(1)
+		}
+		force = true
+	}
+	n, err := media.NewPruner(db).Prune(context.Background(), force)
+	if err != nil {
+		log.Fatalf("Cleanup failed: %v", err)
+	}
+	fmt.Printf("Forgot %d file(s) that are gone.\n", n)
 }
 
 func handleConfigCommand(args []string) {
