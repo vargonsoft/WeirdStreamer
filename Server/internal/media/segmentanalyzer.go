@@ -442,7 +442,7 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 						mu.Lock()
 						if err == nil {
 							lengths++
-						} else {
+						} else if ctx.Err() == nil { // not a read cut off by shutting down
 							failed[p] = true
 							skipped++
 							log.Printf("trickplay: %s: no length: %v", filepath.Base(p), err)
