@@ -292,5 +292,6 @@ func (h *MediaHandler) GetCodecs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	addExternalSubtitles(codecs, externalSubtitles(path))
+	h.addSubtitleOffsets(path, codecs)
 	respondJSON(w, http.StatusOK, codecs)
 }

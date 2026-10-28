@@ -2454,3 +2454,16 @@ body.has-az #main-screen .content { padding-right: 28px; }
     padding: 0 6px;
     cursor: pointer;
 }
+
+/* Subtitle timing: Already said / the correction / Not said yet / the step */
+.player-sync {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sync-value {
+    min-width: 7em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}

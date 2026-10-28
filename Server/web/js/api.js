@@ -261,6 +261,14 @@ class MediaAPI {
     }
 
     // Marks files watched or unwatched for the signed-in user.
+    // Saves a subtitle track's timing correction (ms; positive shows its lines later), for everyone.
+    async setSubtitleOffset(path, key, offsetMs) {
+        return this.request('/api/media/subtitle-offset', {
+            method: 'PUT',
+            body: JSON.stringify({ path: this.encodePath(path), key, offset_ms: offsetMs }),
+        });
+    }
+
     // A video's intro and credits ({ intro, credits, auto_skip, show_id, next }).
     async getSegments(path) {
         return this.request(`/api/media/segments?path=${encodeURIComponent(this.encodePath(path))}`);

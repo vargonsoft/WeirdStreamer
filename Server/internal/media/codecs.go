@@ -49,6 +49,11 @@ type SubtitleCodec struct {
 	// "opensubtitles" (downloaded). Always text.
 	External        string `json:"external,omitempty"`
 	HearingImpaired bool   `json:"hearing_impaired,omitempty"`
+	// Key names the track whatever its place in the list: "stream:N" for the video's own, "file:…"
+	// for a subtitle file. OffsetMs is its timing correction, for every player: positive shows the
+	// lines later, negative earlier.
+	Key      string `json:"key,omitempty"`
+	OffsetMs int    `json:"offset_ms,omitempty"`
 }
 
 // IsTextSubtitle reports whether ffmpeg can turn a subtitle codec into WebVTT.

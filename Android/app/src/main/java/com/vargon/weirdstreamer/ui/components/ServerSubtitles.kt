@@ -34,6 +34,7 @@ import com.vargon.weirdstreamer.api.models.SubtitleSearch
 import com.vargon.weirdstreamer.api.models.SubtitleTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -64,6 +65,28 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
     /** The picture track to burn into the stream (subtitle=N), or -1. */
     val burnIn: Int get() = selectedTrack?.takeIf { !it.text }?.index ?: -1
 
+    /** The selected track's timing correction (ms; positive shows its lines later). */
+    val offsetMs: Int get() = selectedTrack?.offsetMs ?: 0
+
+    private val saver = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+    private var saving: kotlinx.coroutines.Job? = null
+
+    /**
+     * Moves the selected track's lines by [deltaMs] (negative: earlier), at once, and saves the
+     * correction for every player a moment after the last change.
+     */
+    fun shift(deltaMs: Int) {
+        val track = selectedTrack?.takeIf { it.text } ?: return
+        val moved = track.copy(offsetMs = track.offsetMs + deltaMs)
+        tracks = tracks.toMutableList().also { it[selected] = moved }
+        val key = moved.key ?: return
+        saving?.cancel()
+        saving = saver.launch {
+            delay(600)
+            runCatching { api.setSubtitleOffset(com.vargon.weirdstreamer.api.models.SubtitleOffsetRequest(encodedPath, key, moved.offsetMs)) }
+        }
+    }
+
     // The cues loaded for the selected track: from fromMs to untilMs.
     private var cues = emptyList<SubtitleCue>()
     private var fromMs = 0L
@@ -85,7 +108,8 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
     }
 
     /** Loads the cues around [positionMs], and the next window before it's needed. */
-    suspend fun keepAhead(positionMs: Long) {
+    suspend fun keepAhead(playerMs: Long) {
+        val positionMs = playerMs - offsetMs // in the subtitles' own time
         val track = selectedTrack?.takeIf { it.text } ?: return
         val outside = positionMs < fromMs || positionMs > untilMs
         if (!outside && positionMs < untilMs - AHEAD_MS) return
@@ -102,15 +126,18 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
             cues = window
             fromMs = start
         } else {
-            val known = cues.mapTo(HashSet()) { it.startMs }
-            cues = cues + window.filter { it.startMs !in known }
+            // The windows overlap a little: skip lines already had (by time and text; two different
+            // lines can start together, two speakers, say).
+            val known = cues.mapTo(HashSet()) { it.startMs to it.text.text }
+            cues = cues + window.filter { (it.startMs to it.text.text) !in known }
         }
         untilMs = start + WINDOW_MS
     }
 
     /** The line to show at [positionMs], if any. */
-    fun cueAt(positionMs: Long): AnnotatedString? {
+    fun cueAt(playerMs: Long): AnnotatedString? {
         if (selectedTrack?.text != true) return null
+        val positionMs = playerMs - offsetMs // in the subtitles' own time
         val at = cues.filter { positionMs >= it.startMs && positionMs < it.endMs }
         return when (at.size) {
             0 -> null
@@ -273,3 +300,15 @@ fun SubtitleOverlay(subtitles: ServerSubtitles?, position: () -> Long, fontSize:
         StyledSubtitleText(shown, style, fontSize)
     }
 }
+
+/** How far the subtitles are moved, in words: "In sync", "250 ms earlier", "1.5 s later". */
+fun subtitleOffsetText(ms: Int): String {
+    if (ms == 0) return "In sync"
+    val a = kotlin.math.abs(ms)
+    val amount = if (a >= 1000) "%.2f".format(Locale.US, a / 1000.0).trimEnd('0').trimEnd('.') + " s" else "$a ms"
+    return amount + if (ms < 0) " earlier" else " later"
+}
+
+/** The steps the timing moves by. */
+val SUBTITLE_STEPS = listOf(50, 250, 500, 1000)
+fun subtitleStepText(ms: Int) = if (ms >= 1000) "${ms / 1000} s" else if (ms == 500) "0.5 s" else "$ms ms"

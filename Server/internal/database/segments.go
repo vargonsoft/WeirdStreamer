@@ -30,8 +30,20 @@ CREATE TABLE IF NOT EXISTS auto_skip (
 	PRIMARY KEY (user_id, show_id)
 );`
 
+// Subtitle tracks' timing corrections, shared by every player: by video and track key.
+const subtitleOffsetSchema = `
+CREATE TABLE IF NOT EXISTS subtitle_offsets (
+	path TEXT NOT NULL,
+	track TEXT NOT NULL,
+	offset_ms INTEGER NOT NULL,
+	PRIMARY KEY (path, track)
+);`
+
 func (db *DB) initSegmentSchema() error {
 	if _, err := db.mediaConn.Exec(segmentSchema); err != nil {
+		return err
+	}
+	if _, err := db.mediaConn.Exec(subtitleOffsetSchema); err != nil {
 		return err
 	}
 	_, err := db.userConn.Exec(autoSkipSchema)
@@ -203,11 +215,42 @@ func (db *DB) ForgetMedia(paths []string) error {
 	}
 	defer tx.Rollback()
 	for _, p := range paths {
-		for _, q := range []string{`DELETE FROM media_items WHERE path = ?`, `DELETE FROM segments WHERE path = ?`, `DELETE FROM dvd_discs WHERE path = ?`} {
+		for _, q := range []string{`DELETE FROM media_items WHERE path = ?`, `DELETE FROM segments WHERE path = ?`,
+			`DELETE FROM dvd_discs WHERE path = ?`, `DELETE FROM subtitle_offsets WHERE path = ?`} {
 			if _, err := tx.Exec(q, p); err != nil {
 				return err
 			}
 		}
 	}
 	return tx.Commit()
+}
+
+// SubtitleOffsets returns a video's subtitle timing corrections (ms), by track key.
+func (db *DB) SubtitleOffsets(path string) (map[string]int, error) {
+	rows, err := db.mediaConn.Query(`SELECT track, offset_ms FROM subtitle_offsets WHERE path = ?`, path)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var k string
+		var ms int
+		if err := rows.Scan(&k, &ms); err != nil {
+			return nil, err
+		}
+		out[k] = ms
+	}
+	return out, rows.Err()
+}
+
+// SetSubtitleOffset sets a subtitle track's timing correction (0 forgets it).
+func (db *DB) SetSubtitleOffset(path, track string, ms int) error {
+	if ms == 0 {
+		_, err := db.mediaConn.Exec(`DELETE FROM subtitle_offsets WHERE path = ? AND track = ?`, path, track)
+		return err
+	}
+	_, err := db.mediaConn.Exec(`INSERT INTO subtitle_offsets (path, track, offset_ms) VALUES (?, ?, ?)
+		ON CONFLICT(path, track) DO UPDATE SET offset_ms = excluded.offset_ms`, path, track, ms)
+	return err
 }

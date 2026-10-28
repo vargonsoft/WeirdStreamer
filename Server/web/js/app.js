@@ -1048,6 +1048,7 @@ function renderFileControls() {
     document.getElementById('player-subtitle-label').hidden = false;
     fillSelect(document.getElementById('player-subtitle'), [[-1, 'Off'], ...codecs.subtitles.map(s =>
         [s.index, trackDescription(s) + (s.text ? '' : ' (burned in)')]), ['search', 'Search online…']], p.subtitle);
+    updateSyncControls();
     document.getElementById('player-status').textContent = streamNote(p);
 }
 
@@ -1300,7 +1301,7 @@ async function loadTrickplay(p) {
 
 const SUBTITLE_WINDOW = 120; // seconds of cues per request
 const SUBTITLE_LINE = 90; // where cues end, in percent of the picture's height from the top
-let subs = null; // { track, index, offset, from, until, loading, abort }
+let subs = null; // { track, index, offset, shift, from, until, loading, abort }
 
 function subtitleTextTrack() {
     if (!videoPlayer.subtitleTrack) {
@@ -1326,7 +1327,9 @@ function restartSubtitles(position) {
     track.mode = 'showing';
     // A little earlier, for the cue already on screen there.
     const from = Math.max(0, position - 10);
-    subs = { track, index: sub.index, offset: p.offset, from, until: from, loading: false, abort: new AbortController() };
+    // shift: the track's timing correction (seconds; positive shows lines later)
+    subs = { track, index: sub.index, offset: p.offset, shift: (sub.offset_ms || 0) / 1000, from, until: from,
+             loading: false, abort: new AbortController() };
     loadSubtitleWindow(subs);
 }
 
@@ -1348,6 +1351,39 @@ function keepSubtitlesAhead(position) {
     const duration = playerDuration();
     if (duration && s.until >= duration) return;
     loadSubtitleWindow(s);
+}
+
+// Subtitle timing: the selected text track's correction, saved for every player. "Already said"
+// (the line was spoken before its subtitle showed) moves subtitles earlier; "Not said yet", later.
+function updateSyncControls() {
+    const p = player, sub = p && !disc && subtitleTrack(p);
+    const box = document.getElementById('player-sync');
+    box.hidden = !(sub && sub.text);
+    if (box.hidden) return;
+    const ms = sub.offset_ms || 0;
+    const amount = Math.abs(ms) >= 1000 ? `${(Math.abs(ms) / 1000).toFixed(2).replace(/\.?0+$/, '')} s` : `${Math.abs(ms)} ms`;
+    document.getElementById('sync-value').textContent = ms === 0 ? 'In sync' : `${amount} ${ms < 0 ? 'earlier' : 'later'}`;
+}
+
+let syncSave = null;
+function shiftSubtitles(direction) {
+    const p = player, sub = p && subtitleTrack(p);
+    if (!sub || !sub.text) return;
+    const step = Number(document.getElementById('sync-step').value) || 250;
+    const delta = direction * step;
+    sub.offset_ms = (sub.offset_ms || 0) + delta;
+    // The cues already loaded move by the change; ones loaded later come with it.
+    if (subs && subs.index === sub.index) {
+        subs.shift += delta / 1000;
+        for (const cue of [...(subs.track.cues || [])]) {
+            cue.endTime = Math.max(0, cue.endTime + delta / 1000);
+            cue.startTime = Math.max(0, cue.startTime + delta / 1000);
+        }
+    }
+    updateSyncControls();
+    clearTimeout(syncSave);
+    const path = p.item.path, key = sub.key, ms = sub.offset_ms;
+    syncSave = setTimeout(() => api.setSubtitleOffset(path, key, ms).catch(e => console.warn('Saving the timing failed:', e)), 600);
 }
 
 // After a seek within the stream: restarts the subtitles if the seek left the cues loaded.
@@ -1384,7 +1420,7 @@ function addSubtitleCue(s, block) {
     const [a, b] = lines[at].split('-->');
     const text = lines.slice(at + 1).join('\n').trim();
     // Cue times are the file's; the stream's time 0 is s.offset in the file.
-    const start = vttSeconds(a) - s.offset, end = vttSeconds(b.trim().split(/\s+/)[0]) - s.offset;
+    const start = vttSeconds(a) - s.offset + s.shift, end = vttSeconds(b.trim().split(/\s+/)[0]) - s.offset + s.shift;
     if (!text || !(end > 0)) return;
     // A window starts at a keyframe before from: cues there came with the window before too.
     if ([...(s.track.cues || [])].some(c => c.text === text && Math.abs(c.startTime - start) < 0.05)) return;
@@ -1548,6 +1584,7 @@ function resetPlayer() {
     document.getElementById('player-controls').hidden = true;
     document.getElementById('player-status').textContent = '';
     document.getElementById('player-skip').hidden = true;
+    document.getElementById('player-sync').hidden = true;
     videoPlayer.onclick = videoPlayer.ondblclick = null;
     videoPlayer.onplay = videoPlayer.onpause = videoPlayer.onvolumechange = null;
     videoPlayer.ontimeupdate = videoPlayer.onerror = videoPlayer.onloadedmetadata = null;
@@ -1906,6 +1943,8 @@ function setupPlayerControls() {
         if (disc && disc.info) { disc.audio = a; loadDiscStream(playerPosition()); return; }
         changeFileStream(p => { p.audio = a; chooseCompatibility(p); });
     });
+    document.getElementById('sync-earlier').onclick = () => shiftSubtitles(-1);
+    document.getElementById('sync-later').onclick = () => shiftSubtitles(1);
     on('player-subtitle', (value) => {
         if (value === 'search') {
             document.getElementById('player-subtitle').value = String(player ? player.subtitle : -1);

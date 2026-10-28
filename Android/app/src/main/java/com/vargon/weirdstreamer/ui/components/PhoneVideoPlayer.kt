@@ -31,6 +31,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -193,6 +196,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     // Stereo audio in transcodes, once a surround one has failed to decode (AudioFallback)
     var stereoAudio by remember(path) { mutableStateOf(AudioFallback.stereo) }
     var showSubtitleMenu by remember { mutableStateOf(false) }
+    var showTiming by remember { mutableStateOf(false) }
     var showSubtitleSearch by remember { mutableStateOf(false) }
     val subtitleVideo = remember(path) { sourceItem?.originalPath ?: path.substringBefore("&") }
     fun chooseServerSubtitle(index: Int) {
@@ -470,7 +474,9 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     }
 
     BackHandler { 
-        if (showSpeedDialog) {
+        if (showTiming) {
+            showTiming = false
+        } else if (showSpeedDialog) {
             showSpeedDialog = false
         } else if (zoomScale > 1f) {
             // Reset zoom on back if zoomed
@@ -693,6 +699,13 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                     )
                                 }
                                 HorizontalDivider()
+                                if (subs.selectedTrack?.text == true) {
+                                    DropdownMenuItem(
+                                        text = { Text("Timing: ${subtitleOffsetText(subs.offsetMs)}") },
+                                        leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null) },
+                                        onClick = { showSubtitleMenu = false; showTiming = true }
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text("Search online…") },
                                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
@@ -925,6 +938,12 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     }
                 }
             }
+        }
+
+        // Subtitle timing, at the top so the subtitles below show the change
+        if (showTiming && serverSubs != null) {
+            PhoneSubtitleTiming(serverSubs.offsetMs, onShift = { serverSubs.shift(it) }, onClose = { showTiming = false },
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp, start = 12.dp, end = 12.dp))
         }
 
         // Over the picture's lower right, above the controls when they show
@@ -1165,4 +1184,33 @@ private fun PhoneSubtitleSearchDialog(subs: ServerSubtitles, onDismiss: () -> Un
         },
         confirmButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text("Close") } }
     )
+}
+
+/**
+ * Subtitle timing on the phone: "Already said" when the line was spoken before its subtitle showed
+ * (subtitles earlier), "Not said yet" when the subtitle came first (later), each by the step chosen.
+ */
+@Composable
+private fun PhoneSubtitleTiming(offsetMs: Int, onShift: (Int) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    var step by remember { mutableIntStateOf(250) }
+    androidx.compose.material3.Surface(modifier = modifier, shape = AppButtonShape, color = Color.Black.copy(alpha = 0.85f),
+        border = phoneMenuBorder()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Subtitle timing: ${subtitleOffsetText(offsetMs)}", color = Color.White, modifier = Modifier.weight(1f, fill = false))
+                IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { onShift(-step) }, shape = AppButtonShape, colors = phoneButtonColors()) { Text("Already said") }
+                Button(onClick = { onShift(step) }, shape = AppButtonShape, colors = phoneButtonColors()) { Text("Not said yet") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                SUBTITLE_STEPS.forEach { ms ->
+                    FilterChip(selected = ms == step, onClick = { step = ms }, shape = AppButtonShape,
+                        label = { Text(subtitleStepText(ms)) })
+                }
+            }
+        }
+    }
 }

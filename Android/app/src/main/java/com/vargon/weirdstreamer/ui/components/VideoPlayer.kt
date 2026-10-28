@@ -190,6 +190,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     
     // Dialog states
     var showSubtitleDialog by remember { mutableStateOf(false) }
+    var showTimingDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showTranscodeDialog by remember { mutableStateOf(false) }
     var showDownloadDialog by remember { mutableStateOf(false) }
@@ -887,7 +888,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             selectedSubtitleIndex = serverSubs?.selected ?: selectedSubtitleIndex, onDismiss = { showSubtitleDialog = false }, onSubtitleSelected = {
             if (serverSubs != null) chooseServerSubtitle(it) else selectSubtitleTrack(it)
             if (!isDisc) SubtitleMemory.set(context, subtitleVideo, it, subtitleLabels.getOrNull(it))
-        }, onDownloadRequested = if (serverSubs == null) null else ({ showSubtitleDialog = false; showDownloadDialog = true; searchSubtitlesOnline() }))
+        }, onDownloadRequested = if (serverSubs == null) null else ({ showSubtitleDialog = false; showDownloadDialog = true; searchSubtitlesOnline() }),
+            timing = serverSubs?.takeIf { it.selectedTrack?.text == true }?.let { subtitleOffsetText(it.offsetMs) },
+            onTiming = { showSubtitleDialog = false; showTimingDialog = true })
+        SubtitleTimingDialog(show = showTimingDialog && serverSubs != null, offsetMs = serverSubs?.offsetMs ?: 0,
+            onShift = { serverSubs?.shift(it) }, onDismiss = { showTimingDialog = false })
         OnlineSubtitlesDialog(show = showDownloadDialog, isSearching = isSearchingSubtitles, status = downloadStatus,
             note = subtitleSearchNote, results = subtitleResults,
             onDismiss = { showDownloadDialog = false; subtitleResults = emptyList(); downloadStatus = null; subtitleSearchNote = null },

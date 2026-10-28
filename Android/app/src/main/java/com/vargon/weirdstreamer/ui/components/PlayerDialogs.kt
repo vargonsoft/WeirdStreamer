@@ -23,6 +23,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
@@ -194,7 +202,10 @@ fun SubtitleDialog(
     onDismiss: () -> Unit,
     onSubtitleSelected: (Int) -> Unit,
     // Search OpenSubtitles through the server (videos from a WeirdStreamer server only)
-    onDownloadRequested: (() -> Unit)?
+    onDownloadRequested: (() -> Unit)?,
+    // The text track's timing ("In sync", "250 ms earlier"), which opens the timing panel; null: none
+    timing: String? = null,
+    onTiming: () -> Unit = {},
 ) {
     if (!show) return
     Dialog(
@@ -252,6 +263,9 @@ fun SubtitleDialog(
                     HorizontalDivider(color = Color.White.copy(alpha = 0.3f), thickness = 1.dp)
                 }
 
+                if (timing != null) {
+                    SubtitleRow("Timing: $timing", selected = false, icon = Icons.Default.Schedule, requester = null) { onTiming() }
+                }
                 if (onDownloadRequested != null) {
                     SubtitleRow("Search online (OpenSubtitles)", selected = false, icon = Icons.Default.Search,
                         requester = if (availableSubtitles.isEmpty()) currentRequester else null) { onDownloadRequested() }
@@ -397,6 +411,60 @@ private fun SubtitleRow(
         }
         if (selected) {
             Icon(Icons.Default.Check, contentDescription = "In use", tint = content, modifier = Modifier.size(24.dp))
+        }
+    }
+}
+
+/**
+ * Subtitle timing on the TV, near the top so the subtitles below show the change: Left when the
+ * line was already said before its subtitle showed (subtitles earlier), Right when it's not said
+ * yet (later); Up and Down change how far each press moves them. OK or Back closes it.
+ */
+@Composable
+fun SubtitleTimingDialog(show: Boolean, offsetMs: Int, onShift: (Int) -> Unit, onDismiss: () -> Unit) {
+    if (!show) return
+    var step by remember { mutableIntStateOf(250) }
+    val requester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { requester.requestFocus() } }
+    androidx.compose.ui.window.Popup(
+        alignment = Alignment.TopCenter,
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.PopupProperties(focusable = true)
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(top = 40.dp)
+                .width(760.dp)
+                .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+                .border(2.dp, Color.White, RoundedCornerShape(16.dp))
+                .focusRequester(requester)
+                .onPreviewKeyEvent { e ->
+                    if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    val i = SUBTITLE_STEPS.indexOf(step)
+                    when (e.key) {
+                        Key.DirectionLeft -> { onShift(-step); true }
+                        Key.DirectionRight -> { onShift(step); true }
+                        Key.DirectionUp -> { step = SUBTITLE_STEPS[(i + 1).coerceAtMost(SUBTITLE_STEPS.size - 1)]; true }
+                        Key.DirectionDown -> { step = SUBTITLE_STEPS[(i - 1).coerceAtLeast(0)]; true }
+                        Key.DirectionCenter, Key.Enter, Key.Back -> { onDismiss(); true }
+                        else -> false
+                    }
+                }
+                .focusable()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Subtitle timing", style = MaterialTheme.typography.headlineSmall, color = Color.White)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹  Already said", color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(subtitleOffsetText(offsetMs), color = Color.White, style = MaterialTheme.typography.titleLarge)
+                Text("Not said yet  ›", color = Color.White, style = MaterialTheme.typography.titleMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.weight(1f))
+            }
+            Text("Each press: ${subtitleStepText(step)}   (▲ ▼ to change)", color = Color.White.copy(alpha = 0.8f),
+                style = MaterialTheme.typography.bodyMedium)
+            Text("Already said: the line was spoken before its subtitle showed. Not said yet: the subtitle showed first.",
+                color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
         }
     }
 }

@@ -389,6 +389,16 @@ data class SubtitleTrack(
     @SerializedName("text") val text: Boolean = false,
     @SerializedName("external") val external: String? = null, // "file" (beside the video) or "opensubtitles"
     @SerializedName("hearing_impaired") val hearingImpaired: Boolean = false,
+    // Names the track whatever its place in the list; its timing correction, shared by every
+    // player (positive: lines shown later)
+    @SerializedName("key") val key: String? = null,
+    @SerializedName("offset_ms") val offsetMs: Int = 0,
+)
+
+data class SubtitleOffsetRequest(
+    @SerializedName("path") val path: String,
+    @SerializedName("key") val key: String,
+    @SerializedName("offset_ms") val offsetMs: Int
 )
 
 /** GET /api/media/subtitles/search: OpenSubtitles results for a video, best first. */

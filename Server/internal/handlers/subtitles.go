@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/metadata"
 	"github.com/weirdstreamer/server/internal/subtitles"
@@ -39,8 +41,51 @@ func addExternalSubtitles(c *media.Codecs, tracks []subtitles.Track) {
 	for _, t := range tracks {
 		c.Subtitles = append(c.Subtitles, media.SubtitleCodec{Index: len(c.Subtitles), Codec: t.Codec,
 			Language: t.Language, Title: t.Title, Forced: t.Forced, Text: true, External: t.Source,
-			HearingImpaired: t.HearingImpaired})
+			HearingImpaired: t.HearingImpaired, Key: "file:" + database.PathHash(t.Path)[:16]})
 	}
+}
+
+// addSubtitleOffsets keys the video's own tracks and adds each track's timing correction.
+func (h *MediaHandler) addSubtitleOffsets(path string, c *media.Codecs) {
+	offsets, _ := h.db.SubtitleOffsets(path)
+	for i := range c.Subtitles {
+		s := &c.Subtitles[i]
+		if s.Key == "" {
+			s.Key = fmt.Sprintf("stream:%d", s.Index)
+		}
+		s.OffsetMs = offsets[s.Key]
+	}
+}
+
+// SetSubtitleOffset saves a subtitle track's timing correction for everyone:
+// PUT /api/media/subtitle-offset {path, key, offset_ms} (positive: lines shown later)
+func (h *MediaHandler) SetSubtitleOffset(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path     string `json:"path"`
+		Key      string `json:"key"`
+		OffsetMs int    `json:"offset_ms"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	path, ok := h.decodeMediaPath(w, r, req.Path)
+	if !ok {
+		return
+	}
+	if !strings.HasPrefix(req.Key, "stream:") && !strings.HasPrefix(req.Key, "file:") || len(req.Key) > 40 {
+		respondError(w, http.StatusBadRequest, "Unknown subtitle track")
+		return
+	}
+	if req.OffsetMs < -600_000 || req.OffsetMs > 600_000 {
+		respondError(w, http.StatusBadRequest, "Offset out of range")
+		return
+	}
+	if err := h.db.SetSubtitleOffset(path, req.Key, req.OffsetMs); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to save")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // subtitleSearch is GET /api/media/subtitles/search's answer.
@@ -158,6 +203,7 @@ func (h *MediaHandler) DownloadSubtitle(w http.ResponseWriter, r *http.Request) 
 	own := len(codecs.Subtitles)
 	external := externalSubtitles(t.path)
 	addExternalSubtitles(codecs, external)
+	h.addSubtitleOffsets(t.path, codecs)
 	index := -1
 	for i, tr := range external {
 		if tr.Source == subtitles.SourceDownload && tr.FileID == req.Result.FileID {

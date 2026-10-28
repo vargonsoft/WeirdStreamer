@@ -273,6 +273,18 @@
                     <label id="disc-angle-label" class="disc-only">Angle <select id="disc-angle"></select></label>
                     <label id="player-audio-label">Audio <select id="player-audio"></select></label>
                     <label id="player-subtitle-label">Subtitles <select id="player-subtitle"></select></label>
+                    <!-- Text subtitles out of sync: named by what's on screen, not by + or − -->
+                    <span id="player-sync" class="player-sync" hidden>
+                        <button type="button" id="sync-earlier" class="btn btn-small"
+                            title="The line was already said when its subtitle appeared: show subtitles earlier">Already said</button>
+                        <span id="sync-value" class="sync-value"></span>
+                        <button type="button" id="sync-later" class="btn btn-small"
+                            title="The line hasn't been said yet when its subtitle appears: show subtitles later">Not said yet</button>
+                        <select id="sync-step" aria-label="How far each press moves the subtitles">
+                            <option value="50">50 ms</option><option value="250" selected>250 ms</option>
+                            <option value="500">0.5 s</option><option value="1000">1 s</option>
+                        </select>
+                    </span>
                     <!-- Admins: mark the intro and credits by hand, at the current position -->
                     <label id="player-mark-label" hidden>Mark <select id="player-mark">
                         <option value="">Intro / credits…</option>
