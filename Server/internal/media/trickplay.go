@@ -385,10 +385,10 @@ func IsMacFile(path string) bool {
 	return false
 }
 
-// exists says whether a file is there (following symlinks).
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+// hasData says whether a file is there (following symlinks) and isn't empty (a copy that failed).
+func hasData(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Size() > 0
 }
 
 // IgnoredMacFile says whether a path is a Mac's leftover and the settings say to ignore those.
