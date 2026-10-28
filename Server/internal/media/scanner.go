@@ -1,6 +1,7 @@
 package media
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	_ "golang.org/x/image/webp"
@@ -84,6 +86,13 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 			return nil
 		}
 
+		// A symlinked file counts as what it points to (its size, not the link's).
+		if info.Mode()&os.ModeSymlink != 0 {
+			if target, err := os.Stat(path); err == nil {
+				info = target
+			}
+		}
+
 		if info.IsDir() {
 			return nil
 		}
@@ -91,6 +100,14 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 		mediaType := s.getMediaType(path)
 		if mediaType == "" {
 			return nil // Skip unsupported files
+		}
+
+		// Already scanned and unchanged (same size): nothing to redo, so a scan only probes new
+		// and changed files. A missing thumbnail is retried when its folder is browsed instead,
+		// so files that can't be read aren't probed again on every scan.
+		if known, err := s.db.GetMediaItem(path); err == nil && known.Size == info.Size() {
+			*processed++
+			return nil
 		}
 
 		// Update progress
@@ -251,9 +268,29 @@ func (s *Scanner) getVideoMetadata(item *models.MediaItem) error {
 		return err
 	}
 
-	// Parse basic info - in production you'd parse the JSON properly
-	// For now, we'll just mark it as having metadata
-	_ = output
+	// The length, and the first video stream's size.
+	var probe struct {
+		Format struct {
+			Duration string `json:"duration"`
+		} `json:"format"`
+		Streams []struct {
+			CodecType string `json:"codec_type"`
+			Width     int    `json:"width"`
+			Height    int    `json:"height"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal(output, &probe); err != nil {
+		return err
+	}
+	if d, err := strconv.ParseFloat(probe.Format.Duration, 64); err == nil {
+		item.Duration = d
+	}
+	for _, st := range probe.Streams {
+		if st.CodecType == "video" && st.Width > 0 {
+			item.Width, item.Height = st.Width, st.Height
+			break
+		}
+	}
 	return nil
 }
 
