@@ -250,3 +250,41 @@ func TestNoLengthInHeader(t *testing.T) {
 		t.Errorf("after fillLength: %+v (%v), want 40s at 160 wide", item, err)
 	}
 }
+
+// TestNotAVideo: a file nothing can read as a video (code named .ts, random bytes) is marked done
+// without frames; one that can't be read at all is left to try again.
+func TestNotAVideo(t *testing.T) {
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe not installed")
+	}
+	dir := t.TempDir()
+	old := config.GlobalConfig
+	defer func() { config.GlobalConfig = old }()
+	config.GlobalConfig = &config.Config{Media: config.MediaConfig{TrickplayPath: filepath.Join(dir, "trickplay")}}
+	tg := NewTrickplayGenerator(nil)
+
+	code := filepath.Join(dir, "main.ts")
+	os.WriteFile(code, []byte("import { createApp } from 'vue'\ncreateApp(App).mount('#app')\n"), 0o644)
+	noise := filepath.Join(dir, "noise.mkv")
+	b := make([]byte, 256<<10)
+	for i := range b {
+		b[i] = byte(i*7919 + i/13)
+	}
+	os.WriteFile(noise, b, 0o644)
+	for _, p := range []string{code, noise} {
+		if err := tg.generate(context.Background(), p, nil); err != nil {
+			t.Errorf("%s: %v, want it marked not a video", filepath.Base(p), err)
+		}
+		if !HasTrickplay(p) {
+			t.Errorf("%s wasn't marked done", filepath.Base(p))
+		}
+	}
+
+	empty := filepath.Join(dir, "empty.mkv")
+	os.WriteFile(empty, nil, 0o644)
+	for _, p := range []string{empty, filepath.Join(dir, "gone.mkv")} {
+		if err := tg.generate(context.Background(), p, nil); err == nil || HasTrickplay(p) {
+			t.Errorf("%s: %v, marked done %v; want an error and no mark", filepath.Base(p), err, HasTrickplay(p))
+		}
+	}
+}

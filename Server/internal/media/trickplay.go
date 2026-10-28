@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -66,6 +67,12 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 	fmt.Printf("Generating trickplay frames for %s\n", videoPath)
 
 	duration, codec, err := tg.getVideoInfo(videoPath)
+	if errors.Is(err, errUnreadableMedia) && ctx.Err() == nil && readable(videoPath) {
+		// Every way of reading it failed, but the file is there and reads (so it's not the share):
+		// not a video (code named .ts, say, or a corrupt file). Marked done, it isn't tried again.
+		fmt.Printf("Not a video, no frames to make: %s (%v)\n", videoPath, err)
+		return markNoFrames(videoPath)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to get video info: %w", err)
 	}
@@ -100,7 +107,7 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			fmt.Printf("Warning: failed to generate frame at %ds: %v\n", i, err)
+			fmt.Printf("Warning: failed to generate frame at %ds of %s: %v\n", i, videoPath, err)
 			if failures++; failures >= maxFrameFailures {
 				// Frames worked up to a point and none after it: a damaged file (cut short, empty or
 				// garbled past there, or a header claiming more than it holds). If it's still the
@@ -229,7 +236,13 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, e
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return 0, "", fmt.Errorf("ffprobe failed: %s", string(output))
+		// ffprobe ran and turned the file down (rather than not running, or being stopped).
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.Exited() {
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+			return 0, "", fmt.Errorf("%w: ffprobe failed: %s", errUnreadableMedia, lines[len(lines)-1]) // its summary
+		}
+		return 0, "", fmt.Errorf("ffprobe failed: %v %s", err, string(output))
 	}
 
 	// The codec and the duration, in whatever order and with whatever repeats ffprobe prints them
@@ -252,7 +265,7 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, e
 		duration = PacketDuration(videoPath) // a header without a length
 	}
 	if duration <= 0 {
-		return 0, "", fmt.Errorf("ffprobe gave no duration")
+		return 0, "", fmt.Errorf("%w: ffprobe gave no duration, nor its packets", errUnreadableMedia)
 	}
 
 	return duration, codec, nil
@@ -389,6 +402,20 @@ func IsMacFile(path string) bool {
 		}
 	}
 	return false
+}
+
+// errUnreadableMedia: ffprobe read the file and found no video it can use (no length either).
+var errUnreadableMedia = errors.New("not readable as a video")
+
+// readable says whether a file's first bytes can be read now.
+func readable(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	n, err := f.Read(make([]byte, 64<<10))
+	return n > 0 && (err == nil || err == io.EOF)
 }
 
 // hasData says whether a file is there (following symlinks) and isn't empty (a copy that failed).
