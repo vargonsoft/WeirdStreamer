@@ -197,7 +197,7 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, e
 	cmd := exec.Command("ffprobe",
 		"-v", "error",
 		"-select_streams", "v:0",
-		"-show_entries", "stream=codec_name:format=duration",
+		"-show_entries", "stream=codec_name,duration:format=duration",
 		"-of", "default=noprint_wrappers=1:nokey=1",
 		videoPath,
 	)
@@ -208,13 +208,17 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, e
 	}
 
 	// The codec and the duration, in whatever order and with whatever repeats ffprobe prints them
-	// (a transport stream can list its video stream more than once).
+	// (a transport stream can list its video stream more than once). The duration is the shorter of
+	// the video's and the file's: the file's is its longest stream's, which can be an audio stream
+	// that runs on past the video, or whose header claims days.
 	var codec string
 	var duration float64
 	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
 		line = strings.TrimSpace(line)
 		if d, err := strconv.ParseFloat(line, 64); err == nil {
-			duration = d
+			if d > 0 && (duration == 0 || d < duration) {
+				duration = d
+			}
 		} else if codec == "" && line != "" && line != "N/A" {
 			codec = line
 		}

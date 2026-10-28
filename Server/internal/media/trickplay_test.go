@@ -48,3 +48,32 @@ func TestTrickplayTruncatedFile(t *testing.T) {
 		t.Error("the frames before the cut weren't kept")
 	}
 }
+
+func TestTrickplayStopsAtTheVideosEnd(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "clip.mp4")
+	// 30 seconds of video with 300 of audio: the file's length is the audio's (MP4 and AVI list
+	// each stream's length too; MKV doesn't, so it keeps the file's).
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=10:duration=30",
+		"-f", "lavfi", "-i", "sine=duration=300", "-c:v", "libx264", "-c:a", "aac", "-y", src).CombinedOutput(); err != nil {
+		t.Fatalf("make clip: %v %s", err, out)
+	}
+
+	old := config.GlobalConfig
+	defer func() { config.GlobalConfig = old }()
+	config.GlobalConfig = &config.Config{Media: config.MediaConfig{TrickplayPath: filepath.Join(dir, "trickplay")}}
+
+	tg := NewTrickplayGenerator(nil)
+	if d, codec, err := tg.getVideoInfo(src); err != nil || d > 31 || codec != "h264" {
+		t.Errorf("video info: %.1fs %q %v, want about 30s of h264", d, codec, err)
+	}
+	if err := tg.generate(context.Background(), src, nil); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if !HasTrickplay(src) {
+		t.Error("not marked done")
+	}
+}
