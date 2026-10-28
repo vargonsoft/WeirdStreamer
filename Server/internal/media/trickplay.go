@@ -69,9 +69,14 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 	}
 	removeParts(trickplayVideoDir)
 
+	start, err := os.Stat(videoPath)
+	if err != nil {
+		return err
+	}
+
 	// Generate frames every 10 seconds.
 	// Stop 1 second before the end to avoid empty output issues with input seeking.
-	failures := 0
+	failures, lastGood := 0, -1
 	for i := 0; i <= int(duration)-1; i += 10 {
 		if ctx.Err() != nil || (wait != nil && !wait()) {
 			return ctx.Err()
@@ -81,19 +86,21 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 				return ctx.Err()
 			}
 			fmt.Printf("Warning: failed to generate frame at %ds: %v\n", i, err)
-			// A file that can't be read there, or whose length is wrong (frames past its real
-			// end all fail): give up on it, keeping the frames made, and leave it unmarked.
 			if failures++; failures >= maxFrameFailures {
-				// A cut-short file (its index lists more than its data holds) never gets more
-				// frames: mark it done with what it has instead of trying it again every start.
-				if first := i - 10*(failures-1); first > 0 && tg.truncatedAt(videoPath, float64(i)) {
-					fmt.Printf("Truncated file: data ends before %ds of %.0fs; keeping the frames up to there: %s\n", first, duration, videoPath)
+				// Frames worked up to a point and none after it: a damaged file (cut short, empty or
+				// garbled past there, or a header claiming more than it holds). If it's still the
+				// same file and its last good frame still comes out, it's the file and not a share
+				// that went away: mark it done with the frames it has instead of trying it again
+				// every start. Otherwise give up for now, keeping the frames made, and leave it
+				// unmarked.
+				if lastGood >= 0 && tg.stillReadable(ctx, videoPath, start, float64(lastGood), codec) {
+					fmt.Printf("Damaged file: no frames after %ds of %.0fs; keeping the frames up to there: %s\n", lastGood, duration, videoPath)
 					break
 				}
 				return fmt.Errorf("%d frames in a row failed (at %ds of %.0fs)", failures, i, duration)
 			}
 		} else {
-			failures = 0
+			failures, lastGood = 0, i
 		}
 	}
 	if err := os.WriteFile(filepath.Join(trickplayVideoDir, trickplayDone), nil, 0644); err != nil {
@@ -230,18 +237,20 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, e
 	return duration, codec, nil
 }
 
-// truncatedAt says whether a video's data runs out before seconds: ffprobe reads no video packet
-// from there on (the index lists them, but they'd lie past the end of the file).
-func (tg *TrickplayGenerator) truncatedAt(videoPath string, seconds float64) bool {
-	out, err := exec.Command("ffprobe",
-		"-v", "quiet",
-		"-select_streams", "v:0",
-		"-read_intervals", fmt.Sprintf("%.3f%%+#1", seconds),
-		"-show_entries", "packet=pts_time",
-		"-of", "csv=p=0",
-		videoPath,
-	).Output()
-	return err == nil && strings.TrimSpace(string(out)) == ""
+// stillReadable says whether a video is the file it was when its frames were started (same size
+// and time) and a frame still comes out at seconds.
+func (tg *TrickplayGenerator) stillReadable(ctx context.Context, videoPath string, start os.FileInfo, seconds float64, codec string) bool {
+	now, err := os.Stat(videoPath)
+	if err != nil || now.Size() != start.Size() || !now.ModTime().Equal(start.ModTime()) {
+		return false
+	}
+	check, err := os.CreateTemp("", "trickplay-check-*.jpg")
+	if err != nil {
+		return false
+	}
+	check.Close()
+	defer os.Remove(check.Name())
+	return tg.extractFrame(ctx, videoPath, check.Name(), seconds, codec)
 }
 
 func (tg *TrickplayGenerator) generateFrame(ctx context.Context, videoPath, outputDir string, seekTime float64, frameIndex int, codec string) error {
@@ -252,6 +261,16 @@ func (tg *TrickplayGenerator) generateFrame(ctx context.Context, videoPath, outp
 	}
 	part := partPath(framePath)
 
+	if tg.extractFrame(ctx, videoPath, part, seekTime, codec) {
+		return finishPart(framePath)
+	}
+	os.Remove(part)
+
+	return fmt.Errorf("failed to extract frame %d", frameIndex)
+}
+
+// extractFrame writes the frame at seekTime to out, saying whether a picture came out.
+func (tg *TrickplayGenerator) extractFrame(ctx context.Context, videoPath, out string, seekTime float64, codec string) bool {
 	timestamp := fmt.Sprintf("%.3f", seekTime)
 
 	// format=yuvj420p and -strict unofficial are MANDATORY for MJPEG compliance in FFmpeg 7.1.1.
@@ -259,25 +278,23 @@ func (tg *TrickplayGenerator) generateFrame(ctx context.Context, videoPath, outp
 	if codec == "h264" || codec == "hevc" {
 		args = append(args, "-bsf:v", codec+"_metadata=matrix_coefficients=1")
 	}
-	args = append(args, "-ss", timestamp, "-noaccurate_seek", "-i", videoPath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-strict", "unofficial", "-y", part)
+	args = append(args, "-ss", timestamp, "-noaccurate_seek", "-i", videoPath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-strict", "unofficial", "-y", out)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	if err := cmd.Run(); err == nil {
-		if info, statErr := os.Stat(part); statErr == nil && info.Size() > 0 {
-			return finishPart(framePath)
+		if info, statErr := os.Stat(out); statErr == nil && info.Size() > 0 {
+			return true
 		}
 	}
 
 	// Simple fallback without BSF or format flags.
-	cmdFallback := exec.CommandContext(ctx, "ffmpeg", "-ss", timestamp, "-i", videoPath, "-vf", "scale=320:-1", "-frames:v", "1", "-strict", "unofficial", "-y", part)
+	cmdFallback := exec.CommandContext(ctx, "ffmpeg", "-ss", timestamp, "-i", videoPath, "-vf", "scale=320:-1", "-frames:v", "1", "-strict", "unofficial", "-y", out)
 	if errFallback := cmdFallback.Run(); errFallback == nil {
-		if info, statErr := os.Stat(part); statErr == nil && info.Size() > 0 {
-			return finishPart(framePath)
+		if info, statErr := os.Stat(out); statErr == nil && info.Size() > 0 {
+			return true
 		}
 	}
-	os.Remove(part)
-
-	return fmt.Errorf("failed to extract frame %d", frameIndex)
+	return false
 }
 
 // isMacFile checks if a filename is a Mac-specific file that should be ignored
