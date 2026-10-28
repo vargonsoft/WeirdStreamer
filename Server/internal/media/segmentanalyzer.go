@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/jobs"
 )
 
 // SegmentAnalysisVersion is stored with each video's segments; raising it has every video looked
@@ -25,10 +27,14 @@ type SegmentAnalyzer struct {
 	// when it's in none (a leftover row): those are left alone.
 	LibraryKind func(path string) (string, bool)
 	wake        chan struct{}
+	job         *jobs.Job
 }
 
 func NewSegmentAnalyzer(db *database.DB, streams *StreamTracker, kind func(string) (string, bool)) *SegmentAnalyzer {
-	return &SegmentAnalyzer{db: db, streams: streams, LibraryKind: kind, wake: make(chan struct{}, 1)}
+	a := &SegmentAnalyzer{db: db, streams: streams, LibraryKind: kind, wake: make(chan struct{}, 1),
+		job: jobs.Register("segments", "Intros and credits", "Finds videos' intros and credits for the Skip buttons, a folder at a time.")}
+	a.job.OnRunNow(a.Wake)
+	return a
 }
 
 // Wake has the analyzer look for new videos now (after a scan).
@@ -41,13 +47,16 @@ func (a *SegmentAnalyzer) Wake() {
 
 // Run analyzes until ctx ends: everything not yet analyzed, then again when woken or every few hours.
 func (a *SegmentAnalyzer) Run(ctx context.Context) {
+	a.job.NextIn(time.Minute)
 	select { // let the server settle first
 	case <-ctx.Done():
 		return
+	case <-a.wake:
 	case <-time.After(time.Minute):
 	}
 	for {
 		a.pass(ctx)
+		a.job.NextIn(6 * time.Hour)
 		select {
 		case <-ctx.Done():
 			return
@@ -68,6 +77,7 @@ func (a *SegmentAnalyzer) pass(ctx context.Context) {
 		log.Printf("segments: reading progress: %v", err)
 		return
 	}
+	a.job.Begin(0)
 	// Folders with a video not analyzed (by this version) yet, each analyzed whole.
 	byDir := map[string][]string{}
 	var dirs []string
@@ -84,27 +94,38 @@ func (a *SegmentAnalyzer) pass(ctx context.Context) {
 		}
 		byDir[d] = append(byDir[d], p)
 	}
-	n := 0
+	var todo []string
 	for _, d := range dirs {
-		todo := false
 		for _, p := range byDir[d] {
 			if done[p] < SegmentAnalysisVersion {
-				todo = true
+				todo = append(todo, d)
 				break
 			}
 		}
-		if !todo {
-			continue
-		}
-		if ctx.Err() != nil {
+	}
+	a.job.SetTotal(len(todo))
+	n := 0
+	for _, d := range todo {
+		if !a.waitIdle(ctx) {
+			a.job.End(fmt.Sprintf("Stopped after %d of %d folders", n, len(todo)))
 			return
 		}
 		a.analyzeDir(ctx, byDir[d])
+		a.job.Step(1)
 		n++
 	}
 	if n > 0 {
 		log.Printf("segments: analyzed %d folder(s)", n)
 	}
+	a.job.End(plural(n, "folder") + " analyzed")
+}
+
+// plural: "1 folder", "3 folders".
+func plural(n int, thing string) string {
+	if n == 1 {
+		return "1 " + thing
+	}
+	return fmt.Sprintf("%d %ss", n, thing)
 }
 
 // analyzable: a video file analysis can read (not a disc image).
@@ -112,9 +133,10 @@ func analyzable(path string) bool {
 	return !strings.EqualFold(filepath.Ext(path), ".iso")
 }
 
-// waitIdle waits while anyone is streaming, so analysis doesn't compete with playback.
+// waitIdle waits while the machine is busy or the job is paused, so analysis doesn't compete
+// with playback.
 func (a *SegmentAnalyzer) waitIdle(ctx context.Context) bool {
-	return waitForIdle(ctx, a.streams)
+	return a.job.Wait(ctx, func() (bool, string) { return busyReason(a.streams) })
 }
 
 // Background jobs share one load monitor (set by SetLoadMonitor); without one, or without
@@ -143,16 +165,43 @@ func streaming(streams *StreamTracker) bool {
 	return false
 }
 
-// busy says whether a background job should wait: the CPU or a disk too busy to share (or, with
-// no readings, anyone streaming).
-func busy(streams *StreamTracker) bool {
+// busyReason says whether a background job should wait, and why: the CPU or a disk too busy to
+// share (or, with no readings, anyone streaming).
+func busyReason(streams *StreamTracker) (bool, string) {
 	if pauseWhileStreaming() && streaming(streams) {
-		return true
+		return true, "Someone is streaming (paused while streaming)"
 	}
 	if cpu, disk, ok := load.Readings(); ok {
-		return cpu > maxCPU || disk > maxDisk
+		if cpu > maxCPU {
+			return true, fmt.Sprintf("CPU busy (%.0f%%)", cpu*100)
+		}
+		if disk > maxDisk {
+			return true, fmt.Sprintf("Disk busy (%.0f%%)", disk*100)
+		}
+		return false, ""
 	}
-	return streaming(streams)
+	if streaming(streams) {
+		return true, "Someone is streaming"
+	}
+	return false, ""
+}
+
+// LoadStatus is the machine's load as background jobs judge it, for the Jobs page.
+type LoadStatus struct {
+	Available           bool    `json:"available"`
+	CPU                 float64 `json:"cpu"`
+	Disk                float64 `json:"disk"`
+	MaxCPU              float64 `json:"max_cpu"`
+	MaxDisk             float64 `json:"max_disk"`
+	Streaming           bool    `json:"streaming"`
+	PauseWhileStreaming bool    `json:"pause_while_streaming"`
+}
+
+// CurrentLoad returns the load readings and whether anyone is streaming.
+func CurrentLoad(streams *StreamTracker) LoadStatus {
+	cpu, disk, ok := load.Readings()
+	return LoadStatus{Available: ok, CPU: cpu, Disk: disk, MaxCPU: maxCPU, MaxDisk: maxDisk,
+		Streaming: streaming(streams), PauseWhileStreaming: pauseWhileStreaming()}
 }
 
 // overloaded says whether a job already running should stop: well past what busy allows (its own
@@ -165,19 +214,6 @@ func overloaded(streams *StreamTracker) bool {
 		return cpu > stopCPU || disk > 0.9
 	}
 	return streaming(streams)
-}
-
-// waitForIdle waits while the machine is busy (background jobs mustn't compete with playback);
-// false when ctx ends first.
-func waitForIdle(ctx context.Context, streams *StreamTracker) bool {
-	for busy(streams) {
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(30 * time.Second):
-		}
-	}
-	return ctx.Err() == nil
 }
 
 type analyzedVideo struct {
@@ -301,10 +337,14 @@ type TrickplayJob struct {
 	// InLibrary says whether a video is in a library (leftover rows are left alone).
 	InLibrary func(path string) bool
 	wake      chan struct{}
+	job       *jobs.Job
 }
 
 func NewTrickplayJob(db *database.DB, streams *StreamTracker, inLibrary func(string) bool) *TrickplayJob {
-	return &TrickplayJob{gen: NewTrickplayGenerator(db), db: db, streams: streams, InLibrary: inLibrary, wake: make(chan struct{}, 1)}
+	j := &TrickplayJob{gen: NewTrickplayGenerator(db), db: db, streams: streams, InLibrary: inLibrary, wake: make(chan struct{}, 1),
+		job: jobs.Register("trickplay", "Trickplay frames", "Makes the pictures over the seek bars for videos (and discs) without them.")}
+	j.job.OnRunNow(j.Wake)
+	return j
 }
 
 // Wake has the job look for new videos now (after a scan).
@@ -317,35 +357,46 @@ func (j *TrickplayJob) Wake() {
 
 // Run makes missing frames until ctx ends: everything now, then again when woken or every few hours.
 func (j *TrickplayJob) Run(ctx context.Context) {
+	j.job.NextIn(2 * time.Minute)
 	select {
 	case <-ctx.Done():
 		return
+	case <-j.wake:
 	case <-time.After(2 * time.Minute):
 	}
 	failed := map[string]bool{} // unreadable files, not tried again until a restart
 	for {
+		j.job.Begin(0)
 		paths, err := j.db.VideoPaths()
 		if err != nil {
 			log.Printf("trickplay: listing videos: %v", err)
 		}
-		n := 0
+		var todo []string
 		for _, p := range paths {
+			if !failed[p] && j.InLibrary(p) && !HasTrickplay(p) {
+				todo = append(todo, p)
+			}
+		}
+		j.job.SetTotal(len(todo))
+		wait := func() bool { return j.job.Wait(ctx, func() (bool, string) { return busyReason(j.streams) }) }
+		// A disc's decode stops part way when the machine gets much busier, or the job is paused.
+		stop := func() bool { return overloaded(j.streams) || j.job.IsPaused() }
+		n, skipped := 0, 0
+		for _, p := range todo {
 			if ctx.Err() != nil {
 				return
 			}
-			if failed[p] || !j.InLibrary(p) || HasTrickplay(p) {
-				continue
-			}
-			wait := func() bool { return waitForIdle(ctx, j.streams) }
 			var err error
 			if IsDiscImage(p) {
-				err = j.gen.generateDisc(ctx, p, wait, func() bool { return overloaded(j.streams) })
+				err = j.gen.generateDisc(ctx, p, wait, stop)
 			} else {
 				err = j.gen.generate(ctx, p, wait)
 			}
+			j.job.Step(1)
 			if err != nil {
 				if ctx.Err() == nil && !errors.Is(err, errInterrupted) {
 					failed[p] = true
+					skipped++
 					log.Printf("trickplay: %s: %v", filepath.Base(p), err)
 				}
 				continue
@@ -355,6 +406,12 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		if n > 0 {
 			log.Printf("trickplay: made frames for %d video(s)", n)
 		}
+		result := "Frames made for " + plural(n, "video")
+		if skipped > 0 {
+			result += fmt.Sprintf(", %d unreadable", skipped)
+		}
+		j.job.End(result)
+		j.job.NextIn(6 * time.Hour)
 		select {
 		case <-ctx.Done():
 			return

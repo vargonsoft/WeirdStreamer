@@ -80,6 +80,7 @@ function setupEventListeners() {
     document.getElementById('close-streams-btn').addEventListener('click', hideStreams);
     if (closeSettingsBtn) {
         closeSettingsBtn.addEventListener('click', () => {
+            stopJobsView();
             settingsScreen.classList.remove('active');
             mainScreen.classList.add('active');
         });
@@ -93,6 +94,8 @@ function setupEventListeners() {
             document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
             tab.classList.add('active');
             document.getElementById(`${tabName}-tab`).classList.add('active');
+            if (tabName === 'jobs') startJobsView();
+            else stopJobsView();
             
             // Load users when switching to users tab
             if (tabName === 'users') {
@@ -2114,9 +2117,11 @@ async function showSettings() {
     // Hide admin tabs for non-admin users
     const serverTabBtn = document.querySelector('.settings-tab[data-tab="server"]');
     const usersTabBtn = document.querySelector('.settings-tab[data-tab="users"]');
+    const jobsTabBtn = document.querySelector('.settings-tab[data-tab="jobs"]');
 
     if (serverTabBtn) serverTabBtn.style.display = user.is_admin ? 'block' : 'none';
     if (usersTabBtn) usersTabBtn.style.display = user.is_admin ? 'block' : 'none';
+    if (jobsTabBtn) jobsTabBtn.style.display = user.is_admin ? 'block' : 'none';
 
     // Set active tab to 'account' if not admin
     if (!user.is_admin) {
@@ -4162,6 +4167,160 @@ function hideStreams() {
     streamsTimer = null;
     document.getElementById('streams-screen').classList.remove('active');
     mainScreen.classList.add('active');
+}
+
+// ---------------------------------------------------------------------------------------------
+// Settings → Jobs (admins): each background job's state, progress, last run and next run (a
+// countdown), with Run now and Pause/Resume. The status is fetched every few seconds while the
+// tab is open, and the times tick in between.
+
+let jobsView = null; // { data, poll, tick }
+const JOB_STATES = { idle: 'Idle', running: 'Running', waiting: 'Waiting', paused: 'Paused' };
+
+function startJobsView() {
+    if (jobsView) return;
+    jobsView = { data: null };
+    const refresh = async () => {
+        try {
+            const data = await api.getJobs();
+            if (jobsView) {
+                jobsView.data = data;
+                renderJobs();
+            }
+        } catch (e) {
+            if (jobsView) document.getElementById('jobs-list').textContent = `Couldn't load the jobs: ${e.message}`;
+        }
+    };
+    refresh();
+    jobsView.poll = setInterval(refresh, 5000);
+    jobsView.tick = setInterval(updateJobTimes, 1000);
+}
+
+function stopJobsView() {
+    if (!jobsView) return;
+    clearInterval(jobsView.poll);
+    clearInterval(jobsView.tick);
+    jobsView = null;
+}
+
+// A span of time: "2h 05m 09s", "4m 09s", "12s" (days as "3d 4h").
+function jobDuration(ms) {
+    const s = Math.max(0, Math.round(ms / 1000));
+    const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+    const two = (n) => String(n).padStart(2, '0');
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${two(m)}m ${two(sec)}s`;
+    if (m) return `${m}m ${two(sec)}s`;
+    return `${sec}s`;
+}
+
+function jobWhen(iso) {
+    const t = new Date(iso);
+    const ago = Date.now() - t;
+    if (ago < 60000) return 'just now';
+    if (ago < 86400000) return `${jobDuration(ago).replace(/ \d+s$/, '')} ago`;
+    return t.toLocaleString();
+}
+
+function renderJobs() {
+    const { jobs = [], load } = jobsView.data;
+    const pct = (f) => `${Math.round(f * 100)}%`;
+    const loadText = [];
+    if (load) {
+        if (load.available) {
+            loadText.push(`CPU ${pct(load.cpu)} (jobs wait above ${pct(load.max_cpu)})`,
+                `Disk ${pct(load.disk)} (above ${pct(load.max_disk)})`);
+        } else {
+            loadText.push('No load readings on this machine: jobs wait while anyone is streaming');
+        }
+        if (load.streaming) loadText.push('Someone is streaming');
+        if (load.pause_while_streaming) loadText.push('Jobs pause while anyone streams');
+    }
+    document.getElementById('jobs-load').textContent = loadText.join(' · ');
+
+    const list = document.getElementById('jobs-list');
+    list.replaceChildren(...jobs.map(job => {
+        const el = (tag, cls, text) => {
+            const e = document.createElement(tag);
+            if (cls) e.className = cls;
+            if (text != null) e.textContent = text;
+            return e;
+        };
+        const card = el('div', 'job-card');
+        card.dataset.id = job.id;
+        const head = el('div', 'stream-head');
+        head.append(el('span', 'stream-title', job.name),
+            el('span', `stream-badge job-state state-${job.state}`, JOB_STATES[job.state] || job.state));
+        card.append(head, el('div', 'job-about', job.about));
+        if (job.started) {
+            const progress = el('div', 'job-progress');
+            if (job.total > 0) {
+                const bar = el('div', 'stream-bar');
+                const fill = el('div', 'job-bar-fill');
+                fill.style.width = `${Math.min(100, job.done / job.total * 100)}%`;
+                bar.append(fill);
+                progress.append(bar);
+            }
+            progress.append(el('div', 'job-line', '')); // filled by updateJobTimes
+            card.append(progress);
+        }
+        if (job.state === 'waiting' && job.note) card.append(el('div', 'job-note', `Waiting: ${job.note}`));
+        card.append(el('div', 'job-line job-last'), el('div', 'job-line job-next'));
+        const actions = el('div', 'job-actions');
+        const run = el('button', 'btn', 'Run now');
+        run.type = 'button';
+        run.disabled = !job.can_run || !!job.started;
+        run.title = job.started ? 'Already running' : '';
+        run.onclick = () => controlJob(job.id, 'run');
+        const pause = el('button', 'btn', job.paused ? 'Resume' : 'Pause');
+        pause.type = 'button';
+        pause.onclick = () => controlJob(job.id, job.paused ? 'resume' : 'pause');
+        actions.append(run, pause);
+        card.append(actions);
+        return card;
+    }));
+    updateJobTimes();
+}
+
+// The times on the job cards, by the clock: elapsed, last run, and the countdown to the next.
+function updateJobTimes() {
+    if (!jobsView || !jobsView.data) return;
+    const now = Date.now();
+    for (const job of jobsView.data.jobs || []) {
+        const card = document.querySelector(`.job-card[data-id="${CSS.escape(job.id)}"]`);
+        if (!card) continue;
+        const progress = card.querySelector('.job-progress .job-line');
+        if (progress) {
+            const count = job.total > 0 ? `${job.done.toLocaleString()} of ${job.total.toLocaleString()} · ` : '';
+            progress.textContent = `${count}running for ${jobDuration(now - new Date(job.started))}`;
+        }
+        let last = 'Last run: not since the server started';
+        if (job.last_end) {
+            const took = jobDuration(new Date(job.last_end) - new Date(job.last_start));
+            last = `Last run: ${jobWhen(job.last_end)}, took ${took}${job.last_result ? ` · ${job.last_result}` : ''}`;
+        }
+        card.querySelector('.job-last').textContent = last;
+        let next;
+        if (job.started) next = 'Next run: after this one';
+        else if (job.next) {
+            const left = new Date(job.next) - now;
+            next = left > 0 ? `Next run: in ${jobDuration(left)}` : 'Next run: any moment';
+        } else next = `Runs: ${job.schedule || 'when asked'}`;
+        if (job.paused) next += ' (paused)';
+        card.querySelector('.job-next').textContent = next;
+    }
+}
+
+async function controlJob(id, action) {
+    try {
+        const data = await api.controlJob(id, action);
+        if (jobsView) {
+            jobsView.data = data;
+            renderJobs();
+        }
+    } catch (e) {
+        alert(`Couldn't ${action === 'run' ? 'start' : action} the job: ${e.message}`);
+    }
 }
 
 async function refreshStreams() {

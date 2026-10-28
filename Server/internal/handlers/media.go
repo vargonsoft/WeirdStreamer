@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/jobs"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/metadata"
 	"github.com/weirdstreamer/server/internal/models"
@@ -81,7 +83,7 @@ func (h *MediaHandler) NotifyMetadataReady(path string) {
 }
 
 func NewMediaHandler(db *database.DB, authService *auth.Service) *MediaHandler {
-	return &MediaHandler{
+	h := &MediaHandler{
 		db:                 db,
 		streamer:           media.NewStreamer(),
 		scanner:            media.NewScanner(db),
@@ -90,6 +92,11 @@ func NewMediaHandler(db *database.DB, authService *auth.Service) *MediaHandler {
 		authService:        authService,
 		streams:            media.NewStreamTracker(),
 	}
+	if j := jobs.Get("scan"); j != nil {
+		j.Schedule("On Scan Media")
+		j.OnRunNow(h.startScan)
+	}
+	return h
 }
 
 // ListMedia godoc
@@ -622,8 +629,17 @@ func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.startScan()
+	respondJSON(w, http.StatusOK, map[string]string{"status": "scan started"})
+}
+
+// startScan scans the libraries in the background, then has the other jobs pick up what changed;
+// the TMDB sync runs alongside. (Scan Media, and the scan's Run now on the Jobs page.)
+func (h *MediaHandler) startScan() {
 	go func() {
-		h.scanner.ScanMediaPaths()
+		if err := h.scanner.ScanMediaPaths(); errors.Is(err, media.ErrScanRunning) {
+			return // the scan running wakes them when it's done
+		}
 		if h.segments != nil {
 			h.segments.Wake() // new videos' intros and credits
 		}
@@ -637,7 +653,6 @@ func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
 	if h.meta != nil {
 		go h.meta.SyncAll(context.Background())
 	}
-	respondJSON(w, http.StatusOK, map[string]string{"status": "scan started"})
 }
 
 // RegenerateThumbnails godoc

@@ -58,7 +58,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
             add("App")
             add("Downloads")
             if (server != null) {
-                if (isAdmin) addAll(listOf("Server", "Users", "Streams"))
+                if (isAdmin) addAll(listOf("Server", "Users", "Streams", "Jobs"))
                 add("Account")
             }
         }
@@ -85,6 +85,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
         "Server" -> ServerSettingsTab(server!!)
         "Users" -> UsersTab(server!!)
         "Streams" -> StreamsTab(server!!)
+        "Jobs" -> JobsTab(server!!)
         "Account" -> AccountTab(server!!)
         "Downloads" -> DownloadsTab(viewModel)
         else -> LazyColumn(modifier = Modifier.fillMaxSize()) {

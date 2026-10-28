@@ -252,6 +252,15 @@ class MediaAPI {
         return this.request('/api/admin/streams');
     }
 
+    // Settings → Jobs (admins): { jobs, load }; action is run, pause or resume.
+    async getJobs() {
+        return this.request('/api/admin/jobs');
+    }
+
+    async controlJob(id, action) {
+        return this.request(`/api/admin/jobs/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
+    }
+
     // extra: { ended, title } — the player reached the end; a disc's title (0: the main title)
     async reportPlayback(path, position, paused, extra = {}) {
         return this.request('/api/streams/progress', {

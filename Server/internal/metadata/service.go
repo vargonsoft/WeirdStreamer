@@ -16,6 +16,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	bgjobs "github.com/weirdstreamer/server/internal/jobs"
 )
 
 const (
@@ -47,6 +48,8 @@ type Service struct {
 	staleIndex map[string]bool
 	jobs       chan job
 	syncing    atomic.Bool
+	syncJob    *bgjobs.Job  // the sync's status on the Jobs page
+	syncQueued atomic.Int64 // lookups the sync running has queued
 
 	newClient func(token, language string) *Client // replaceable in tests
 }
@@ -86,6 +89,8 @@ func NewService(db *database.DB, notify func(path string)) *Service {
 		indexes:         map[string]*libraryIndex{},
 		staleIndex:      map[string]bool{},
 		jobs:            make(chan job, 16384),
+		syncJob: bgjobs.Register("metadata", "TMDB lookups",
+			"Matches new titles in Movies and TV libraries with TMDB, and removes artwork nothing uses."),
 
 		newClient: NewClient,
 	}
@@ -93,6 +98,8 @@ func NewService(db *database.DB, notify func(path string)) *Service {
 
 // Start runs the lookup workers until ctx is done.
 func (s *Service) Start(ctx context.Context) {
+	s.syncJob.Schedule("At server start, on Scan Media and when settings change")
+	s.syncJob.OnRunNow(func() { go s.SyncAll(ctx) })
 	for i := 0; i < workerCount; i++ {
 		go func() {
 			for {
@@ -638,14 +645,26 @@ func (s *Service) SyncAll(ctx context.Context) {
 
 	start := time.Now()
 	complete := true
+	var typed []config.MediaPath
 	for _, lib := range config.GlobalConfig.Media.Paths {
-		if lib.Type == "" {
-			continue
+		if lib.Type != "" {
+			typed = append(typed, lib)
+		}
+	}
+	s.syncJob.Begin(len(typed))
+	s.syncQueued.Store(0)
+	failed := 0
+	for _, lib := range typed {
+		if !s.syncJob.Wait(ctx, nil) { // held while paused
+			complete = false
+			break
 		}
 		if err := s.syncLibrary(ctx, lib); err != nil {
 			complete = false
+			failed++
 			log.Printf("[METADATA] Sync of %q failed: %v", lib.Name, err)
 		}
+		s.syncJob.Step(1)
 	}
 	// Only prune artwork after every library was walked, or titles in an unreadable library
 	// would lose theirs.
@@ -653,6 +672,11 @@ func (s *Service) SyncAll(ctx context.Context) {
 		s.cleanupArtwork()
 	}
 	log.Printf("[METADATA] Library sync finished in %s", time.Since(start).Round(time.Second))
+	result := fmt.Sprintf("%d title(s) queued for lookup", s.syncQueued.Load())
+	if failed > 0 {
+		result += fmt.Sprintf("; %d library(ies) couldn't be read", failed)
+	}
+	s.syncJob.End(result)
 }
 
 func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
@@ -788,6 +812,7 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 		queued++
 	}
 	log.Printf("[METADATA] %s: %d titles on disk, %d queued for lookup", lib.Name, len(refs), queued)
+	s.syncQueued.Add(int64(queued))
 	return nil
 }
 

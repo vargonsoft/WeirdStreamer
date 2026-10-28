@@ -1,5 +1,10 @@
 package com.vargon.weirdstreamer.ui.components
 
+import kotlin.math.roundToInt
+import androidx.compose.runtime.mutableLongStateOf
+import com.vargon.weirdstreamer.api.models.JobLoad
+import com.vargon.weirdstreamer.api.models.BackgroundJob
+import com.vargon.weirdstreamer.api.models.JobsResponse
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.filled.Edit
@@ -765,6 +770,137 @@ private fun StreamCard(s: AdminStream) {
                 Text(if (t.stalled) "Transcoder waiting for the player"
                     else String.format(Locale.US, "Transcoder %.2f× realtime · %.0f fps", t.speed, t.fps),
                     style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Jobs tab (admins): the server's background jobs, with what each is doing, its last and next run
+// (a countdown) and Run now / Pause. Fetched every few seconds; the times tick in between.
+
+@Composable
+fun JobsTab(server: ServerRepository) {
+    val scope = rememberCoroutineScope()
+    var data by remember { mutableStateOf<JobsResponse?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(server.address) {
+        while (true) {
+            val (d, err) = attempt { server.api.getJobs() }
+            error = err
+            if (d != null) data = d
+            delay(5000)
+        }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    fun control(id: String, action: String) {
+        scope.launch {
+            val (d, err) = attempt { server.api.controlJob(id, action) }
+            if (d != null) data = d
+            error = err
+        }
+    }
+    val d = data
+    when {
+        d == null && error != null -> AdminOnly(error!!)
+        d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                Text("Jobs wait while the CPU or a disk is busy (or, with the setting under Streaming, while anyone " +
+                    "is streaming). Pause holds a job until you resume it, or the server restarts.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                d.load?.let { Text(loadText(it), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp)) }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+            itemsIndexed(d.jobs, key = { _, j -> j.id }) { _, j -> JobCard(j, now, ::control) }
+        }
+    }
+}
+
+private fun loadText(l: JobLoad): String {
+    fun pct(f: Double) = "${(f * 100).roundToInt()}%"
+    val parts = mutableListOf<String>()
+    if (l.available) parts += listOf("CPU ${pct(l.cpu)} (jobs wait above ${pct(l.maxCpu)})", "Disk ${pct(l.disk)} (above ${pct(l.maxDisk)})")
+    else parts += "No load readings: jobs wait while anyone is streaming"
+    if (l.streaming) parts += "Someone is streaming"
+    if (l.pauseWhileStreaming) parts += "Jobs pause while anyone streams"
+    return parts.joinToString(" · ")
+}
+
+private fun epochMillis(time: String?): Long? =
+    time?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
+
+/** A span of time: "2h 05m 09s", "4m 09s", "12s" (days as "3d 4h"). */
+private fun jobDuration(ms: Long): String {
+    val s = (ms / 1000).coerceAtLeast(0)
+    val d = s / 86400; val h = s % 86400 / 3600; val m = s % 3600 / 60; val sec = s % 60
+    return when {
+        d > 0 -> "${d}d ${h}h"
+        h > 0 -> String.format(Locale.US, "%dh %02dm %02ds", h, m, sec)
+        m > 0 -> String.format(Locale.US, "%dm %02ds", m, sec)
+        else -> "${sec}s"
+    }
+}
+
+private fun jobWhen(at: Long, now: Long): String {
+    val ago = now - at
+    return when {
+        ago < 60_000 -> "just now"
+        ago < 86_400_000 -> jobDuration(ago).replace(Regex(" \\d+s$"), "") + " ago"
+        else -> java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(at))
+    }
+}
+
+@Composable
+private fun JobCard(j: BackgroundJob, now: Long, control: (String, String) -> Unit) {
+    val started = epochMillis(j.started)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(j.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                val stateColor = when (j.state) {
+                    "running" -> Color(0xFF2E7D32); "waiting" -> Color(0xFFB7791F); "paused" -> Color(0xFFC62828)
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Text(j.state.replaceFirstChar { it.uppercase() }, color = stateColor, style = MaterialTheme.typography.labelLarge)
+            }
+            Text(j.about, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (started != null) {
+                if (j.total > 0) {
+                    LinearProgressIndicator(progress = { (j.done.toFloat() / j.total).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+                }
+                val count = if (j.total > 0) String.format(Locale.US, "%,d of %,d · ", j.done, j.total) else ""
+                Text("${count}running for ${jobDuration(now - started)}", style = MaterialTheme.typography.bodySmall)
+            }
+            if (j.state == "waiting" && !j.note.isNullOrEmpty()) {
+                Text("Waiting: ${j.note}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+            }
+            val lastEnd = epochMillis(j.lastEnd)
+            val lastStart = epochMillis(j.lastStart)
+            Text(if (lastEnd == null) "Last run: not since the server started"
+                else "Last run: ${jobWhen(lastEnd, now)}, took ${jobDuration(lastEnd - (lastStart ?: lastEnd))}" +
+                    (j.lastResult?.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""),
+                style = MaterialTheme.typography.bodySmall)
+            val next = epochMillis(j.next)
+            val nextText = when {
+                started != null -> "Next run: after this one"
+                next != null -> if (next > now) "Next run: in ${jobDuration(next - now)}" else "Next run: any moment"
+                else -> "Runs: ${j.schedule ?: "when asked"}"
+            } + if (j.paused) " (paused)" else ""
+            Text(nextText, style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                Button(shape = AppButtonShape, colors = phoneButtonColors(), enabled = j.canRun && started == null,
+                    onClick = { control(j.id, "run") }) { Text("Run now") }
+                Button(shape = AppButtonShape, colors = phoneButtonColors(),
+                    onClick = { control(j.id, if (j.paused) "resume" else "pause") }) { Text(if (j.paused) "Resume" else "Pause") }
             }
         }
     }

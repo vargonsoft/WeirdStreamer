@@ -79,6 +79,7 @@
                 <div class="settings-tabs">
                     <button class="settings-tab active" data-tab="server">Server & Media</button>
                     <button class="settings-tab" data-tab="users">User Management</button>
+                    <button class="settings-tab" data-tab="jobs">Jobs</button>
                     <button class="settings-tab" data-tab="account">My Account</button>
                     <button class="settings-tab" data-tab="subtitles">Subtitles</button>
                 </div>
@@ -166,6 +167,16 @@
 
                 <!-- My Account Tab -->
                 <!-- Subtitles: how they look in this browser's player -->
+                <!-- Jobs Tab (admins): the background jobs, what they're doing and when they run -->
+                <div id="jobs-tab" class="settings-tab-content">
+                    <div class="settings-group">
+                        <h3>Background Jobs</h3>
+                        <p class="settings-hint">Jobs wait while the CPU or a disk is busy (or, with the setting under Streaming, while anyone is streaming). Pause holds a job until you resume it, or the server restarts.</p>
+                        <p id="jobs-load" class="jobs-load"></p>
+                        <div id="jobs-list" class="jobs-list"></div>
+                    </div>
+                </div>
+
                 <div id="subtitles-tab" class="settings-tab-content">
                     <div class="settings-group subtitle-style">
                         <h3 class="icon-heading" data-icon="subtitles">Subtitle style</h3>

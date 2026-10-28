@@ -12,6 +12,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/jobs"
 )
 
 // Pruner removes the records of media files that are gone: rows outside every library (one
@@ -21,10 +22,14 @@ import (
 type Pruner struct {
 	db   *database.DB
 	wake chan struct{}
+	job  *jobs.Job
 }
 
 func NewPruner(db *database.DB) *Pruner {
-	return &Pruner{db: db, wake: make(chan struct{}, 1)}
+	p := &Pruner{db: db, wake: make(chan struct{}, 1),
+		job: jobs.Register("cleanup", "Cleanup", "Forgets files that are gone, with their thumbnails, frames, intros and credits.")}
+	p.job.OnRunNow(p.Wake)
+	return p
 }
 
 // Wake has the pruner look now (after a scan).
@@ -37,17 +42,25 @@ func (p *Pruner) Wake() {
 
 // Run prunes a few minutes after starting, when woken, and daily, until ctx ends.
 func (p *Pruner) Run(ctx context.Context) {
+	p.job.NextIn(5 * time.Minute)
 	select {
 	case <-ctx.Done():
 		return
+	case <-p.wake:
 	case <-time.After(5 * time.Minute):
 	}
 	for {
+		p.job.Begin(len(config.GlobalConfig.Media.Paths))
 		if n, err := p.Prune(ctx); err != nil {
 			log.Printf("cleanup: %v", err)
-		} else if n > 0 {
-			log.Printf("cleanup: forgot %d file(s) that are gone", n)
+			p.job.End("Failed: " + err.Error())
+		} else {
+			if n > 0 {
+				log.Printf("cleanup: forgot %d file(s) that are gone", n)
+			}
+			p.job.End(plural(n, "gone file") + " forgotten")
 		}
+		p.job.NextIn(24 * time.Hour)
 		select {
 		case <-ctx.Done():
 			return
@@ -77,9 +90,10 @@ func (p *Pruner) Prune(ctx context.Context) (int, error) {
 		}
 	}
 	for i, lib := range libraries {
-		if ctx.Err() != nil {
+		if !p.job.Wait(ctx, nil) { // held while paused
 			return 0, ctx.Err()
 		}
+		p.job.Step(1)
 		if entries, err := os.ReadDir(lib.Path); err != nil || len(entries) == 0 {
 			if len(byLibrary[i]) > 0 {
 				log.Printf("cleanup: %s can't be read (not mounted?); leaving its %d files", lib.Name, len(byLibrary[i]))

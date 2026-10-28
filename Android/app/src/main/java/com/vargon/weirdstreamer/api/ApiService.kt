@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.api
 
+import com.vargon.weirdstreamer.api.models.JobsResponse
 import com.vargon.weirdstreamer.api.models.Directory
 import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.api.models.MediaSegments
@@ -127,6 +128,13 @@ interface ApiService {
 
     @GET("/api/admin/streams")
     suspend fun getStreams(): Response<List<AdminStream>>
+
+    // Settings → Jobs: the background jobs, and Run now / Pause / Resume (action: run, pause, resume)
+    @GET("/api/admin/jobs")
+    suspend fun getJobs(): Response<JobsResponse>
+
+    @POST("/api/admin/jobs/{id}/{action}")
+    suspend fun controlJob(@Path("id") id: String, @Path("action") action: String): Response<JobsResponse>
 
     // Offline downloads: originals come from /api/media/stream; compressed copies are encoded
     // by a server job first and fetched from /api/downloads/{id}/file.

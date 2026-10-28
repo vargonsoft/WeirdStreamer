@@ -1,7 +1,9 @@
 package media
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -13,27 +15,44 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	_ "golang.org/x/image/webp"
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/jobs"
 	"github.com/weirdstreamer/server/internal/models"
 )
 
 type Scanner struct {
 	db                 *database.DB
 	thumbnailGenerator *ThumbnailGenerator
+	job                *jobs.Job
+	probed             int // files probed (new or changed) in the scan running
 }
 
 func NewScanner(db *database.DB) *Scanner {
 	return &Scanner{
 		db:                 db,
 		thumbnailGenerator: NewThumbnailGenerator(),
+		job:                jobs.Register("scan", "Media scan", "Adds new and changed files in every library, with their length, size and thumbnail."),
 	}
 }
 
+// scanning: a scan is running (one at a time, whichever Scanner started it).
+var scanning atomic.Bool
+
+// ErrScanRunning: a scan was asked for while one is running.
+var ErrScanRunning = errors.New("a scan is already running")
+
 func (s *Scanner) ScanMediaPaths() error {
+	if !scanning.CompareAndSwap(false, true) {
+		return ErrScanRunning
+	}
+	defer scanning.Store(false)
+	s.job.Begin(0)
+	s.probed = 0
 	// First pass: count total files
 	totalFiles := 0
 	for _, mediaPath := range config.GlobalConfig.Media.Paths {
@@ -46,11 +65,13 @@ func (s *Scanner) ScanMediaPaths() error {
 	}
 
 	fmt.Printf("Found %d media files to scan\n", totalFiles)
+	s.job.SetTotal(totalFiles)
 
 	// Second pass: scan with progress
 	processedFiles := 0
 	for _, mediaPath := range config.GlobalConfig.Media.Paths {
 		if err := s.scanDirectory(mediaPath.Path, &processedFiles, totalFiles); err != nil {
+			s.job.End("Failed: couldn't read the " + mediaPath.Name + " library")
 			return fmt.Errorf("failed to scan %s: %w", mediaPath.Path, err)
 		}
 	}
@@ -63,6 +84,7 @@ func (s *Scanner) ScanMediaPaths() error {
 	if err := s.cleanupOrphanedThumbnails(); err != nil {
 		fmt.Printf("Warning: failed to cleanup thumbnails: %v\n", err)
 	}
+	s.job.End(fmt.Sprintf("%s checked, %d new or changed", plural(processedFiles, "file"), s.probed))
 
 	return nil
 }
@@ -105,6 +127,8 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 		// Already scanned and unchanged (same size): nothing to redo, so a scan only probes new
 		// and changed files. A missing thumbnail is retried when its folder is browsed instead,
 		// so files that can't be read aren't probed again on every scan.
+		s.job.Wait(context.Background(), nil) // held while paused
+		s.job.Step(1)
 		if known, err := s.db.GetMediaItem(path); err == nil && known.Size == info.Size() {
 			*processed++
 			return nil
@@ -112,6 +136,7 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 
 		// Update progress
 		*processed++
+		s.probed++
 		percentage := float64(*processed) / float64(total) * 100
 		fileName := filepath.Base(path)
 		if len(fileName) > 50 {

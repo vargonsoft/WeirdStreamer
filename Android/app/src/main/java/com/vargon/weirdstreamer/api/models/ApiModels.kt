@@ -212,6 +212,41 @@ data class ChangePasswordRequest(
     @SerializedName("new_password") val newPassword: String
 )
 
+/** Settings → Jobs (admins): the server's background jobs, and the load they wait on. */
+data class JobsResponse(
+    @SerializedName("jobs") val jobs: List<BackgroundJob> = emptyList(),
+    @SerializedName("load") val load: JobLoad? = null
+)
+
+/** One background job. Times are RFC 3339 strings, absent when unknown. */
+data class BackgroundJob(
+    @SerializedName("id") val id: String,
+    @SerializedName("name") val name: String = "",
+    @SerializedName("about") val about: String = "",
+    @SerializedName("state") val state: String = "idle", // idle, running, waiting, paused
+    @SerializedName("note") val note: String? = null, // why it's waiting
+    @SerializedName("done") val done: Int = 0,
+    @SerializedName("total") val total: Int = 0,
+    @SerializedName("started") val started: String? = null,
+    @SerializedName("last_start") val lastStart: String? = null,
+    @SerializedName("last_end") val lastEnd: String? = null,
+    @SerializedName("last_result") val lastResult: String? = null,
+    @SerializedName("next") val next: String? = null,
+    @SerializedName("schedule") val schedule: String? = null,
+    @SerializedName("paused") val paused: Boolean = false,
+    @SerializedName("can_run") val canRun: Boolean = false
+)
+
+data class JobLoad(
+    @SerializedName("available") val available: Boolean = false,
+    @SerializedName("cpu") val cpu: Double = 0.0,
+    @SerializedName("disk") val disk: Double = 0.0,
+    @SerializedName("max_cpu") val maxCpu: Double = 0.0,
+    @SerializedName("max_disk") val maxDisk: Double = 0.0,
+    @SerializedName("streaming") val streaming: Boolean = false,
+    @SerializedName("pause_while_streaming") val pauseWhileStreaming: Boolean = false
+)
+
 /** A stream playing on the server, from its admin Streams list. */
 data class AdminStream(
     @SerializedName("id") val id: String,
