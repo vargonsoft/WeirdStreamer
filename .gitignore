@@ -22,3 +22,5 @@ local.properties
 
 # Local test server (its own config, accounts and sample media)
 /Server/e2e
+Server/logs/
+Server/server.log
