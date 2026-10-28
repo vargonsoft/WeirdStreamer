@@ -84,6 +84,12 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 			// A file that can't be read there, or whose length is wrong (frames past its real
 			// end all fail): give up on it, keeping the frames made, and leave it unmarked.
 			if failures++; failures >= maxFrameFailures {
+				// A cut-short file (its index lists more than its data holds) never gets more
+				// frames: mark it done with what it has instead of trying it again every start.
+				if first := i - 10*(failures-1); first > 0 && tg.truncatedAt(videoPath, float64(i)) {
+					fmt.Printf("Truncated file: data ends before %ds of %.0fs; keeping the frames up to there: %s\n", first, duration, videoPath)
+					break
+				}
 				return fmt.Errorf("%d frames in a row failed (at %ds of %.0fs)", failures, i, duration)
 			}
 		} else {
@@ -218,6 +224,20 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, e
 	}
 
 	return duration, codec, nil
+}
+
+// truncatedAt says whether a video's data runs out before seconds: ffprobe reads no video packet
+// from there on (the index lists them, but they'd lie past the end of the file).
+func (tg *TrickplayGenerator) truncatedAt(videoPath string, seconds float64) bool {
+	out, err := exec.Command("ffprobe",
+		"-v", "quiet",
+		"-select_streams", "v:0",
+		"-read_intervals", fmt.Sprintf("%.3f%%+#1", seconds),
+		"-show_entries", "packet=pts_time",
+		"-of", "csv=p=0",
+		videoPath,
+	).Output()
+	return err == nil && strings.TrimSpace(string(out)) == ""
 }
 
 func (tg *TrickplayGenerator) generateFrame(ctx context.Context, videoPath, outputDir string, seekTime float64, frameIndex int, codec string) error {
