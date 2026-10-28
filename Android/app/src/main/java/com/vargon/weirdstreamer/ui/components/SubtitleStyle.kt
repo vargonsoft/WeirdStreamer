@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
@@ -38,7 +39,8 @@ import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 // settings (Accessibility → Captions), or our own colours, outline, font and size.
 
 enum class SubtitleBackground(val label: String) { BLACK("Black"), WHITE("White"), THEMED("Themed"), NONE("None") }
-enum class SubtitleForeground(val label: String) { WHITE("White"), BLACK("Black"), THEMED("Themed") }
+// NONE: see-through letters, cut out of the box or the outline, so the picture shows through them.
+enum class SubtitleForeground(val label: String) { WHITE("White"), BLACK("Black"), THEMED("Themed"), NONE("None") }
 enum class SubtitleFont(val label: String) { DEFAULT("Default"), SERIF("Serif"), MONOSPACE("Monospace"), CASUAL("Casual"), CONDENSED("Condensed") }
 enum class SubtitleSize(val label: String, val scale: Float) {
     TINY("Tiny", 0.6f), SMALL("Small", 0.8f), NORMAL("Normal", 1f), LARGE("Large", 1.3f), HUGE("Huge", 1.6f)
@@ -106,6 +108,7 @@ data class ResolvedSubtitleStyle(
     val font: FontFamily,
     val scale: Float,
     val textAlpha: Float = 1f, // the text and its outline, faded together
+    val cutout: Boolean = false, // the letters erase the box or outline instead of being drawn
 )
 
 private fun fontFamily(font: SubtitleFont): FontFamily = when (font) {
@@ -150,6 +153,7 @@ fun resolvedSubtitleStyle(setting: SubtitleStyleSetting = SubtitleStyleStore.get
             SubtitleForeground.WHITE -> Color.White
             SubtitleForeground.BLACK -> Color.Black
             SubtitleForeground.THEMED -> accent
+            SubtitleForeground.NONE -> Color.Black // only its shape is used, to cut with
         },
         box = back?.takeIf { !setting.outline }?.copy(alpha = setting.opacity),
         outline = back?.takeIf { setting.outline },
@@ -157,6 +161,7 @@ fun resolvedSubtitleStyle(setting: SubtitleStyleSetting = SubtitleStyleStore.get
         font = fontFamily(setting.font),
         scale = setting.size.scale,
         textAlpha = setting.textOpacity,
+        cutout = setting.foreground == SubtitleForeground.NONE,
     )
 }
 
@@ -168,7 +173,9 @@ fun StyledSubtitleText(text: AnnotatedString, style: ResolvedSubtitleStyle, font
         shadow = if (style.shadow) Shadow(Color.Black, blurRadius = 6f) else null)
     val boxed = if (style.box != null) Modifier.background(style.box, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 4.dp)
         else Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-    Box(modifier.then(boxed), contentAlignment = Alignment.Center) {
+    // A cut-out needs the box and outline in a layer of their own, for the letters to erase.
+    val layer = if (style.cutout) Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen } else Modifier
+    Box(modifier.then(layer).then(boxed), contentAlignment = Alignment.Center) {
         // The text and its outline fade as one (faded apart, the outline would show through the letters).
         Box(Modifier.graphicsLayer {
             alpha = style.textAlpha
@@ -179,7 +186,11 @@ fun StyledSubtitleText(text: AnnotatedString, style: ResolvedSubtitleStyle, font
                 androidx.compose.material3.Text(text, style = base.copy(color = outline, shadow = null,
                     drawStyle = Stroke(width = width, join = StrokeJoin.Round)))
             }
-            androidx.compose.material3.Text(text, style = base)
+            if (!style.cutout) androidx.compose.material3.Text(text, style = base)
+        }
+        if (style.cutout) {
+            androidx.compose.material3.Text(text, style = base.copy(shadow = null),
+                modifier = Modifier.graphicsLayer { blendMode = BlendMode.DstOut })
         }
     }
 }

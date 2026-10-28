@@ -1245,7 +1245,94 @@ function applySubtitleStyle() {
     if (preview) {
         rules.forEach(r => { const [k, v] = r.split(': '); preview.style.setProperty(k, v); });
         preview.style.fontSize = `${(22 * css.scale).toFixed(1)}px`;
+        const cutout = document.getElementById('subtitle-preview-cutout');
+        preview.hidden = cutoutSubtitles();
+        cutout.hidden = !cutoutSubtitles();
+        cutout.replaceChildren();
+        if (cutoutSubtitles()) drawCutoutSubtitles(cutout, ['The quick brown fox', 'jumps over the lazy dog.'], 22);
     }
+    // A player showing subtitles switches between the browser's cues and the cut-out ones.
+    if (subs) {
+        subs.track.mode = cutoutSubtitles() ? 'hidden' : 'showing';
+        showCutoutCues();
+    }
+}
+
+// Text: None makes see-through letters, cut out of the box or the outline. ::cue can't draw that,
+// so those cues are drawn over the video instead, as SVG: the box or outline, masked by the letters.
+function cutoutSubtitles() {
+    const style = subtitleStyle();
+    return style.mode === 'custom' && style.foreground === 'none';
+}
+
+let cutoutMasks = 0;
+function drawCutoutSubtitles(container, lines, basePx) {
+    const style = subtitleStyle();
+    const theme = getComputedStyle(document.documentElement);
+    const named = { white: '#ffffff', black: '#000000' };
+    const back = style.background === 'themed' ? (theme.getPropertyValue('--surface-color') || '#321b2f').trim() : named[style.background];
+    if (!back || !lines.length) return;
+    const ns = 'http://www.w3.org/2000/svg';
+    const el = (name, attrs, parent) => {
+        const e = document.createElementNS(ns, name);
+        Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+        if (parent) parent.appendChild(e);
+        return e;
+    };
+    const px = basePx * (SUBTITLE_SIZES[style.size] || 1);
+    const lineHeight = px * 1.3, padX = px * 0.4, stroke = px * 0.2;
+    const font = { 'font-family': SUBTITLE_FONTS[style.font] || SUBTITLE_FONTS.default, 'font-size': px, 'text-anchor': 'middle' };
+    const svg = el('svg', {}, container);
+    // The lines' widths, measured in place.
+    const widths = lines.map(line => {
+        const t = el('text', font, svg);
+        t.textContent = line;
+        const w = t.getComputedTextLength();
+        t.remove();
+        return w;
+    });
+    const width = Math.ceil(Math.max(...widths) + 2 * padX + stroke), height = Math.ceil(lines.length * lineHeight + stroke);
+    svg.setAttribute('width', width);
+    svg.setAttribute('height', height);
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    const addLines = (parent, attrs) => lines.forEach((line, i) => {
+        const t = el('text', { ...font, ...attrs, x: width / 2, y: stroke / 2 + i * lineHeight + lineHeight * 0.76 }, parent);
+        t.textContent = line;
+    });
+    // Where the letters are, the mask hides what's drawn.
+    const id = `cutout-mask-${++cutoutMasks}`;
+    const mask = el('mask', { id, maskUnits: 'userSpaceOnUse', x: 0, y: 0, width, height }, el('defs', {}, svg));
+    el('rect', { x: 0, y: 0, width, height, fill: 'white' }, mask);
+    addLines(mask, { fill: 'black' });
+    const drawn = el('g', { mask: `url(#${id})` }, svg);
+    if (style.outline) {
+        // The outer half of a stroke around the letters, as solid as the text opacity says.
+        drawn.setAttribute('opacity', Number(style.textOpacity) || 1);
+        addLines(drawn, { fill: 'none', stroke: back, 'stroke-width': stroke * 0.8, 'stroke-linejoin': 'round' });
+    } else {
+        drawn.setAttribute('fill-opacity', Number(style.opacity) || 1);
+        lines.forEach((line, i) => el('rect', { x: (width - widths[i]) / 2 - padX, y: stroke / 2 + i * lineHeight,
+            width: widths[i] + 2 * padX, height: lineHeight, rx: px * 0.15, fill: back }, drawn));
+    }
+}
+
+// The cues showing now, drawn cut out over the video (when Text is None).
+function showCutoutCues() {
+    const box = document.getElementById('player-cutout-subs');
+    box.replaceChildren();
+    const on = !!(subs && cutoutSubtitles());
+    box.hidden = !on;
+    if (!on) return;
+    const lines = [...(subs.track.activeCues || [])]
+        .flatMap(cue => cue.text.replace(/<[^>]*>/g, '').split('\n'))
+        .map(line => line.trim()).filter(Boolean);
+    // Where the browser's own cues go (their last line 10% of the video's height above its bottom),
+    // as big as theirs: 5% of its height.
+    const v = videoPlayer, h = v.offsetHeight;
+    box.style.left = `${v.offsetLeft}px`;
+    box.style.width = `${v.offsetWidth}px`;
+    box.style.bottom = `${box.offsetParent ? box.offsetParent.clientHeight - (v.offsetTop + h) + h * (100 - SUBTITLE_LINE) / 100 : 0}px`;
+    drawCutoutSubtitles(box, lines, h * 0.05);
 }
 
 function setupSubtitleStyle() {
@@ -1316,6 +1403,7 @@ function stopSubtitles() {
     const track = subtitleTextTrack();
     while (track.cues && track.cues.length) track.removeCue(track.cues[0]);
     track.mode = 'disabled';
+    showCutoutCues();
 }
 
 // Starts the chosen text subtitles from position (seconds into the file), or turns them off.
@@ -1324,7 +1412,8 @@ function restartSubtitles(position) {
     const p = player, sub = p && subtitleTrack(p);
     if (!sub || !sub.text) return;
     const track = subtitleTextTrack();
-    track.mode = 'showing';
+    track.mode = cutoutSubtitles() ? 'hidden' : 'showing';
+    track.oncuechange = showCutoutCues;
     // A little earlier, for the cue already on screen there.
     const from = Math.max(0, position - 10);
     // shift: the track's timing correction (seconds; positive shows lines later)

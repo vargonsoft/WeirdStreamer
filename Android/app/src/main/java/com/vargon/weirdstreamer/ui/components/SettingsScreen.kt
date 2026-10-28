@@ -95,8 +95,9 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
             }
     ) {
         // In a box, like the web UI's settings page, in themes that draw them
-        Panel(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp)) {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        Panel(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp)) {
+        // The list's own padding, not the panel's: it clips at its edges, and focused buttons grow.
+        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 24.dp)) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(shape = tvButtonShape(), colors = tvButtonColors(),
