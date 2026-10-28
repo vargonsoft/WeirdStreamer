@@ -7,6 +7,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
@@ -327,6 +328,9 @@ func span(s *Segment, source string) *database.Span {
 	return &database.Span{Start: s.Start, End: s.End, Source: source}
 }
 
+// trickplayWorkers is how many videos the trickplay job makes frames for at once.
+const trickplayWorkers = 3
+
 // TrickplayJob makes trickplay frames (the pictures over the players' seek bars) in the
 // background for every video in a library that doesn't have them all yet, pausing while anyone
 // is streaming.
@@ -381,27 +385,48 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		wait := func() bool { return j.job.Wait(ctx, func() (bool, string) { return busyReason(j.streams) }) }
 		// A disc's decode stops part way when the machine gets much busier, or the job is paused.
 		stop := func() bool { return overloaded(j.streams) || j.job.IsPaused() }
+		// trickplayWorkers videos at once (one ffmpeg keeps only a few cores busy); discs one at a
+		// time, since each decodes whole titles.
 		n, skipped := 0, 0
+		var mu, discs sync.Mutex
+		next := make(chan string)
+		var wg sync.WaitGroup
+		for w := 0; w < trickplayWorkers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for p := range next {
+					var err error
+					if IsDiscImage(p) {
+						discs.Lock()
+						err = j.gen.generateDisc(ctx, p, wait, stop)
+						discs.Unlock()
+					} else {
+						err = j.gen.generate(ctx, p, wait)
+					}
+					j.job.Step(1)
+					mu.Lock()
+					if err == nil {
+						n++
+					} else if ctx.Err() == nil && !errors.Is(err, errInterrupted) {
+						failed[p] = true
+						skipped++
+						log.Printf("trickplay: %s: %v", filepath.Base(p), err)
+					}
+					mu.Unlock()
+				}
+			}()
+		}
 		for _, p := range todo {
 			if ctx.Err() != nil {
-				return
+				break
 			}
-			var err error
-			if IsDiscImage(p) {
-				err = j.gen.generateDisc(ctx, p, wait, stop)
-			} else {
-				err = j.gen.generate(ctx, p, wait)
-			}
-			j.job.Step(1)
-			if err != nil {
-				if ctx.Err() == nil && !errors.Is(err, errInterrupted) {
-					failed[p] = true
-					skipped++
-					log.Printf("trickplay: %s: %v", filepath.Base(p), err)
-				}
-				continue
-			}
-			n++
+			next <- p
+		}
+		close(next)
+		wg.Wait()
+		if ctx.Err() != nil {
+			return
 		}
 		if n > 0 {
 			log.Printf("trickplay: made frames for %d video(s)", n)
