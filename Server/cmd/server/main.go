@@ -117,6 +117,7 @@ func main() {
 	mediaHandler.StartCleanup(ctx)
 	// Trickplay frames (the pictures over the seek bars) for videos without them.
 	mediaHandler.StartTrickplay(ctx)
+	go media.CountStorage() // the data folders' sizes, for Settings → Jobs
 	// A token or library change saved through Settings starts a sync without a restart
 	configHandler.OnUpdate(func() { go metadataService.SyncAll(ctx) })
 

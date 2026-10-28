@@ -167,6 +167,10 @@ func removeGenerated(r database.MediaRecord) {
 		}
 	}
 	if dir := config.GlobalConfig.Media.TrickplayPath; dir != "" {
-		os.RemoveAll(filepath.Join(dir, GenerateThumbnailHash(r.Path)))
+		frames := filepath.Join(dir, GenerateThumbnailHash(r.Path))
+		size := dirSize(frames)
+		if os.RemoveAll(frames) == nil {
+			trickplayBytes.Add(-size) // the Jobs page's count of frames
+		}
 	}
 }

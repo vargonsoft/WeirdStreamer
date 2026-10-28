@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
@@ -28,6 +29,18 @@ func NewTrickplayGenerator(db *database.DB) *TrickplayGenerator {
 
 func (tg *TrickplayGenerator) Generate(videoPath string) error {
 	return tg.generate(context.Background(), videoPath, nil)
+}
+
+// trickplayBytes is the size of every video's frames: counted with the other data folders (see
+// storage.go), with each frame made since added (frames removed with their video are taken off at
+// the next count).
+var trickplayBytes atomic.Int64
+
+// addFrame counts a frame just made.
+func addFrame(path string) {
+	if info, err := os.Stat(path); err == nil {
+		trickplayBytes.Add(info.Size())
+	}
 }
 
 // maxFrameFailures is how many frames in a row may fail before a video is given up on.
@@ -265,7 +278,11 @@ func (tg *TrickplayGenerator) generateFrame(ctx context.Context, videoPath, outp
 	part := partPath(framePath)
 
 	if tg.extractFrame(ctx, videoPath, part, seekTime, codec) {
-		return finishPart(framePath)
+		if err := finishPart(framePath); err != nil {
+			return err
+		}
+		addFrame(framePath)
+		return nil
 	}
 	os.Remove(part)
 
@@ -415,7 +432,10 @@ func (tg *TrickplayGenerator) discSegmentFrames(ctx context.Context, path string
 			continue
 		}
 		at := int(seg.Start + float64(n-1)*10)
-		os.Rename(filepath.Join(tmp, e.Name()), filepath.Join(dir, fmt.Sprintf("frame-%d.jpg", at)))
+		frame := filepath.Join(dir, fmt.Sprintf("frame-%d.jpg", at))
+		if os.Rename(filepath.Join(tmp, e.Name()), frame) == nil {
+			addFrame(frame)
+		}
 	}
 	return nil
 }

@@ -1601,6 +1601,16 @@ header h1 {
     gap: 6px;
     min-width: 0;
 }
+.storage-list { display: grid; grid-template-columns: 1fr auto auto; column-gap: 16px; row-gap: 6px; }
+.storage-row { display: contents; font-size: 14px; }
+.storage-size { text-align: right; font-weight: 600; }
+.storage-bytes { text-align: right; color: var(--muted-text); font-variant-numeric: tabular-nums; }
+.storage-total span { padding-top: 6px; border-top: 1px solid var(--border-color, rgba(128, 128, 128, 0.3)); font-weight: 700; }
+@media (max-width: 500px) {
+    .storage-list { grid-template-columns: 1fr auto; }
+    .storage-bytes { grid-column: 2; font-size: 12px; }
+    .storage-total .storage-bytes { border-top: none; padding-top: 0; }
+}
 .job-about, .job-line { font-size: 13px; color: var(--muted-text); overflow-wrap: anywhere; }
 .job-note { font-size: 13px; font-weight: 600; color: var(--strong-text); }
 .job-progress { display: flex; flex-direction: column; gap: 4px; }

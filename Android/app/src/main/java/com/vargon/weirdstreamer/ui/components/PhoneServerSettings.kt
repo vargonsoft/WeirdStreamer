@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import com.vargon.weirdstreamer.api.models.JobLoad
 import com.vargon.weirdstreamer.api.models.BackgroundJob
 import com.vargon.weirdstreamer.api.models.JobsResponse
+import com.vargon.weirdstreamer.api.models.StorageUse
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.filled.Edit
@@ -820,6 +821,37 @@ fun JobsTab(server: ServerRepository) {
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
             itemsIndexed(d.jobs, key = { _, j -> j.id }) { _, j -> JobCard(j, now, ::control) }
+            item { StorageCard(d.storage.orEmpty()) }
+        }
+    }
+}
+
+// What the server's data folders hold (kept current as things are added and removed), each readable
+// and in bytes, with their total.
+@Composable
+private fun StorageCard(storage: List<StorageUse>) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Storage", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (storage.isEmpty()) {
+                Text("Counting…", style = MaterialTheme.typography.bodySmall)
+                return@Column
+            }
+            @Composable
+            fun line(name: String, bytes: Long, bold: Boolean) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
+                        fontWeight = if (bold) FontWeight.Bold else null)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(formatBytes(bytes).ifEmpty { "0 B" }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(String.format(Locale.US, "%,d bytes", bytes), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            storage.forEach { line(it.name, it.bytes, false) }
+            HorizontalDivider()
+            line("Total", storage.sumOf { it.bytes }, true)
         }
     }
 }

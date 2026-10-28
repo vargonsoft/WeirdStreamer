@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/weirdstreamer/server/internal/auth"
@@ -9,10 +10,13 @@ import (
 	"github.com/weirdstreamer/server/internal/media"
 )
 
-// jobsResponse is Settings → Jobs: each background job's status, and the load they wait on.
+// jobsResponse is Settings → Jobs: each background job's status, the load they wait on, and how
+// much the server's data folders hold (counted every few minutes).
 type jobsResponse struct {
-	Jobs []jobs.Status    `json:"jobs"`
-	Load media.LoadStatus `json:"load"`
+	Jobs           []jobs.Status      `json:"jobs"`
+	Load           media.LoadStatus   `json:"load"`
+	Storage        []media.StorageUse `json:"storage"`
+	StorageCounted *time.Time         `json:"storage_counted,omitempty"`
 }
 
 // ListJobs returns the background jobs' status (admins).
@@ -21,7 +25,12 @@ func (h *MediaHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusForbidden, "Admin access required")
 		return
 	}
-	respondJSON(w, http.StatusOK, jobsResponse{Jobs: jobs.All(), Load: media.CurrentLoad(h.streams)})
+	resp := jobsResponse{Jobs: jobs.All(), Load: media.CurrentLoad(h.streams)}
+	var counted time.Time
+	if resp.Storage, counted = media.Storage(); !counted.IsZero() {
+		resp.StorageCounted = &counted
+	}
+	respondJSON(w, http.StatusOK, resp)
 }
 
 // ControlJob runs, pauses or resumes a job (admins): POST /api/admin/jobs/{id}/{run|pause|resume}.

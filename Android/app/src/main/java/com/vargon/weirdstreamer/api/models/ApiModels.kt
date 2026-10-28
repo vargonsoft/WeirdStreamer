@@ -215,7 +215,14 @@ data class ChangePasswordRequest(
 /** Settings → Jobs (admins): the server's background jobs, and the load they wait on. */
 data class JobsResponse(
     @SerializedName("jobs") val jobs: List<BackgroundJob> = emptyList(),
-    @SerializedName("load") val load: JobLoad? = null
+    @SerializedName("load") val load: JobLoad? = null,
+    @SerializedName("storage") val storage: List<StorageUse>? = null
+)
+
+/** One of the server's data folders and its size, for the Jobs tab's Storage card. */
+data class StorageUse(
+    @SerializedName("name") val name: String = "",
+    @SerializedName("bytes") val bytes: Long = 0
 )
 
 /** One background job. Times are RFC 3339 strings, absent when unknown. */

@@ -2091,7 +2091,7 @@ function placeholderIcon(name) {
 function formatSize(bytes) {
     if (bytes === 0) return '0 B';
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
@@ -4222,6 +4222,28 @@ function jobWhen(iso) {
     return t.toLocaleString();
 }
 
+// The Jobs tab's Storage box: each data folder's size, readable and in bytes, and their total.
+function renderStorage(storage) {
+    const box = document.getElementById('storage-list');
+    if (!storage.length) {
+        box.replaceChildren(Object.assign(document.createElement('div'), { className: 'job-line', textContent: 'Counting…' }));
+        return;
+    }
+    const row = (name, bytes, cls) => {
+        const r = document.createElement('div');
+        r.className = `storage-row ${cls || ''}`;
+        for (const [text, c] of [[name, 'storage-name'], [formatSize(bytes), 'storage-size'], [`${bytes.toLocaleString()} bytes`, 'storage-bytes']]) {
+            const span = document.createElement('span');
+            span.className = c;
+            span.textContent = text;
+            r.append(span);
+        }
+        return r;
+    };
+    const total = storage.reduce((sum, u) => sum + u.bytes, 0);
+    box.replaceChildren(...storage.map(u => row(u.name, u.bytes)), row('Total', total, 'storage-total'));
+}
+
 function renderJobs() {
     const { jobs = [], load } = jobsView.data;
     const pct = (f) => `${Math.round(f * 100)}%`;
@@ -4240,6 +4262,7 @@ function renderJobs() {
         if (load.pause_while_streaming) loadText.push('Jobs pause while anyone streams');
     }
     document.getElementById('jobs-load').textContent = loadText.join(' · ');
+    renderStorage(jobsView.data.storage || []);
 
     const list = document.getElementById('jobs-list');
     list.replaceChildren(...jobs.map(job => {
