@@ -98,7 +98,8 @@ func NewService(db *database.DB, notify func(path string)) *Service {
 
 // Start runs the lookup workers until ctx is done.
 func (s *Service) Start(ctx context.Context) {
-	s.syncJob.Schedule("At server start, on Scan Media and when settings change")
+	// Opening a folder also looks up its new titles, one by one (not counted as a run here).
+	s.syncJob.Schedule("At server start, on Scan Media and when settings change; a folder's new titles are also looked up when it's opened")
 	s.syncJob.OnRunNow(func() { go s.SyncAll(ctx) })
 	for i := 0; i < workerCount; i++ {
 		go func() {
