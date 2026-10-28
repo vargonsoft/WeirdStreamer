@@ -165,6 +165,24 @@ func (db *DB) VideoPaths() ([]string, error) {
 	return out, rows.Err()
 }
 
+// VideosWithoutLength lists the videos stored with no length (older scans didn't save one).
+func (db *DB) VideosWithoutLength() (map[string]bool, error) {
+	rows, err := db.mediaConn.Query(`SELECT path FROM media_items WHERE type = 'video' AND (duration IS NULL OR duration <= 0)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out[p] = true
+	}
+	return out, rows.Err()
+}
+
 // LargestVideo returns the biggest video under a folder ("" if none).
 func (db *DB) LargestVideo(dir string) (string, error) {
 	var p string

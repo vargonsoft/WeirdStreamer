@@ -209,7 +209,7 @@ func (s *Scanner) GetFileMetadata(path string) (*models.MediaItem, error) {
 		if err == nil {
 			var duration float64
 			fmt.Sscanf(string(output), "%f", &duration)
-			item.Duration = duration
+			item.Duration = orPackets(path, duration)
 		}
 	} else if item.Type == "image" {
 		s.getImageMetadata(item)
@@ -304,9 +304,8 @@ func (s *Scanner) getVideoMetadata(item *models.MediaItem) error {
 	if err := json.Unmarshal(output, &probe); err != nil {
 		return err
 	}
-	if d, err := strconv.ParseFloat(probe.Format.Duration, 64); err == nil {
-		item.Duration = d
-	}
+	d, _ := strconv.ParseFloat(probe.Format.Duration, 64)
+	item.Duration = orPackets(item.Path, d)
 	for _, st := range probe.Streams {
 		if st.CodecType == "video" && st.Width > 0 {
 			item.Width, item.Height = st.Width, st.Height

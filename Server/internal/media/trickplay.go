@@ -68,6 +68,7 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 	if err != nil {
 		return fmt.Errorf("failed to get video info: %w", err)
 	}
+	tg.saveDuration(videoPath, duration)
 
 	trickplayDir := config.GlobalConfig.Media.TrickplayPath
 	if trickplayDir == "" {
@@ -247,6 +248,9 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, e
 		}
 	}
 	if duration <= 0 {
+		duration = PacketDuration(videoPath) // a header without a length
+	}
+	if duration <= 0 {
 		return 0, "", fmt.Errorf("ffprobe gave no duration")
 	}
 
@@ -287,6 +291,55 @@ func (tg *TrickplayGenerator) generateFrame(ctx context.Context, videoPath, outp
 	os.Remove(part)
 
 	return fmt.Errorf("failed to extract frame %d", frameIndex)
+}
+
+// saveDuration stores a video's length when the library has none (older scans didn't save
+// lengths, and a header without one gave 0 before the packets were read for it).
+func (tg *TrickplayGenerator) saveDuration(videoPath string, duration float64) {
+	tg.saveLength(videoPath, duration, 0, 0)
+}
+
+// saveLength stores a video's length, and its picture size if it has none, when the library has
+// no length for it.
+func (tg *TrickplayGenerator) saveLength(videoPath string, duration float64, width, height int) {
+	if tg.db == nil || duration <= 0 {
+		return
+	}
+	if item, err := tg.db.GetMediaItem(videoPath); err == nil && item.Duration <= 0 {
+		item.Duration = duration
+		if item.Width <= 0 && width > 0 {
+			item.Width, item.Height = width, height
+		}
+		tg.db.SaveMediaItem(item)
+	}
+}
+
+// fillLength reads and stores the length of a video the library has none for (one whose frames
+// are already made): a disc's main title's, else the file's (its packets', when its header has none).
+func (tg *TrickplayGenerator) fillLength(path string) error {
+	if IsDiscImage(path) {
+		info, err := LoadDisc(path)
+		if IsNotVideoDisc(err) {
+			return nil // an installer or data disc: no length to have
+		}
+		if err != nil {
+			return err
+		}
+		if t := info.Title(0); t != nil && t.Duration > 0 {
+			tg.saveLength(path, t.Duration, t.Width, t.Height)
+			return nil
+		}
+		return errors.New("no length")
+	}
+	d, w, h, err := ProbeVideo(path)
+	if err != nil {
+		return err
+	}
+	if d <= 0 {
+		return errors.New("no length")
+	}
+	tg.saveLength(path, d, w, h)
+	return nil
 }
 
 // extractFrame writes the frame at seekTime to out, saying whether a picture came out.

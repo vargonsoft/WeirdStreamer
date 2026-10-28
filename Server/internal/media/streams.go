@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bufio"
 	"encoding/json"
 	"os/exec"
 	"regexp"
@@ -320,6 +321,47 @@ func ClientName(ua string) string {
 	return ua
 }
 
+// PacketDuration is a video's length from its packets: where its last video packet ends. It's for
+// files whose header gives no length (ASF saved from a live stream, say), and reads the whole file.
+func PacketDuration(path string) float64 {
+	cmd := exec.Command("ffprobe", "-v", "quiet", "-select_streams", "v:0",
+		"-show_entries", "packet=pts_time,dts_time,duration_time", "-of", "csv=p=0", path)
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return 0
+	}
+	if err := cmd.Start(); err != nil {
+		return 0
+	}
+	var end float64
+	sc := bufio.NewScanner(out)
+	for sc.Scan() {
+		// pts, dts, duration; an AVI's packets can have no pts, or no duration.
+		f := strings.Split(sc.Text(), ",")
+		if len(f) < 3 {
+			continue
+		}
+		at, err := strconv.ParseFloat(f[0], 64)
+		if err != nil {
+			if at, err = strconv.ParseFloat(f[1], 64); err != nil {
+				continue
+			}
+		}
+		d, _ := strconv.ParseFloat(f[2], 64)
+		end = max(end, at+d)
+	}
+	cmd.Wait()
+	return end
+}
+
+// orPackets is a header's length, or the packets' when it gives none.
+func orPackets(path string, duration float64) float64 {
+	if duration > 0 {
+		return duration
+	}
+	return PacketDuration(path)
+}
+
 // ProbeVideo reads a video file's duration (seconds) and first video stream's size.
 func ProbeVideo(path string) (duration float64, width, height int, err error) {
 	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
@@ -340,6 +382,7 @@ func ProbeVideo(path string) (duration float64, width, height int, err error) {
 		return 0, 0, 0, err
 	}
 	duration, _ = strconv.ParseFloat(probe.Format.Duration, 64)
+	duration = orPackets(path, duration)
 	if len(probe.Streams) > 0 {
 		width, height = probe.Streams[0].Width, probe.Streams[0].Height
 	}

@@ -95,6 +95,7 @@ func ProbeCodecs(path string) (*Codecs, error) {
 	}
 	c := &Codecs{Container: probe.Format.FormatName, Audio: []AudioCodec{}, Subtitles: []SubtitleCodec{}}
 	c.Duration, _ = strconv.ParseFloat(probe.Format.Duration, 64)
+	c.Duration = orPackets(path, c.Duration)
 	for _, s := range probe.Streams {
 		switch s.CodecType {
 		case "video":

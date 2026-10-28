@@ -353,7 +353,7 @@ type TrickplayJob struct {
 
 func NewTrickplayJob(db *database.DB, streams *StreamTracker, inLibrary func(string) bool) *TrickplayJob {
 	j := &TrickplayJob{gen: NewTrickplayGenerator(db), db: db, streams: streams, InLibrary: inLibrary, wake: make(chan struct{}, 1),
-		job: jobs.Register("trickplay", "Trickplay frames", "Makes the pictures over the seek bars for videos (and discs) without them.")}
+		job: jobs.Register("trickplay", "Trickplay frames", "Makes the pictures over the seek bars for videos (and discs) without them, and fills in lengths the library is missing.")}
 	j.job.OnRunNow(j.Wake)
 	return j
 }
@@ -382,9 +382,15 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		if err != nil {
 			log.Printf("trickplay: listing videos: %v", err)
 		}
+		noLength, err := j.db.VideosWithoutLength()
+		if err != nil {
+			log.Printf("trickplay: listing videos without a length: %v", err)
+		}
 		// Progress is of every video in the libraries, counting those already done (or given up on
-		// until a restart), so it carries on from where the last run got to.
-		var todo []string
+		// until a restart), so it carries on from where the last run got to. A video whose frames
+		// are made but that has no length stored gets its length read (making frames stores it
+		// too); those go first, being quick.
+		var todo, lengthOnly []string
 		total, already := 0, 0
 		for _, p := range paths {
 			// Gone files (cleanup forgets them) and a Mac's leftovers aren't videos to make frames for.
@@ -392,12 +398,22 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 				continue
 			}
 			total++
-			if failed[p] || HasTrickplay(p) {
+			switch {
+			case failed[p]:
 				already++
-			} else {
+			case HasTrickplay(p) && noLength[p]:
+				lengthOnly = append(lengthOnly, p)
+			case HasTrickplay(p):
+				already++
+			default:
 				todo = append(todo, p)
 			}
 		}
+		isLengthOnly := make(map[string]bool, len(lengthOnly))
+		for _, p := range lengthOnly {
+			isLengthOnly[p] = true
+		}
+		todo = append(lengthOnly, todo...)
 		j.job.SetTotal(total)
 		j.job.Step(already)
 		wait := func() bool { return j.job.Wait(ctx, func() (bool, string) { return busyReason(j.streams) }) }
@@ -405,7 +421,7 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		stop := func() bool { return overloaded(j.streams) || j.job.IsPaused() }
 		// trickplayWorkers videos at once (one ffmpeg keeps only a few cores busy); discs one at a
 		// time, since each decodes whole titles.
-		n, skipped := 0, 0
+		n, lengths, skipped := 0, 0, 0
 		var mu, discs sync.Mutex
 		next := make(chan string)
 		var wg sync.WaitGroup
@@ -415,6 +431,24 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 				defer wg.Done()
 				for p := range next {
 					var err error
+					if isLengthOnly[p] {
+						if !wait() {
+							j.job.Step(1)
+							continue
+						}
+						err = j.gen.fillLength(p)
+						j.job.Step(1)
+						mu.Lock()
+						if err == nil {
+							lengths++
+						} else {
+							failed[p] = true
+							skipped++
+							log.Printf("trickplay: %s: no length: %v", filepath.Base(p), err)
+						}
+						mu.Unlock()
+						continue
+					}
 					if IsDiscImage(p) {
 						discs.Lock()
 						err = j.gen.generateDisc(ctx, p, wait, stop)
@@ -450,6 +484,9 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 			log.Printf("trickplay: made frames for %d video(s)", n)
 		}
 		result := "Frames made for " + plural(n, "video")
+		if lengths > 0 {
+			result += fmt.Sprintf(", %d lengths filled in", lengths)
+		}
 		if skipped > 0 {
 			result += fmt.Sprintf(", %d unreadable", skipped)
 		}

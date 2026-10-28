@@ -1,14 +1,18 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/models"
 )
 
 func TestTrickplayTruncatedFile(t *testing.T) {
@@ -166,5 +170,75 @@ func TestTrickplayDataDisc(t *testing.T) {
 	}
 	if !HasTrickplay(iso) || TrickplayTitle(iso) != 0 {
 		t.Error("the data disc wasn't marked done without a title")
+	}
+}
+
+// TestNoLengthInHeader: an ASF saved from a live stream has no length in its header (it's marked
+// broadcast), so the length comes from its packets.
+func TestNoLengthInHeader(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "live.asf")
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=10:duration=40",
+		"-c:v", "wmv2", "-f", "asf", "-y", src).CombinedOutput(); err != nil {
+		t.Fatalf("make clip: %v %s", err, out)
+	}
+	// The File Properties object: its play and send durations emptied, and the broadcast flag set.
+	b, _ := os.ReadFile(src)
+	guid := []byte{0xA1, 0xDC, 0xAB, 0x8C, 0x47, 0xA9, 0xCF, 0x11, 0x8E, 0xE4, 0x00, 0xC0, 0x0C, 0x20, 0x53, 0x65}
+	at := bytes.Index(b, guid)
+	if at < 0 {
+		t.Fatal("no File Properties object")
+	}
+	clear(b[at+64 : at+80])
+	b[at+88] |= 1
+	os.WriteFile(src, b, 0o644)
+	if out, _ := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", src).Output(); strings.TrimSpace(string(out)) != "N/A" {
+		t.Fatalf("ffprobe still reads a length from the header: %q", out)
+	}
+
+	if d := PacketDuration(src); d < 39.5 || d > 40.5 {
+		t.Errorf("PacketDuration = %.2f, want 40", d)
+	}
+	if d, _, _, err := ProbeVideo(src); err != nil || d < 39.5 {
+		t.Errorf("ProbeVideo = %.2f (%v), want 40", d, err)
+	}
+	if c, err := ProbeCodecs(src); err != nil || c.Duration < 39.5 {
+		t.Errorf("ProbeCodecs: %v (%v), want 40s", c, err)
+	}
+
+	old := config.GlobalConfig
+	defer func() { config.GlobalConfig = old }()
+	config.GlobalConfig = &config.Config{Media: config.MediaConfig{TrickplayPath: filepath.Join(dir, "trickplay")}}
+	// Stored with no length (as older scans left it): making its frames stores the length.
+	db, err := database.New(filepath.Join(dir, "users.db"), filepath.Join(dir, "media.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.SaveMediaItem(&models.MediaItem{Path: src, Name: "live.asf", Type: "video", MimeType: "video/x-ms-asf"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewTrickplayGenerator(db).generate(context.Background(), src, nil); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(config.GlobalConfig.Media.TrickplayPath, GenerateThumbnailHash(src), "frame-30.jpg")); err != nil {
+		t.Error("no frame at 30s")
+	}
+	if item, err := db.GetMediaItem(src); err != nil || item.Duration < 39.5 || item.Duration > 40.5 {
+		t.Errorf("stored length %v (%v), want 40", item, err)
+	}
+
+	// Its frames made but its length lost: reading it again stores it (and its picture size).
+	if err := db.SaveMediaItem(&models.MediaItem{Path: src, Name: "live.asf", Type: "video", MimeType: "video/x-ms-asf"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewTrickplayGenerator(db).fillLength(src); err != nil {
+		t.Fatalf("fillLength: %v", err)
+	}
+	if item, err := db.GetMediaItem(src); err != nil || item.Duration < 39.5 || item.Width != 160 {
+		t.Errorf("after fillLength: %+v (%v), want 40s at 160 wide", item, err)
 	}
 }
