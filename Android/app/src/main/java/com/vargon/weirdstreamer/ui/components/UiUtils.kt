@@ -172,3 +172,9 @@ fun addressKeyboard(imeAction: androidx.compose.ui.text.input.ImeAction = androi
 fun usernameKeyboard(imeAction: androidx.compose.ui.text.input.ImeAction = androidx.compose.ui.text.input.ImeAction.Default) =
     androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email,
         autoCorrectEnabled = false, imeAction = imeAction)
+
+// A password, key or token: the keyboard neither suggests nor learns what's typed (a plain text
+// field would offer it back as a suggestion).
+fun secretKeyboard(imeAction: androidx.compose.ui.text.input.ImeAction = androidx.compose.ui.text.input.ImeAction.Default) =
+    androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+        autoCorrectEnabled = false, imeAction = imeAction)

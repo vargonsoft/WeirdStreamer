@@ -14,7 +14,6 @@ class SmbRepository(
     private val baseContext: CIFSContext,
     private val credentialManager: CredentialManager,
     private val serverAddress: String,
-    private val showHiddenFiles: Boolean = false
 ) : MediaRepository {
 
     override suspend fun inheritState(other: MediaRepository?) {
@@ -36,6 +35,8 @@ class SmbRepository(
             val context = baseContext.withCredentials(auth)
             SmbFile(normalizedPath, context).use { smbFile ->
                 val allFiles = smbFile.listFiles()
+                // Settings → Show hidden files, as it is now
+                val showHiddenFiles = credentialManager.getShowHiddenFiles()
                 val items = allFiles.mapNotNull { file ->
                     val isHidden = file.isHidden || file.name.startsWith(".")
                     val item = if (showHiddenFiles || !isHidden) {

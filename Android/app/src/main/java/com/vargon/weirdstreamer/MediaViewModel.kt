@@ -784,6 +784,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         currentSource = null
         currentPath = ""
         errorMessage = null
+        // A sign-in cancelled: else the browser still asks for it and opens the dialog again.
+        authRequiredSource = null
+        authTitle = null
         fileList = emptyList()
         currentPathDisplayName = null
         supportsThumbnailRegeneration = false

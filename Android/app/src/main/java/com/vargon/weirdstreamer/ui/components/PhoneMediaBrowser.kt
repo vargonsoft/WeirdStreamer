@@ -476,6 +476,7 @@ private fun PhoneAuthDialog(host: String, onDismiss: () -> Unit, initialUsername
                     onValueChange = { password = it },
                     label = { Text("Password") },
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = secretKeyboard(),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )

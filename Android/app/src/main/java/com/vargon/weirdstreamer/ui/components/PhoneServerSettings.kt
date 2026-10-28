@@ -373,6 +373,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                 OutlinedTextField(
                     tmdbToken, { tmdbToken = it }, label = { Text("TMDB API read access token") }, singleLine = true,
                     visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = secretKeyboard(),
                     trailingIcon = {
                         IconButton(onClick = { showToken = !showToken }) {
                             Icon(if (showToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
@@ -385,6 +386,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                     openSubtitlesKey, { openSubtitlesKey = it }, label = { Text("OpenSubtitles API key") }, singleLine = true,
                     supportingText = { Text("For searching subtitles online") },
                     visualTransformation = if (showSubtitlesKey) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = secretKeyboard(),
                     trailingIcon = {
                         IconButton(onClick = { showSubtitlesKey = !showSubtitlesKey }) {
                             Icon(if (showSubtitlesKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
@@ -530,7 +532,7 @@ fun UsersTab(server: ServerRepository) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(newName, { newName = it }, label = { Text("Username") }, singleLine = true, keyboardOptions = usernameKeyboard(), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(newPassword, { newPassword = it }, label = { Text("Password") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = secretKeyboard(), modifier = Modifier.fillMaxWidth())
                 GroupMenu(newGroup, groups, Modifier.fillMaxWidth(), onNew = { creatingGroup = true }) { newGroup = it }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = newAdmin, onCheckedChange = { newAdmin = it })
@@ -679,11 +681,11 @@ fun AccountTab(server: ServerRepository) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(current, { current = it }, label = { Text("Current password") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = secretKeyboard(), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(password, { password = it }, label = { Text("New password") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = secretKeyboard(), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(confirm, { confirm = it }, label = { Text("Confirm password") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = secretKeyboard(), modifier = Modifier.fillMaxWidth())
                 Message(message?.first, message?.second ?: false)
                 Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = {
                     when {
