@@ -126,6 +126,9 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 		if mediaType == "" {
 			return nil // Skip unsupported files
 		}
+		if IsNonDiscISO(path) {
+			return nil // An installer or data disc image, not a video
+		}
 
 		// Already scanned and unchanged (same size): nothing to redo, so a scan only probes new
 		// and changed files. A missing thumbnail is retried when its folder is browsed instead,

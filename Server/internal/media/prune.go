@@ -90,6 +90,10 @@ func (p *Pruner) Prune(ctx context.Context, force bool) (int, error) {
 			gone = append(gone, r) // a Mac's leftover, which scans now skip
 			continue
 		}
+		if IsNonDiscISO(r.Path) {
+			gone = append(gone, r) // an installer or data disc image, which scans now skip
+			continue
+		}
 		if i := libraryIndex(libraries, r.Path); i >= 0 {
 			byLibrary[i] = append(byLibrary[i], r)
 		} else {

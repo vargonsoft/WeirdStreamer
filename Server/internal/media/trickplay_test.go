@@ -288,3 +288,23 @@ func TestNotAVideo(t *testing.T) {
 		}
 	}
 }
+
+func TestNonDiscISOIsNotVideo(t *testing.T) {
+	dir := t.TempDir()
+	iso := filepath.Join(dir, "installer.iso")
+	dataISO(t, iso)
+
+	if !IsNonDiscISO(iso) {
+		t.Error("a data disc image wasn't taken for a non-video disc")
+	}
+	if IsNonDiscISO(filepath.Join(dir, "gone.iso")) {
+		t.Error("a missing image was taken for a non-video disc")
+	}
+	movie := filepath.Join(dir, "movie.mkv")
+	if err := os.WriteFile(movie, []byte("not a disc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if IsNonDiscISO(movie) {
+		t.Error("a non-ISO file was taken for a non-video disc")
+	}
+}

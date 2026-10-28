@@ -600,6 +600,16 @@ var errNotOnDisc = errors.New("not found on the disc")
 // installer or data disc), as opposed to one that couldn't be read.
 func IsNotVideoDisc(err error) bool { return errors.Is(err, errNotOnDisc) }
 
+// IsNonDiscISO says whether a file is a disc image that was read and isn't a video DVD (an
+// installer or data disc). Those aren't videos, so the library leaves them out.
+func IsNonDiscISO(path string) bool {
+	if !IsDiscImage(path) {
+		return false
+	}
+	_, err := LoadDisc(path)
+	return IsNotVideoDisc(err)
+}
+
 // readFile reads a file by its path components (case-insensitive), up to 16 MB.
 func (fs *iso9660) readFile(parts ...string) ([]byte, error) {
 	lba, size := fs.rootLBA, fs.rootSize
