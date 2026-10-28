@@ -1265,7 +1265,7 @@ function cutoutSubtitles() {
     return style.mode === 'custom' && style.foreground === 'none';
 }
 
-let cutoutMasks = 0;
+let cutoutMasks = 0, cutoutMeasure = null;
 function drawCutoutSubtitles(container, lines, basePx) {
     const style = subtitleStyle();
     const theme = getComputedStyle(document.documentElement);
@@ -1283,14 +1283,10 @@ function drawCutoutSubtitles(container, lines, basePx) {
     const lineHeight = px * 1.3, padX = px * 0.4, stroke = px * 0.2;
     const font = { 'font-family': SUBTITLE_FONTS[style.font] || SUBTITLE_FONTS.default, 'font-size': px, 'text-anchor': 'middle' };
     const svg = el('svg', {}, container);
-    // The lines' widths, measured in place.
-    const widths = lines.map(line => {
-        const t = el('text', font, svg);
-        t.textContent = line;
-        const w = t.getComputedTextLength();
-        t.remove();
-        return w;
-    });
+    // The lines' widths, from a canvas (text in a hidden page, like Settings at load, measures 0).
+    const measure = (cutoutMeasure ||= document.createElement('canvas').getContext('2d'));
+    measure.font = `${px}px ${font['font-family']}`;
+    const widths = lines.map(line => measure.measureText(line).width);
     const width = Math.ceil(Math.max(...widths) + 2 * padX + stroke), height = Math.ceil(lines.length * lineHeight + stroke);
     svg.setAttribute('width', width);
     svg.setAttribute('height', height);

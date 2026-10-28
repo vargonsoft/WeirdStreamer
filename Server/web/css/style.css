@@ -2423,6 +2423,8 @@ body.has-az #main-screen .content { padding-right: 28px; }
 .player-cutout-subs {
     position: absolute;
     z-index: 4;
+    /* Its own layer: else Chrome can leave it under the playing video's */
+    will-change: transform;
     display: flex;
     justify-content: center;
     pointer-events: none;
