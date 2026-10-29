@@ -1,0 +1,12 @@
+# Keeps the build context small, and local data and secrets out of the image
+bin
+run
+var
+e2e
+logs
+config.json
+web/downloads
+.git
+.env
+docker/config.container.json
+docker/docker-compose.override.yml

@@ -28,6 +28,21 @@ If `streaming.enableHTTP2` is on and the certificate and key files (`server.cert
 `server.keyFile`, default `cert.pem` and `key.pem`) exist, the server uses HTTPS (with HTTP/2).
 Otherwise it falls back to plain HTTP.
 
+## Docker
+
+Files are in `docker/`. Copy `config.example.json` to `config.json` and edit it, then run
+`make docker-compose-up`. That writes `docker/docker-compose.override.yml` (one read-only mount per
+library, at the same path inside the container) and `docker/config.container.json` (the config the
+container runs with, its data under `var/`), then builds and starts the server on port 8080.
+
+`make docker-config` asks which user the container runs as: you (the default, so it can read the
+libraries and write `var/`), root, or another uid:gid. Pass `DOCKER_USER=current|root|uid:gid` to
+choose without the prompt. Run it again after changing the libraries. For your own mounts (a folder outside the libraries, say),
+copy `docker/docker-compose.extra.example.yml` to `docker/docker-compose.extra.yml` and add them there.
+The generated files are rewritten, so don't edit them. The generated files are git-ignored,
+and the container config holds the secrets. Create the admin user with
+`docker compose -f docker/docker-compose.yml -f docker/docker-compose.override.yml exec weirdstreamer /app/cli user create admin --admin`.
+
 ## Configuration
 
 See `config.example.json`. The main sections:

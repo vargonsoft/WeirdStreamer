@@ -1,0 +1,16 @@
+# Runs the server in a container: make docker-compose-up
+#
+# make docker-config writes the two generated files this loads: the library mounts (the override
+# file) and the config the container runs with (config.container.json, from config.json).
+services:
+  weirdstreamer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: weirdstreamer:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.container.json:/app/config.json:ro
+      - ../var:/app/var
+    restart: unless-stopped

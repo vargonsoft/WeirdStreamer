@@ -48,23 +48,23 @@ clean: ## Remove build artifacts
 	rm -rf thumbnails/*
 	@echo "Clean complete!"
 
-docker-build: ## Build Docker image
-	docker build -t media-server:latest .
+# Your own container settings (docker/docker-compose.extra.yml, from the example) are loaded when present
+COMPOSE = docker compose -f docker/docker-compose.yml -f docker/docker-compose.override.yml $(if $(wildcard docker/docker-compose.extra.yml),-f docker/docker-compose.extra.yml)
 
-docker-run: docker-build ## Build and run Docker container
-	docker run -p 8080:8080 \
-		-v $(PWD)/data:/app/data \
-		-v $(PWD)/thumbnails:/app/thumbnails \
-		media-server:latest
+docker-config: ## Write the Docker library mounts and container config from config.json
+	python3 docker/generate.py $(if $(DOCKER_USER),--user $(DOCKER_USER))
 
-docker-compose-up: ## Start services with docker-compose
-	docker-compose up -d
+docker-build: ## Build the Docker image
+	docker build -f docker/Dockerfile -t weirdstreamer:latest .
 
-docker-compose-down: ## Stop services
-	docker-compose down
+docker-compose-up: docker-config ## Generate the config, then build and start the container
+	$(COMPOSE) up -d --build
 
-docker-compose-logs: ## View docker-compose logs
-	docker-compose logs -f
+docker-compose-down: ## Stop the container
+	$(COMPOSE) down
+
+docker-compose-logs: ## Follow the container's logs
+	$(COMPOSE) logs -f
 
 setup: build ## Initial setup: build, create config, and create admin user
 	@if [ ! -f config.json ]; then \
