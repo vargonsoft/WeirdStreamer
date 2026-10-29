@@ -266,7 +266,7 @@ func isSupportedVideo(path string) bool {
 }
 
 func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, error) {
-	cmd := exec.Command("ffprobe",
+	cmd := backgroundCommand(context.Background(), "ffprobe",
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "stream=codec_name,duration:format=duration",
@@ -422,7 +422,7 @@ func (tg *TrickplayGenerator) extractBatch(ctx context.Context, videoPath, dir, 
 		args = append(args, "-map", fmt.Sprintf("%d:v:0", k), "-vf", "scale=320:-1,format=yuvj420p",
 			"-frames:v", "1", "-strict", "unofficial", "-y", outs[k])
 	}
-	exec.CommandContext(ctx, "ffmpeg", args...).Run()
+	backgroundCommand(ctx, "ffmpeg", args...).Run()
 	for k := range times {
 		if info, err := os.Stat(outs[k]); err == nil && info.Size() > 0 && ctx.Err() == nil {
 			made[k] = true
@@ -444,7 +444,7 @@ func (tg *TrickplayGenerator) extractFrame(ctx context.Context, videoPath, out s
 	}
 	args = append(args, "-ss", timestamp, "-noaccurate_seek", "-i", videoPath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-strict", "unofficial", "-y", out)
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := backgroundCommand(ctx, "ffmpeg", args...)
 	if err := cmd.Run(); err == nil {
 		if info, statErr := os.Stat(out); statErr == nil && info.Size() > 0 {
 			return true
@@ -452,7 +452,7 @@ func (tg *TrickplayGenerator) extractFrame(ctx context.Context, videoPath, out s
 	}
 
 	// Simple fallback without BSF or format flags.
-	cmdFallback := exec.CommandContext(ctx, "ffmpeg", "-ss", timestamp, "-i", videoPath, "-vf", "scale=320:-1", "-frames:v", "1", "-strict", "unofficial", "-y", out)
+	cmdFallback := backgroundCommand(ctx, "ffmpeg", "-ss", timestamp, "-i", videoPath, "-vf", "scale=320:-1", "-frames:v", "1", "-strict", "unofficial", "-y", out)
 	if errFallback := cmdFallback.Run(); errFallback == nil {
 		if info, statErr := os.Stat(out); statErr == nil && info.Size() > 0 {
 			return true
@@ -571,7 +571,7 @@ func (tg *TrickplayGenerator) discSegmentFrames(ctx context.Context, path string
 	args = append(args, "-map", "0:v:0", "-vf", "fps=1/10,scale=320:-1,format=yuvj420p", "-strict", "unofficial",
 		filepath.Join(tmp, "%d.jpg"))
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(run, "ffmpeg", args...)
+	cmd := backgroundCommand(run, "ffmpeg", args...)
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if interrupted {

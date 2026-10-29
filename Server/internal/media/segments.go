@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/bits"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -34,7 +33,7 @@ var (
 
 // ChapterSegments returns a file's chapters named like an intro or credits (nil for none).
 func ChapterSegments(ctx context.Context, path string) (intro, credits *Segment, err error) {
-	out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-print_format", "json", "-show_chapters", path).Output()
+	out, err := backgroundCommand(ctx, "ffprobe", "-v", "error", "-print_format", "json", "-show_chapters", path).Output()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -71,7 +70,7 @@ const fingerprintStep = 0.1238
 
 // Fingerprint returns the Chromaprint points of a file's first audio track over [start, start+length).
 func Fingerprint(ctx context.Context, path string, start, length float64) ([]uint32, error) {
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+	cmd := backgroundCommand(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
 		"-ss", fmt.Sprintf("%.3f", start), "-t", fmt.Sprintf("%.3f", length), "-i", path,
 		"-map", "0:a:0", "-ac", "1", "-f", "chromaprint", "-fp_format", "raw", "-")
 	var stderr bytes.Buffer
@@ -149,7 +148,7 @@ var blackLine = regexp.MustCompile(`black_start:([\d.]+) black_end:([\d.]+)`)
 // Only keyframes are decoded, so this is quick but coarse.
 func BlackCredits(ctx context.Context, path string, duration, span float64) (*Segment, error) {
 	from := max(0, duration-span)
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-nostdin", "-skip_frame", "nokey",
+	cmd := backgroundCommand(ctx, "ffmpeg", "-hide_banner", "-nostdin", "-skip_frame", "nokey",
 		"-ss", fmt.Sprintf("%.3f", from), "-i", path, "-an", "-sn", "-map", "0:v:0",
 		"-vf", "scale=320:-2,blackdetect=d=0:pic_th=0.85:pix_th=0.12", "-f", "null", "-")
 	var stderr bytes.Buffer

@@ -815,8 +815,9 @@ fun JobsTab(server: ServerRepository) {
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Text("Jobs wait while the CPU, a disk or a network share is busy (or, with the setting under Streaming, while anyone " +
-                    "is streaming). Pause holds a job until you resume it, or the server restarts.",
+                Text("Jobs run at low priority, so playback gets the CPU and disks first. They wait while a disk or a network share " +
+                    "is busy (or, with the setting under Streaming, while anyone is streaming). Pause holds a job until you resume it, " +
+                    "or the server restarts.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 d.load?.let { Text(loadText(it), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp)) }
@@ -922,7 +923,7 @@ private fun StorageCard(storage: List<StorageUse>) {
 private fun loadText(l: JobLoad): String {
     fun pct(f: Double) = "${(f * 100).roundToInt()}%"
     val parts = mutableListOf<String>()
-    if (l.available) parts += listOf("CPU ${pct(l.cpu)} (jobs wait above ${pct(l.maxCpu)})", "Disk ${pct(l.disk)} (above ${pct(l.maxDisk)})")
+    if (l.available) parts += listOf("CPU ${pct(l.cpu)}", "Disk ${pct(l.disk)} (jobs wait above ${pct(l.maxDisk)})")
     val shares = l.shares.orEmpty()
     if (l.available && shares.isNotEmpty()) {
         parts += "Shares ${shares.joinToString(", ") { "${it.library} ${it.ms.roundToInt()} ms" }} (above ${l.maxShareMs.roundToInt()} ms)"

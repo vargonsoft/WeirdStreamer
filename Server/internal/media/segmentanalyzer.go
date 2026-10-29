@@ -166,16 +166,14 @@ func streaming(streams *StreamTracker) bool {
 	return false
 }
 
-// busyReason says whether a background job should wait, and why: the CPU or a disk too busy to
-// share (or, with no readings, anyone streaming).
+// busyReason says whether a background job should wait, and why: a disk or network share too
+// busy to share (or, with no readings, anyone streaming). The CPU isn't waited for: the jobs run
+// at low priority instead (backgroundCommand), so playback gets it first.
 func busyReason(streams *StreamTracker) (bool, string) {
 	if pauseWhileStreaming() && streaming(streams) {
 		return true, "Someone is streaming (paused while streaming)"
 	}
-	if cpu, disk, ok := load.Readings(); ok {
-		if cpu > maxCPU {
-			return true, fmt.Sprintf("CPU busy (%.0f%%)", cpu*100)
-		}
+	if _, disk, ok := load.Readings(); ok {
 		if disk > maxDisk {
 			return true, fmt.Sprintf("Disk busy (%.0f%%)", disk*100)
 		}
@@ -196,7 +194,6 @@ type LoadStatus struct {
 	Available           bool        `json:"available"`
 	CPU                 float64     `json:"cpu"`
 	Disk                float64     `json:"disk"`
-	MaxCPU              float64     `json:"max_cpu"`
 	MaxDisk             float64     `json:"max_disk"`
 	Shares              []ShareLoad `json:"shares"`
 	MaxShareMs          float64     `json:"max_share_ms"`
@@ -207,19 +204,20 @@ type LoadStatus struct {
 // CurrentLoad returns the load readings and whether anyone is streaming.
 func CurrentLoad(streams *StreamTracker) LoadStatus {
 	cpu, disk, ok := load.Readings()
-	return LoadStatus{Available: ok, CPU: cpu, Disk: disk, MaxCPU: maxCPU, MaxDisk: maxDisk,
+	return LoadStatus{Available: ok, CPU: cpu, Disk: disk, MaxDisk: maxDisk,
 		Shares: load.Shares(), MaxShareMs: maxShareMs, Streaming: streaming(streams), PauseWhileStreaming: pauseWhileStreaming()}
 }
 
-// overloaded says whether a job already running should stop: well past what busy allows (its own
-// work counts too), or, with no readings, anyone streaming.
+// overloaded says whether a job already running should stop: a disk or share well past what busy
+// allows (its own work counts too), or, with no readings, anyone streaming. The CPU doesn't count
+// (see busyReason).
 func overloaded(streams *StreamTracker) bool {
 	if pauseWhileStreaming() && streaming(streams) {
 		return true
 	}
-	if cpu, disk, ok := load.Readings(); ok {
+	if _, disk, ok := load.Readings(); ok {
 		sh := load.Shares()
-		return cpu > stopCPU || disk > 0.9 || len(sh) > 0 && sh[0].Ms > stopShareMs
+		return disk > 0.9 || len(sh) > 0 && sh[0].Ms > stopShareMs
 	}
 	return streaming(streams)
 }
@@ -335,35 +333,33 @@ func span(s *Segment, source string) *database.Span {
 	return &database.Span{Start: s.Start, End: s.End, Source: source}
 }
 
-// runners scales how many trickplay workers work. The job's own ffmpegs are usually what makes
-// the CPU busy, so when it passes the limit one runner stops (after the frame it's on) instead of
-// all of them pausing; only with one runner left does a busy CPU pause the job. A drop is given
-// time to show in the (averaged) reading before another, and a runner is added back once the CPU
-// has stayed well under the limit for a while.
+// runners is how many trickplay workers work at once: the number set on the Jobs page (a change
+// applies at once). Workers beyond it wait without holding a video; one that was part way through
+// a video when the number went down keeps it until a runner frees up. The jobs run at low priority
+// (backgroundCommand) instead of waiting for the CPU, whose load is mostly their own work.
 type runners struct {
-	mu      sync.Mutex
-	active  int
-	limit   int // the configured number of runners, seen last (a change applies at once)
-	changed time.Time
-	moved   chan struct{} // closed and remade when active changes
+	mu    sync.Mutex
+	limit int           // the configured number of runners, seen last
+	moved chan struct{} // closed and remade when limit changes
 	// Every video has been handed out: the runners holding one go on with it (else one parked
 	// mid-video would wait for runners that have all finished), and wait as jobs usually do.
 	draining bool
 }
 
-const (
-	runnerSettle = 20 * time.Second // after a drop, before another
-	runnerRaise  = time.Minute      // under raiseCPU this long since the last change, add one
-	raiseCPU     = 0.75 * maxCPU
-)
-
 func newRunners() *runners {
-	limit := config.TrickplayRunners()
-	return &runners{active: limit, limit: limit, changed: time.Now(), moved: make(chan struct{})}
+	return &runners{limit: config.TrickplayRunners(), moved: make(chan struct{})}
 }
 
-func (r *runners) set(n int) {
-	r.active, r.changed = n, time.Now()
+// update applies a change of the setting (with mu held), waking the runners waiting on it.
+func (r *runners) update(j *jobs.Job) {
+	if lim := config.TrickplayRunners(); lim != r.limit {
+		r.limit = lim
+		r.wake()
+		j.SetDetail(r.detail())
+	}
+}
+
+func (r *runners) wake() {
 	close(r.moved)
 	r.moved = make(chan struct{})
 }
@@ -372,22 +368,18 @@ func (r *runners) set(n int) {
 func (r *runners) drain() {
 	r.mu.Lock()
 	r.draining = true
-	r.set(r.limit)
+	r.wake()
 	r.mu.Unlock()
 }
 
-// claim waits until runner w may start another video: while it's beyond the active count, it
-// waits without holding one (so it can't keep a video from the runners that are working). True
+// claim waits until runner w may start another video: while it's beyond the number of runners,
+// it waits without holding one (so it can't keep a video from the runners that are working). True
 // at once once every video has been handed out; false when ctx ends.
 func (r *runners) claim(ctx context.Context, j *jobs.Job, w int) bool {
 	for {
 		r.mu.Lock()
-		if lim := config.TrickplayRunners(); lim != r.limit { // changed on the Jobs page: apply now
-			r.limit = lim
-			r.set(lim)
-			j.SetDetail(r.detail())
-		}
-		ok, moved := r.draining || w < r.active, r.moved
+		r.update(j)
+		ok, moved := r.draining || w < r.limit, r.moved
 		r.mu.Unlock()
 		if ok {
 			return true
@@ -403,27 +395,19 @@ func (r *runners) claim(ctx context.Context, j *jobs.Job, w int) bool {
 // detail is the runner count for the Jobs page. Callers hold mu, or call it before the runners
 // start.
 func (r *runners) detail() string {
-	return fmt.Sprintf("%d of %d runners", min(r.active, r.limit), r.limit)
+	return plural(r.limit, "runner")
 }
 
-// wait is runner w's wait before each step: it parks while w is beyond the active count, scales
-// the count by the CPU, and otherwise waits as jobs do (paused, disk busy, streaming).
+// wait is runner w's wait before each step: it parks while w is beyond the number of runners (it
+// went down part way through w's video), and otherwise waits as jobs do (paused, a disk or share
+// busy, streaming).
 func (r *runners) wait(ctx context.Context, j *jobs.Job, streams *StreamTracker, w int) bool {
 	for {
 		r.mu.Lock()
-		if lim := config.TrickplayRunners(); lim != r.limit { // changed on the Jobs page: apply now
-			r.limit = lim
-			r.set(lim)
-			j.SetDetail(r.detail())
-		}
-		active, moved, draining := r.active, r.moved, r.draining
+		r.update(j)
+		limit, moved, draining := r.limit, r.moved, r.draining
 		r.mu.Unlock()
-		if draining {
-			return j.Wait(ctx, func() (bool, string) { return busyReason(streams) })
-		}
-		if w >= active {
-			// Stopped part way through its video (the CPU was busy): it keeps the video until a
-			// runner frees up, and the Jobs page says so.
+		if !draining && w >= limit {
 			j.RunnerWaiting(w, true)
 			select {
 			case <-ctx.Done():
@@ -433,37 +417,7 @@ func (r *runners) wait(ctx context.Context, j *jobs.Job, streams *StreamTracker,
 			j.RunnerWaiting(w, false)
 			continue
 		}
-		ok := j.Wait(ctx, func() (bool, string) {
-			busy, why := busyReason(streams)
-			cpu, _, readings := load.Readings()
-			r.mu.Lock()
-			defer r.mu.Unlock()
-			if busy && readings && strings.HasPrefix(why, "CPU") && r.active > 1 {
-				// Too busy: one runner fewer, rather than a pause. Until the drop shows in the
-				// reading, the rest carry on.
-				if time.Since(r.changed) >= runnerSettle {
-					r.set(r.active - 1)
-					log.Printf("trickplay: %s, down to %s", why, r.detail())
-					j.SetDetail(r.detail() + " (CPU busy)")
-				}
-				return false, ""
-			}
-			if !busy && readings && cpu < raiseCPU && r.active < r.limit && time.Since(r.changed) >= runnerRaise {
-				r.set(r.active + 1)
-				log.Printf("trickplay: CPU at %.0f%%, up to %s", cpu*100, r.detail())
-				j.SetDetail(r.detail())
-			}
-			return busy, why
-		})
-		if !ok {
-			return false
-		}
-		r.mu.Lock()
-		still := w < r.active
-		r.mu.Unlock()
-		if still {
-			return true
-		}
+		return j.Wait(ctx, func() (bool, string) { return busyReason(streams) })
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 )
 
 type Config struct {
@@ -37,20 +38,30 @@ const (
 	MaxTrickplayProduct             = 100
 )
 
+// The trickplay settings, read by its runners at every step while the Jobs page can change them:
+// kept apart from GlobalConfig so the reads are safe. Set when the config loads (0: the default).
+var trickplayRunners, trickplayFrames atomic.Int64
+
+// SetTrickplaySettings sets the trickplay settings the job reads (Load does, and tests).
+func SetTrickplaySettings(runners, framesPerRunner int) {
+	trickplayRunners.Store(int64(runners))
+	trickplayFrames.Store(int64(framesPerRunner))
+}
+
 // TrickplayRunners is how many videos the trickplay job makes frames for at once (live).
 func TrickplayRunners() int {
-	if GlobalConfig == nil || GlobalConfig.Jobs.TrickplayRunners == 0 {
-		return DefaultTrickplayRunners
+	if n := int(trickplayRunners.Load()); n != 0 {
+		return min(max(n, 1), MaxTrickplayRunners)
 	}
-	return min(max(GlobalConfig.Jobs.TrickplayRunners, 1), MaxTrickplayRunners)
+	return DefaultTrickplayRunners
 }
 
 // TrickplayFramesPerRunner is how many frames one process makes for a runner (live).
 func TrickplayFramesPerRunner() int {
-	if GlobalConfig == nil || GlobalConfig.Jobs.TrickplayFramesPerRunner == 0 {
-		return DefaultTrickplayFramesPerRunner
+	if n := int(trickplayFrames.Load()); n != 0 {
+		return min(max(n, 1), MaxTrickplayFrames)
 	}
-	return min(max(GlobalConfig.Jobs.TrickplayFramesPerRunner, 1), MaxTrickplayFrames)
+	return DefaultTrickplayFramesPerRunner
 }
 
 // UpdateJobs saves new trickplay settings to config.json and reloads them.
@@ -333,6 +344,7 @@ func Load(path string) error {
 
 	GlobalConfig = config
 	loadedPath = path
+	SetTrickplaySettings(config.Jobs.TrickplayRunners, config.Jobs.TrickplayFramesPerRunner)
 	return nil
 }
 

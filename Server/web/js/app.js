@@ -4304,8 +4304,7 @@ function renderJobs() {
     const loadText = [];
     if (load) {
         if (load.available) {
-            loadText.push(`CPU ${pct(load.cpu)} (jobs wait above ${pct(load.max_cpu)})`,
-                `Disk ${pct(load.disk)} (above ${pct(load.max_disk)})`);
+            loadText.push(`CPU ${pct(load.cpu)}`, `Disk ${pct(load.disk)} (jobs wait above ${pct(load.max_disk)})`);
             if (load.shares?.length) {
                 loadText.push(`Shares ${load.shares.map(sh => `${sh.library} ${Math.round(sh.ms)} ms`).join(', ')} (above ${load.max_share_ms} ms)`);
             }

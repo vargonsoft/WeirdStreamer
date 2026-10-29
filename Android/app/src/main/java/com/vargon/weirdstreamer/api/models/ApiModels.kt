@@ -265,7 +265,6 @@ data class JobLoad(
     @SerializedName("available") val available: Boolean = false,
     @SerializedName("cpu") val cpu: Double = 0.0,
     @SerializedName("disk") val disk: Double = 0.0,
-    @SerializedName("max_cpu") val maxCpu: Double = 0.0,
     @SerializedName("max_disk") val maxDisk: Double = 0.0,
     @SerializedName("shares") val shares: List<ShareLoad>? = null,
     @SerializedName("max_share_ms") val maxShareMs: Double = 0.0,

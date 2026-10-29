@@ -19,7 +19,8 @@ import (
 )
 
 // LoadMonitor samples the machine's CPU and disk use (Linux /proc), so background jobs run only
-// with room to spare: busy above maxCPU of all cores or maxDisk of the busiest whole disk's time,
+// with room to spare: busy above maxDisk of the busiest whole disk's time (the CPU is shown on
+// the Jobs page, but the jobs run at low priority instead of waiting for it),
 // smoothed over the last half-minute or so. Network shares' disks don't show in /proc, so it also
 // times small reads from a big file on each share: an idle hard disk answers in 10-20ms, a busy
 // one queues them.
@@ -51,9 +52,7 @@ type shareProbe struct {
 }
 
 const (
-	maxCPU     = 0.60
 	maxDisk    = 0.50
-	stopCPU    = 0.85 // a job already running stops above this (it adds load of its own)
 	loadSample = 5 * time.Second
 
 	maxShareMs  = 60  // a share's reads take this long when its disk is busy
