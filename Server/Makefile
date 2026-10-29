@@ -66,13 +66,8 @@ docker-compose-down: ## Stop the container
 docker-compose-logs: ## Follow the container's logs
 	$(COMPOSE) logs -f
 
-setup: build ## Initial setup: build, create config, and create admin user
-	@if [ ! -f config.json ]; then \
-		echo "Creating config.json from example..."; \
-		cp config.example.json config.json; \
-		echo "Please edit config.json and set your JWT secret and media paths!"; \
-	fi
-	@echo "Run 'make create-admin' to create an admin user"
+setup: ## Guided config.json creation (scripts/create-config.sh), which can also create the admin user
+	scripts/create-config.sh
 
 create-admin: ## Create admin user (interactive)
 	./$(CLI_BIN) user create admin --admin
