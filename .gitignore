@@ -3,6 +3,8 @@
 /local.properties
 /Android/.idea
 /Android/build
+/.idea/
+/.claude/
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
