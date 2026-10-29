@@ -342,10 +342,10 @@ function showMainScreen() {
 async function handleLogin(e) {
     e.preventDefault();
     loginError.textContent = '';
-    
+
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
-    
+
     try {
         console.log('Attempting login for user:', username);
         const response = await api.login(username, password);
@@ -353,8 +353,39 @@ async function handleLogin(e) {
         showMainScreen();
     } catch (error) {
         console.error('Login failed:', error);
+        if (error.retryAfter) {
+            startLoginCooldown(error.retryAfter);
+            return;
+        }
         loginError.textContent = error.message || 'Login failed. Please try again.';
     }
+}
+
+// After too many wrong passwords the server refuses logins for a while. The button stays off and
+// the error shows the countdown until then.
+let loginCooldownTimer = null;
+
+function startLoginCooldown(seconds) {
+    const button = loginForm.querySelector('button[type="submit"]');
+    const until = Date.now() + seconds * 1000;
+    clearInterval(loginCooldownTimer);
+
+    const tick = () => {
+        const left = Math.ceil((until - Date.now()) / 1000);
+        if (left > 0) {
+            const minutes = Math.floor(left / 60);
+            const shown = minutes ? `${minutes}m ${left % 60}s` : `${left}s`;
+            loginError.textContent = `Too many failed attempts. Try again in ${shown}.`;
+            button.disabled = true;
+            return;
+        }
+        clearInterval(loginCooldownTimer);
+        loginCooldownTimer = null;
+        loginError.textContent = '';
+        button.disabled = false;
+    };
+    tick();
+    if (Date.now() < until) loginCooldownTimer = setInterval(tick, 1000);
 }
 
 // After the wordmark: the server's name (else its address) and who's signed in, as on Android.

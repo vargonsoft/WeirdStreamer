@@ -40,7 +40,10 @@ class MediaAPI {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.message || 'Request failed');
+            const failure = new Error(error.message || 'Request failed');
+            // Set on 429: seconds until the server accepts another try
+            failure.retryAfter = error.retry_after || 0;
+            throw failure;
         }
         if (response.status === 204) return null;
 

@@ -25,12 +25,12 @@ func TestChangePasswordRequiresCurrentPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := auth.NewService(db)
-	login, err := service.Authenticate("viewer", "old-pw")
+	login, err := service.Authenticate("viewer", "old-pw", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	authHandler := NewAuthHandler(service)
-	change := authHandler.AuthMiddleware(http.HandlerFunc(NewUserHandler(db).ChangePassword))
+	change := authHandler.AuthMiddleware(http.HandlerFunc(NewUserHandler(db, service).ChangePassword))
 
 	post := func(body string) int {
 		req := httptest.NewRequest(http.MethodPost, "/api/users/change-password", strings.NewReader(body))
@@ -47,13 +47,13 @@ func TestChangePasswordRequiresCurrentPassword(t *testing.T) {
 			t.Errorf("%s: status %d, want %d", body, got, want)
 		}
 	}
-	if _, err := service.Authenticate("viewer", "old-pw"); err != nil {
+	if _, err := service.Authenticate("viewer", "old-pw", "test"); err != nil {
 		t.Fatal("password changed without the right current password")
 	}
 	if got := post(`{"old_password":"old-pw","new_password":"new-pw"}`); got != http.StatusOK {
 		t.Fatalf("change with the right current password: status %d", got)
 	}
-	if _, err := service.Authenticate("viewer", "new-pw"); err != nil {
+	if _, err := service.Authenticate("viewer", "new-pw", "test"); err != nil {
 		t.Errorf("new password doesn't work: %v", err)
 	}
 }

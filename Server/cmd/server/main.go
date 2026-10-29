@@ -97,7 +97,7 @@ func main() {
 	mediaHandler := handlers.NewMediaHandler(db, authService)
 	mediaHandler.SetDownloads(media.NewDownloadManager(config.GlobalConfig.Media.DownloadPath))
 	configHandler := handlers.NewConfigHandler(db)
-	userHandler := handlers.NewUserHandler(db)
+	userHandler := handlers.NewUserHandler(db, authService)
 
 	// TMDB metadata for "movie" and "tv" libraries, looked up in the background
 	metadataService := metadata.NewService(db, mediaHandler.NotifyMetadataReady)

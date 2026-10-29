@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,9 +38,17 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := h.authService.Authenticate(req.Username, req.Password)
-	if err != nil {
+	response, err := h.authService.Authenticate(req.Username, req.Password, clientIP(r))
+	var locked *auth.LockedError
+	switch {
+	case errors.As(err, &locked):
+		respondLocked(w, locked.Wait)
+		return
+	case errors.Is(err, auth.ErrInvalidCredentials):
 		respondError(w, http.StatusUnauthorized, err.Error())
+		return
+	case err != nil:
+		respondError(w, http.StatusInternalServerError, "Failed to sign in")
 		return
 	}
 
@@ -111,6 +122,18 @@ func tokenFromRequest(r *http.Request) string {
 		}
 	}
 	return ""
+}
+
+// respondLocked refuses a password check until the limiter's lock runs out. Rounded up, so a
+// client that waits the number of seconds shown is never refused again.
+func respondLocked(w http.ResponseWriter, wait time.Duration) {
+	seconds := int(math.Ceil(wait.Seconds()))
+	w.Header().Set("Retry-After", strconv.Itoa(seconds))
+	respondJSON(w, http.StatusTooManyRequests, models.ErrorResponse{
+		Error:      http.StatusText(http.StatusTooManyRequests),
+		Message:    "Too many failed attempts. Try again later.",
+		RetryAfter: seconds,
+	})
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {

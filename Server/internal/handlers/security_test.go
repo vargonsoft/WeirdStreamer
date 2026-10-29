@@ -70,7 +70,7 @@ func newTestAuth(t *testing.T) (*AuthHandler, string) {
 		t.Fatal(err)
 	}
 	service := auth.NewService(db)
-	login, err := service.Authenticate("viewer", "pw")
+	login, err := service.Authenticate("viewer", "pw", "test")
 	if err != nil {
 		t.Fatal(err)
 	}

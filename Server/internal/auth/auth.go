@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"database/sql"
 	"errors"
 	"time"
 
@@ -19,21 +20,45 @@ type Claims struct {
 }
 
 type Service struct {
-	db *database.DB
+	db      *database.DB
+	limiter *Limiter
 }
 
 func NewService(db *database.DB) *Service {
-	return &Service{db: db}
+	return &Service{db: db, limiter: NewLimiter()}
 }
 
-func (s *Service) Authenticate(username, password string) (*models.LoginResponse, error) {
-	user, err := s.db.GetUserByUsername(username)
-	if err != nil {
-		return nil, errors.New("invalid credentials")
-	}
+// ErrInvalidCredentials is a wrong password or an unknown username.
+var ErrInvalidCredentials = errors.New("invalid credentials")
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, errors.New("invalid credentials")
+// LockedError refuses a password check while the limiter's lock is in force.
+type LockedError struct {
+	Wait time.Duration
+}
+
+func (e *LockedError) Error() string {
+	return "too many failed attempts"
+}
+
+// Authenticate signs a user in from the client address clientIP. Wrong passwords are limited per
+// username and address (a *LockedError while locked out); ErrInvalidCredentials is a wrong
+// password or unknown user, and any other error is the server's.
+func (s *Service) Authenticate(username, password, clientIP string) (*models.LoginResponse, error) {
+	attempt, wait := s.limiter.Begin(username, clientIP)
+	if attempt == nil {
+		return nil, &LockedError{Wait: wait}
+	}
+	user, err := s.db.GetUserByUsername(username)
+	if errors.Is(err, sql.ErrNoRows) {
+		attempt.Failed()
+		return nil, ErrInvalidCredentials
+	}
+	if err != nil {
+		attempt.Abandon()
+		return nil, err
+	}
+	if err := checkPassword(attempt, user, password); err != nil {
+		return nil, err
 	}
 
 	token, expiresAt, err := s.GenerateToken(user)
@@ -46,6 +71,25 @@ func (s *Service) Authenticate(username, password string) (*models.LoginResponse
 		ExpiresAt: expiresAt,
 		User:      *user,
 	}, nil
+}
+
+// VerifyPassword checks a signed-in user's password (to change it), limited like signing in.
+func (s *Service) VerifyPassword(user *models.User, password, clientIP string) error {
+	attempt, wait := s.limiter.Begin(user.Username, clientIP)
+	if attempt == nil {
+		return &LockedError{Wait: wait}
+	}
+	return checkPassword(attempt, user, password)
+}
+
+// checkPassword compares password with the user's hash and ends the attempt with the result.
+func checkPassword(attempt *Attempt, user *models.User, password string) error {
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+		attempt.Failed()
+		return ErrInvalidCredentials
+	}
+	attempt.Passed()
+	return nil
 }
 
 func (s *Service) GenerateToken(user *models.User) (string, int64, error) {

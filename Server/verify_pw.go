@@ -35,7 +35,7 @@ fmt.Printf("✗ Password 'admin' does NOT match: %v\n", err)
 
 // Now test full authentication flow
 authService := auth.NewService(db)
-response, err := authService.Authenticate("admin", "admin")
+response, err := authService.Authenticate("admin", "admin", "")
 if err != nil {
 fmt.Printf("✗ Authentication failed: %v\n", err)
 } else {

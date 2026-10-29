@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/weirdstreamer/server/internal/config"
 	"net/http"
@@ -10,15 +11,15 @@ import (
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/models"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type UserHandler struct {
-	db *database.DB
+	db          *database.DB
+	authService *auth.Service
 }
 
-func NewUserHandler(db *database.DB) *UserHandler {
-	return &UserHandler{db: db}
+func NewUserHandler(db *database.DB, authService *auth.Service) *UserHandler {
+	return &UserHandler{db: db, authService: authService}
 }
 
 type CreateUserRequest struct {
@@ -210,7 +211,13 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "Current password is required")
 		return
 	}
-	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)) != nil {
+	// Guessing the current password is limited like signing in.
+	var locked *auth.LockedError
+	switch err := h.authService.VerifyPassword(user, req.OldPassword, clientIP(r)); {
+	case errors.As(err, &locked):
+		respondLocked(w, locked.Wait)
+		return
+	case err != nil:
 		respondError(w, http.StatusForbidden, "Current password is incorrect")
 		return
 	}

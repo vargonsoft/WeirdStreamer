@@ -296,6 +296,13 @@ class ServerRepository(
                 credentialManager.saveServerToken(serverUrl, response.body()!!.token, response.body()!!.expiresAt)
                 credentialManager.addApiServer(serverUrl)
                 Result.success(true)
+            } else if (response.code() == 429) {
+                // Too many wrong passwords: the server says how long to wait (Retry-After, or
+                // retry_after in the body, in seconds)
+                val seconds = response.headers()["Retry-After"]?.toIntOrNull()
+                    ?: runCatching { org.json.JSONObject(response.errorBody()?.string() ?: "").optInt("retry_after") }.getOrNull()
+                    ?: 0
+                Result.failure(Exception("Too many failed attempts. Try again ${retryWait(seconds)}."))
             } else Result.failure(Exception("Login failed"))
         } catch (e: Exception) {
             Result.failure(e)
@@ -378,6 +385,13 @@ class ServerRepository(
     }
     
     fun getToken(): String? = credentialManager.getServerToken(serverUrl)
+}
+
+/** When a locked-out login can be tried again, as the web shows it: "in 4m 10s", "in 30s", or "later" if unknown. */
+internal fun retryWait(seconds: Int): String = when {
+    seconds <= 0 -> "later"
+    seconds >= 60 -> "in ${seconds / 60}m ${seconds % 60}s"
+    else -> "in ${seconds}s"
 }
 
 /**

@@ -119,6 +119,8 @@ type UserUpdateRequest struct {
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message,omitempty"`
+	// RetryAfter is the seconds to wait before trying again (set with 429 Too Many Requests).
+	RetryAfter int `json:"retry_after,omitempty"`
 }
 
 // LibraryListing is a movie or TV library as a list of titles (Library view).
