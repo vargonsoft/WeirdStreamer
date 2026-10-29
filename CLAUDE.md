@@ -19,7 +19,7 @@ for each TODO item are at the end of this file.
   `adb install` of a debug build on real devices. Deploy only to the destinations the user names
   (`--onn` only when they ask for the Onn).
 - **Commits:** only when asked. End messages with
-  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. `origin` is a local bare repo
+  `Co-Authored-By: <the model that made the change> <noreply@anthropic.com>` (the model running the session that edited the code). `origin` is a local bare repo
   (`../repos/WeirdStreamer`); push only when asked. There's also a `github` remote.
 - Never `pkill -f` (it can match the live server or other processes). Stop processes by PID or
   through the tool that started them.
