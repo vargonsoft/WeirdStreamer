@@ -12,10 +12,10 @@ if ! command -v go &> /dev/null; then
     exit 1
 fi
 
-# Check if FFmpeg is installed
-if ! command -v ffmpeg &> /dev/null; then
-    echo "Warning: FFmpeg is not installed. Video thumbnail generation will not work."
-    echo "Install FFmpeg: sudo apt install ffmpeg (Ubuntu/Debian)"
+# Check that ffmpeg has the encoders, muxers and filters the server uses
+if ! scripts/check-ffmpeg.sh; then
+    echo "Install an ffmpeg with the features above (sudo apt install ffmpeg, or brew install ffmpeg), then build again." >&2
+    exit 1
 fi
 
 # Download dependencies

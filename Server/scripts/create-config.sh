@@ -38,6 +38,11 @@ if [ "${#missing[@]}" -gt 0 ]; then
     fi
 fi
 
+if ! scripts/check-ffmpeg.sh; then
+    echo "Install an ffmpeg with the features above, then run this again." >&2
+    exit 1
+fi
+
 # go.mod asks for Go 1.24.4 or later
 need_go=1
 if command -v go >/dev/null; then

@@ -10,4 +10,8 @@ fi
 if [ ! -x bin/server ] || [ ! -x bin/cli ]; then
     scripts/build.sh
 fi
+if ! scripts/check-ffmpeg.sh; then
+    echo "ffmpeg is missing features the server needs (listed above)." >&2
+    exit 1
+fi
 exec scripts/live.sh
