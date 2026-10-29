@@ -23,9 +23,9 @@ import (
 	"github.com/weirdstreamer/server/internal/metadata"
 )
 
-// @title Media Streaming Server API
+// @title Weird Streamer API
 // @version 1.0
-// @description High-performance media streaming server with authentication
+// @description High-performance Weird Streamer server with authentication
 // @termsOfService http://swagger.io/terms/
 
 // @contact.name API Support

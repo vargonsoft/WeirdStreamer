@@ -94,6 +94,8 @@ type ServerConfig struct {
 	// from the working directory. Empty: cert.pem and key.pem.
 	CertFile string `json:"certFile,omitempty"`
 	KeyFile  string `json:"keyFile,omitempty"`
+	// Where live.sh writes the server's log files, one per start. Relative paths are from Server/.
+	LogsPath string `json:"logsPath,omitempty"`
 }
 
 const (

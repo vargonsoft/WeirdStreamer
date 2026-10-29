@@ -11,7 +11,7 @@ for each TODO item are at the end of this file.
   so far: reading codec/format details (ffprobe, no frames) of a file the user names.
 - **Secrets:** the TMDB token is in `Server/config.json` and the test password is in
   `Server/e2e/pw`. Never print or repeat either.
-- **Live server restarts:** only when asked, with `Server/restart-live.sh` (below). It won't
+- **Live server restarts:** only when asked, with `Server/scripts/restart-live.sh` (below). It won't
   restart while someone is watching (exit code 2, listing the streams): then say who's watching
   and ask before running it with `--force`.
 - **Onn TV box:** no testing or installing on it during the day. Use the emulators.
@@ -27,7 +27,7 @@ for each TODO item are at the end of this file.
 ## Layout
 
 - `Server/`: Go, gorilla/mux, SQLite (`mattn/go-sqlite3`, needs CGO). Entry point
-  `cmd/server/main.go` (routes). Code is in `internal/`:
+  `src/cmd/server/main.go` (routes). Code is in `src/internal/`:
   - `handlers/`: HTTP API. `media.go` (browse, stream, thumbnails), `library.go` (Library view,
     title pages), `playback.go` (per-user progress, Continue Watching), `streams.go` (admin
     Streams page, player progress reports), `downloads.go` (offline-download encodes), `match.go`
@@ -58,22 +58,22 @@ for each TODO item are at the end of this file.
 
 ## Live server
 
-- Runs from `Server/` as `./server`, under `Server/live.sh` in the user's "WeirdStreamer live"
-  terminal tab. Each start logs to its own file in `Server/logs/` (the last 20 are kept), and
-  `Server/server.log` links to the newest. Port 9000, HTTPS. Config is `Server/config.json`
+- Runs from `Server/` as `./bin/server`, under `Server/scripts/live.sh` in the user's "WeirdStreamer live"
+  terminal tab. Each start logs to its own file in the folder `server.logsPath` names (`Server/run/logs/` live) (the last 20 are kept). Port 9000, HTTPS. Config is `Server/config.json`
   (git-ignored). Data is in `Server/run/` (databases, thumbnails, trickplay, artwork, download
   encodes).
-- To deploy server code: `Server/restart-live.sh`. It checks for active streams, builds, stops
+- To deploy server code: `Server/scripts/restart-live.sh`. It checks for active streams, builds, stops
   the live server and waits for `live.sh` to start the new one (`--no-build` restarts the binary
   as it is). It refuses if the server wasn't started by `live.sh`; then the user has to stop it
-  and run `live.sh` in that tab.
-- Server tests: `cd Server && go vet ./internal/... ./cmd/... && go test ./internal/...`.
-  Don't use `./...`: stray `main` files in `Server/` (`test_auth.go`, `verify_pw.go`,
-  `test_login.go`) break it.
+  and run `scripts/live.sh` in that tab.
+- Server tests: `cd Server/src && go vet ./internal/... ./cmd/... && go test ./internal/...`.
+  Don't use `./...`: stray `main` files in `Server/src/` (`test_auth.go`, `test_login.go`) break it.
+  The Go module is in `Server/src/`; binaries build into `Server/bin/` (`make build`, `scripts/build.sh`,
+  `scripts/restart-live.sh`).
 
 ## Test environment
 
-- `Server/run-e2e.sh` builds the server and runs a test server from `Server/e2e/` (git-ignored)
+- `Server/scripts/run-e2e.sh` builds the server and runs a test server from `Server/e2e/` (git-ignored)
   on **http://localhost:9100**. Android emulators reach it at `http://10.0.2.2:9100`. It has its
   own config, databases and accounts (`e2e_admin`, `e2e_adult`, `e2e_normal`; password in
   `Server/e2e/pw`), and serves `Server/web` through a symlink.

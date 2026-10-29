@@ -1,8 +1,8 @@
 .PHONY: build clean run install test docker help
 
 # Build variables
-SERVER_BIN=server
-CLI_BIN=cli
+SERVER_BIN=bin/server
+CLI_BIN=bin/cli
 GO=go
 GOFLAGS=-v
 LDFLAGS=-s -w
@@ -14,16 +14,17 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
 build: ## Build server and CLI binaries
+	mkdir -p bin
 	@echo "Building server..."
-	CGO_ENABLED=1 $(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(SERVER_BIN) ./cmd/server
+	CGO_ENABLED=1 $(GO) -C src build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o ../$(SERVER_BIN) ./cmd/server
 	@echo "Building CLI..."
-	CGO_ENABLED=1 $(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(CLI_BIN) ./cmd/cli
+	CGO_ENABLED=1 $(GO) -C src build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o ../$(CLI_BIN) ./cmd/cli
 	@echo "Build complete!"
 
 install: ## Install dependencies
 	@echo "Installing dependencies..."
-	$(GO) mod download
-	$(GO) mod tidy
+	$(GO) -C src mod download
+	$(GO) -C src mod tidy
 
 run: build ## Build and run the server
 	@echo "Starting server..."
@@ -33,17 +34,17 @@ dev: ## Run server with auto-reload (requires air: go install github.com/cosmtre
 	air
 
 test: ## Run tests
-	$(GO) test -v ./...
+	$(GO) -C src test -v ./...
 
 test-coverage: ## Run tests with coverage
-	$(GO) test -v -coverprofile=coverage.out ./...
+	$(GO) -C src test -v -coverprofile=../coverage.out ./...
 	$(GO) tool cover -html=coverage.out
 
 clean: ## Remove build artifacts
 	@echo "Cleaning..."
 	rm -f $(SERVER_BIN) $(CLI_BIN)
 	rm -f coverage.out
-	rm -rf data/*.db
+	rm -rf var/data/*.db
 	rm -rf thumbnails/*
 	@echo "Clean complete!"
 
@@ -89,10 +90,10 @@ list-paths: ## List media paths
 	./$(CLI_BIN) config list-paths
 
 fmt: ## Format Go code
-	$(GO) fmt ./...
+	$(GO) -C src fmt ./...
 
 vet: ## Run go vet
-	$(GO) vet ./...
+	$(GO) -C src vet ./...
 
 lint: ## Run golangci-lint (requires: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
 	golangci-lint run

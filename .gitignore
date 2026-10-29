@@ -17,12 +17,34 @@
 .externalNativeBuild
 .cxx
 local.properties
+# Server (Go): the binaries, built into Server/bin/ by make, build.sh and the scripts
+/Server/bin/
+/Server/*.exe
+/Server/*.exe~
+/Server/*.dll
+/Server/*.so
+/Server/*.dylib
+# Test binaries (go test -c) and coverage output
+*.test
+*.out
+# Go workspace file
+go.work
+# Thumbnails cache
+thumbnails/
+# Config and secrets
+config.json
+.env
 /Server/run
+/Server/var
 # The Android app published for download by Android/deploy-release.sh --web
 /Server/web/downloads
 
-
 # Local test server (its own config, accounts and sample media)
 /Server/e2e
-Server/logs/
-Server/server.log
+
+# Editors
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db

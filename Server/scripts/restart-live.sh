@@ -3,7 +3,7 @@
 # watching: then it lists the streams and stops, exit code 2 (--force restarts anyway).
 # Options: --force, --no-build (restart with the server binary as it is).
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 force=0 build=1
 for arg in "$@"; do
     case "$arg" in
@@ -13,16 +13,16 @@ for arg in "$@"; do
     esac
 done
 
-# The live server: ./server running in this directory (not the e2e one). Its binary reads as
+# The live server: ./bin/server running in this directory (not the e2e one). Its binary reads as
 # "(deleted)" once a new one has replaced it.
 pid=""
 for p in $(pgrep -u "$USER" -x server || true); do
     exe=$(readlink "/proc/$p/exe")
-    if [ "$(readlink "/proc/$p/cwd")" = "$PWD" ] && [ "${exe% (deleted)}" = "$PWD/server" ]; then
+    if [ "$(readlink "/proc/$p/cwd")" = "$PWD" ] && [ "${exe% (deleted)}" = "$PWD/bin/server" ]; then
         pid=$p
     fi
 done
-[ -n "$pid" ] || { echo "The live server isn't running. Start it with Server/live.sh." >&2; exit 1; }
+[ -n "$pid" ] || { echo "The live server isn't running. Start it with Server/scripts/live.sh." >&2; exit 1; }
 # live.sh restarts it; a server started some other way would just stop.
 started_by_live() {
     local p=$1
@@ -34,7 +34,7 @@ started_by_live() {
 }
 if ! started_by_live "$pid"; then
     echo "The live server (PID $pid) wasn't started by live.sh, so it wouldn't come back." >&2
-    echo "Stop it, then run Server/live.sh in its terminal." >&2
+    echo "Stop it, then run Server/scripts/live.sh in its terminal." >&2
     exit 1
 fi
 
@@ -51,8 +51,9 @@ for s in json.load(sys.stdin)["streams"]:
 fi
 
 if [ "$build" = 1 ]; then
-    go build -o server.new ./cmd/server
-    mv server.new server
+    mkdir -p bin
+    go -C src build -o ../bin/server.new ./cmd/server
+    mv bin/server.new bin/server
 fi
 
 touch run/.restart
@@ -68,5 +69,5 @@ for _ in $(seq 1 60); do
     fi
     sleep 0.5
 done
-echo "The live server hasn't come back after 30s: see server.log." >&2
+echo "The live server hasn't come back after 30s: see the newest log file (server.logsPath in config.json)." >&2
 exit 1

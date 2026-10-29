@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
-  title: Media Streaming Server API
-  description: High-performance media streaming server with authentication and thumbnail generation
+  title: Weird Streamer API
+  description: High-performance Weird Streamer server with authentication and thumbnail generation
   version: 1.0.0
   contact:
     name: API Support

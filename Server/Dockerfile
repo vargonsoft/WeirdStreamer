@@ -6,15 +6,16 @@ RUN apk add --no-cache git gcc musl-dev ffmpeg-dev
 WORKDIR /build
 
 # Copy go mod files
-COPY go.mod go.sum ./
-RUN go mod download
+COPY src/go.mod src/go.sum ./src/
+RUN go -C src mod download
 
-# Copy source
-COPY . .
+# Copy source and the web UI
+COPY src ./src
+COPY web ./web
 
 # Build server and CLI
-RUN CGO_ENABLED=1 go build -o server ./cmd/server
-RUN CGO_ENABLED=1 go build -o cli ./cmd/cli
+RUN CGO_ENABLED=1 go -C src build -o /build/server ./cmd/server
+RUN CGO_ENABLED=1 go -C src build -o /build/cli ./cmd/cli
 
 FROM alpine:latest
 

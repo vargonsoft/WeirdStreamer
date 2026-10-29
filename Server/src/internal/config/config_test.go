@@ -106,3 +106,18 @@ func TestTLSFilesDefaultAndExplicit(t *testing.T) {
 		t.Errorf("explicit = %q, %q", cert, key)
 	}
 }
+
+// Saving rewrites every field, so a field the config struct doesn't name would be dropped.
+func TestSaveKeepsLogsPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := Save(path, &Config{Server: ServerConfig{LogsPath: "./var/logs"}}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"logsPath": "./var/logs"`) {
+		t.Errorf("saved config lost logsPath: %s", data)
+	}
+}

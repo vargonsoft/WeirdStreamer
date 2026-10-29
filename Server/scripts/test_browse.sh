@@ -2,6 +2,8 @@
 # Quick test script to verify on-demand file browsing is working
 # Run this after rebuilding the server on the remote machine
 
+cd "$(dirname "$0")/.."
+
 echo "=== Testing On-Demand File Browsing ==="
 echo ""
 
@@ -70,7 +72,7 @@ fi
 
 echo ""
 echo "=== Verification Checklist ==="
-echo "✓ Check server binary date: ls -lah ./server"
-echo "✓ Check if 'getMediaTypeFromExtension' exists: grep -n getMediaTypeFromExtension internal/handlers/media.go"
-echo "✓ Restart server to load new code: killall server && ./server"
+echo "✓ Check server binary date: ls -lah ./bin/server"
+echo "✓ Check if 'getMediaTypeFromExtension' exists: grep -n getMediaTypeFromExtension src/internal/handlers/media.go"
+echo "✓ Restart server to load new code: killall server && ./bin/server"
 echo "✓ Check server logs for errors during browsing"

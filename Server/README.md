@@ -13,11 +13,12 @@ and serves the web UI. The Android TV and phone app talks to the same API.
 ## Build and run
 
 ```bash
-go build -o server ./cmd/server
-go build -o cli ./cmd/cli
+mkdir -p bin
+go -C src build -o ../bin/server ./cmd/server
+go -C src build -o ../bin/cli ./cmd/cli
 cp config.example.json config.json   # then edit it
-./cli user create admin --admin
-./server
+./bin/cli user create admin --admin
+./bin/server
 ```
 
 `make build` builds both binaries. The server reads `./config.json`, or the file named by
@@ -57,26 +58,26 @@ there starts a metadata sync without a restart.
 Each user has one group, and sees a library only if that group is in the library's `groups`.
 
 ```bash
-./cli user create <name> [--admin] [--group <group>]
-./cli user list
-./cli user set-group <name> <group>
-./cli user change-password <name>
-./cli user delete <name>
+./bin/cli user create <name> [--admin] [--group <group>]
+./bin/cli user list
+./bin/cli user set-group <name> <group>
+./bin/cli user change-password <name>
+./bin/cli user delete <name>
 ```
 
-The CLI can also scan libraries (`./cli scan`) and generate trickplay frames ahead of time
-(`./cli trickplay [--video P | --dir P | --library NAME]`, `./cli trickplay clean`).
+The CLI can also scan libraries (`./bin/cli scan`) and generate trickplay frames ahead of time
+(`./bin/cli trickplay [--video P | --dir P | --library NAME]`, `./bin/cli trickplay clean`).
 
 ## Code layout
 
-- `cmd/server/main.go`: startup and all routes. `cmd/cli`: the admin CLI.
-- `internal/handlers`: the HTTP API. Browse and stream, library and title pages, playback
+- `src/cmd/server/main.go`: startup and all routes. `src/cmd/cli`: the admin CLI.
+- `src/internal/handlers`: the HTTP API. Browse and stream, library and title pages, playback
   progress and Continue Watching, the admin Streams page, downloads, TMDB match fixing, users,
   config and access checks.
-- `internal/media`: direct serving and ffmpeg transcoding, ISO9660/IFO parsing and disc
+- `src/internal/media`: direct serving and ffmpeg transcoding, ISO9660/IFO parsing and disc
   streaming, download encodes, the active-stream tracker, thumbnails and trickplay.
-- `internal/metadata`: TMDB matching and the library index.
-- `internal/database`: SQLite. `internal/auth`: logins and JWTs.
+- `src/internal/metadata`: TMDB matching and the library index.
+- `src/internal/database`: SQLite. `src/internal/auth`: logins and JWTs.
 - `web/`: the web UI (vanilla JS, no build step). Changes show up on a page reload.
 
 ## API overview
@@ -95,17 +96,18 @@ Everything under `/api` except login needs `Authorization: Bearer <token>` from
 - `/thumbnails/`, `/trickplay/`, `/artwork/`: images.
 - `GET /health`, and `GET /local/streams` (active streams, from localhost only).
 
-`api/openapi.yaml` is from an early version and doesn't cover most of this.
+`src/api/openapi.yaml` is from an early version and doesn't cover most of this.
 
 ## Tests
 
 ```bash
+cd src
 go vet ./internal/... ./cmd/...
 go test ./internal/...
 ```
 
-Use `./internal/...`, not `./...`: the stray `main` files in this directory (`test_auth.go`,
-`test_login.go`, `verify_pw.go`) break the build.
+Use `./internal/...`, not `./...`: the stray `main` files in `src/` (`test_auth.go`,
+`test_login.go`) break the build.
 
-`./run-e2e.sh` builds the server and runs a test instance from `e2e/` (git-ignored, with its own
+`./scripts/run-e2e.sh` builds the server and runs a test instance from `e2e/` (git-ignored, with its own
 config, accounts and sample media) on http://localhost:9100.

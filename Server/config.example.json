@@ -3,11 +3,12 @@
     "port": 8080,
     "host": "0.0.0.0",
     "certFile": "cert.pem",
-    "keyFile": "key.pem"
+    "keyFile": "key.pem",
+    "logsPath": "./var/logs"
   },
   "database": {
-    "userPath": "./data/users.db",
-    "mediaPath": "./data/media.db"
+    "userPath": "./var/data/users.db",
+    "mediaPath": "./var/data/media.db"
   },
   "media": {
     "paths": [
@@ -29,10 +30,10 @@
         "groups": ["adults", "admins"]
       }
     ],
-    "thumbnailPath": "./thumbnails",
-    "trickplayPath": "./trickplay",
-    "artworkPath": "./artwork",
-    "downloadPath": "./downloads",
+    "thumbnailPath": "./var/thumbnails",
+    "trickplayPath": "./var/trickplay",
+    "artworkPath": "./var/artwork",
+    "downloadPath": "./var/downloads",
     "supportedVideoFormats": [".mp4", ".mkv", ".avi", ".divx", ".xvid", ".iso", ".mov", ".wmv", ".flv", ".webm", ".3gp", ".3gpp", ".m4v", ".mpg", ".mpeg", ".ts", ".mp2"],
     "supportedImageFormats": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
     "supportedDocFormats": [".pdf"],
