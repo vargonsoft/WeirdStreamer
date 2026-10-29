@@ -1,7 +1,9 @@
 {
   "server": {
     "port": 8080,
-    "host": "0.0.0.0"
+    "host": "0.0.0.0",
+    "certFile": "cert.pem",
+    "keyFile": "key.pem"
   },
   "database": {
     "userPath": "./data/users.db",

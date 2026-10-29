@@ -242,8 +242,7 @@ func main() {
 		var err error
 		// Check if HTTP/2 is enabled and certificates exist
 		if config.GlobalConfig.Streaming.EnableHTTP2 {
-			certFile := "cert.pem"
-			keyFile := "key.pem"
+			certFile, keyFile := config.GlobalConfig.Server.TLSFiles()
 
 			if _, statErr := os.Stat(certFile); os.IsNotExist(statErr) {
 				log.Printf("Warning: %s not found, falling back to HTTP", certFile)

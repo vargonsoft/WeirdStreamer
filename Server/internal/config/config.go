@@ -90,6 +90,27 @@ type ServerConfig struct {
 	Name string `json:"name"`
 	Port int    `json:"port"`
 	Host string `json:"host"`
+	// TLS certificate and private key for HTTPS (with streaming.enableHTTP2). Relative paths are
+	// from the working directory. Empty: cert.pem and key.pem.
+	CertFile string `json:"certFile,omitempty"`
+	KeyFile  string `json:"keyFile,omitempty"`
+}
+
+const (
+	defaultCertFile = "cert.pem"
+	defaultKeyFile  = "key.pem"
+)
+
+// TLSFiles returns the certificate and key files to serve HTTPS with.
+func (s ServerConfig) TLSFiles() (certFile, keyFile string) {
+	certFile, keyFile = s.CertFile, s.KeyFile
+	if certFile == "" {
+		certFile = defaultCertFile
+	}
+	if keyFile == "" {
+		keyFile = defaultKeyFile
+	}
+	return certFile, keyFile
 }
 
 type DatabaseConfig struct {

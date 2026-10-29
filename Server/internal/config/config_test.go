@@ -95,3 +95,14 @@ func TestGroups(t *testing.T) {
 		t.Error("CheckGroupName: a new name is fine, an existing one in any case isn't")
 	}
 }
+
+func TestTLSFilesDefaultAndExplicit(t *testing.T) {
+	cert, key := ServerConfig{}.TLSFiles()
+	if cert != "cert.pem" || key != "key.pem" {
+		t.Errorf("defaults = %q, %q", cert, key)
+	}
+	cert, key = ServerConfig{CertFile: "/etc/ws/fullchain.pem", KeyFile: "/etc/ws/privkey.pem"}.TLSFiles()
+	if cert != "/etc/ws/fullchain.pem" || key != "/etc/ws/privkey.pem" {
+		t.Errorf("explicit = %q, %q", cert, key)
+	}
+}

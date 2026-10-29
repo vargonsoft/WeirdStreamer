@@ -23,14 +23,15 @@ cp config.example.json config.json   # then edit it
 `make build` builds both binaries. The server reads `./config.json`, or the file named by
 `CONFIG_PATH`. It serves the web UI from `./web`, so run it from this directory.
 
-If `streaming.enableHTTP2` is on and `cert.pem` and `key.pem` are in the working directory, the
-server uses HTTPS (with HTTP/2). Otherwise it falls back to plain HTTP.
+If `streaming.enableHTTP2` is on and the certificate and key files (`server.certFile` and
+`server.keyFile`, default `cert.pem` and `key.pem`) exist, the server uses HTTPS (with HTTP/2).
+Otherwise it falls back to plain HTTP.
 
 ## Configuration
 
 See `config.example.json`. The main sections:
 
-- `server`: `host` and `port`.
+- `server`: `host`, `port`, and the TLS `certFile` and `keyFile` for HTTPS.
 - `database`: paths for the users database (accounts, playback progress) and the media database
   (index, TMDB data, discs).
 - `groups`: the access groups. Every user is in one of them, and each library lists those that
