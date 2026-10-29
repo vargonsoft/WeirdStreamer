@@ -266,8 +266,10 @@ data class JobLoad(
     @SerializedName("cpu") val cpu: Double = 0.0,
     @SerializedName("disk") val disk: Double = 0.0,
     @SerializedName("max_disk") val maxDisk: Double = 0.0,
+    @SerializedName("relaxed_disk") val relaxedDisk: Double = 0.0, // the limit on a disk nobody plays from
     @SerializedName("shares") val shares: List<ShareLoad>? = null,
     @SerializedName("max_share_ms") val maxShareMs: Double = 0.0,
+    @SerializedName("relaxed_share_ms") val relaxedShareMs: Double = 0.0, // ... and on a share nobody plays from
     @SerializedName("streaming") val streaming: Boolean = false,
     @SerializedName("pause_while_streaming") val pauseWhileStreaming: Boolean = false
 )

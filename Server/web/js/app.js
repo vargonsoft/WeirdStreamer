@@ -4335,9 +4335,12 @@ function renderJobs() {
     const loadText = [];
     if (load) {
         if (load.available) {
-            loadText.push(`CPU ${pct(load.cpu)}`, `Disk ${pct(load.disk)} (jobs wait above ${pct(load.max_disk)})`);
+            // Jobs wait at the lower limit on a disk or share someone is playing from.
+            loadText.push(`CPU ${pct(load.cpu)}`,
+                `Disk ${pct(load.disk)} (jobs wait above ${pct(load.max_disk)} on a disk someone is playing from, ${pct(load.relaxed_disk)} otherwise)`);
             if (load.shares?.length) {
-                loadText.push(`Shares ${load.shares.map(sh => `${sh.library} ${Math.round(sh.ms)} ms`).join(', ')} (above ${load.max_share_ms} ms)`);
+                loadText.push(`Shares ${load.shares.map(sh => `${sh.library} ${Math.round(sh.ms)} ms`).join(', ')} ` +
+                    `(above ${load.max_share_ms} ms on a share someone is playing from, ${load.relaxed_share_ms} ms otherwise)`);
             }
         } else {
             loadText.push('No load readings on this machine: jobs wait while anyone is streaming');

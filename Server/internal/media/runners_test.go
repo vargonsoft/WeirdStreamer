@@ -40,7 +40,7 @@ func TestRunnersFollowTheSetting(t *testing.T) {
 	setRunners(2)
 	r := newRunners()
 
-	if returned, ok := within(200*time.Millisecond, func(ctx context.Context) bool { return r.wait(ctx, j, nil, 0) }); !returned || !ok {
+	if returned, ok := within(200*time.Millisecond, func(ctx context.Context) bool { return r.wait(ctx, j, nil, 0, "") }); !returned || !ok {
 		t.Fatal("runner 0 waited with the CPU busy")
 	}
 	if returned, _ := within(200*time.Millisecond, func(ctx context.Context) bool { return r.claim(ctx, j, 2) }); returned {
@@ -63,10 +63,10 @@ func TestRunnersFollowTheSetting(t *testing.T) {
 
 	// Lowered part way through runner 2's video: it waits, and the Jobs page says so.
 	setRunners(1)
-	if returned, _ := within(200*time.Millisecond, func(ctx context.Context) bool { return r.wait(ctx, j, nil, 2) }); returned {
+	if returned, _ := within(200*time.Millisecond, func(ctx context.Context) bool { return r.wait(ctx, j, nil, 2, "") }); returned {
 		t.Fatal("runner 2 went on after the setting went down to 1")
 	}
-	go func() { done <- r.wait(context.Background(), j, nil, 2) }()
+	go func() { done <- r.wait(context.Background(), j, nil, 2, "") }()
 	time.Sleep(50 * time.Millisecond)
 	var shown string
 	j.SetRunner(2, "clip.mkv") // as the worker does when it takes a video

@@ -923,12 +923,16 @@ private fun StorageCard(storage: List<StorageUse>) {
 private fun loadText(l: JobLoad): String {
     fun pct(f: Double) = "${(f * 100).roundToInt()}%"
     val parts = mutableListOf<String>()
-    if (l.available) parts += listOf("CPU ${pct(l.cpu)}", "Disk ${pct(l.disk)} (jobs wait above ${pct(l.maxDisk)})")
-    val shares = l.shares.orEmpty()
-    if (l.available && shares.isNotEmpty()) {
-        parts += "Shares ${shares.joinToString(", ") { "${it.library} ${it.ms.roundToInt()} ms" }} (above ${l.maxShareMs.roundToInt()} ms)"
-    }
-    else parts += "No load readings: jobs wait while anyone is streaming"
+    // Jobs wait at the lower limit on a disk or share someone is playing from.
+    if (l.available) {
+        parts += listOf("CPU ${pct(l.cpu)}",
+            "Disk ${pct(l.disk)} (jobs wait above ${pct(l.maxDisk)} on a disk someone is playing from, ${pct(l.relaxedDisk)} otherwise)")
+        val shares = l.shares.orEmpty()
+        if (shares.isNotEmpty()) {
+            parts += "Shares ${shares.joinToString(", ") { "${it.library} ${it.ms.roundToInt()} ms" }} " +
+                "(above ${l.maxShareMs.roundToInt()} ms on a share someone is playing from, ${l.relaxedShareMs.roundToInt()} ms otherwise)"
+        }
+    } else parts += "No load readings: jobs wait while anyone is streaming"
     if (l.streaming) parts += "Someone is streaming"
     if (l.pauseWhileStreaming) parts += "Jobs pause while anyone streams"
     return parts.joinToString(" · ")

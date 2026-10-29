@@ -107,7 +107,7 @@ func (a *SegmentAnalyzer) pass(ctx context.Context) {
 	a.job.SetTotal(len(todo))
 	n := 0
 	for _, d := range todo {
-		if !a.waitIdle(ctx) {
+		if !a.waitIdle(ctx, byDir[d][0]) {
 			a.job.End(fmt.Sprintf("Stopped after %d of %d folders", n, len(todo)))
 			return
 		}
@@ -134,10 +134,10 @@ func analyzable(path string) bool {
 	return !strings.EqualFold(filepath.Ext(path), ".iso")
 }
 
-// waitIdle waits while the machine is busy or the job is paused, so analysis doesn't compete
-// with playback.
-func (a *SegmentAnalyzer) waitIdle(ctx context.Context) bool {
-	return a.job.Wait(ctx, func() (bool, string) { return busyReason(a.streams) })
+// waitIdle waits while the disk or share path is on is busy, or the job is paused, so analysis
+// doesn't compete with playback.
+func (a *SegmentAnalyzer) waitIdle(ctx context.Context, path string) bool {
+	return a.job.Wait(ctx, func() (bool, string) { return busyFor(path, a.streams) })
 }
 
 // Background jobs share one load monitor (set by SetLoadMonitor); without one, or without
@@ -166,21 +166,16 @@ func streaming(streams *StreamTracker) bool {
 	return false
 }
 
-// busyReason says whether a background job should wait, and why: a disk or network share too
-// busy to share (or, with no readings, anyone streaming). The CPU isn't waited for: the jobs run
-// at low priority instead (backgroundCommand), so playback gets it first.
-func busyReason(streams *StreamTracker) (bool, string) {
+// busyFor says whether a background job reading path should wait, and why: the disk or network
+// share the file is on too busy to share (see loadFor: lower limits while someone plays from the
+// same one), or, with no readings, anyone streaming. The CPU isn't waited for: the jobs run at
+// low priority instead (backgroundCommand), so playback gets it first.
+func busyFor(path string, streams *StreamTracker) (bool, string) {
 	if pauseWhileStreaming() && streaming(streams) {
 		return true, "Someone is streaming (paused while streaming)"
 	}
-	if _, disk, ok := load.Readings(); ok {
-		if disk > maxDisk {
-			return true, fmt.Sprintf("Disk busy (%.0f%%)", disk*100)
-		}
-		if sh := load.Shares(); len(sh) > 0 && sh[0].Ms > maxShareMs {
-			return true, fmt.Sprintf("%s's share busy (reads take %.0f ms)", sh[0].Library, sh[0].Ms)
-		}
-		return false, ""
+	if _, _, ok := load.Readings(); ok {
+		return loadFor(path, streams).waitReason()
 	}
 	if streaming(streams) {
 		return true, "Someone is streaming"
@@ -189,14 +184,17 @@ func busyReason(streams *StreamTracker) (bool, string) {
 }
 
 // LoadStatus is the machine's load as background jobs judge it, for the Jobs page. Shares are
-// each network share's read time (ms), slowest first; jobs wait above MaxShareMs.
+// each network share's read time (ms), slowest first. Jobs wait above MaxDisk and MaxShareMs on a
+// disk or share someone is playing from, and above the Relaxed limits on one nobody is.
 type LoadStatus struct {
 	Available           bool        `json:"available"`
 	CPU                 float64     `json:"cpu"`
 	Disk                float64     `json:"disk"`
 	MaxDisk             float64     `json:"max_disk"`
+	RelaxedDisk         float64     `json:"relaxed_disk"`
 	Shares              []ShareLoad `json:"shares"`
 	MaxShareMs          float64     `json:"max_share_ms"`
+	RelaxedShareMs      float64     `json:"relaxed_share_ms"`
 	Streaming           bool        `json:"streaming"`
 	PauseWhileStreaming bool        `json:"pause_while_streaming"`
 }
@@ -204,20 +202,20 @@ type LoadStatus struct {
 // CurrentLoad returns the load readings and whether anyone is streaming.
 func CurrentLoad(streams *StreamTracker) LoadStatus {
 	cpu, disk, ok := load.Readings()
-	return LoadStatus{Available: ok, CPU: cpu, Disk: disk, MaxDisk: maxDisk,
-		Shares: load.Shares(), MaxShareMs: maxShareMs, Streaming: streaming(streams), PauseWhileStreaming: pauseWhileStreaming()}
+	return LoadStatus{Available: ok, CPU: cpu, Disk: disk, MaxDisk: maxDisk, RelaxedDisk: relaxedDisk,
+		Shares: load.Shares(), MaxShareMs: maxShareMs, RelaxedShareMs: relaxedShareMs,
+		Streaming: streaming(streams), PauseWhileStreaming: pauseWhileStreaming()}
 }
 
-// overloaded says whether a job already running should stop: a disk or share well past what busy
-// allows (its own work counts too), or, with no readings, anyone streaming. The CPU doesn't count
-// (see busyReason).
-func overloaded(streams *StreamTracker) bool {
+// overloadedFor says whether a job already reading path should stop: its disk or share well past
+// what busyFor allows (its own work counts too), or, with no readings, anyone streaming. The CPU
+// doesn't count (see busyFor).
+func overloadedFor(path string, streams *StreamTracker) bool {
 	if pauseWhileStreaming() && streaming(streams) {
 		return true
 	}
-	if _, disk, ok := load.Readings(); ok {
-		sh := load.Shares()
-		return disk > 0.9 || len(sh) > 0 && sh[0].Ms > stopShareMs
+	if _, _, ok := load.Readings(); ok {
+		return loadFor(path, streams).overloaded()
 	}
 	return streaming(streams)
 }
@@ -240,7 +238,7 @@ func (a *SegmentAnalyzer) analyzeDir(ctx context.Context, paths []string) {
 		} else if d, _, _, err := ProbeVideo(p); err == nil {
 			v.duration = d
 		}
-		if !a.waitIdle(ctx) {
+		if !a.waitIdle(ctx, p) {
 			return
 		}
 		videos = append(videos, v) // saved even when it can't be read, so it isn't tried again and again
@@ -259,7 +257,7 @@ func (a *SegmentAnalyzer) analyzeDir(ctx context.Context, paths []string) {
 			if v.duration <= 0 {
 				continue
 			}
-			if !a.waitIdle(ctx) {
+			if !a.waitIdle(ctx, v.path) {
 				return
 			}
 			// The first quarter (at least 3 minutes, at most 10) and the last (2 to 6 minutes).
@@ -299,7 +297,7 @@ func (a *SegmentAnalyzer) analyzeDir(ctx context.Context, paths []string) {
 			if v.credits != nil || v.duration <= 0 {
 				continue
 			}
-			if !a.waitIdle(ctx) {
+			if !a.waitIdle(ctx, v.path) {
 				return
 			}
 			look := min(v.duration*0.15, 300)
@@ -398,10 +396,10 @@ func (r *runners) detail() string {
 	return plural(r.limit, "runner")
 }
 
-// wait is runner w's wait before each step: it parks while w is beyond the number of runners (it
-// went down part way through w's video), and otherwise waits as jobs do (paused, a disk or share
-// busy, streaming).
-func (r *runners) wait(ctx context.Context, j *jobs.Job, streams *StreamTracker, w int) bool {
+// wait is runner w's wait before each step of path: it parks while w is beyond the number of
+// runners (it went down part way through w's video), and otherwise waits as jobs do (paused, the
+// file's disk or share busy, streaming).
+func (r *runners) wait(ctx context.Context, j *jobs.Job, streams *StreamTracker, w int, path string) bool {
 	for {
 		r.mu.Lock()
 		r.update(j)
@@ -417,7 +415,7 @@ func (r *runners) wait(ctx context.Context, j *jobs.Job, streams *StreamTracker,
 			j.RunnerWaiting(w, false)
 			continue
 		}
-		return j.Wait(ctx, func() (bool, string) { return busyReason(streams) })
+		return j.Wait(ctx, func() (bool, string) { return busyFor(path, streams) })
 	}
 }
 
@@ -503,8 +501,6 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		j.job.Step(already)
 		run := newRunners()
 		j.job.SetDetail(run.detail())
-		// A disc's decode stops part way when the machine gets much busier, or the job is paused.
-		stop := func() bool { return overloaded(j.streams) || j.job.IsPaused() }
 		// Up to MaxTrickplayRunners videos at once, as many as the setting says (one ffmpeg keeps only a few cores busy); discs one at a
 		// time, since each decodes whole titles.
 		n, lengths, skipped := 0, 0, 0
@@ -513,7 +509,6 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		var wg sync.WaitGroup
 		for w := 0; w < config.MaxTrickplayRunners; w++ {
 			wg.Add(1)
-			wait := func() bool { return run.wait(ctx, j.job, j.streams, w) }
 			go func() {
 				defer wg.Done()
 				for {
@@ -526,6 +521,9 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 					}
 					var err error
 					j.job.SetRunner(w, filepath.Base(p)) // the file it's on, for the Jobs page
+					wait := func() bool { return run.wait(ctx, j.job, j.streams, w, p) }
+					// A disc's decode stops part way when its disk gets much busier, or the job is paused.
+					stop := func() bool { return overloadedFor(p, j.streams) || j.job.IsPaused() }
 					if isLengthOnly[p] {
 						if !wait() {
 							j.job.Step(1)

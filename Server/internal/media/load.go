@@ -26,8 +26,9 @@ import (
 // one queues them.
 type LoadMonitor struct {
 	mu        sync.Mutex
-	cpu, disk float64 // smoothed, 0..1
-	ok        bool    // readings available
+	cpu, disk float64            // smoothed, 0..1 (disk: the busiest whole disk)
+	disks     map[string]float64 // each whole disk's use, smoothed, 0..1
+	ok        bool               // readings available
 	shares    map[string]*shareProbe
 	probes    func() []ShareProbe
 }
@@ -45,21 +46,29 @@ type ShareLoad struct {
 
 type shareProbe struct {
 	ShareProbe
+	dev    uint64  // the device its file is on (the mount), to tell which share a file is on
 	ms     float64 // smoothed; 0 before the first reading
 	busy   bool    // a read is still going (a share that hangs)
 	since  time.Time
 	failed bool
 }
 
+// A disk or share someone is playing from holds the jobs back at the lower limits; one nobody is
+// playing from only when it's close to full (the jobs run at idle disk priority anyway).
 const (
-	maxDisk    = 0.50
-	loadSample = 5 * time.Second
+	maxDisk         = 0.50 // busy share of a whole disk's time a stream is reading from
+	relaxedDisk     = 0.90 // ... and of one no stream is reading from
+	stopDisk        = 0.90 // a disc decode already running stops above these
+	relaxedStopDisk = 0.98
+	loadSample      = 5 * time.Second
 
-	maxShareMs  = 60  // a share's reads take this long when its disk is busy
-	stopShareMs = 150 // a job already running stops above this
-	probeReads  = 3   // reads per sample; their median counts
-	probeSize   = 64 << 10
-	probeEvery  = 10 * time.Minute // how often the files to read are chosen again
+	maxShareMs         = 60   // a share's reads take this long when its disk is busy
+	relaxedShareMs     = 500  // ... the limit when no stream reads from it
+	stopShareMs        = 150  // a job already running stops above this
+	relaxedStopShareMs = 1000 // ... or this, when no stream reads from it
+	probeReads         = 3    // reads per sample; their median counts
+	probeSize          = 64 << 10
+	probeEvery         = 10 * time.Minute // how often the files to read are chosen again
 )
 
 // NewLoadMonitor starts sampling until ctx ends. probes (when given) names a big file for each
@@ -135,8 +144,37 @@ func (m *LoadMonitor) chooseProbes() {
 		} else {
 			keep[pr.Library] = &shareProbe{ShareProbe: pr}
 		}
+		if dev, ok := deviceOf(pr.Path); ok {
+			keep[pr.Library].dev = dev
+		}
 	}
 	m.shares = keep
+}
+
+// shareFor returns the read time (ms) of the share on device dev, and its library.
+func (m *LoadMonitor) shareFor(dev uint64) (ms float64, library string, ok bool) {
+	if m == nil {
+		return 0, "", false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.shares {
+		if p.dev == dev && p.ms > 0 {
+			return p.ms, p.Library, true
+		}
+	}
+	return 0, "", false
+}
+
+// diskUse returns a whole disk's smoothed use (0..1).
+func (m *LoadMonitor) diskUse(name string) (float64, bool) {
+	if m == nil {
+		return 0, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	use, ok := m.disks[name]
+	return use, ok
 }
 
 // timeReads reads probeSize bytes at probeReads random places in a file, dropping them from the
@@ -216,17 +254,25 @@ func (m *LoadMonitor) run(ctx context.Context) {
 			cpu := float64(busy-busy0) / float64(total-total0)
 			elapsed := float64(now.Sub(at0).Milliseconds())
 			disk := 0.0
+			uses := map[string]float64{}
 			for name, ms := range disks {
 				if prev, seen := disks0[name]; seen && elapsed > 0 {
-					disk = max(disk, min(float64(ms-prev)/elapsed, 1))
+					uses[name] = min(float64(ms-prev)/elapsed, 1)
+					disk = max(disk, uses[name])
 				}
 			}
 			m.mu.Lock()
 			if m.ok {
 				m.cpu, m.disk = 0.7*m.cpu+0.3*cpu, 0.7*m.disk+0.3*disk
+				for name, use := range uses {
+					if prev, seen := m.disks[name]; seen {
+						uses[name] = 0.7*prev + 0.3*use
+					}
+				}
 			} else {
 				m.cpu, m.disk, m.ok = cpu, disk, true
 			}
+			m.disks = uses
 			m.mu.Unlock()
 		}
 		busy0, total0, err1, disks0, err2, at0 = busy, total, errC, disks, errD, now
