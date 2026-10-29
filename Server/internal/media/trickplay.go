@@ -48,6 +48,11 @@ func addFrame(path string) {
 // maxFrameFailures is how many frames in a row may fail before a video is given up on.
 const maxFrameFailures = 10
 
+// trickplayBatch is how many frames one ffmpeg process makes at once, each with its own seek and
+// one decoder thread (25 frames: about 2.8 GB and about twice as fast per frame as one process
+// each; 50 ran out of memory with several threads per decoder).
+const trickplayBatch = 25
+
 // trickplayDone marks a video's frames as all made (a folder without it was stopped part way).
 const trickplayDone = ".done"
 
@@ -96,33 +101,60 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 		return err
 	}
 
-	// Generate frames every 10 seconds.
-	// Stop 1 second before the end to avoid empty output issues with input seeking.
+	// Generate frames every 10 seconds, in batches (see trickplayBatch). A frame a batch doesn't
+	// make is tried again on its own, so a failure is judged as it always was.
+	var pending []int
 	failures, lastGood := 0, -1
 	for i := 0; i <= int(duration)-1; i += 10 {
+		if info, err := os.Stat(filepath.Join(trickplayVideoDir, fmt.Sprintf("frame-%d.jpg", i))); err == nil && info.Size() > 0 {
+			failures, lastGood = 0, i // made already
+			continue
+		}
+		pending = append(pending, i)
+	}
+loop:
+	for len(pending) > 0 {
 		if ctx.Err() != nil || (wait != nil && !wait()) {
 			return ctx.Err()
 		}
-		if err := tg.generateFrame(ctx, videoPath, trickplayVideoDir, float64(i), i, codec); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			fmt.Printf("Warning: failed to generate frame at %ds of %s: %v\n", i, videoPath, err)
-			if failures++; failures >= maxFrameFailures {
-				// Frames worked up to a point and none after it: a damaged file (cut short, empty or
-				// garbled past there, or a header claiming more than it holds). If it's still the
-				// same file and its last good frame still comes out, it's the file and not a share
-				// that went away: mark it done with the frames it has instead of trying it again
-				// every start. Otherwise give up for now, keeping the frames made, and leave it
-				// unmarked.
-				if lastGood >= 0 && tg.stillReadable(ctx, videoPath, start, float64(lastGood), codec) {
-					fmt.Printf("Damaged file: no frames after %ds of %.0fs; keeping the frames up to there: %s\n", lastGood, duration, videoPath)
-					break
+		n := min(trickplayBatch, len(pending))
+		batch := pending[:n]
+		pending = pending[n:]
+		made := tg.extractBatch(ctx, videoPath, trickplayVideoDir, codec, batch)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		for k, i := range batch {
+			if made[k] {
+				framePath := filepath.Join(trickplayVideoDir, fmt.Sprintf("frame-%d.jpg", i))
+				if err := finishPart(framePath); err != nil {
+					return err
 				}
-				return fmt.Errorf("%d frames in a row failed (at %ds of %.0fs)", failures, i, duration)
+				addFrame(framePath)
+				failures, lastGood = 0, i
+				continue
 			}
-		} else {
-			failures, lastGood = 0, i
+			if err := tg.generateFrame(ctx, videoPath, trickplayVideoDir, float64(i), i, codec); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				fmt.Printf("Warning: failed to generate frame at %ds of %s: %v\n", i, videoPath, err)
+				if failures++; failures >= maxFrameFailures {
+					// Frames worked up to a point and none after it: a damaged file (cut short, empty or
+					// garbled past there, or a header claiming more than it holds). If it's still the
+					// same file and its last good frame still comes out, it's the file and not a share
+					// that went away: mark it done with the frames it has instead of trying it again
+					// every start. Otherwise give up for now, keeping the frames made, and leave it
+					// unmarked.
+					if lastGood >= 0 && tg.stillReadable(ctx, videoPath, start, float64(lastGood), codec) {
+						fmt.Printf("Damaged file: no frames after %ds of %.0fs; keeping the frames up to there: %s\n", lastGood, duration, videoPath)
+						break loop
+					}
+					return fmt.Errorf("%d frames in a row failed (at %ds of %.0fs)", failures, i, duration)
+				}
+			} else {
+				failures, lastGood = 0, i
+			}
 		}
 	}
 	if err := os.WriteFile(filepath.Join(trickplayVideoDir, trickplayDone), nil, 0644); err != nil {
@@ -359,6 +391,38 @@ func (tg *TrickplayGenerator) fillLength(path string) error {
 	}
 	tg.saveLength(path, d, w, h)
 	return nil
+}
+
+// extractBatch makes the frames at the given times (seconds) in one ffmpeg process, each input
+// seeking like extractFrame does, and says which came out. ffmpeg exits with success even when
+// some inputs fail, so a frame counts only when its file was written.
+func (tg *TrickplayGenerator) extractBatch(ctx context.Context, videoPath, dir, codec string, times []int) []bool {
+	made := make([]bool, len(times))
+	outs := make([]string, len(times))
+	args := []string{"-v", "error"}
+	for k, i := range times {
+		outs[k] = partPath(filepath.Join(dir, fmt.Sprintf("frame-%d.jpg", i)))
+		os.Remove(outs[k])
+		if codec == "h264" || codec == "hevc" {
+			args = append(args, "-threads", "1", "-bsf:v", codec+"_metadata=matrix_coefficients=1")
+		} else {
+			args = append(args, "-threads", "1")
+		}
+		args = append(args, "-ss", fmt.Sprintf("%.3f", float64(i)), "-noaccurate_seek", "-i", videoPath)
+	}
+	for k := range times {
+		args = append(args, "-map", fmt.Sprintf("%d:v:0", k), "-vf", "scale=320:-1,format=yuvj420p",
+			"-frames:v", "1", "-strict", "unofficial", "-y", outs[k])
+	}
+	exec.CommandContext(ctx, "ffmpeg", args...).Run()
+	for k := range times {
+		if info, err := os.Stat(outs[k]); err == nil && info.Size() > 0 && ctx.Err() == nil {
+			made[k] = true
+		} else {
+			os.Remove(outs[k])
+		}
+	}
+	return made
 }
 
 // extractFrame writes the frame at seekTime to out, saying whether a picture came out.
