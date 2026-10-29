@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
 import java.util.Locale
+import kotlinx.coroutines.delay
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
@@ -420,10 +421,24 @@ private fun SubtitleRow(
  * line was already said before its subtitle showed (subtitles earlier), Right when it's not said
  * yet (later); Up and Down change how far each press moves them. OK or Back closes it.
  */
+// The theme's gold and aubergine, for the side a press just moved the subtitles
+private val TimingFlash = Color(0xFFF6C445)
+private val TimingFlashText = Color(0xFF321B2F)
+
 @Composable
 fun SubtitleTimingDialog(show: Boolean, offsetMs: Int, onShift: (Int) -> Unit, onDismiss: () -> Unit) {
     if (!show) return
     var step by remember { mutableIntStateOf(250) }
+    // The side of the last left or right press (-1 earlier, 1 later), lit briefly. presses changes
+    // on each one, so a quick second press restarts the flash.
+    var flashSide by remember { mutableIntStateOf(0) }
+    var presses by remember { mutableIntStateOf(0) }
+    LaunchedEffect(presses) {
+        if (presses > 0) {
+            delay(200)
+            flashSide = 0
+        }
+    }
     val requester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { requester.requestFocus() } }
     androidx.compose.ui.window.Popup(
@@ -442,8 +457,8 @@ fun SubtitleTimingDialog(show: Boolean, offsetMs: Int, onShift: (Int) -> Unit, o
                     if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     val i = SUBTITLE_STEPS.indexOf(step)
                     when (e.key) {
-                        Key.DirectionLeft -> { onShift(-step); true }
-                        Key.DirectionRight -> { onShift(step); true }
+                        Key.DirectionLeft -> { onShift(-step); flashSide = -1; presses++; true }
+                        Key.DirectionRight -> { onShift(step); flashSide = 1; presses++; true }
                         Key.DirectionUp -> { step = SUBTITLE_STEPS[(i + 1).coerceAtMost(SUBTITLE_STEPS.size - 1)]; true }
                         Key.DirectionDown -> { step = SUBTITLE_STEPS[(i - 1).coerceAtLeast(0)]; true }
                         Key.DirectionCenter, Key.Enter, Key.Back -> { onDismiss(); true }
@@ -456,10 +471,21 @@ fun SubtitleTimingDialog(show: Boolean, offsetMs: Int, onShift: (Int) -> Unit, o
         ) {
             Text("Subtitle timing", style = MaterialTheme.typography.headlineSmall, color = Color.White)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("‹  Already said", color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                val litLeft = flashSide == -1
+                Box(Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                    .background(if (litLeft) TimingFlash else Color.Transparent).padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.CenterStart) {
+                    Text("‹  Already said", color = if (litLeft) TimingFlashText else Color.White,
+                        style = MaterialTheme.typography.titleMedium)
+                }
                 Text(subtitleOffsetText(offsetMs), color = Color.White, style = MaterialTheme.typography.titleLarge)
-                Text("Not said yet  ›", color = Color.White, style = MaterialTheme.typography.titleMedium,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.weight(1f))
+                val litRight = flashSide == 1
+                Box(Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                    .background(if (litRight) TimingFlash else Color.Transparent).padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.CenterEnd) {
+                    Text("Not said yet  ›", color = if (litRight) TimingFlashText else Color.White,
+                        style = MaterialTheme.typography.titleMedium)
+                }
             }
             Text("Each press: ${subtitleStepText(step)}   (▲ ▼ to change)", color = Color.White.copy(alpha = 0.8f),
                 style = MaterialTheme.typography.bodyMedium)
