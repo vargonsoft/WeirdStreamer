@@ -497,7 +497,8 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 			switch {
 			case failed[p]:
 				already++
-			case HasTrickplay(p) && noLength[p]:
+			case HasTrickplay(p) && noLength[p] && !noFramesMade(p):
+				// Not a video (marked so, with no frames): nothing to read a length from.
 				lengthOnly = append(lengthOnly, p)
 			case HasTrickplay(p):
 				already++

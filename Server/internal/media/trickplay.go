@@ -56,6 +56,18 @@ const trickplayBatch = 25
 // trickplayDone marks a video's frames as all made (a folder without it was stopped part way).
 const trickplayDone = ".done"
 
+// noFramesMade says whether a video was marked done without frames (not a video: see
+// markNoFrames), as opposed to done with frames. Both leave an empty marker, so this looks for a
+// frame.
+func noFramesMade(videoPath string) bool {
+	dir := config.GlobalConfig.Media.TrickplayPath
+	if dir == "" || !HasTrickplay(videoPath) {
+		return false
+	}
+	frames, _ := filepath.Glob(filepath.Join(dir, GenerateThumbnailHash(videoPath), "frame-*.jpg"))
+	return len(frames) == 0
+}
+
 // HasTrickplay says whether all of a video's frames have been made.
 func HasTrickplay(videoPath string) bool {
 	dir := config.GlobalConfig.Media.TrickplayPath
