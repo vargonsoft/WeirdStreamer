@@ -20,6 +20,50 @@ type Config struct {
 	Auth      AuthConfig      `json:"auth"`
 	Streaming StreamingConfig `json:"streaming"`
 	Metadata  MetadataConfig  `json:"metadata"`
+	Jobs      JobsConfig      `json:"jobs"`
+}
+
+// JobsConfig tunes the trickplay job, which the Jobs page changes live.
+type JobsConfig struct {
+	TrickplayRunners         int `json:"trickplayRunners"`         // videos made at once: 1 to 8 (0: 3)
+	TrickplayFramesPerRunner int `json:"trickplayFramesPerRunner"` // frames per ffmpeg process: 1 to 50 (0: 25)
+}
+
+const (
+	DefaultTrickplayRunners         = 3
+	DefaultTrickplayFramesPerRunner = 25
+	MaxTrickplayRunners             = 8  // the pool of runners the job starts with
+	MaxTrickplayFrames              = 50 // one process's frames: more ran out of memory
+	MaxTrickplayProduct             = 100
+)
+
+// TrickplayRunners is how many videos the trickplay job makes frames for at once (live).
+func TrickplayRunners() int {
+	if GlobalConfig == nil || GlobalConfig.Jobs.TrickplayRunners == 0 {
+		return DefaultTrickplayRunners
+	}
+	return min(max(GlobalConfig.Jobs.TrickplayRunners, 1), MaxTrickplayRunners)
+}
+
+// TrickplayFramesPerRunner is how many frames one process makes for a runner (live).
+func TrickplayFramesPerRunner() int {
+	if GlobalConfig == nil || GlobalConfig.Jobs.TrickplayFramesPerRunner == 0 {
+		return DefaultTrickplayFramesPerRunner
+	}
+	return min(max(GlobalConfig.Jobs.TrickplayFramesPerRunner, 1), MaxTrickplayFrames)
+}
+
+// UpdateJobs saves new trickplay settings to config.json and reloads them.
+func UpdateJobs(runners, frames int) error {
+	c := *GlobalConfig
+	c.Jobs = JobsConfig{TrickplayRunners: runners, TrickplayFramesPerRunner: frames}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if err := Save(Path(), &c); err != nil {
+		return fmt.Errorf("failed to save configuration")
+	}
+	return Load(Path())
 }
 
 // MetadataConfig configures lookups for "movie" and "tv" libraries.
@@ -109,6 +153,17 @@ func (c *Config) CheckGroupName(name string) error {
 // Validate checks values that can't be expressed by the JSON structure alone.
 func (c *Config) Validate() error {
 	c.Server.Name = strings.TrimSpace(c.Server.Name)
+	if c.Jobs.TrickplayRunners == 0 {
+		c.Jobs.TrickplayRunners = DefaultTrickplayRunners
+	}
+	if c.Jobs.TrickplayFramesPerRunner == 0 {
+		c.Jobs.TrickplayFramesPerRunner = DefaultTrickplayFramesPerRunner
+	}
+	if r, f := c.Jobs.TrickplayRunners, c.Jobs.TrickplayFramesPerRunner; r < 1 || r > MaxTrickplayRunners || f < 1 || f > MaxTrickplayFrames {
+		return fmt.Errorf("trickplay runners must be 1 to %d, and frames per runner 1 to %d", MaxTrickplayRunners, MaxTrickplayFrames)
+	} else if r*f > MaxTrickplayProduct {
+		return fmt.Errorf("runners times frames per runner can't exceed %d (about %d GB of memory)", MaxTrickplayProduct, MaxTrickplayProduct*110/1000)
+	}
 	// Groups: each a valid name, none twice (in any case)
 	groups := c.Groups
 	c.Groups = nil

@@ -4244,6 +4244,60 @@ function renderStorage(storage) {
     box.replaceChildren(...storage.map(u => row(u.name, u.bytes)), row('Total', total, 'storage-total'));
 }
 
+// Trickplay's settings box. The page refreshes every few seconds, so the fields only follow the
+// server while they aren't being edited.
+function renderTrickplaySettings(tp) {
+    const box = document.getElementById('trickplay-settings');
+    if (!tp) return;
+    box.hidden = false;
+    const runners = document.getElementById('tp-runners'), frames = document.getElementById('tp-frames');
+    runners.max = tp.max_runners;
+    frames.max = tp.max_frames;
+    if (!box.dataset.wired) {
+        box.dataset.wired = '1';
+        const edited = () => { box.dataset.edited = '1'; trickplayHint(); };
+        runners.oninput = edited;
+        frames.oninput = edited;
+        document.getElementById('tp-save').onclick = saveTrickplaySettings;
+    }
+    if (box.dataset.edited !== '1') {
+        runners.value = tp.runners;
+        frames.value = tp.frames_per_runner;
+    }
+    trickplayHint();
+}
+
+// Each frame in a batch holds its own decoder: about 110 MB (25 frames took 2.8 GB).
+function trickplayHint() {
+    const tp = jobsView && jobsView.data && jobsView.data.trickplay;
+    if (!tp) return;
+    const r = Number(document.getElementById('tp-runners').value) || 0;
+    const f = Number(document.getElementById('tp-frames').value) || 0;
+    document.getElementById('tp-hint').textContent =
+        `${r} × ${f} = ${r * f} frames at once, about ${(r * f * 0.11).toFixed(1)} GB of memory at most. ` +
+        `Runners 1 to ${tp.max_runners}, frames per runner 1 to ${tp.max_frames}, and at most ${tp.max_product} frames at once.`;
+}
+
+async function saveTrickplaySettings() {
+    const box = document.getElementById('trickplay-settings');
+    const message = document.getElementById('tp-message');
+    const r = Number(document.getElementById('tp-runners').value);
+    const f = Number(document.getElementById('tp-frames').value);
+    try {
+        const data = await api.setTrickplaySettings(r, f);
+        delete box.dataset.edited;
+        message.textContent = 'Saved. Applies from the next batch.';
+        message.style.color = '';
+        if (jobsView) {
+            jobsView.data = data;
+            renderJobs();
+        }
+    } catch (e) {
+        message.textContent = e.message;
+        message.style.color = 'var(--danger-color, #c62828)';
+    }
+}
+
 function renderJobs() {
     const { jobs = [], load } = jobsView.data;
     const pct = (f) => `${Math.round(f * 100)}%`;
@@ -4263,6 +4317,7 @@ function renderJobs() {
     }
     document.getElementById('jobs-load').textContent = loadText.join(' · ');
     renderStorage(jobsView.data.storage || []);
+    renderTrickplaySettings(jobsView.data.trickplay);
 
     const list = document.getElementById('jobs-list');
     list.replaceChildren(...jobs.map(job => {
@@ -4289,6 +4344,10 @@ function renderJobs() {
             }
             progress.append(el('div', 'job-line', '')); // filled by updateJobTimes
             if (job.detail) progress.append(el('div', 'job-line job-detail', job.detail));
+            // What each runner is on, for a job that runs several at once.
+            (job.runners || []).forEach((file, i) => {
+                if (file) progress.append(el('div', 'job-line job-runner', `Runner ${i + 1}: ${file}`));
+            });
             card.append(progress);
         }
         if (job.state === 'waiting' && job.note) card.append(el('div', 'job-note', `Waiting: ${job.note}`));

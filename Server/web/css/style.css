@@ -1592,6 +1592,11 @@ header h1 {
 /* Settings → Jobs: a card per background job (sharing the Streams page's head, badge and bar) */
 .jobs-load { font-size: 13px; color: var(--muted-text); margin-bottom: 12px; }
 .jobs-list { display: flex; flex-direction: column; gap: 12px; }
+.trickplay-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 14px; }
+.trickplay-settings[hidden] { display: none; }
+.trickplay-settings label { display: flex; align-items: center; gap: 8px; margin: 0; }
+.trickplay-settings input { width: 80px; }
+.trickplay-settings .settings-hint { flex-basis: 100%; margin: 0; }
 .job-card {
     border: 1px solid var(--border-color);
     border-radius: 10px;

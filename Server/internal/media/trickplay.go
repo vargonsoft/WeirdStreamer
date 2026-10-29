@@ -48,11 +48,6 @@ func addFrame(path string) {
 // maxFrameFailures is how many frames in a row may fail before a video is given up on.
 const maxFrameFailures = 10
 
-// trickplayBatch is how many frames one ffmpeg process makes at once, each with its own seek and
-// one decoder thread (25 frames: about 2.8 GB and about twice as fast per frame as one process
-// each; 50 ran out of memory with several threads per decoder).
-const trickplayBatch = 25
-
 // trickplayDone marks a video's frames as all made (a folder without it was stopped part way).
 const trickplayDone = ".done"
 
@@ -113,7 +108,8 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 		return err
 	}
 
-	// Generate frames every 10 seconds, in batches (see trickplayBatch). A frame a batch doesn't
+	// Generate frames every 10 seconds, in batches of config.TrickplayFramesPerRunner (one ffmpeg
+	// process each, read for every batch so a change applies at once). A frame a batch doesn't
 	// make is tried again on its own, so a failure is judged as it always was.
 	var pending []int
 	failures, lastGood := 0, -1
@@ -129,7 +125,7 @@ loop:
 		if ctx.Err() != nil || (wait != nil && !wait()) {
 			return ctx.Err()
 		}
-		n := min(trickplayBatch, len(pending))
+		n := min(config.TrickplayFramesPerRunner(), len(pending))
 		batch := pending[:n]
 		pending = pending[n:]
 		made := tg.extractBatch(ctx, videoPath, trickplayVideoDir, codec, batch)

@@ -136,6 +136,9 @@ interface ApiService {
     @POST("/api/admin/jobs/{id}/{action}")
     suspend fun controlJob(@Path("id") id: String, @Path("action") action: String): Response<JobsResponse>
 
+    @POST("/api/admin/jobs/trickplay/settings")
+    suspend fun setTrickplaySettings(@Body request: com.vargon.weirdstreamer.api.models.TrickplaySettingsRequest): Response<JobsResponse>
+
     // Offline downloads: originals come from /api/media/stream; compressed copies are encoded
     // by a server job first and fetched from /api/downloads/{id}/file.
     @GET("/api/downloads/options")

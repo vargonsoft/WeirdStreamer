@@ -261,6 +261,14 @@ class MediaAPI {
         return this.request(`/api/admin/jobs/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
     }
 
+    // Trickplay's runners and frames per runner (saved to config.json); returns the jobs status.
+    async setTrickplaySettings(runners, framesPerRunner) {
+        return this.request('/api/admin/jobs/trickplay/settings', {
+            method: 'POST',
+            body: JSON.stringify({ runners, frames_per_runner: framesPerRunner }),
+        });
+    }
+
     // extra: { ended, title } — the player reached the end; a disc's title (0: the main title)
     async reportPlayback(path, position, paused, extra = {}) {
         return this.request('/api/streams/progress', {

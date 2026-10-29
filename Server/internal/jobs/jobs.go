@@ -29,7 +29,9 @@ type Job struct {
 	mu         sync.Mutex
 	state      string
 	note       string
-	detail     string // how it's running, shown while it runs ("2 of 3 runners")
+	detail     string   // how it's running, shown while it runs ("2 of 3 runners")
+	runners    []string // what each runner is working on ("": nothing), for jobs that run several
+	waiting    []bool   // runners stopped part way, waiting for a free one
 	done       int
 	total      int
 	started    time.Time
@@ -130,10 +132,43 @@ func (j *Job) End(result string) {
 	}
 	log.Printf("jobs: %s finished%s: %s", j.Name, took, result)
 	j.lastStart, j.lastEnd, j.lastResult = j.started, time.Now(), result
-	j.started, j.done, j.total, j.detail = time.Time{}, 0, 0, ""
+	j.started, j.done, j.total, j.detail, j.runners, j.waiting = time.Time{}, 0, 0, "", nil, nil
 	if !j.paused {
 		j.state, j.note = Idle, ""
 	}
+}
+
+// SetRunner says what runner i is working on ("" when nothing), for jobs that run several at
+// once; cleared at the end of the run.
+func (j *Job) SetRunner(i int, working string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for len(j.runners) <= i {
+		j.runners = append(j.runners, "")
+		j.waiting = append(j.waiting, false)
+	}
+	j.runners[i], j.waiting[i] = working, false
+}
+
+// RunnerWaiting marks runner i as stopped part way through its file, waiting for a free runner.
+func (j *Job) RunnerWaiting(i int, waiting bool) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if i < len(j.waiting) {
+		j.waiting[i] = waiting
+	}
+}
+
+// runnerList is what each runner is on, for Status (with j.mu held).
+func (j *Job) runnerList() []string {
+	out := make([]string, len(j.runners))
+	for i, f := range j.runners {
+		out[i] = f
+		if f != "" && j.waiting[i] {
+			out[i] = f + " (waiting for a free runner)"
+		}
+	}
+	return out
 }
 
 // SetDetail says how the run is going, for the Jobs page ("2 of 3 runners"); cleared at the end.
@@ -236,6 +271,7 @@ type Status struct {
 	State      string     `json:"state"`
 	Note       string     `json:"note,omitempty"`
 	Detail     string     `json:"detail,omitempty"`
+	Runners    []string   `json:"runners,omitempty"` // what each runner is working on ("": nothing)
 	Done       int        `json:"done"`
 	Total      int        `json:"total"`
 	Started    *time.Time `json:"started,omitempty"`
@@ -265,7 +301,7 @@ func All() []Status {
 	for _, j := range jobs {
 		j.mu.Lock()
 		out = append(out, Status{
-			ID: j.ID, Name: j.Name, About: j.About, State: j.state, Note: j.note, Detail: j.detail,
+			ID: j.ID, Name: j.Name, About: j.About, State: j.state, Note: j.note, Detail: j.detail, Runners: j.runnerList(),
 			Done: j.done, Total: j.total, Started: timePtr(j.started),
 			LastStart: timePtr(j.lastStart), LastEnd: timePtr(j.lastEnd), LastResult: j.lastResult,
 			Next: timePtr(j.next), Schedule: j.schedule, Paused: j.paused, CanRun: j.runNow != nil,

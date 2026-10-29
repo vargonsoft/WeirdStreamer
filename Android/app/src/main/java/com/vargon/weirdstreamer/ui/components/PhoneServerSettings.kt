@@ -1,5 +1,7 @@
 package com.vargon.weirdstreamer.ui.components
 
+import com.vargon.weirdstreamer.api.models.TrickplaySettingsRequest
+import com.vargon.weirdstreamer.api.models.TrickplaySettings
 import kotlin.math.roundToInt
 import androidx.compose.runtime.mutableLongStateOf
 import com.vargon.weirdstreamer.api.models.JobLoad
@@ -820,8 +822,69 @@ fun JobsTab(server: ServerRepository) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp)) }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
+            d.trickplay?.let { tp ->
+                item {
+                    TrickplaySettingsBox(tp) { runners, frames ->
+                        val (resp, err) = attempt { server.api.setTrickplaySettings(TrickplaySettingsRequest(runners, frames)) }
+                        if (resp != null) data = resp
+                        err
+                    }
+                }
+            }
             itemsIndexed(d.jobs, key = { _, j -> j.id }) { _, j -> JobCard(j, now, ::control) }
             item { StorageCard(d.storage.orEmpty()) }
+        }
+    }
+}
+
+// Trickplay's runners and frames per runner, saved to the server's config.json. The tab refreshes
+// every few seconds, so the fields only follow the server while they aren't being edited. save
+// returns an error to show, or null.
+@Composable
+private fun TrickplaySettingsBox(tp: TrickplaySettings, save: suspend (Int, Int) -> String?) {
+    val scope = rememberCoroutineScope()
+    var runners by remember { mutableStateOf(tp.runners.toString()) }
+    var frames by remember { mutableStateOf(tp.framesPerRunner.toString()) }
+    var edited by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    LaunchedEffect(tp.runners, tp.framesPerRunner) {
+        if (!edited) {
+            runners = tp.runners.toString()
+            frames = tp.framesPerRunner.toString()
+        }
+    }
+    val r = runners.toIntOrNull() ?: 0
+    val f = frames.toIntOrNull() ?: 0
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Trickplay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(runners, { runners = it.filter(Char::isDigit); edited = true }, label = { Text("Runners") },
+                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f))
+                OutlinedTextField(frames, { frames = it.filter(Char::isDigit); edited = true }, label = { Text("Frames per runner") },
+                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f))
+            }
+            // Each frame in a batch holds its own decoder: about 110 MB (25 frames took 2.8 GB).
+            Text("$r × $f = ${r * f} frames at once, about ${String.format(Locale.US, "%.1f", r * f * 0.11)} GB of memory at most. " +
+                "Runners 1 to ${tp.maxRunners}, frames per runner 1 to ${tp.maxFrames}, and at most ${tp.maxProduct} frames at once.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(shape = AppButtonShape, colors = phoneButtonColors(), enabled = r > 0 && f > 0, onClick = {
+                    scope.launch {
+                        val err = save(r, f)
+                        if (err == null) {
+                            edited = false
+                            message = "Saved. Applies from the next batch." to false
+                        } else message = err to true
+                    }
+                }) { Text("Save") }
+                message?.let { (text, isError) ->
+                    Text(text, style = MaterialTheme.typography.bodySmall,
+                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }
@@ -916,6 +979,10 @@ private fun JobCard(j: BackgroundJob, now: Long, control: (String, String) -> Un
                 val count = if (j.total > 0) String.format(Locale.US, "%,d of %,d · ", j.done, j.total) else ""
                 Text("${count}running for ${jobDuration(now - started)}", style = MaterialTheme.typography.bodySmall)
                 j.detail?.takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                // What each runner is on, for a job that runs several at once.
+                j.runners?.forEachIndexed { i, file ->
+                    if (file.isNotEmpty()) Text("Runner ${i + 1}: $file", style = MaterialTheme.typography.bodySmall)
+                }
             }
             if (j.state == "waiting" && !j.note.isNullOrEmpty()) {
                 Text("Waiting: ${j.note}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)

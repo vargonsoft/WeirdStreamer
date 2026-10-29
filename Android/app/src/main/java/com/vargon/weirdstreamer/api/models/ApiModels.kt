@@ -216,7 +216,22 @@ data class ChangePasswordRequest(
 data class JobsResponse(
     @SerializedName("jobs") val jobs: List<BackgroundJob> = emptyList(),
     @SerializedName("load") val load: JobLoad? = null,
-    @SerializedName("storage") val storage: List<StorageUse>? = null
+    @SerializedName("storage") val storage: List<StorageUse>? = null,
+    @SerializedName("trickplay") val trickplay: TrickplaySettings? = null
+)
+
+/** The trickplay job's settings (kept in the server's config.json) and their limits. */
+data class TrickplaySettings(
+    @SerializedName("runners") val runners: Int = 3,
+    @SerializedName("frames_per_runner") val framesPerRunner: Int = 25,
+    @SerializedName("max_runners") val maxRunners: Int = 8,
+    @SerializedName("max_frames") val maxFrames: Int = 50,
+    @SerializedName("max_product") val maxProduct: Int = 100
+)
+
+data class TrickplaySettingsRequest(
+    @SerializedName("runners") val runners: Int,
+    @SerializedName("frames_per_runner") val framesPerRunner: Int
 )
 
 /** One of the server's data folders and its size, for the Jobs tab's Storage card. */
@@ -233,6 +248,7 @@ data class BackgroundJob(
     @SerializedName("state") val state: String = "idle", // idle, running, waiting, paused
     @SerializedName("note") val note: String? = null, // why it's waiting
     @SerializedName("detail") val detail: String? = null, // how it's running ("2 of 3 runners")
+    @SerializedName("runners") val runners: List<String>? = null, // what each runner is on ("": nothing)
     @SerializedName("done") val done: Int = 0,
     @SerializedName("total") val total: Int = 0,
     @SerializedName("started") val started: String? = null,
