@@ -1,4 +1,5 @@
 {
+  "groups": ["parents", "admins", "kids"],
   "server": {
     "port": 8080,
     "host": "0.0.0.0",
@@ -15,19 +16,19 @@
       {
         "name": "Movies",
         "path": "/path/to/media/movies",
-        "groups": ["adults", "admins"],
+        "groups": ["parents", "admins"],
         "type": "movie"
       },
       {
         "name": "TV Shows",
         "path": "/path/to/media/tv",
-        "groups": ["kids", "adults", "admins"],
+        "groups": ["kids", "parents", "admins"],
         "type": "tv"
       },
       {
         "name": "Photos",
         "path": "/path/to/media/photos",
-        "groups": ["adults", "admins"]
+        "groups": ["parents", "admins"]
       }
     ],
     "thumbnailPath": "./var/thumbnails",

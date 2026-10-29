@@ -59,8 +59,8 @@ for each TODO item are at the end of this file.
 ## Live server
 
 - Runs from `Server/` as `./bin/server`, under `Server/scripts/live.sh` in the user's "WeirdStreamer live"
-  terminal tab. Each start logs to its own file in the folder `server.logsPath` names (`Server/run/logs/` live) (the last 20 are kept). Port 9000, HTTPS. Config is `Server/config.json`
-  (git-ignored). Data is in `Server/run/` (databases, thumbnails, trickplay, artwork, download
+  terminal tab. Each start logs to its own file in the folder `server.logsPath` names (the last 20 are kept). Port 9000, HTTPS. Config is `Server/config.json`
+  (git-ignored). Data is in the folders `config.json` names (databases, thumbnails, trickplay, artwork, download
   encodes).
 - To deploy server code: `Server/scripts/restart-live.sh`. It checks for active streams, builds, stops
   the live server and waits for `live.sh` to start the new one (`--no-build` restarts the binary

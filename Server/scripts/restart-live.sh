@@ -56,7 +56,7 @@ if [ "$build" = 1 ]; then
     mv bin/server.new bin/server
 fi
 
-touch run/.restart
+touch .restart
 kill "$pid"
 for _ in $(seq 1 50); do
     kill -0 "$pid" 2>/dev/null || break

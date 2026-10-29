@@ -12,17 +12,20 @@ and serves the web UI. The Android TV and phone app talks to the same API.
 
 ## Build and run
 
-```bash
-mkdir -p bin
-go -C src build -o ../bin/server ./cmd/server
-go -C src build -o ../bin/cli ./cmd/cli
-cp config.example.json config.json   # then edit it
-./bin/cli user create admin --admin
-./bin/server
-```
+Without Docker, `./start-server.sh` does everything:
 
-`make build` builds both binaries. The server reads `./config.json`, or the file named by
-`CONFIG_PATH`. It serves the web UI from `./web`, so run it from this directory.
+- The first time, there's no `config.json`, so it runs `scripts/create-config.sh`. That checks the
+  tools (Go, gcc, ffmpeg, and openssl for a certificate), asks for the port, the libraries and whether
+  to use HTTPS, generates a self-signed certificate if you want one, and writes `config.json` from
+  `config.example.json` with a fresh JWT secret. It can also create the admin user.
+- If `bin/` is missing, it runs `scripts/build.sh`, which builds `bin/server` and `bin/cli`.
+- Then it runs `scripts/live.sh`, which keeps the server in this terminal and logs to
+  `server.logsPath`.
+
+You can also build with `make build` or `scripts/build.sh`, and create `config.json` with
+`scripts/create-config.sh` or by copying `config.example.json` and editing it. The server reads
+`./config.json`, or the file named by `CONFIG_PATH`. It serves the web UI from `./web`, so run it from
+this directory. Create the admin user with `./bin/cli user create <name> --admin --group parents`.
 
 If `streaming.enableHTTP2` is on and the certificate and key files (`server.certFile` and
 `server.keyFile`, default `cert.pem` and `key.pem`) exist, the server uses HTTPS (with HTTP/2).

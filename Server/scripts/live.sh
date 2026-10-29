@@ -4,9 +4,10 @@
 # (server-<start time>.log), and only the last 20 are kept.
 # When restart-live.sh stops it, it starts again with the new binary (bin/server); Ctrl-C (or a crash) ends it.
 cd "$(dirname "$0")/.."
-marker=run/.restart
+marker=.restart
 rm -f "$marker"
-logs=$(python3 -c 'import json; print(json.load(open("config.json"))["server"].get("logsPath") or "./run/logs")')
+logs=$(python3 -c 'import json; print(json.load(open("config.json"))["server"].get("logsPath", ""))')
+[ -n "$logs" ] || { echo "Set server.logsPath in config.json first." >&2; exit 1; }
 mkdir -p "$logs"
 while true; do
     log="$logs/server-$(date '+%F_%H%M%S').log"
