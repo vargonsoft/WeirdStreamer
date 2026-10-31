@@ -555,7 +555,11 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 					if err == nil {
 						n++
 					} else if ctx.Err() == nil && !errors.Is(err, errInterrupted) {
-						failed[p] = true
+						// An unreadable file (the share, or its permissions) may read on the next run, so
+						// it isn't given up on until a restart. Other failures are.
+						if !errors.Is(err, errUnreadableMedia) {
+							failed[p] = true
+						}
 						skipped++
 						log.Printf("trickplay: %s: %v", p, err)
 					}
