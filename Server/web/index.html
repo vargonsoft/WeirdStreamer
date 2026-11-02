@@ -276,7 +276,8 @@
                 <span class="close">&times;</span>
                 <h2 id="player-title"></h2>
                 <div id="player-filename" class="player-filename" hidden></div>
-                <video id="video-player"></video>
+                <!-- disableremoteplayback: else Chromium keeps its own Cast button over the picture -->
+                <video id="video-player" disableremoteplayback></video>
                 <div id="player-cutout-subs" class="player-cutout-subs" hidden></div>
                 <div id="player-failed" class="player-failed" hidden>Can't play this video</div>
                 <!-- Skip Intro / Skip Credits, over the picture's lower right -->
