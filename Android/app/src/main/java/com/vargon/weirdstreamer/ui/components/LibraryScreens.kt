@@ -65,6 +65,11 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -189,11 +194,58 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                 }
             }
 
+            /**
+             * Moves focus exactly one row, staying in the same column, across from the titles to
+             * the unmatched files too. Compose's own focus search can't be used here: when a held
+             * key outruns the scroll, the next row isn't composed yet, and focus lands on some
+             * other tile of it. Off the posters (the rows above them), it's left to Compose.
+             */
+            fun moveVertically(rows: Int): Boolean {
+                val from = focusedPosition[0]
+                if (from < 0) return false
+                val titles = listing.titles.size
+                val inTitles = from < titles
+                val start = if (inTitles) 0 else titles
+                val size = if (inTitles) titles else listing.unmatched.size
+                val place = from - start
+                val column = place % POSTER_COLUMNS
+                val target = place + rows * POSTER_COLUMNS
+                val position = when {
+                    target < 0 -> {
+                        if (inTitles) return false // the top row: the rows above, or the toolbar
+                        minOf((titles - 1) / POSTER_COLUMNS * POSTER_COLUMNS + column, titles - 1)
+                    }
+                    target < size -> start + target
+                    place / POSTER_COLUMNS != (size - 1) / POSTER_COLUMNS -> start + size - 1
+                    inTitles && listing.unmatched.isNotEmpty() -> titles + minOf(column, listing.unmatched.lastIndex)
+                    else -> return true // already on the last row
+                }
+                val key = keyAt(position)
+                val focused = requesters[key]?.let { runCatching { it.requestFocus() }.getOrDefault(false) } ?: false
+                if (!focused && !gridState.isScrollInProgress) {
+                    // Not composed and nothing in flight to bring it in: scroll to it.
+                    scope.launch {
+                        gridState.scrollToItem(lazyIndex(position))
+                        awaitFrame()
+                        runCatching { requesters[key]?.requestFocus() }
+                    }
+                }
+                // While a scroll is still catching up, the key is dropped; the next repeat retries.
+                return true
+            }
+
             Row(Modifier.fillMaxSize()) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(POSTER_COLUMNS),
                 state = gridState,
-                modifier = Modifier.weight(1f).fillMaxHeight(),
+                modifier = Modifier.weight(1f).fillMaxHeight().onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionDown -> moveVertically(1)
+                        Key.DirectionUp -> moveVertically(-1)
+                        else -> false
+                    }
+                },
                 contentPadding = PaddingValues(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -205,8 +257,11 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                             requesters[CONTINUE_ROW] = continueRequester
                             onDispose { if (requesters[CONTINUE_ROW] === continueRequester) requesters.remove(CONTINUE_ROW) }
                         }
-                        TvContinueRow(viewModel, continueRequester, up = toolbarFocusRequester,
-                            onDown = { runCatching { firstRequester.requestFocus() }.isSuccess })
+                        // While these rows have focus, Up and Down are theirs (moveVertically).
+                        Box(Modifier.onFocusChanged { if (it.hasFocus) focusedPosition[0] = -1 }) {
+                            TvContinueRow(viewModel, continueRequester, up = toolbarFocusRequester,
+                                onDown = { runCatching { firstRequester.requestFocus() }.isSuccess })
+                        }
                     }
                 }
                 itemsIndexed(listing.titles, key = { _, t -> "${t.kind}:${t.tmdbId}" }) { index, t ->
@@ -271,7 +326,7 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                     focusRequester = barRequester,
                     onFocused = {
                         barFocused = true
-                        barLetter = letters.entryFor(focusedPosition[0])
+                        barLetter = letters.entryFor(focusedPosition[0].coerceAtLeast(0))
                     },
                     onMove = { i ->
                         barLetter = i
