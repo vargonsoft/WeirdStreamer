@@ -313,9 +313,29 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
         buildIndex(items, { indexLabel(it.name) }, { if (it.isDirectory) 0 else 1 })
     }
     val continueCount = if (viewModel.hasTopRows) 1 else 0
-    val gridState = remember(viewModel.currentPath) { LazyGridState() }
-    val listState = remember(viewModel.currentPath) { LazyListState() }
+    val folder = viewModel.currentPath
+    val gridState = remember(folder) { LazyGridState() }
+    val listState = remember(folder) { LazyListState() }
     val scope = rememberCoroutineScope()
+    // Back at a folder (from one below it or a video), to where it was. Only once its list has
+    // loaded: a list that's still empty can't hold a position.
+    var scrollRestored by remember(folder) { mutableStateOf(false) }
+    val folderLoaded = items.isNotEmpty() && !viewModel.isLoading && viewModel.continueReady
+    LaunchedEffect(folder, folderLoaded) {
+        if (!folderLoaded || scrollRestored) return@LaunchedEffect
+        viewModel.folderScroll[folder]?.let { (index, offset) ->
+            if (viewModel.isGridView) gridState.scrollToItem(index, offset) else listState.scrollToItem(index, offset)
+        }
+        scrollRestored = true
+    }
+    LaunchedEffect(folder, scrollRestored, viewModel.isGridView) {
+        if (!scrollRestored) return@LaunchedEffect
+        val grid = viewModel.isGridView
+        snapshotFlow {
+            if (grid) gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
+            else listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }.collect { viewModel.folderScroll[folder] = it }
+    }
     val topLetter by remember(letters, continueCount) {
         derivedStateOf {
             val first = if (viewModel.isGridView) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex

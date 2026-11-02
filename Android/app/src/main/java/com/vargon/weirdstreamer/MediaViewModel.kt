@@ -573,6 +573,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getFilteredFileList(): List<FileItem> = sortedFileList
 
+    /** Phone: where each folder is scrolled to (first item, its offset), to come back to from below it or a video. */
+    val folderScroll = HashMap<String, Pair<Int, Int>>()
+
     fun recordSelection(parentPath: String, childPath: String) {
         selectionMap[parentPath] = childPath
     }
@@ -787,6 +790,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val repository = currentRepository ?: return
         
         val parent = repository.getParentPath(currentPath)
+        folderScroll.remove(currentPath) // going back into it starts from the top
         if (parent == null) {
             returnToSourceSelection()
         } else {
@@ -799,6 +803,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun returnToSourceSelection() {
         currentSource = null
         currentPath = ""
+        folderScroll.clear()
         errorMessage = null
         // A sign-in cancelled: else the browser still asks for it and opens the dialog again.
         authRequiredSource = null
