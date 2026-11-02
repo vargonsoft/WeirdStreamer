@@ -200,6 +200,15 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   - `startPlaybackReports` sends progress to `POST /api/streams/progress`. Resume and
     "Play from start" go through `playVideo`'s `startAt`.
   - Icons come from `MATERIAL_ICONS`, `iconSvg(name)` and `decorateIconButtons`.
+- **Resumable transcodes** (`media/transcache.go`): browsers drop and reopen media connections
+  with `Range: bytes=N-`, and ffmpeg can't seek its output, so every transcode goes through
+  64 MB chunks in `media.transcodeCachePath` (default `transcodes` beside the thumbnails folder).
+  A reconnect joins the same ffmpeg and is served from the chunks (206 with an unknown total).
+  - Each viewer (user, client and file, the stream's key) has their own transcode and chunks.
+  - Chunk names are a hash of the viewer, path and ffmpeg's arguments, never the video's name.
+  - ffmpeg runs at most 96 MB ahead of the furthest read, and 512 MB is kept behind it.
+  - With no client for 60 seconds a transcode is stopped and its chunks removed (`reapIdle`, its
+    own timer). Startup clears the folder.
 - **Streams with track options:** file transcodes take `audio=N` (index among the audio tracks)
   and `subtitle=N` (burn in that subtitle track, scaled to the video), in `TrackOptions`
   (`media/codecs.go`).

@@ -69,6 +69,12 @@ func main() {
 	}
 	os.MkdirAll(config.GlobalConfig.Media.ArtworkPath, 0755)
 	// Encodes for offline downloads; by default next to the thumbnails, not in /tmp (often RAM-backed).
+	if config.GlobalConfig.Media.TranscodeCachePath == "" {
+		config.GlobalConfig.Media.TranscodeCachePath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "transcodes")
+	}
+	if err := media.SetTranscodeCacheDir(config.GlobalConfig.Media.TranscodeCachePath); err != nil {
+		log.Printf("Warning: could not prepare the transcode cache: %v", err)
+	}
 	if config.GlobalConfig.Media.DownloadPath == "" {
 		config.GlobalConfig.Media.DownloadPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "downloads")
 	}

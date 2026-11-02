@@ -95,6 +95,14 @@ type StreamSession struct {
 	probed bool
 }
 
+// viewer names who's watching: one user, on one client, of one file.
+func (s *StreamSession) viewer() string {
+	if s == nil {
+		return ""
+	}
+	return s.key
+}
+
 // Begin records a request for a stream (created with init the first time) and returns its
 // session; call End when the request finishes.
 func (t *StreamTracker) Begin(key string, init func(*StreamInfo)) *StreamSession {

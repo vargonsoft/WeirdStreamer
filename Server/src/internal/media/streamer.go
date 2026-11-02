@@ -1,6 +1,7 @@
 package media
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -124,6 +125,13 @@ type trackedWriter struct {
 	offset int64 // file offset of the next byte; -1 when the output isn't the file itself
 }
 
+// Flush sends what's written so far, so a transcode's bytes go out as they're made.
+func (t *trackedWriter) Flush() {
+	if f, ok := t.w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func (t *trackedWriter) Write(p []byte) (int, error) {
 	n, err := t.w.Write(p)
 	if t.offset >= 0 {
@@ -210,7 +218,7 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 	defer os.Remove(tempFile)
 
 	cmd := exec.CommandContext(r.Context(), "heif-convert", filePath, tempFile)
-	
+
 	// Capture stderr for error messages
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -390,79 +398,40 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	return s.runTranscode(w, r, filePath, args, sess)
 }
 
-// runTranscode runs ffmpeg with args (writing fragmented MP4 to stdout) and streams its output.
+// runTranscode streams a transcode (ffmpeg with args, writing fragmented MP4 to stdout) to the
+// client, from the byte it asks for: see transcache.go.
 func (s *Streamer) runTranscode(w http.ResponseWriter, r *http.Request, filePath string, args []string, sess *StreamSession) error {
-	cmd := exec.CommandContext(r.Context(), "ffmpeg", args...)
-
-	// Get stdout and stderr pipes
-	stdout, err := cmd.StdoutPipe()
+	offset := transcodeOffset(r)
+	spool, err := transcodes.attach(filePath, args, offset, sess)
+	if errors.Is(err, errCannotResume) {
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return nil
+	}
 	if err != nil {
-		return fmt.Errorf("failed to create stdout pipe: %w", err)
+		return err
 	}
+	defer spool.detach()
 
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-
-	// Start ffmpeg
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start ffmpeg: %w", err)
-	}
-
-	// Monitor for client disconnect and kill process
-	done := make(chan struct{})
-	go func() {
-		select {
-		case <-r.Context().Done():
-			fmt.Printf("Client disconnected, killing transcode for: %s\n", filePath)
-			cmd.Process.Kill()
-		case <-done:
-			// Normal completion
-		}
-	}()
-
-	// Log stderr in background
-	go func() {
-		buf := make([]byte, 1024)
-		for {
-			n, err := stderr.Read(buf)
-			if n > 0 {
-				fmt.Printf("FFmpeg: %s", string(buf[:n]))
-				sess.FFmpegOutput(string(buf[:n]))
-			}
-			if err != nil {
-				break
-			}
-		}
-	}()
-
-	// Set headers for transcoded content BEFORE writing anything
+	// The length isn't known, so a resumed part can't name its real end.
 	w.Header().Set("Content-Type", "video/mp4")
-	w.WriteHeader(http.StatusOK)
-
-	// Stream the transcoded output
-	_, copyErr := io.Copy(&trackedWriter{w: w, sess: sess, offset: -1}, stdout)
-
-	// Wait for ffmpeg to finish
-	cmdErr := cmd.Wait()
-	close(done)
-
-	fmt.Printf("Transcoding finished for: %s\n", filePath)
-
-	if copyErr != nil {
-		return copyErr
-	}
-	if cmdErr != nil {
-		// If context was cancelled, this is expected
-		if r.Context().Err() != nil {
-			return nil
-		}
-		return fmt.Errorf("ffmpeg error: %w", cmdErr)
+	w.Header().Set("Accept-Ranges", "bytes")
+	if offset > 0 {
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/*", offset, offset+transcodeUnknownLength-1))
+		w.WriteHeader(http.StatusPartialContent)
+	} else {
+		w.WriteHeader(http.StatusOK)
 	}
 
-	return nil
+	err = spool.streamFrom(r.Context(), &trackedWriter{w: w, sess: sess, offset: -1}, offset)
+	if r.Context().Err() != nil {
+		fmt.Printf("Client disconnected from transcode for: %s\n", filePath)
+		return nil
+	}
+	return err
 }
+
+// transcodeUnknownLength stands in for the rest of a stream of unknown length.
+const transcodeUnknownLength = int64(1) << 42
 
 // describeTranscode summarizes ffmpeg arguments for the Streams page.
 func describeTranscode(args []string, startTime, bitrate, resolution, reason string) TranscodeInfo {
