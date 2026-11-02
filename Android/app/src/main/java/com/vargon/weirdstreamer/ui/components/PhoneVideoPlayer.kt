@@ -138,6 +138,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     var playbackPosition by remember(path) { mutableLongStateOf(viewModel.playbackStartMs) }
     var duration by remember(path) { mutableLongStateOf(0L) }
     var isBuffering by remember { mutableStateOf(true) }
+    var playbackFailed by remember { mutableStateOf(false) }
     var ended by remember(path) { mutableStateOf(false) }
 
     // Keep screen on while playing or buffering
@@ -364,12 +365,14 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     val message = if (decoderProblem && isLocal)
                         "This phone can't play this download. Download a compressed copy at a lower resolution."
                     else "Playback failed: ${error.errorCodeName}"
+                    playbackFailed = true
                     android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                 }
             }
 
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
+                if (state != Player.STATE_IDLE) playbackFailed = false
                 if (state == Player.STATE_ENDED) {
                     if (!isSmbSource) {
                         ended = true
@@ -592,7 +595,9 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }, fontSize = 18.sp, bottomPadding = if (showControls) 160.dp else 32.dp)
 
         // Loading Spinner
-        if (isBuffering) {
+        if (playbackFailed) {
+            PlaybackFailedMessage(Modifier.align(Alignment.Center))
+        } else if (isBuffering) {
             CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),
                 color = Color.White

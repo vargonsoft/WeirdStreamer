@@ -26,6 +26,19 @@ import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import java.util.*
 import kotlin.math.abs
 
+/** Stays on screen in place of the spinner once a video can't play. */
+@Composable
+fun PlaybackFailedMessage(modifier: Modifier = Modifier) {
+    Text(
+        text = "Can't play this video",
+        style = MaterialTheme.typography.titleLarge,
+        color = Color.White,
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    )
+}
+
 @Composable
 fun FilenameOverlay(
     show: Boolean,

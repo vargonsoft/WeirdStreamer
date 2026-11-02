@@ -161,6 +161,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var isPlaying by remember { mutableStateOf(true) }
     var isPaused by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(true) }
+    var playbackFailed by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(false) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var lastControlsHideTime by remember { mutableLongStateOf(0L) }
@@ -376,12 +377,14 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     android.widget.Toast.makeText(context, "This device can't play the original. Transcoding it.",
                         android.widget.Toast.LENGTH_SHORT).show()
                 } else {
+                    playbackFailed = true
                     android.widget.Toast.makeText(context, "Playback failed: ${error.errorCodeName}",
                         android.widget.Toast.LENGTH_LONG).show()
                 }
             }
 
             override fun onPlaybackStateChanged(state: Int) {
+                if (state != Player.STATE_IDLE) playbackFailed = false
                 if (state == Player.STATE_READY) {
                     val currentDuration = exoPlayer.duration
                     if (fullDuration > 0) duration = fullDuration
@@ -799,7 +802,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             }
         }
 
-        if (isBuffering) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = WeirdStreamerTheme.spec.spinnerColor.takeOrElse { MaterialTheme.colorScheme.primary })
+        if (playbackFailed) PlaybackFailedMessage(Modifier.align(Alignment.Center))
+        else if (isBuffering) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = WeirdStreamerTheme.spec.spinnerColor.takeOrElse { MaterialTheme.colorScheme.primary })
 
         FilenameOverlay(show = showControls, filename = filename, title = playerTitle, modifier = Modifier.align(Alignment.TopStart))
         skip?.let { (prompt, _) ->
