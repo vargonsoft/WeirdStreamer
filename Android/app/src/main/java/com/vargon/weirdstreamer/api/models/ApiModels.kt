@@ -83,7 +83,16 @@ data class ContinueMetadata(
     @SerializedName("still") val still: String? = null,
     @SerializedName("backdrop") val backdrop: String? = null,
     @SerializedName("poster") val poster: String? = null
-)
+) {
+    /** The player's title: "Example Show · S01E02 · Example Episode", or "Example Movie (2008)". */
+    val playerTitle: String?
+        get() = when {
+            kind == "episode" && season != null && episode != null ->
+                listOfNotNull(showTitle, String.format(java.util.Locale.US, "S%02dE%02d", season, episode), title).joinToString(" · ")
+            kind == "movie" && title != null -> title + (year?.let { " ($it)" } ?: "")
+            else -> null
+        }
+}
 
 data class WatchedRequest(
     @SerializedName("paths") val paths: List<String>, // base64 server paths
@@ -416,7 +425,8 @@ data class MediaSegments(
     @SerializedName("credits") val credits: SegmentSpan? = null,
     @SerializedName("auto_skip") val autoSkip: Boolean = false,
     @SerializedName("show_id") val showId: Int = 0,
-    @SerializedName("next") val next: ContinueItem? = null
+    @SerializedName("next") val next: ContinueItem? = null,
+    @SerializedName("metadata") val metadata: ContinueMetadata? = null
 )
 
 data class AutoSkipRequest(

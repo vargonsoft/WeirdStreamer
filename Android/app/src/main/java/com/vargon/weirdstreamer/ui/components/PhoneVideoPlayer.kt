@@ -620,14 +620,25 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                             tint = Color.White
                         )
                     }
-                    Text(
-                        text = viewModel.getDisplayName(path),
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 8.dp).weight(1f)
-                    )
+                    val playerTitle by produceState<String?>(null, path) { value = viewModel.playerTitleFor(path) }
+                    Column(modifier = Modifier.padding(start = 8.dp).weight(1f)) {
+                        Text(
+                            text = playerTitle ?: viewModel.getDisplayName(path),
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (playerTitle != null) {
+                            Text(
+                                text = viewModel.getDisplayName(path),
+                                color = Color.White.copy(alpha = 0.8f),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                     
                     // Disc: chapters, angles, tracks, titles
                     if (isDisc) {

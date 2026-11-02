@@ -26,6 +26,8 @@ type segmentsResponse struct {
 	ShowID   int          `json:"show_id,omitempty"` // the show an episode belongs to
 	// The episode after this one (on into the next season), for Skip Credits
 	Next *models.MediaItem `json:"next,omitempty"`
+	// What this video is, for the players' title
+	Metadata *models.ItemMetadata `json:"metadata,omitempty"`
 }
 
 func toSegmentJSON(s *database.Span) *segmentJSON {
@@ -66,6 +68,7 @@ func (h *MediaHandler) GetSegments(w http.ResponseWriter, r *http.Request) {
 	if lib, found := libraryForPath(path); found {
 		if item := h.continueEntry(lib, path); item != nil {
 			resp.ShowID = episodeShow(item)
+			resp.Metadata = item.Metadata
 		}
 		if resp.ShowID != 0 {
 			if after := h.episodesAfter(r.Context(), lib, resp.ShowID, path); len(after) > 0 {

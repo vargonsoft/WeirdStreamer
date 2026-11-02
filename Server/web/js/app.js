@@ -786,6 +786,23 @@ async function playVideo(item, forceTranscode = false, startAt = 0, fromFolder =
     loadTrickplay(p);
 }
 
+// The player's title for a show or movie, with the file name small beneath it. A viewing begun in
+// a folder keeps the file name.
+function showPlayerTitle(now, md) {
+    if (now.fromFolder || !md) return;
+    let title = null;
+    if (md.kind === 'episode' && md.season != null && md.episode != null) {
+        title = [md.show_title, episodeCode(md.season, md.episode), md.title].filter(Boolean).join(' · ');
+    } else if (md.kind === 'movie' && md.title) {
+        title = md.title + (md.year ? ` (${md.year})` : '');
+    }
+    if (!title) return;
+    playerTitle.textContent = title;
+    const file = document.getElementById('player-filename');
+    file.textContent = now.item.name;
+    file.hidden = false;
+}
+
 // The videos of the folder on screen, in order.
 function folderVideos() {
     return state.view === 'folders' ? state.mediaItems.filter(item => item.type === 'video') : [];
@@ -817,6 +834,7 @@ async function playNextAfterEnd(now) {
 
 function openPlayer(title) {
     playerTitle.textContent = title;
+    document.getElementById('player-filename').hidden = true;
     videoPlayer.controls = false;
     document.getElementById('player-controls').hidden = false;
     playerModal.classList.add('active');
@@ -1653,7 +1671,10 @@ const SKIP_SHOWN_MS = 10000;
 async function loadSegments(p) {
     try {
         const segments = await api.getSegments(p.item.path);
-        if (player === p) p.segments = segments;
+        if (player === p) {
+            p.segments = segments;
+            showPlayerTitle(p, segments.metadata);
+        }
     } catch (e) { /* no Skip button */ }
     const mark = document.getElementById('player-mark-label');
     if (mark) mark.hidden = !canFixMatches();
@@ -1763,6 +1784,12 @@ async function playDisc(item, startAt = 0, fromFolder = false) {
     disc.title = info.main_title;
     loadTrickplay(disc);
     playerTitle.textContent = item.name;
+    if (!fromFolder) {
+        const now = disc;
+        api.getSegments(item.path).then(segments => {
+            if (disc === now) showPlayerTitle(now, segments.metadata);
+        }).catch(() => {});
+    }
     renderDiscControls();
     loadDiscStream(startAt); // progress is kept for the main title, which plays first
 }

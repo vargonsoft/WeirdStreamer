@@ -30,6 +30,7 @@ import kotlin.math.abs
 fun FilenameOverlay(
     show: Boolean,
     filename: String,
+    title: String? = null, // the show or movie: then the file name goes small beneath it
     modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
@@ -38,17 +39,29 @@ fun FilenameOverlay(
         exit = slideOutVertically { -it } + fadeOut(),
         modifier = modifier
     ) {
-        Text(
-            text = filename,
-            style = MaterialTheme.typography.headlineMedium,
-            color = Color.White,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Column(
             modifier = Modifier
                 .padding(32.dp)
                 .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                 .padding(horizontal = 16.dp, vertical = 8.dp)
-        )
+        ) {
+            Text(
+                text = title ?: filename,
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (title != null) {
+                Text(
+                    text = filename,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }
 

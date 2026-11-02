@@ -965,6 +965,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** The show or movie a video is, for the player's title; null shows its file name, as does a folder viewing. */
+    suspend fun playerTitleFor(path: String): String? {
+        if (startedInFolder || path.startsWith("file://")) return null
+        return runCatching { segmentsFor(path) }.getOrNull()?.metadata?.playerTitle
+    }
+
     /** A partly watched video picked in folder view: the UI asks Resume or Play from start. */
     var resumeChoice by mutableStateOf<FileItem?>(null)
         private set

@@ -603,6 +603,14 @@ header h1 {
     color: var(--heading-color, #667eea);
 }
 
+/* The file name, under a show's or movie's title */
+.player-filename {
+    margin: -6px 0 10px;
+    font-size: 13px;
+    color: var(--muted-text);
+    overflow-wrap: anywhere;
+}
+
 /* Settings Screen */
 #settings-screen {
     padding: 20px;
@@ -1860,6 +1868,7 @@ header h1 {
 }
 
 #player-modal .modal-content:fullscreen #player-title,
+#player-modal .modal-content:fullscreen .player-filename,
 #player-modal .modal-content:fullscreen .close {
     display: none;
 }

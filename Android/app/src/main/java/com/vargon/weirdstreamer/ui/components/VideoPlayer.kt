@@ -349,6 +349,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     val focusRequester = remember { FocusRequester() }
     val filename = remember(path) { viewModel.getDisplayName(path) }
+    val playerTitle by produceState<String?>(null, path) { value = viewModel.playerTitleFor(path) }
 
     // Sync playback state
     DisposableEffect(exoPlayer) {
@@ -800,7 +801,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
         if (isBuffering) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = WeirdStreamerTheme.spec.spinnerColor.takeOrElse { MaterialTheme.colorScheme.primary })
 
-        FilenameOverlay(show = showControls, filename = filename, modifier = Modifier.align(Alignment.TopStart))
+        FilenameOverlay(show = showControls, filename = filename, title = playerTitle, modifier = Modifier.align(Alignment.TopStart))
         skip?.let { (prompt, _) ->
             TvSkipButton(prompt, Modifier.align(Alignment.BottomEnd)
                 .padding(end = 56.dp, bottom = if (showControls || showZoomToolbar) 210.dp else 64.dp))
