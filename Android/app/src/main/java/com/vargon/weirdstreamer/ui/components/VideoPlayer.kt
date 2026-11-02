@@ -362,8 +362,6 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             // The box can't decode the original (too big, or a codec it lacks): have the server
             // transcode it instead, from the same place.
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                val decoderProblem = error.errorCode in androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..
-                    androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED
                 if (AudioFallback.isAudioDecoderFailure(error) && !currentTranscodeMode.isOriginal && !isSmbSource && !stereoAudio) {
                     // The transcode's surround audio didn't decode: again from here, in stereo.
                     AudioFallback.stereo = true
@@ -371,7 +369,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     stereoAudio = true
                     android.widget.Toast.makeText(context, "This device can't play the surround audio. Switching to stereo.",
                         android.widget.Toast.LENGTH_SHORT).show()
-                } else if (decoderProblem && currentTranscodeMode.isOriginal && !isSmbSource) {
+                } else if (currentTranscodeMode.isOriginal && !isSmbSource) {
+                    // Whatever failed (decoder, container, audio output), the server may manage it.
                     transcodeStartOffset = playbackPosition
                     selectedTranscodeModeIndex = 1
                     android.widget.Toast.makeText(context, "This device can't play the original. Transcoding it.",

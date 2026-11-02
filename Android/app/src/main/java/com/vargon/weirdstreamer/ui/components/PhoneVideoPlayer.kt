@@ -356,7 +356,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     stereoAudio = true
                     android.widget.Toast.makeText(context, "This phone can't play the surround audio. Switching to stereo.",
                         android.widget.Toast.LENGTH_SHORT).show()
-                } else if (decoderProblem && !enableTranscode && !isSmbSource && !isLocal) {
+                } else if (!enableTranscode && !isSmbSource && !isLocal) {
+                    // Whatever failed (decoder, container, audio output), the server may manage it.
                     playbackPosition = exoPlayer.currentPosition.takeIf { it > 0 } ?: playbackPosition
                     chooseTranscodeMode(1)
                     android.widget.Toast.makeText(context, "This phone can't play the original. Transcoding it.",

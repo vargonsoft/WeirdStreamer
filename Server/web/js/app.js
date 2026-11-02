@@ -1023,6 +1023,7 @@ async function loadFileStream(start) {
 
 // Plays url in the player. seekOnLoad: where to seek once it's loaded (an original file).
 function attachStream(url, item, seekOnLoad = 0) {
+    document.getElementById('player-failed').hidden = true;
     videoPlayer.pause();
     videoPlayer.innerHTML = '';
     videoPlayer.src = url;
@@ -1058,6 +1059,7 @@ function onPlayerError() {
     const status = document.getElementById('player-status');
     if (!p || !(p.mode === 'original' || copiesVideo(p))) {
         status.textContent = `Playback failed: ${err.message || 'error ' + err.code}`;
+        document.getElementById('player-failed').hidden = false;
         return;
     }
     const at = videoPlayer.currentTime > 0 ? playerPosition() : p.start;

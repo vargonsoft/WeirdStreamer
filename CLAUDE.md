@@ -198,14 +198,15 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 - **TV player** (`VideoPlayer.kt`, ExoPlayer):
   - Transcode modes come from `transcodeModes` in `UiUtils.kt`, picked in a D-pad dialog in
     `PlayerDialogs.kt`. `transcodeQuery()` caps the height at what the hardware decodes.
-  - A decoder error on the original switches to Compatibility (Auto).
+  - Any playback error on the original switches to Compatibility (Auto), once. If that fails
+    too, the player says it can't play the video.
   - Subtitles: `onTracksChanged` collects `C.TRACK_TYPE_TEXT` formats and labels them
     (`subtitleLabels`). `selectSubtitleTrack(index)` sets a `TrackSelectionOverride`, and
     `SubtitleMemory` remembers the choice per video. **Audio track selection should copy this
     pattern** with `C.TRACK_TYPE_AUDIO`, and get its own dialog row in the player toolbar
     (`PlayerZoomToolbar` buttons 0–8).
 - **Phone player** (`PhoneVideoPlayer.kt`, ExoPlayer):
-  - Same transcode menu (a dropdown) and decoder fallback as the TV.
+  - Same transcode menu (a dropdown) and fallback to Compatibility (Auto) as the TV.
   - Touch handling today: the root `Box` has `pointerInput { detectTransformGestures }` for
     pinch-zoom and pan, and `clickable` to show or hide the controls. Swipe gestures (seek,
     brightness, volume) must not break pinch-zoom: handle single-finger drags separately.
