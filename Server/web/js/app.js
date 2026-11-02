@@ -1568,7 +1568,7 @@ function subtitleTextTrack() {
 function stopSubtitles() {
     if (subs && subs.abort) subs.abort.abort();
     subs = null;
-    document.getElementById('player-pgs').hidden = true;
+    document.getElementById('player-pgs-box').hidden = true;
     const track = subtitleTextTrack();
     while (track.cues && track.cues.length) track.removeCue(track.cues[0]);
     track.mode = 'disabled';
@@ -1632,31 +1632,36 @@ function showPictureSubtitles(s) {
     for (let i = s.sets.length - 1; i >= 0; i--) {
         if (s.sets[i].time <= position) { set = s.sets[i]; break; }
     }
-    const canvas = document.getElementById('player-pgs');
+    const canvas = document.getElementById('player-pgs'), box = document.getElementById('player-pgs-box');
     if (set !== s.shown) {
         s.shown = set;
         drawPgs(canvas, set);
     }
-    canvas.hidden = !(set && set.parts.length);
-    if (!canvas.hidden) placePictureSubtitles(canvas, set);
+    box.hidden = !(set && set.parts.length);
+    if (!box.hidden) placePictureSubtitles(box, canvas, set);
     requestAnimationFrame(() => showPictureSubtitles(s));
 }
 
 // Over the picture, inside any bars the video element has around it. The pictures are drawn for
 // the disc's frame (1920x1080), and a video cropped of its black bars no longer fills that: it's
 // centered on the video at the video's scale, as it was on the disc, and a line that would fall
-// off the bottom is moved up.
-function placePictureSubtitles(canvas, set) {
+// off the picture is moved onto it.
+function placePictureSubtitles(box, canvas, set) {
     const v = videoPlayer;
+    box.style.left = `${v.offsetLeft}px`;
+    box.style.top = `${v.offsetTop}px`;
+    box.style.width = `${v.offsetWidth}px`;
+    box.style.height = `${v.offsetHeight}px`;
     const ratio = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : set.width / set.height;
     const shownWidth = Math.min(v.offsetWidth, v.offsetHeight * ratio), shownHeight = shownWidth / ratio;
     const scale = Math.max(shownWidth / set.width, shownHeight / set.height);
-    const left = v.offsetLeft + v.offsetWidth / 2 - set.width * scale / 2;
-    const top = v.offsetTop + v.offsetHeight / 2 - set.height * scale / 2;
+    const left = (v.offsetWidth - set.width * scale) / 2, top = (v.offsetHeight - set.height * scale) / 2;
+    const highest = Math.min(...set.parts.map(p => p.y));
     const lowest = Math.max(...set.parts.map(p => p.y + (p.crop ? p.crop.height : p.object.height)));
-    const shownBottom = v.offsetTop + (v.offsetHeight + shownHeight) / 2;
+    const shownTop = (v.offsetHeight - shownHeight) / 2, shownBottom = shownTop + shownHeight;
+    const moved = Math.max(0, shownTop - (top + highest * scale)) - Math.max(0, top + lowest * scale - shownBottom);
     canvas.style.left = `${left}px`;
-    canvas.style.top = `${top - Math.max(0, top + lowest * scale - shownBottom)}px`;
+    canvas.style.top = `${top + moved}px`;
     canvas.style.width = `${set.width * scale}px`;
     canvas.style.height = `${set.height * scale}px`;
 }

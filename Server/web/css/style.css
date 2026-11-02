@@ -1824,6 +1824,7 @@ header h1 {
     max-height: none;
     width: 100vw;
     height: 100vh;
+    overflow: hidden; /* the video fills it and the controls lie over it: nothing to scroll to */
     border-radius: 0;
     background: black;
     color: white;
@@ -2476,14 +2477,17 @@ body.has-az #main-screen .content { padding-right: 28px; }
 }
 .player-cutout-subs[hidden] { display: none; }
 
-/* Picture subtitles (PGS), drawn over the video */
-.player-pgs {
+/* Picture subtitles (PGS), drawn over the video. Their frame can be taller than a cropped video:
+   the box keeps it from overflowing the player, which would give it a scrollbar. */
+.player-pgs-box {
     position: absolute;
     z-index: 4;
+    overflow: hidden;
     will-change: transform;
     pointer-events: none;
 }
-.player-pgs[hidden] { display: none; }
+.player-pgs-box[hidden] { display: none; }
+.player-pgs-box canvas { position: absolute; }
 
 /* Stays over the picture once a video can't play, as on Android */
 .player-failed {
