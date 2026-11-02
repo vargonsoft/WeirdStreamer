@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/metadata"
 	"github.com/weirdstreamer/server/internal/models"
 )
@@ -80,39 +82,59 @@ func (h *MediaHandler) GetLibraryTitle(w http.ResponseWriter, r *http.Request) {
 
 const newAdditionsLimit = 10
 
-// NewAdditions lists the videos that arrived last in a library, newest first, for the Recently Added
-// row: GET /api/library/new?lib=<id>. Empty for a library without showNewAdditions.
+// NewAdditions lists the videos that arrived last, newest first, for the Recently Added row: in a
+// library (GET /api/library/new?lib=<id>), or blended from the libraries that show on the home
+// screen (without lib). Empty where the showNewAdditions option leaves it off.
 func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
-	lib, found := libraryByID(r.URL.Query().Get("lib"))
-	if !found || !h.canAccessLibrary(r, lib) {
-		respondError(w, http.StatusNotFound, "Library not found")
-		return
+	libs := []config.MediaPath{}
+	if id := r.URL.Query().Get("lib"); id != "" {
+		lib, found := libraryByID(id)
+		if !found || !h.canAccessLibrary(r, lib) {
+			respondError(w, http.StatusNotFound, "Library not found")
+			return
+		}
+		if lib.OnNewAdditions(true) {
+			libs = append(libs, lib)
+		}
+	} else {
+		for _, lib := range config.GlobalConfig.Media.Paths {
+			if lib.OnNewAdditions(false) && h.canAccessLibrary(r, lib) {
+				libs = append(libs, lib)
+			}
+		}
 	}
+	type arrival struct {
+		database.AddedMedia
+		lib config.MediaPath
+	}
+	var arrivals []arrival
+	for _, lib := range libs {
+		// Some may be gone from the disk: read a few extra.
+		added, err := h.db.NewestMedia(lib.Path, newAdditionsLimit*2)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to list new additions")
+			return
+		}
+		for _, a := range added {
+			arrivals = append(arrivals, arrival{a, lib})
+		}
+	}
+	sort.SliceStable(arrivals, func(i, j int) bool { return arrivals[i].AddedAt > arrivals[j].AddedAt })
 	items := []continueItem{}
-	if !lib.ShowNewAdditions {
-		respondJSON(w, http.StatusOK, items)
-		return
-	}
-	// Some may be gone from the disk: read a few extra.
-	added, err := h.db.NewestMedia(lib.Path, newAdditionsLimit*2)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Failed to list new additions")
-		return
-	}
 	pb := h.requestPlayback(r)
-	for _, a := range added {
+	for _, a := range arrivals {
 		if len(items) >= newAdditionsLimit {
 			break
 		}
 		if _, err := os.Stat(a.Path); err != nil {
 			continue
 		}
-		item := h.continueEntry(lib, a.Path)
+		item := h.continueEntry(a.lib, a.Path)
 		if item == nil {
 			continue
 		}
 		item.Playback = pb[a.Path]
-		items = append(items, continueItem{MediaItem: *item, LibraryID: lib.ID, LibraryType: lib.Type, AddedAt: a.AddedAt})
+		items = append(items, continueItem{MediaItem: *item, LibraryID: a.lib.ID, LibraryType: a.lib.Type, AddedAt: a.AddedAt})
 	}
 	respondJSON(w, http.StatusOK, items)
 }

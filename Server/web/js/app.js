@@ -569,7 +569,7 @@ function renderMedia() {
     if (!state.currentPath || atLibrary) {
         const path = state.currentPath;
         Promise.all([createContinueRow(atLibrary ? state.libraryId : ''),
-            atLibrary ? createNewAdditionsRow(state.libraryId) : null]).then(rows => {
+            createNewAdditionsRow(atLibrary ? state.libraryId : '')]).then(rows => {
             const shown = rows.filter(Boolean);
             if (shown.length && state.view === 'folders' && state.currentPath === path) {
                 directoryList.innerHTML = '';
@@ -2465,6 +2465,13 @@ const CONTINUE_MODES = [
     { value: 'off', label: 'Continue Watching: off' },
 ];
 
+// Where a library's new videos show on Recently Added (the config's showNewAdditions)
+const NEW_ADDITIONS_MODES = [
+    { value: 'on', label: 'Recently Added: on the home screen and the library' },
+    { value: 'libraryOnly', label: 'Recently Added: in the library only' },
+    { value: 'off', label: 'Recently Added: off' },
+];
+
 // Sets a media path's type, omitting the key for "no type" so the saved config stays clean.
 function setMediaPathType(mediaPath, type) {
     if (type) {
@@ -2549,15 +2556,20 @@ function renderMediaPaths(paths) {
             state.currentConfig.media.paths[index].continueWatchingMode = e.target.value;
         };
 
-        const newAdditions = document.createElement('label');
-        newAdditions.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 12px;';
-        const newAdditionsBox = document.createElement('input');
-        newAdditionsBox.type = 'checkbox';
-        newAdditionsBox.checked = !!mediaPath.showNewAdditions;
-        newAdditionsBox.onchange = (e) => {
-            state.currentConfig.media.paths[index].showNewAdditions = e.target.checked;
+        const newAdditions = document.createElement('select');
+        newAdditions.className = 'settings-input';
+        newAdditions.style.cssText = 'margin-bottom: 5px; font-size: 12px;';
+        newAdditions.title = 'Where the last videos to arrive show on Recently Added';
+        NEW_ADDITIONS_MODES.forEach(({ value, label }) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            newAdditions.appendChild(option);
+        });
+        newAdditions.value = mediaPath.showNewAdditions || 'off';
+        newAdditions.onchange = (e) => {
+            state.currentConfig.media.paths[index].showNewAdditions = e.target.value;
         };
-        newAdditions.append(newAdditionsBox, 'Show Recently Added on this library');
 
         const pathDiv = document.createElement('div');
         pathDiv.style.cssText = 'display: flex; align-items: center; gap: 10px;';
@@ -4258,8 +4270,9 @@ async function createContinueRow(lib = '') {
     return section;
 }
 
-// Recently Added: the videos that arrived last in a library (its showNewAdditions option).
-async function createNewAdditionsRow(lib) {
+// Recently Added: the videos that arrived last in a library, or blended from the libraries that
+// show on the home screen (the showNewAdditions option).
+async function createNewAdditionsRow(lib = '') {
     let items;
     try {
         items = await api.newAdditions(lib);

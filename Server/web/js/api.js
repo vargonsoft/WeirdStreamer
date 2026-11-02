@@ -327,8 +327,8 @@ class MediaAPI {
         return this.request('/api/playback/continue' + (lib ? `?lib=${encodeURIComponent(lib)}` : ''));
     }
 
-    async newAdditions(lib) {
-        return this.request('/api/library/new?lib=' + encodeURIComponent(lib));
+    async newAdditions(lib = '') {
+        return this.request('/api/library/new' + (lib ? `?lib=${encodeURIComponent(lib)}` : ''));
     }
 
     async removeFromContinue(path) {

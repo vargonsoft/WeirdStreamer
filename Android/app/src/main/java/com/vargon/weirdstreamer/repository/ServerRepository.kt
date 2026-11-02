@@ -152,8 +152,8 @@ class ServerRepository(
         }
     }
 
-    /** The videos that arrived last in [libraryId]: empty unless it has showNewAdditions. */
-    suspend fun newAdditions(libraryId: String): Result<List<ContinueItem>> = withContext(Dispatchers.IO) {
+    /** The videos that arrived last in [libraryId], or blended for the home screen; empty where showNewAdditions is off. */
+    suspend fun newAdditions(libraryId: String?): Result<List<ContinueItem>> = withContext(Dispatchers.IO) {
         runCatching {
             val r = apiService.newAdditions(libraryId)
             r.body()?.takeIf { r.isSuccessful } ?: throw Exception("Server error: ${r.code()}")

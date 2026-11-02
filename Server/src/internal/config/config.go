@@ -130,8 +130,10 @@ type MediaPath struct {
 	// also when empty), ContinueLibraryOnly or ContinueOff. Their progress is kept and shown
 	// either way.
 	ContinueWatchingMode string `json:"continueWatchingMode,omitempty"`
-	// Show a Recently Added row on this library's pages: its last videos to arrive.
-	ShowNewAdditions bool `json:"showNewAdditions,omitempty"`
+	// Where this library's last videos to arrive show on Recently Added: ContinueOn (the home
+	// screen's row, which blends the libraries, and the library's own), ContinueLibraryOnly, or
+	// ContinueOff (the default, also when empty).
+	ShowNewAdditions string `json:"showNewAdditions,omitempty"`
 }
 
 // Continue Watching modes (MediaPath.ContinueWatchingMode)
@@ -152,6 +154,18 @@ func (p MediaPath) OnContinueWatching(libraryPage bool) bool {
 		return libraryPage
 	}
 	return true
+}
+
+// OnNewAdditions reports whether the library's new videos belong on a Recently Added row: the
+// library's own page's (libraryPage) or the home screen's, which blends libraries.
+func (p MediaPath) OnNewAdditions(libraryPage bool) bool {
+	switch p.ShowNewAdditions {
+	case ContinueOn:
+		return true
+	case ContinueLibraryOnly:
+		return libraryPage
+	}
+	return false
 }
 
 // Library types. A library has at most one type; untyped libraries are plain folders.
@@ -225,21 +239,31 @@ func (c *Config) Validate() error {
 		default:
 			return fmt.Errorf("media path %q: invalid type %q (allowed: %q, %q, or none)", p.Name, p.Type, LibraryTypeMovie, LibraryTypeTV)
 		}
-		// Any capitalization, written back in the canonical one
-		mode := p.ContinueWatchingMode
-		switch {
-		case mode == "" || strings.EqualFold(mode, ContinueOn):
-			p.ContinueWatchingMode = ContinueOn
-		case strings.EqualFold(mode, ContinueLibraryOnly):
-			p.ContinueWatchingMode = ContinueLibraryOnly
-		case strings.EqualFold(mode, ContinueOff):
-			p.ContinueWatchingMode = ContinueOff
-		default:
-			return fmt.Errorf("media path %q: invalid continueWatchingMode %q (allowed: %q, %q, %q)",
-				p.Name, mode, ContinueOn, ContinueLibraryOnly, ContinueOff)
+		var err error
+		if p.ContinueWatchingMode, err = canonicalMode(p.ContinueWatchingMode, ContinueOn); err != nil {
+			return fmt.Errorf("media path %q: invalid continueWatchingMode %w", p.Name, err)
+		}
+		if p.ShowNewAdditions, err = canonicalMode(p.ShowNewAdditions, ContinueOff); err != nil {
+			return fmt.Errorf("media path %q: invalid showNewAdditions %w", p.Name, err)
 		}
 	}
 	return nil
+}
+
+// canonicalMode reads an on/libraryOnly/off option in any capitalization, written back in the
+// canonical one; empty is empty's meaning.
+func canonicalMode(mode, empty string) (string, error) {
+	switch {
+	case mode == "":
+		return empty, nil
+	case strings.EqualFold(mode, ContinueOn):
+		return ContinueOn, nil
+	case strings.EqualFold(mode, ContinueLibraryOnly):
+		return ContinueLibraryOnly, nil
+	case strings.EqualFold(mode, ContinueOff):
+		return ContinueOff, nil
+	}
+	return "", fmt.Errorf("%q (allowed: %q, %q, %q)", mode, ContinueOn, ContinueLibraryOnly, ContinueOff)
 }
 
 type MediaConfig struct {

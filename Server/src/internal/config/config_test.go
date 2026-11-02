@@ -43,6 +43,28 @@ func TestLibraryType(t *testing.T) {
 	}
 }
 
+func TestShowNewAdditions(t *testing.T) {
+	cfg := &Config{Media: MediaConfig{Paths: []MediaPath{
+		{Name: "a"}, {Name: "b", ShowNewAdditions: "ON"}, {Name: "c", ShowNewAdditions: "LibraryOnly"}, {Name: "d", ShowNewAdditions: "off"},
+	}}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		mode          string
+		home, library bool
+	}{{ContinueOff, false, false}, {ContinueOn, true, true}, {ContinueLibraryOnly, false, true}, {ContinueOff, false, false}}
+	for i, p := range cfg.Media.Paths {
+		if p.ShowNewAdditions != want[i].mode || p.OnNewAdditions(false) != want[i].home || p.OnNewAdditions(true) != want[i].library {
+			t.Errorf("%s: %q, home %v, library %v; want %+v", p.Name, p.ShowNewAdditions, p.OnNewAdditions(false), p.OnNewAdditions(true), want[i])
+		}
+	}
+	bad := &Config{Media: MediaConfig{Paths: []MediaPath{{Name: "x", ShowNewAdditions: "sometimes"}}}}
+	if err := bad.Validate(); err == nil {
+		t.Error("an invalid showNewAdditions passed")
+	}
+}
+
 func TestContinueWatchingMode(t *testing.T) {
 	c := &Config{Media: MediaConfig{Paths: []MediaPath{
 		{Name: "a"}, {Name: "b", ContinueWatchingMode: "LibraryOnly"}, {Name: "c", ContinueWatchingMode: "OFF"},

@@ -383,7 +383,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var continueItems by mutableStateOf<List<ContinueItem>>(emptyList())
         private set
 
-    /** The videos that arrived last in this library, for the Recently Added row under Continue Watching. */
+    /** The videos that arrived last in this library, or the libraries on the home screen, for the Recently Added row. */
     var newItems by mutableStateOf<List<ContinueItem>>(emptyList())
         private set
 
@@ -448,7 +448,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             // Offline, the row keeps what it had.
             try {
                 repo.continueWatching(libraryId).getOrNull()?.let { continueItems = it }
-                newItems = libraryId?.let { repo.newAdditions(it).getOrNull() }.orEmpty()
+                newItems = repo.newAdditions(libraryId).getOrNull().orEmpty()
             } finally {
                 continueReady = true
             }
