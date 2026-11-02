@@ -50,6 +50,9 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.File
 
+/** How long after a skip one the other way goes back to where the skipping started. */
+private const val SKIP_REVERSAL_WINDOW_MS = 2000L
+
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Unit) {
@@ -717,7 +720,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             else {
                                 val now = System.currentTimeMillis(); val dir = -1
                                 val within = (now - lastSkipTime) <= 1000 && lastSkipDirection == dir && skipReversalStep == 0
-                                val opp = lastSkipDirection == 1 && skipReversalStep == 0
+                                val opp = (now - lastSkipTime) <= SKIP_REVERSAL_WINDOW_MS && lastSkipDirection == 1 && skipReversalStep == 0
                                 if (!within && !opp) basePlaybackPositionBeforeSkip = if (!currentTranscodeMode.isOriginal && !isSmbSource) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
                                 var amount: Int
                                 if (opp) {
@@ -746,7 +749,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             else {
                                 val now = System.currentTimeMillis(); val dir = 1
                                 val within = (now - lastSkipTime) <= 1000 && lastSkipDirection == dir && skipReversalStep == 0
-                                val opp = lastSkipDirection == -1 && skipReversalStep == 0
+                                val opp = (now - lastSkipTime) <= SKIP_REVERSAL_WINDOW_MS && lastSkipDirection == -1 && skipReversalStep == 0
                                 if (!within && !opp) basePlaybackPositionBeforeSkip = if (!currentTranscodeMode.isOriginal && !isSmbSource) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
                                 var amount: Int
                                 if (opp) {
