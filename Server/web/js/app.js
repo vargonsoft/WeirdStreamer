@@ -563,10 +563,12 @@ function renderMedia() {
         run: el.classList.contains('directory-item') ? 0 : 1,
     })));
 
-    // The server's front page leads with what's in progress, in every library.
-    if (!state.currentPath) {
+    // The server's front page leads with what's in progress in every library, and a library's own
+    // page (shown as folders here; as posters in showLibrary) with what's in progress in it.
+    const atLibrary = state.currentPath.split('/').filter(p => p).length === 1;
+    if (!state.currentPath || atLibrary) {
         const path = state.currentPath;
-        createContinueRow().then(row => {
+        createContinueRow(atLibrary ? state.libraryId : '').then(row => {
             if (row && state.view === 'folders' && state.currentPath === path) {
                 directoryList.innerHTML = '';
                 directoryList.appendChild(row);

@@ -420,11 +420,17 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadContinueWatching() {
         val repo = serverRepository ?: return
-        // Library view shows its own library's; the server's front page shows every library's.
-        val libraryId = if (isLibraryView) currentLibraryId else null
+        // A library's own page (Library view, or its top folder) shows its own library's; the
+        // server's front page shows every library's.
+        val atLibraryRoot = repo.getParentPath(currentPath) == ""
+        val libraryId = when {
+            isLibraryView -> currentLibraryId
+            atLibraryRoot -> repo.libraryIdOf(currentPath)
+            else -> null
+        }
         // Whenever the server answers, progress played offline goes to it.
         viewModelScope.launch { syncLocalProgress(repo) }
-        if (!isLibraryView && repo.getParentPath(currentPath) != null) {
+        if (!isLibraryView && !atLibraryRoot && repo.getParentPath(currentPath) != null) {
             continueItems = emptyList()
             continueReady = true
             return
