@@ -245,7 +245,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   top folder pages, and with `on` they also blend into the home screen's row
   (`GET /api/library/new`, with or without `lib`). The `media_added` table dates each file once:
   files already known by their time on disk (`FillMediaAdded`, at startup), new ones when the
-  server first saves them. `media_items`' `created_at` is no use for this: every save replaces the
+  server first saves them. The newest day comes first, and a day's videos in viewing order (show,
+  season, episode). `media_items`' `created_at` is no use for this: every save replaces the
   row. Clients turn `added_at` into "Added 2 days ago" on their own calendar.
 - **Progress and resume:** players report position every 5s, on pause and at the end. The
   server decides "watched" (the last 2 minutes of videos 20 minutes or longer; the end of shorter

@@ -87,3 +87,33 @@ func TestMediaAdded(t *testing.T) {
 		t.Errorf("forgotten file still listed: %+v", got)
 	}
 }
+
+func TestNewestMediaByDay(t *testing.T) {
+	db := testDB(t)
+	day := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
+	dates := map[string]time.Time{
+		"/lib/S01E09.mkv": day.Add(time.Hour), // a day's files in order, whenever they arrived
+		"/lib/S01E10.mkv": day.Add(-time.Hour),
+		"/lib/S01E11.mkv": day.Add(-2 * time.Hour),
+		"/lib/S01E01.mkv": day.Add(-7 * 24 * time.Hour),
+	}
+	for path, at := range dates {
+		saveVideo(t, db, path)
+		if err := recordAdded(db.mediaConn, path, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := db.NewestMedia("/lib", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/lib/S01E09.mkv", "/lib/S01E10.mkv", "/lib/S01E11.mkv", "/lib/S01E01.mkv"}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v", got)
+	}
+	for i := range want {
+		if got[i].Path != want[i] {
+			t.Errorf("%d: %s, want %s", i, got[i].Path, want[i])
+		}
+	}
+}

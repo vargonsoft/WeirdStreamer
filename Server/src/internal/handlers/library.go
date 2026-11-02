@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
@@ -119,13 +121,9 @@ func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 			arrivals = append(arrivals, arrival{a, lib})
 		}
 	}
-	sort.SliceStable(arrivals, func(i, j int) bool { return arrivals[i].AddedAt > arrivals[j].AddedAt })
 	items := []continueItem{}
 	pb := h.requestPlayback(r)
 	for _, a := range arrivals {
-		if len(items) >= newAdditionsLimit {
-			break
-		}
 		if _, err := os.Stat(a.Path); err != nil {
 			continue
 		}
@@ -136,7 +134,41 @@ func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 		item.Playback = pb[a.Path]
 		items = append(items, continueItem{MediaItem: *item, LibraryID: a.lib.ID, LibraryType: a.lib.Type, AddedAt: a.AddedAt})
 	}
+	sortNewAdditions(items)
+	if len(items) > newAdditionsLimit {
+		items = items[:newAdditionsLimit]
+	}
 	respondJSON(w, http.StatusOK, items)
+}
+
+// sortNewAdditions puts the newest day first, and a day's videos in viewing order: by show, season
+// and episode, whatever order they happened to arrive in.
+func sortNewAdditions(items []continueItem) {
+	day := func(item continueItem) string { return time.Unix(item.AddedAt, 0).Format("2006-01-02") }
+	order := func(item continueItem) (string, int, int) {
+		if md := item.Metadata; md != nil && md.Kind == "episode" && md.Season != nil && md.Episode != nil {
+			return strings.ToLower(md.ShowTitle), *md.Season, *md.Episode
+		}
+		if item.Metadata != nil && item.Metadata.Title != "" {
+			return strings.ToLower(item.Metadata.Title), 0, 0
+		}
+		return strings.ToLower(item.Name), 0, 0
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		if day(a) != day(b) {
+			return day(a) > day(b)
+		}
+		aTitle, aSeason, aEpisode := order(a)
+		bTitle, bSeason, bEpisode := order(b)
+		if aTitle != bTitle {
+			return aTitle < bTitle
+		}
+		if aSeason != bSeason {
+			return aSeason < bSeason
+		}
+		return aEpisode < bEpisode
+	})
 }
 
 // thumbnailsInFlight limits how many missing thumbnails a library page starts generating at once.
