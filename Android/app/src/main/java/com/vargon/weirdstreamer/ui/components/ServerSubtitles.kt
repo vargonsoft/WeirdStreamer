@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,6 +40,10 @@ import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.net.URLDecoder
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import kotlin.math.roundToInt
 import java.util.Locale
 
 /** One subtitle line on screen, from startMs to endMs (in the file's time). */
@@ -48,8 +53,9 @@ data class SubtitleCue(val startMs: Long, val endMs: Long, val text: AnnotatedSt
  * Subtitles for a video played from a WeirdStreamer server, as the web player has them: the
  * video's own tracks, then files beside it and downloads from OpenSubtitles. Text tracks come
  * from the server as WebVTT, a couple of minutes at a time, and are drawn by [SubtitleOverlay], so
- * they show the same whatever the stream is (a transcode has none of its own); picture tracks
- * (PGS, DVD) can only be burned into a transcode ([burnIn]).
+ * they show the same whatever the stream is (a transcode has none of its own). PGS tracks come the
+ * same way, as pictures for [decodePgs]; other picture tracks (DVD) can only be burned into a
+ * transcode ([burnIn]).
  */
 class ServerSubtitles(private val api: ApiService, private val encodedPath: String) {
     var tracks by mutableStateOf<List<SubtitleTrack>>(emptyList())
@@ -63,7 +69,9 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
     val selectedTrack: SubtitleTrack? get() = tracks.getOrNull(selected)
 
     /** The picture track to burn into the stream (subtitle=N), or -1. */
-    val burnIn: Int get() = selectedTrack?.takeIf { !it.text }?.index ?: -1
+    val burnIn: Int get() = selectedTrack?.takeIf { !it.text && !it.drawn }?.index ?: -1
+
+    private val SubtitleTrack.drawn: Boolean get() = codec == "hdmv_pgs_subtitle"
 
     /** The selected track's timing correction (ms; positive shows its lines later). */
     val offsetMs: Int get() = selectedTrack?.offsetMs ?: 0
@@ -89,6 +97,7 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
 
     // The cues loaded for the selected track: from fromMs to untilMs.
     private var cues = emptyList<SubtitleCue>()
+    private var pictures = emptyList<PgsSet>()
     private var fromMs = 0L
     private var untilMs = 0L
     private var generation = 0 // a new choice drops cues still arriving for the old one
@@ -102,6 +111,7 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
     fun select(index: Int) {
         selected = if (index in tracks.indices) index else -1
         cues = emptyList()
+        pictures = emptyList()
         fromMs = 0
         untilMs = 0
         generation++
@@ -110,6 +120,10 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
     /** Loads the cues around [positionMs], and the next window before it's needed. */
     suspend fun keepAhead(playerMs: Long) {
         val positionMs = playerMs - offsetMs // in the subtitles' own time
+        selectedTrack?.takeIf { it.drawn }?.let { track ->
+            keepPicturesAhead(track, positionMs)
+            return
+        }
         val track = selectedTrack?.takeIf { it.text } ?: return
         val outside = positionMs < fromMs || positionMs > untilMs
         if (!outside && positionMs < untilMs - AHEAD_MS) return
@@ -133,6 +147,31 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
         }
         untilMs = start + WINDOW_MS
     }
+
+    private suspend fun keepPicturesAhead(track: SubtitleTrack, positionMs: Long) {
+        val outside = positionMs < fromMs || positionMs > untilMs
+        if (!outside && positionMs < untilMs - AHEAD_MS) return
+        val start = if (outside) (positionMs - 10_000).coerceAtLeast(0) else untilMs
+        val gen = generation
+        val window = withContext(Dispatchers.IO) {
+            runCatching {
+                api.getSubtitles(encodedPath, track.index, start / 1000.0, WINDOW_MS / 1000.0, "sup").body()?.bytes()
+            }.getOrNull()?.let { decodePgs(it) }
+        } ?: return
+        if (gen != generation) return
+        if (outside) {
+            pictures = window
+            fromMs = start
+        } else {
+            val known = pictures.mapTo(HashSet()) { it.startMs }
+            pictures = (pictures.filter { it.startMs > positionMs - 60_000 } + window.filter { it.startMs !in known })
+                .sortedBy { it.startMs }
+        }
+        untilMs = start + WINDOW_MS
+    }
+
+    /** The display set showing at [playerMs], if the selected track is one the players draw. */
+    fun pictureAt(playerMs: Long): PgsSet? = pictures.lastOrNull { it.startMs <= playerMs }
 
     /** The line to show at [positionMs], if any. */
     fun cueAt(playerMs: Long): AnnotatedString? {
@@ -282,10 +321,11 @@ fun serverSubtitleLabels(tracks: List<SubtitleTrack>): List<String> {
  */
 @Composable
 fun SubtitleOverlay(subtitles: ServerSubtitles?, position: () -> Long, fontSize: TextUnit, modifier: Modifier = Modifier,
-                    bottomPadding: Dp = 48.dp) {
+                    bottomPadding: Dp = 48.dp, videoAspect: () -> Float = { 0f }) {
     if (subtitles == null) return
     val currentPosition by rememberUpdatedState(position)
     var text by remember { mutableStateOf<AnnotatedString?>(null) }
+    var picture by remember { mutableStateOf<PgsPicture?>(null) }
     val selected = subtitles.selected
     LaunchedEffect(subtitles, selected) {
         while (true) {
@@ -299,11 +339,47 @@ fun SubtitleOverlay(subtitles: ServerSubtitles?, position: () -> Long, fontSize:
             delay(100)
         }
     }
+    LaunchedEffect(subtitles, selected) {
+        picture = null
+        var set: PgsSet? = null
+        while (true) {
+            val now = subtitles.pictureAt(currentPosition())
+            if (now !== set) {
+                set = now
+                picture = withContext(Dispatchers.Default) { now?.render() }
+            }
+            delay(50)
+        }
+    }
+    picture?.let { PictureSubtitle(it, videoAspect) }
     val shown = text ?: return
     // In this device's subtitle style (Settings → Subtitle style); fontSize is Normal's.
     val style = resolvedSubtitleStyle()
     Box(modifier.fillMaxSize().padding(bottom = bottomPadding, start = 48.dp, end = 48.dp), contentAlignment = Alignment.BottomCenter) {
         StyledSubtitleText(shown, style, fontSize)
+    }
+}
+
+/**
+ * A PGS picture over the video. It's drawn for the disc's frame (1920x1080), and a video cropped of
+ * its black bars no longer fills that: the frame is centered on the video at the video's scale, as
+ * it was on the disc, and a line that would fall off the bottom is moved up.
+ */
+@Composable
+private fun PictureSubtitle(picture: PgsPicture, videoAspect: () -> Float) {
+    val image = remember(picture) { picture.bitmap.asImageBitmap() }
+    Canvas(Modifier.fillMaxSize()) {
+        val aspect = videoAspect().takeIf { it > 0 } ?: (picture.frameWidth.toFloat() / picture.frameHeight)
+        val shownWidth = minOf(size.width, size.height * aspect)
+        val shownHeight = shownWidth / aspect
+        val scale = maxOf(shownWidth / picture.frameWidth, shownHeight / picture.frameHeight)
+        val left = size.width / 2 - picture.frameWidth * scale / 2
+        val top = size.height / 2 - picture.frameHeight * scale / 2
+        val bottom = top + (picture.y + picture.bitmap.height) * scale
+        val above = (bottom - (size.height + shownHeight) / 2).coerceAtLeast(0f)
+        drawImage(image,
+            dstOffset = IntOffset((left + picture.x * scale).roundToInt(), (top + picture.y * scale - above).roundToInt()),
+            dstSize = IntSize((picture.bitmap.width * scale).roundToInt(), (picture.bitmap.height * scale).roundToInt()))
     }
 }
 

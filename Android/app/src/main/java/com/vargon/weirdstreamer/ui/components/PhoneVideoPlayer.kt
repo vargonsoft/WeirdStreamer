@@ -628,7 +628,9 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
         SubtitleOverlay(serverSubs, position = {
             if (transcodeStartOffset > 0) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
-        }, fontSize = 18.sp, bottomPadding = if (showControls) 160.dp else 32.dp)
+        }, fontSize = 18.sp, bottomPadding = if (showControls) 160.dp else 32.dp, videoAspect = {
+            exoPlayer.videoSize.let { if (it.height > 0) it.width * it.pixelWidthHeightRatio / it.height else 0f }
+        })
 
         // Loading Spinner
         if (playbackFailed) {

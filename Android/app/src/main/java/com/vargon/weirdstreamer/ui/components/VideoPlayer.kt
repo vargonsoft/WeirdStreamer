@@ -848,7 +848,9 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         SpeedFeedbackOverlay(speed = speedFeedback)
         SubtitleOverlay(serverSubs, position = {
             if (!currentTranscodeMode.isOriginal) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
-        }, fontSize = 26.sp, bottomPadding = if (showControls || showZoomToolbar) 190.dp else 48.dp)
+        }, fontSize = 26.sp, bottomPadding = if (showControls || showZoomToolbar) 190.dp else 48.dp, videoAspect = {
+            exoPlayer.videoSize.let { if (it.height > 0) it.width * it.pixelWidthHeightRatio / it.height else 0f }
+        })
 
         FrameFeedbackOverlay(feedback = frameFeedback)
 

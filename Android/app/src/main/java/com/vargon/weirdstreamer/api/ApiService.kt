@@ -80,7 +80,8 @@ interface ApiService {
 
     @GET("/api/media/subtitles")
     suspend fun getSubtitles(@Query("path") path: String, @Query("track") track: Int,
-                             @Query("start") start: Double, @Query("duration") duration: Double): Response<ResponseBody>
+                             @Query("start") start: Double, @Query("duration") duration: Double,
+                             @Query("format") format: String? = null): Response<ResponseBody>
 
     @PUT("/api/media/subtitle-offset")
     suspend fun setSubtitleOffset(@Body request: com.vargon.weirdstreamer.api.models.SubtitleOffsetRequest): Response<Unit>

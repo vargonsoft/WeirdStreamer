@@ -322,6 +322,13 @@ func SubtitleArgs(filePath string, track int, start, duration float64) []string 
 	return append(args, "-map", "0:s:"+strconv.Itoa(track), "-c:s", "webvtt", "-f", "webvtt", "pipe:1")
 }
 
+// PictureSubtitleArgs are ffmpeg's arguments for a PGS track's pictures, as SubtitleArgs has its
+// lines: a raw .sup stream for the players to decode and draw over the video.
+func PictureSubtitleArgs(filePath string, track int, start, duration float64) []string {
+	args := SubtitleArgs(filePath, track, start, duration)
+	return append(args[:len(args)-5], "-c:s", "copy", "-f", "sup", "pipe:1")
+}
+
 // SubtitleFileArgs are SubtitleArgs for a subtitle file (beside the video, or downloaded), read in
 // charset. A subtitle file can't seek: the cues before start are dropped as they're read instead.
 func SubtitleFileArgs(filePath, charset string, start, duration float64) []string {
@@ -338,15 +345,20 @@ func SubtitleFileArgs(filePath, charset string, start, duration float64) []strin
 // ServeSubtitles streams a text subtitle track as WebVTT (see SubtitleArgs), cue by cue as ffmpeg
 // reads them.
 func ServeSubtitles(w http.ResponseWriter, r *http.Request, filePath string, track int, start, duration float64) error {
-	return serveWebVTT(w, r, SubtitleArgs(filePath, track, start, duration))
+	return serveSubtitleStream(w, r, SubtitleArgs(filePath, track, start, duration), "text/vtt; charset=utf-8")
+}
+
+// ServePictureSubtitles streams a PGS track as raw .sup data.
+func ServePictureSubtitles(w http.ResponseWriter, r *http.Request, filePath string, track int, start, duration float64) error {
+	return serveSubtitleStream(w, r, PictureSubtitleArgs(filePath, track, start, duration), "application/octet-stream")
 }
 
 // ServeSubtitleFile streams a subtitle file as WebVTT, as ServeSubtitles does a video's track.
 func ServeSubtitleFile(w http.ResponseWriter, r *http.Request, filePath, charset string, start, duration float64) error {
-	return serveWebVTT(w, r, SubtitleFileArgs(filePath, charset, start, duration))
+	return serveSubtitleStream(w, r, SubtitleFileArgs(filePath, charset, start, duration), "text/vtt; charset=utf-8")
 }
 
-func serveWebVTT(w http.ResponseWriter, r *http.Request, args []string) error {
+func serveSubtitleStream(w http.ResponseWriter, r *http.Request, args []string, contentType string) error {
 	cmd := exec.CommandContext(r.Context(), "ffmpeg", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -355,7 +367,7 @@ func serveWebVTT(w http.ResponseWriter, r *http.Request, args []string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	flusher, _ := w.(http.Flusher)

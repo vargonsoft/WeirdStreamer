@@ -243,6 +243,10 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 		media.ServeSubtitleFile(w, r, file, subtitles.Charset(file), start, duration)
 		return
 	}
+	if r.URL.Query().Get("format") == "sup" { // a PGS track, for the players to draw
+		media.ServePictureSubtitles(w, r, path, track, start, duration)
+		return
+	}
 	media.ServeSubtitles(w, r, path, track, start, duration)
 }
 

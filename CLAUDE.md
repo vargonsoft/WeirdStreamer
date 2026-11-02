@@ -189,8 +189,12 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     `player.offset`, `disc.offset`), as on Android, so the player tracks the absolute position
     itself (`playerPosition`). Seeks within the buffer don't restart it.
   - Text subtitles come from `GET /api/media/subtitles` (WebVTT, 2-minute windows, fetched ahead
-    by `keepSubtitlesAhead`) as cues on a `TextTrack`; picture subtitles (PGS, DVD) are burned in
-    with `subtitle=N`. Track choices are kept per video in `localStorage`. Subtitles are off unless
+    by `keepSubtitlesAhead`) as cues on a `TextTrack`. PGS comes the same way with `format=sup`
+    (raw .sup data, which also carries when each line clears): `js/pgs.js` decodes it and a canvas
+    draws it over the video, as `PgsSubtitles.kt` and `SubtitleOverlay` do on Android, so it needs
+    no transcode. Pictures decode only when shown (a film's worth would take hundreds of MB). PGS
+    draws for the disc's 16:9 frame: it's centered on the video at the video's scale, not
+    stretched to a cropped video. DVD subtitles are still burned in with `subtitle=N`. Track choices are kept per video in `localStorage`. Subtitles are off unless
     the file has forced ones, as on Android.
   - The seek bar shows trickplay frames (made by `cmd/cli trickplay`) on hover.
   - `startPlaybackReports` sends progress to `POST /api/streams/progress`. Resume and

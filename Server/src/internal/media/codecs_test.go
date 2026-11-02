@@ -90,6 +90,14 @@ func TestParseFrameTime(t *testing.T) {
 	}
 }
 
+func TestPictureSubtitleArgs(t *testing.T) {
+	got := strings.Join(PictureSubtitleArgs("/m/a.mkv", 2, 90.5, 120), " ")
+	want := "-v error -ss 90.500 -i /m/a.mkv -copyts -start_at_zero -to 210.500 -map 0:s:2 -c:s copy -f sup pipe:1"
+	if got != want {
+		t.Errorf("got %q", got)
+	}
+}
+
 func TestSubtitleArgs(t *testing.T) {
 	got := strings.Join(SubtitleArgs("/m/a.mkv", 2, 90.5, 120), " ")
 	want := "-v error -ss 90.500 -i /m/a.mkv -copyts -start_at_zero -to 210.500 -map 0:s:2 -c:s webvtt -f webvtt pipe:1"

@@ -46,7 +46,7 @@ function naturalCompare(s1, s2) {
 // The web UI has no version number: the server serves these files from disk, so a change to any of
 // them is a new version. The page compares them with how they were when it loaded, every few
 // minutes and on coming back to the tab, and offers a reload.
-const WEB_FILES = ['./', 'js/api.js', 'js/app.js', 'css/style.css'];
+const WEB_FILES = ['./', 'js/api.js', 'js/app.js', 'js/pgs.js', 'css/style.css'];
 const WEB_CHECK_MS = 5 * 60 * 1000;
 let webFingerprint = null;
 
@@ -968,10 +968,15 @@ function audioNeedsConverting(p) {
     return !!track && (track !== defaultAudioTrack(p.codecs) || !browserPlaysAudio(track));
 }
 
-// Picture subtitles (PGS, DVD) can only be burned into a transcode.
+// Picture subtitles the player draws itself, from the server's .sup data (see pgs.js).
+function drawsPictureSubtitles(sub) {
+    return sub.codec === 'hdmv_pgs_subtitle';
+}
+
+// Other picture subtitles (DVD) can only be burned into a transcode.
 function burnsInSubtitles(p) {
     const sub = subtitleTrack(p);
-    return !!sub && !sub.text;
+    return !!sub && !sub.text && !drawsPictureSubtitles(sub);
 }
 
 // Compatibility (Auto) copies the video and converts only the audio.
@@ -1214,7 +1219,7 @@ function renderFileControls() {
         track ? track.index : -1);
     document.getElementById('player-subtitle-label').hidden = false;
     fillSelect(document.getElementById('player-subtitle'), [[-1, 'Off'], ...codecs.subtitles.map(s =>
-        [s.index, trackDescription(s) + (s.text ? '' : ' (burned in)')]), ['search', 'Search online…']], p.subtitle);
+        [s.index, trackDescription(s) + (s.text || drawsPictureSubtitles(s) ? '' : ' (burned in)')]), ['search', 'Search online…']], p.subtitle);
     updateSyncControls();
     document.getElementById('player-status').textContent = streamNote(p);
 }
@@ -1563,6 +1568,7 @@ function subtitleTextTrack() {
 function stopSubtitles() {
     if (subs && subs.abort) subs.abort.abort();
     subs = null;
+    document.getElementById('player-pgs').hidden = true;
     const track = subtitleTextTrack();
     while (track.cues && track.cues.length) track.removeCue(track.cues[0]);
     track.mode = 'disabled';
@@ -1573,6 +1579,14 @@ function stopSubtitles() {
 function restartSubtitles(position) {
     stopSubtitles();
     const p = player, sub = p && subtitleTrack(p);
+    if (sub && drawsPictureSubtitles(sub)) {
+        const from = Math.max(0, position - 10);
+        subs = { track: subtitleTextTrack(), index: sub.index, sets: [], shown: undefined, from, until: from,
+                 loading: false, abort: new AbortController() };
+        loadPictureWindow(subs);
+        requestAnimationFrame(() => showPictureSubtitles(subs));
+        return;
+    }
     if (!sub || !sub.text) return;
     const track = subtitleTextTrack();
     track.mode = cutoutSubtitles() ? 'hidden' : 'showing';
@@ -1583,6 +1597,68 @@ function restartSubtitles(position) {
     subs = { track, index: sub.index, offset: p.offset, shift: (sub.offset_ms || 0) / 1000, from, until: from,
              loading: false, abort: new AbortController() };
     loadSubtitleWindow(subs);
+}
+
+// A window of a PGS track, merged into what's loaded: the windows overlap a little where a seek
+// lands early. Sets far behind are dropped.
+async function loadPictureWindow(s) {
+    const from = s.until;
+    s.until = from + SUBTITLE_WINDOW;
+    s.loading = true;
+    const url = `${API_BASE}/api/media/subtitles?path=${encodeURIComponent(api.encodePath(player.item.path))}` +
+        `&track=${s.index}&start=${from.toFixed(2)}&duration=${SUBTITLE_WINDOW}&format=sup`;
+    try {
+        const headers = api.token ? { Authorization: `Bearer ${api.token}` } : {};
+        const res = await fetch(url, { signal: s.abort.signal, credentials: 'same-origin', headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const decoded = decodePgs(await res.arrayBuffer());
+        const known = new Set(s.sets.map(set => set.time));
+        const position = playerPosition();
+        s.sets = [...s.sets.filter(set => set.time > position - 60), ...decoded.filter(set => !known.has(set.time))]
+            .sort((a, b) => a.time - b.time);
+    } catch (err) {
+        if (err.name !== 'AbortError') console.warn('Subtitles failed:', err);
+    } finally {
+        s.loading = false;
+    }
+}
+
+// Draws the display set for the moment playing, while these subtitles are on. Each frame, as a
+// picture's start is exact, unlike ontimeupdate's few times a second.
+function showPictureSubtitles(s) {
+    if (subs !== s) return;
+    const position = playerPosition();
+    let set = null;
+    for (let i = s.sets.length - 1; i >= 0; i--) {
+        if (s.sets[i].time <= position) { set = s.sets[i]; break; }
+    }
+    const canvas = document.getElementById('player-pgs');
+    if (set !== s.shown) {
+        s.shown = set;
+        drawPgs(canvas, set);
+    }
+    canvas.hidden = !(set && set.parts.length);
+    if (!canvas.hidden) placePictureSubtitles(canvas, set);
+    requestAnimationFrame(() => showPictureSubtitles(s));
+}
+
+// Over the picture, inside any bars the video element has around it. The pictures are drawn for
+// the disc's frame (1920x1080), and a video cropped of its black bars no longer fills that: it's
+// centered on the video at the video's scale, as it was on the disc, and a line that would fall
+// off the bottom is moved up.
+function placePictureSubtitles(canvas, set) {
+    const v = videoPlayer;
+    const ratio = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : set.width / set.height;
+    const shownWidth = Math.min(v.offsetWidth, v.offsetHeight * ratio), shownHeight = shownWidth / ratio;
+    const scale = Math.max(shownWidth / set.width, shownHeight / set.height);
+    const left = v.offsetLeft + v.offsetWidth / 2 - set.width * scale / 2;
+    const top = v.offsetTop + v.offsetHeight / 2 - set.height * scale / 2;
+    const lowest = Math.max(...set.parts.map(p => p.y + (p.crop ? p.crop.height : p.object.height)));
+    const shownBottom = v.offsetTop + (v.offsetHeight + shownHeight) / 2;
+    canvas.style.left = `${left}px`;
+    canvas.style.top = `${top - Math.max(0, top + lowest * scale - shownBottom)}px`;
+    canvas.style.width = `${set.width * scale}px`;
+    canvas.style.height = `${set.height * scale}px`;
 }
 
 function loadSubtitleWindow(s) {
@@ -1602,7 +1678,8 @@ function keepSubtitlesAhead(position) {
     if (!s || s.loading || position < s.until - 40) return;
     const duration = playerDuration();
     if (duration && s.until >= duration) return;
-    loadSubtitleWindow(s);
+    if (s.sets) loadPictureWindow(s);
+    else loadSubtitleWindow(s);
 }
 
 // Subtitle timing: the selected text track's correction, saved for every player. "Already said"
