@@ -100,8 +100,23 @@ fun clockText(seconds: Double): String {
 }
 
 /** "23 min left", for a video in progress. */
-/** A Continue Watching card's last line: "Up next" for the episode after one finished, else the time left. */
-fun continueNote(item: ContinueItem): String? = if (item.upNext) "Up next" else timeLeftText(item.playback, item.duration)
+/** A card's last line: when it arrived on Recently Added; "Up next" for the episode after one finished, else the time left. */
+fun continueNote(item: ContinueItem): String? =
+    item.addedAt?.let { addedText(it) } ?: if (item.upNext) "Up next" else timeLeftText(item.playback, item.duration)
+
+/** When a video arrived, in days on this device's calendar: "Added 2 days ago". */
+fun addedText(seconds: Long): String {
+    val day = java.time.Instant.ofEpochSecond(seconds).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+    val days = java.time.temporal.ChronoUnit.DAYS.between(day, java.time.LocalDate.now())
+    fun count(n: Long, unit: String) = "Added $n $unit${if (n == 1L) "" else "s"} ago"
+    return when {
+        days <= 0 -> "Added today"
+        days == 1L -> "Added yesterday"
+        days < 30 -> count(days, "day")
+        days < 365 -> count(days / 30, "month")
+        else -> count(days / 365, "year")
+    }
+}
 
 fun timeLeftText(playback: Playback?, duration: Double?): String? {
     val p = playback ?: return null
@@ -110,20 +125,25 @@ fun timeLeftText(playback: Playback?, duration: Double?): String? {
     return "${((total - p.position) / 60).toInt().coerceAtLeast(1)} min left"
 }
 
-/** Phone: Continue Watching, a row of videos in progress (nothing when there are none). */
+/** Phone: Continue Watching and Recently Added, rows of videos (nothing when there are none). */
 @Composable
 fun PhoneContinueRow(viewModel: MediaViewModel, modifier: Modifier = Modifier, sidePadding: Dp = 16.dp) {
-    val items = viewModel.continueItems
-    if (items.isEmpty()) return
     Column(modifier = modifier) {
-        Text("Continue Watching", style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(start = sidePadding, end = sidePadding, top = 12.dp, bottom = 8.dp))
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(horizontal = sidePadding)
-        ) {
-            items(items, key = { it.path }) { item -> PhoneContinueCard(viewModel, item) }
-        }
+        PhoneVideoRow(viewModel, "Continue Watching", viewModel.continueItems, sidePadding)
+        PhoneVideoRow(viewModel, "Recently Added", viewModel.newItems, sidePadding)
+    }
+}
+
+@Composable
+private fun PhoneVideoRow(viewModel: MediaViewModel, heading: String, items: List<ContinueItem>, sidePadding: Dp) {
+    if (items.isEmpty()) return
+    Text(heading, style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(start = sidePadding, end = sidePadding, top = 12.dp, bottom = 8.dp))
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = sidePadding)
+    ) {
+        items(items, key = { it.path }) { item -> PhoneContinueCard(viewModel, item) }
     }
 }
 
@@ -139,7 +159,7 @@ private fun PhoneContinueCard(viewModel: MediaViewModel, item: ContinueItem) {
             Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(32.dp))
             continueImage(viewModel, item)?.let { RemoteImage(it, Modifier.fillMaxSize()) }
             PlaybackOverlay(item.playback, item.duration)
-            IconButton(
+            if (item.addedAt == null) IconButton(
                 onClick = { viewModel.removeFromContinue(item) },
                 modifier = Modifier.align(Alignment.TopEnd).size(36.dp)
             ) {

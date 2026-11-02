@@ -118,6 +118,12 @@ func main() {
 	// Trickplay frames (the pictures over the seek bars) for videos without them.
 	mediaHandler.StartTrickplay(ctx)
 	go media.CountStorage() // the data folders' sizes, for Settings → Jobs
+	// When files arrived, for Recently Added: old files by their time on disk, new ones as they're found.
+	go func() {
+		if err := db.FillMediaAdded(); err != nil {
+			log.Printf("Warning: could not date the media files: %v", err)
+		}
+	}()
 	// A token or library change saved through Settings starts a sync without a restart
 	configHandler.OnUpdate(func() { go metadataService.SyncAll(ctx) })
 
@@ -151,6 +157,7 @@ func main() {
 	api.HandleFunc("/media/details", mediaHandler.GetMediaDetails).Methods("GET")
 	api.HandleFunc("/library", mediaHandler.GetLibrary).Methods("GET")
 	api.HandleFunc("/library/title", mediaHandler.GetLibraryTitle).Methods("GET")
+	api.HandleFunc("/library/new", mediaHandler.NewAdditions).Methods("GET")
 	api.HandleFunc("/playback/watched", mediaHandler.SetWatched).Methods("POST")
 	api.HandleFunc("/playback/sync", mediaHandler.SyncPlayback).Methods("POST")
 	api.HandleFunc("/playback/continue", mediaHandler.ContinueWatching).Methods("GET")

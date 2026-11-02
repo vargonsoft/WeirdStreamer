@@ -245,7 +245,7 @@ func (db *DB) ForgetMedia(paths []string) error {
 	}
 	defer tx.Rollback()
 	for _, p := range paths {
-		for _, q := range []string{`DELETE FROM media_items WHERE path = ?`, `DELETE FROM segments WHERE path = ?`,
+		for _, q := range []string{`DELETE FROM media_items WHERE path = ?`, `DELETE FROM media_added WHERE path = ?`, `DELETE FROM segments WHERE path = ?`,
 			`DELETE FROM dvd_discs WHERE path = ?`, `DELETE FROM subtitle_offsets WHERE path = ?`} {
 			if _, err := tx.Exec(q, p); err != nil {
 				return err

@@ -78,6 +78,45 @@ func (h *MediaHandler) GetLibraryTitle(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, detail)
 }
 
+const newAdditionsLimit = 10
+
+// NewAdditions lists the videos that arrived last in a library, newest first, for the Recently Added
+// row: GET /api/library/new?lib=<id>. Empty for a library without showNewAdditions.
+func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
+	lib, found := libraryByID(r.URL.Query().Get("lib"))
+	if !found || !h.canAccessLibrary(r, lib) {
+		respondError(w, http.StatusNotFound, "Library not found")
+		return
+	}
+	items := []continueItem{}
+	if !lib.ShowNewAdditions {
+		respondJSON(w, http.StatusOK, items)
+		return
+	}
+	// Some may be gone from the disk: read a few extra.
+	added, err := h.db.NewestMedia(lib.Path, newAdditionsLimit*2)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list new additions")
+		return
+	}
+	pb := h.requestPlayback(r)
+	for _, a := range added {
+		if len(items) >= newAdditionsLimit {
+			break
+		}
+		if _, err := os.Stat(a.Path); err != nil {
+			continue
+		}
+		item := h.continueEntry(lib, a.Path)
+		if item == nil {
+			continue
+		}
+		item.Playback = pb[a.Path]
+		items = append(items, continueItem{MediaItem: *item, LibraryID: lib.ID, LibraryType: lib.Type, AddedAt: a.AddedAt})
+	}
+	respondJSON(w, http.StatusOK, items)
+}
+
 // thumbnailsInFlight limits how many missing thumbnails a library page starts generating at once.
 var thumbnailsInFlight sync.Map
 

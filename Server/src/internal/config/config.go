@@ -130,6 +130,8 @@ type MediaPath struct {
 	// also when empty), ContinueLibraryOnly or ContinueOff. Their progress is kept and shown
 	// either way.
 	ContinueWatchingMode string `json:"continueWatchingMode,omitempty"`
+	// Show a Recently Added row on this library's pages: its last videos to arrive.
+	ShowNewAdditions bool `json:"showNewAdditions,omitempty"`
 }
 
 // Continue Watching modes (MediaPath.ContinueWatchingMode)

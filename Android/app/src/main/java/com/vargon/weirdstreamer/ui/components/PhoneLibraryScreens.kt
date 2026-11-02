@@ -112,7 +112,7 @@ fun PhoneLibraryScreen(viewModel: MediaViewModel) {
                     listing.unmatched.map { indexLabel(it.name, skipArticles = true) to 1 },
                     { it.first }, { it.second })
             }
-            val continueCount = if (viewModel.continueItems.isNotEmpty()) 1 else 0
+            val continueCount = if (viewModel.hasTopRows) 1 else 0
             val scope = rememberCoroutineScope()
             val topLetter by remember(letters, continueCount) {
                 derivedStateOf {
@@ -129,7 +129,7 @@ fun PhoneLibraryScreen(viewModel: MediaViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                if (viewModel.continueItems.isNotEmpty()) {
+                if (viewModel.hasTopRows) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "continue") {
                         PhoneContinueRow(viewModel, sidePadding = 0.dp) // the grid has its own
                     }

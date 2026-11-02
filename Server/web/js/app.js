@@ -568,10 +568,12 @@ function renderMedia() {
     const atLibrary = state.currentPath.split('/').filter(p => p).length === 1;
     if (!state.currentPath || atLibrary) {
         const path = state.currentPath;
-        createContinueRow(atLibrary ? state.libraryId : '').then(row => {
-            if (row && state.view === 'folders' && state.currentPath === path) {
+        Promise.all([createContinueRow(atLibrary ? state.libraryId : ''),
+            atLibrary ? createNewAdditionsRow(state.libraryId) : null]).then(rows => {
+            const shown = rows.filter(Boolean);
+            if (shown.length && state.view === 'folders' && state.currentPath === path) {
                 directoryList.innerHTML = '';
-                directoryList.appendChild(row);
+                directoryList.append(...shown);
             }
         });
     }
@@ -2547,6 +2549,16 @@ function renderMediaPaths(paths) {
             state.currentConfig.media.paths[index].continueWatchingMode = e.target.value;
         };
 
+        const newAdditions = document.createElement('label');
+        newAdditions.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 12px;';
+        const newAdditionsBox = document.createElement('input');
+        newAdditionsBox.type = 'checkbox';
+        newAdditionsBox.checked = !!mediaPath.showNewAdditions;
+        newAdditionsBox.onchange = (e) => {
+            state.currentConfig.media.paths[index].showNewAdditions = e.target.checked;
+        };
+        newAdditions.append(newAdditionsBox, 'Show Recently Added on this library');
+
         const pathDiv = document.createElement('div');
         pathDiv.style.cssText = 'display: flex; align-items: center; gap: 10px;';
         
@@ -2567,6 +2579,7 @@ function renderMediaPaths(paths) {
         div.appendChild(groupsInput);
         div.appendChild(typeSelect);
         div.appendChild(continueSelect);
+        div.appendChild(newAdditions);
         div.appendChild(pathDiv);
         pathsList.appendChild(div);
     });
@@ -3631,9 +3644,10 @@ async function showLibrary(libId, push = true, keepScroll = false) {
     state.mediaItems = data.unmatched.map(libraryFileItem);
     libraryBreadcrumb(null);
 
-    const continueRow = await createContinueRow(libId);
+    const [continueRow, newRow] = await Promise.all([createContinueRow(libId), createNewAdditionsRow(libId)]);
     container.innerHTML = '';
     if (continueRow) container.appendChild(continueRow);
+    if (newRow) container.appendChild(newRow);
     const grid = document.createElement('div');
     grid.className = 'poster-grid';
     data.titles.forEach(t => grid.appendChild(createPosterCard(t)));
@@ -4244,6 +4258,34 @@ async function createContinueRow(lib = '') {
     return section;
 }
 
+// Recently Added: the videos that arrived last in a library (its showNewAdditions option).
+async function createNewAdditionsRow(lib) {
+    let items;
+    try {
+        items = await api.newAdditions(lib);
+    } catch (error) {
+        return null;
+    }
+    if (!items || !items.length) return null;
+    const section = el('section', 'continue-row');
+    section.appendChild(el('h2', 'library-section', 'Recently Added'));
+    const row = el('div', 'continue-items');
+    items.forEach(item => row.appendChild(createContinueCard(item)));
+    section.appendChild(row);
+    return section;
+}
+
+// When a video arrived, in days on this device's calendar: "Added 2 days ago".
+function addedText(seconds) {
+    const midnight = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const days = Math.round((midnight(new Date()) - midnight(new Date(seconds * 1000))) / 86400000);
+    if (days <= 0) return 'Added today';
+    if (days === 1) return 'Added yesterday';
+    if (days < 30) return `Added ${days} days ago`;
+    const count = (n, unit) => `Added ${n} ${unit}${n === 1 ? '' : 's'} ago`;
+    return days < 365 ? count(Math.floor(days / 30), 'month') : count(Math.floor(days / 365), 'year');
+}
+
 function continueTitle(item) {
     const md = item.metadata;
     if (md && md.kind === 'episode') {
@@ -4270,21 +4312,23 @@ function createContinueCard(item) {
         thumb.innerHTML = placeholderIcon('movie');
     }
     addProgressOverlay(thumb, item.playback, item.duration);
-    const remove = el('button', 'card-action continue-remove');
-    remove.type = 'button';
-    remove.title = 'Remove from Continue Watching';
-    remove.innerHTML = iconSvg('close');
-    remove.onclick = async (e) => {
-        e.stopPropagation();
-        await api.removeFromContinue(item.path).catch(() => {});
-        card.remove();
-    };
-    thumb.appendChild(remove);
+    if (!item.added_at) { // Recently Added cards aren't anyone's to remove
+        const remove = el('button', 'card-action continue-remove');
+        remove.type = 'button';
+        remove.title = 'Remove from Continue Watching';
+        remove.innerHTML = iconSvg('close');
+        remove.onclick = async (e) => {
+            e.stopPropagation();
+            await api.removeFromContinue(item.path).catch(() => {});
+            card.remove();
+        };
+        thumb.appendChild(remove);
+    }
     const { title, subtitle } = continueTitle(item);
     card.append(thumb, el('div', 'continue-title', title));
     if (subtitle) card.appendChild(el('div', 'continue-subtitle', subtitle));
     // The episode after one finished says so; one in progress, how long is left.
-    const left = item.up_next ? 'Up next' : timeLeftText(item);
+    const left = item.added_at ? addedText(item.added_at) : item.up_next ? 'Up next' : timeLeftText(item);
     if (left) card.appendChild(el('div', 'continue-subtitle', left));
     const play = () => playVideo(item, false, resumePosition(item));
     card.onclick = play;

@@ -127,7 +127,7 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
             val gridState = rememberLazyGridState(returnTo?.index ?: 0, returnTo?.offset ?: 0)
             val lastRequester = remember { FocusRequester() }
             val isTv = listing.libraryType == "tv"
-            val hasContinue = viewModel.continueItems.isNotEmpty()
+            val hasContinue = viewModel.hasTopRows
             // Requesters of the composed tiles by key, for Down from the toolbar.
             val requesters = remember(listing.libraryId) { HashMap<Any, FocusRequester>() }
             DisposableEffect(contentEntry, listing.libraryId) {

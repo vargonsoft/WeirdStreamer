@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -14,6 +15,9 @@ import (
 type DB struct {
 	userConn  *sql.DB
 	mediaConn *sql.DB
+	// Set once the files already known have their dates (FillMediaAdded): until then a save can't
+	// tell a new file from an old one.
+	datesNewMedia atomic.Bool
 }
 
 func New(userDBPath, mediaDBPath string) (*DB, error) {
@@ -72,7 +76,7 @@ func (db *DB) initSchema() error {
 
 	CREATE INDEX IF NOT EXISTS idx_media_type ON media_items(type);
 	CREATE INDEX IF NOT EXISTS idx_media_path ON media_items(path);
-	`
+	` + mediaAddedSchema
 
 	if _, err := db.userConn.Exec(userSchema); err != nil {
 		return err
@@ -305,6 +309,9 @@ func (db *DB) SaveMediaItem(item *models.MediaItem) error {
 
 	id, _ := result.LastInsertId()
 	item.ID = id
+	if db.datesNewMedia.Load() {
+		return recordAdded(db.mediaConn, item.Path, time.Now())
+	}
 	return nil
 }
 
@@ -386,5 +393,8 @@ func (db *DB) ListMediaItems(mediaType string) ([]models.MediaItem, error) {
 
 func (db *DB) DeleteMediaItem(path string) error {
 	_, err := db.mediaConn.Exec("DELETE FROM media_items WHERE path = ?", path)
+	if err == nil {
+		_, err = db.mediaConn.Exec("DELETE FROM media_added WHERE path = ?", path)
+	}
 	return err
 }

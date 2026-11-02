@@ -312,7 +312,7 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
     val letters = remember(items) {
         buildIndex(items, { indexLabel(it.name) }, { if (it.isDirectory) 0 else 1 })
     }
-    val continueCount = if (viewModel.continueItems.isNotEmpty()) 1 else 0
+    val continueCount = if (viewModel.hasTopRows) 1 else 0
     val gridState = remember(viewModel.currentPath) { LazyGridState() }
     val listState = remember(viewModel.currentPath) { LazyListState() }
     val scope = rememberCoroutineScope()
@@ -333,7 +333,7 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (viewModel.continueItems.isNotEmpty()) {
+            if (viewModel.hasTopRows) {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "continue") {
                     PhoneContinueRow(viewModel, sidePadding = 0.dp)
                 }
@@ -349,7 +349,7 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
         LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxHeight(),
             contentPadding = PaddingValues(vertical = 8.dp)) {
             // The server's front page leads with what's in progress, in every library.
-            if (viewModel.continueItems.isNotEmpty()) {
+            if (viewModel.hasTopRows) {
                 item(key = "continue") {
                     PhoneContinueRow(viewModel, Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp), sidePadding = 0.dp)
                 }

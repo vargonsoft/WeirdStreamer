@@ -383,6 +383,13 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var continueItems by mutableStateOf<List<ContinueItem>>(emptyList())
         private set
 
+    /** The videos that arrived last in this library, for the Recently Added row under Continue Watching. */
+    var newItems by mutableStateOf<List<ContinueItem>>(emptyList())
+        private set
+
+    /** Whether the page leads with a row of videos: Continue Watching, Recently Added or both. */
+    val hasTopRows: Boolean get() = continueItems.isNotEmpty() || newItems.isNotEmpty()
+
     /** False while the Continue Watching row is being asked for, so the TV can start focus on it. */
     var continueReady by mutableStateOf(true)
         private set
@@ -432,6 +439,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { syncLocalProgress(repo) }
         if (!isLibraryView && !atLibraryRoot && repo.getParentPath(currentPath) != null) {
             continueItems = emptyList()
+            newItems = emptyList()
             continueReady = true
             return
         }
@@ -440,6 +448,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             // Offline, the row keeps what it had.
             try {
                 repo.continueWatching(libraryId).getOrNull()?.let { continueItems = it }
+                newItems = libraryId?.let { repo.newAdditions(it).getOrNull() }.orEmpty()
             } finally {
                 continueReady = true
             }

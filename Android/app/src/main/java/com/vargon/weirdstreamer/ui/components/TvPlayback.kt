@@ -45,8 +45,9 @@ import com.vargon.weirdstreamer.MediaViewModel
 
 /** Progress lines and checks on TV: white reads on every theme's dark backgrounds. */
 /**
- * TV: Continue Watching, a row of videos in progress above a folder or library grid. Up goes to
- * the toolbar ([up]); Down hands focus to the grid ([onDown]). [firstRequester] focuses the first card.
+ * TV: the rows above a folder or library grid: Continue Watching, the videos in progress, and
+ * Recently Added, the last to arrive in the library. Up goes to the toolbar ([up]); Down from the last
+ * row hands focus to the grid ([onDown]). [firstRequester] focuses the first card.
  */
 @Composable
 fun TvContinueRow(
@@ -56,10 +57,31 @@ fun TvContinueRow(
     onDown: () -> Boolean,
     modifier: Modifier = Modifier
 ) {
-    val items = viewModel.continueItems
-    if (items.isEmpty()) return
+    val inProgress = viewModel.continueItems
+    val newlyAdded = viewModel.newItems
+    val newRequester = remember { FocusRequester() }
+    val both = inProgress.isNotEmpty() && newlyAdded.isNotEmpty()
     Column(modifier = modifier) {
-        Text("Continue Watching", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 10.dp))
+        if (inProgress.isNotEmpty()) TvVideoRow(viewModel, "Continue Watching", inProgress, firstRequester, up,
+            onDown = { if (both) runCatching { newRequester.requestFocus() }.isSuccess else onDown() })
+        if (newlyAdded.isNotEmpty()) TvVideoRow(viewModel, "Recently Added", newlyAdded,
+            if (both) newRequester else firstRequester, if (both) firstRequester else up, onDown,
+            modifier = if (both) Modifier.padding(top = 16.dp) else Modifier)
+    }
+}
+
+@Composable
+private fun TvVideoRow(
+    viewModel: MediaViewModel,
+    heading: String,
+    items: List<com.vargon.weirdstreamer.api.models.ContinueItem>,
+    firstRequester: FocusRequester,
+    up: FocusRequester,
+    onDown: () -> Boolean,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(heading, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 10.dp))
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(20.dp),
             contentPadding = PaddingValues(horizontal = FocusBleed, vertical = 8.dp),
@@ -84,7 +106,7 @@ fun TvContinueRow(
                             .onPreviewKeyEvent { e ->
                                 val select = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
                                 when {
-                                    !select -> false
+                                    !select || item.addedAt != null -> false // Recently Added has nothing to remove
                                     e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount > 0 -> {
                                         if (!held) {
                                             held = true
@@ -182,5 +204,5 @@ fun TvResumeDialog(viewModel: MediaViewModel) {
 fun continueSettled(viewModel: MediaViewModel, page: Any?): Boolean {
     var waited by remember(page) { mutableStateOf(false) }
     LaunchedEffect(page) { delay(3_000); waited = true }
-    return viewModel.continueReady || viewModel.continueItems.isNotEmpty() || waited
+    return viewModel.continueReady || viewModel.hasTopRows || waited
 }

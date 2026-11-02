@@ -240,6 +240,12 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   `ThemedControls.kt` draw with it. On the phone `surface` is transparent, so lists and bars show
   their box. Android also has Light, Dark and Auto Light/Dark (`AppTheme`); the web's old purple
   default is now Purple.
+- **Recently Added:** a library with `showNewAdditions` (`config.json` or Settings) shows its last 10
+  videos under Continue Watching, on its Library and top folder pages (`GET /api/library/new`). The
+  `media_added` table dates each file once: files already known by their time on disk
+  (`FillMediaAdded`, at startup), new ones when the server first saves them. `media_items`'
+  `created_at` is no use for this: every save replaces the row. Clients turn `added_at` into "Added
+  2 days ago" on their own calendar.
 - **Progress and resume:** players report position every 5s, on pause and at the end. The
   server decides "watched" (the last 2 minutes of videos 20 minutes or longer; the end of shorter
   ones). `MediaViewModel.playVideo(path, fromStart)` sets `playbackStartMs`.

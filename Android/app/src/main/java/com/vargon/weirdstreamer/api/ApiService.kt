@@ -172,6 +172,9 @@ interface ApiService {
     @POST("/api/playback/sync")
     suspend fun syncPlayback(@Body request: PlaybackSync): Response<Unit>
 
+    @GET("/api/library/new")
+    suspend fun newAdditions(@Query("lib") libraryId: String): Response<List<ContinueItem>>
+
     @GET("/api/playback/continue")
     suspend fun continueWatching(@Query("lib") libraryId: String? = null): Response<List<ContinueItem>>
 

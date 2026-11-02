@@ -152,6 +152,14 @@ class ServerRepository(
         }
     }
 
+    /** The videos that arrived last in [libraryId]: empty unless it has showNewAdditions. */
+    suspend fun newAdditions(libraryId: String): Result<List<ContinueItem>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.newAdditions(libraryId)
+            r.body()?.takeIf { r.isSuccessful } ?: throw Exception("Server error: ${r.code()}")
+        }
+    }
+
     suspend fun removeFromContinue(originalPath: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching { apiService.removeFromContinue(encode(originalPath)); Unit }
     }

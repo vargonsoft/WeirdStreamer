@@ -559,7 +559,7 @@ private fun FileBrowserScreen(
     val items = remember(allItems) { allItems.filter { it.path != "UP" } }
     // The server's front page leads with what's in progress. The row sits above the grid: Down
     // from the toolbar lands on it, and Down from it on the grid.
-    val showContinue = viewModel.continueItems.isNotEmpty()
+    val showContinue = viewModel.hasTopRows
     val continueRequester = remember { FocusRequester() }
     val gridEntry = remember { ContentEntry() }
     DisposableEffect(contentEntry, showContinue) {

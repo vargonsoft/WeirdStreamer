@@ -276,7 +276,8 @@ type continueItem struct {
 	models.MediaItem
 	LibraryID   string `json:"library_id"`
 	LibraryType string `json:"library_type,omitempty"`
-	UpNext      bool   `json:"up_next,omitempty"` // the episode after one just finished, not started yet
+	UpNext      bool   `json:"up_next,omitempty"`  // the episode after one just finished, not started yet
+	AddedAt     int64  `json:"added_at,omitempty"` // on Recently Added: when it arrived (Unix seconds)
 }
 
 // ContinueWatching lists the user's videos in progress, most recent first, optionally in one
