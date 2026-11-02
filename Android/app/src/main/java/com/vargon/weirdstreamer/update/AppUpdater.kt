@@ -45,6 +45,14 @@ object AppUpdater {
 
     val installedVersion: String get() = BuildConfig.VERSION_NAME
 
+    /** The build whose banner was closed: the next one shows again. */
+    var dismissedBuild by mutableStateOf(0)
+
+    /** A look for a newer build while the app runs, for the banner: leaves an update under way, or found, as it is. */
+    suspend fun checkQuietly(servers: List<String>) {
+        if (state in listOf(UpdateState.Idle, UpdateState.UpToDate, UpdateState.NotPublished)) check(servers)
+    }
+
     private val client: OkHttpClient by lazy {
         // The API client's TLS settings; no read timeout for the APK itself.
         ApiClient.probeClient().newBuilder()

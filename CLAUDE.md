@@ -248,6 +248,12 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   server first saves them. The newest day comes first, and a day's videos in viewing order (show,
   season, episode). `media_items`' `created_at` is no use for this: every save replaces the
   row. Clients turn `added_at` into "Added 2 days ago" on their own calendar.
+- **Update banners:** the apps run `AppUpdater`'s check when they open, on another server and every
+  6 hours (`UpdateChecks`), and `UpdateBanner` points to Settings: on the TV only to read, gone
+  after 15 seconds; on the phone a tap opens Settings and X closes it for that version. The web
+  has no version number: `checkForNewWeb` compares its files' dates and sizes with those at page
+  load, every 5 minutes and on returning to the tab, so saving a file in `Server/web` shows the
+  banner in open pages. A click reloads.
 - **Progress and resume:** players report position every 5s, on pause and at the end. The
   server decides "watched" (the last 2 minutes of videos 20 minutes or longer; the end of shorter
   ones). `MediaViewModel.playVideo(path, fromStart)` sets `playbackStartMs`.

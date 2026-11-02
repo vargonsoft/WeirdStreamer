@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
         val selectedVideo = viewModel.selectedVideoPath
         val selectedImage = viewModel.selectedImagePath
         val selectedPdf = viewModel.selectedPdfPath
+        UpdateChecks(viewModel)
 
         // Keep screen on when viewing media
         val isViewingMedia = selectedVideo != null || selectedImage != null || selectedPdf != null
@@ -141,16 +142,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
             else -> {
-                if (isTv) {
-                    MediaBrowser(
-                        viewModel = viewModel,
-                        onOpenSettings = { showSettings = true }
-                    )
-                } else {
-                    PhoneMediaBrowser(
-                        viewModel = viewModel,
-                        onOpenSettings = { showSettings = true }
-                    )
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                    if (isTv) {
+                        MediaBrowser(
+                            viewModel = viewModel,
+                            onOpenSettings = { showSettings = true }
+                        )
+                    } else {
+                        PhoneMediaBrowser(
+                            viewModel = viewModel,
+                            onOpenSettings = { showSettings = true }
+                        )
+                    }
+                    UpdateBanner(isTv, onOpenSettings = { showSettings = true },
+                        modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
                 }
             }
         }

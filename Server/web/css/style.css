@@ -2500,6 +2500,29 @@ body.has-az #main-screen .content { padding-right: 28px; }
 
 .account-signed-in { margin-top: 20px; font-size: 15px; color: var(--muted-text); }
 
+/* A new web UI is on the server: a click loads it. Under the player, so a video isn't covered. */
+.update-banner {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100vw - 32px);
+    padding: 10px 18px;
+    border: none;
+    border-radius: 10px;
+    background: var(--button-focus, #667eea);
+    color: var(--button-focus-text, #fff);
+    font: inherit;
+    font-weight: 600;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+}
+.update-banner[hidden] { display: none; }
+
 /* Skip Intro / Skip Credits: over the picture's lower right, above the controls */
 #player-modal .modal-content {
     position: relative;

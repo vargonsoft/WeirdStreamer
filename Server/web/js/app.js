@@ -43,7 +43,39 @@ function naturalCompare(s1, s2) {
 }
 
 // Initialize
+// The web UI has no version number: the server serves these files from disk, so a change to any of
+// them is a new version. The page compares them with how they were when it loaded, every few
+// minutes and on coming back to the tab, and offers a reload.
+const WEB_FILES = ['./', 'js/api.js', 'js/app.js', 'css/style.css'];
+const WEB_CHECK_MS = 5 * 60 * 1000;
+let webFingerprint = null;
+
+async function checkForNewWeb() {
+    let fingerprint;
+    try {
+        const heads = await Promise.all(WEB_FILES.map(file => fetch(file, { method: 'HEAD', cache: 'no-cache' })));
+        if (heads.some(head => !head.ok)) return; // the server restarting
+        fingerprint = heads.map(head => `${head.headers.get('last-modified')}/${head.headers.get('content-length')}`).join(' ');
+    } catch (error) {
+        return;
+    }
+    if (webFingerprint === null) webFingerprint = fingerprint;
+    else if (fingerprint !== webFingerprint) document.getElementById('update-banner').hidden = false;
+}
+
+function watchForNewWeb() {
+    const banner = document.getElementById('update-banner');
+    banner.innerHTML = `${iconSvg('refresh')}<span>A new version is available. Click to refresh.</span>`;
+    banner.onclick = () => location.reload();
+    checkForNewWeb();
+    setInterval(checkForNewWeb, WEB_CHECK_MS);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) checkForNewWeb();
+    });
+}
+
 function init() {
+    watchForNewWeb();
     // Apply saved theme
     applyTheme();
     setupSubtitleStyle();
