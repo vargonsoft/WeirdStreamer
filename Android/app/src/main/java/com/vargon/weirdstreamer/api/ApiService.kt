@@ -6,6 +6,7 @@ import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.api.models.MediaSegments
 import com.vargon.weirdstreamer.api.models.AutoSkipRequest
 import com.vargon.weirdstreamer.api.models.CodecsInfo
+import com.vargon.weirdstreamer.api.models.SeekPoint
 import com.vargon.weirdstreamer.api.models.SubtitleSearch
 import com.vargon.weirdstreamer.api.models.SubtitleDownload
 import com.vargon.weirdstreamer.api.models.SubtitleDownloadRequest
@@ -73,6 +74,9 @@ interface ApiService {
     // WebVTT (a window at a time), and OpenSubtitles search and download through the server.
     @GET("/api/media/codecs")
     suspend fun getCodecs(@Query("path") path: String): Response<CodecsInfo>
+
+    @GET("/api/media/seekpoint")
+    suspend fun getSeekPoint(@Query("path") path: String, @Query("start") start: String): Response<SeekPoint>
 
     @GET("/api/media/subtitles")
     suspend fun getSubtitles(@Query("path") path: String, @Query("track") track: Int,

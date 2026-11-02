@@ -106,18 +106,29 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     // Store the original full duration (before any transcoding)
     var fullDuration by remember { mutableLongStateOf(0L) }
 
+    // Compatibility (Auto) copies a video it can (VideoCopy): copyStartMs is the start asked for,
+    // transcodeStartOffset where the stream really begins.
+    val videoCopy = remember(path) { if (isSmbSource || isDisc) null else VideoCopy.forStream(path) }
+    var copiesVideo by remember(path) { mutableStateOf(false) }
+    var copyFailed by remember(path) { mutableStateOf(false) }
+    var copyStartMs by remember(path) { mutableLongStateOf(0L) }
+    var restartJob by remember(path) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+    fun transcodedUrl(startMs: Long): String {
+        var url = path + (if (path.contains("?")) "&" else "?")
+        url += if (copiesVideo) "transcode=audio"
+            else "transcode=1" + transcodeQuery(currentTranscodeMode) // no taller than the hardware decodes
+        url += discQuery
+        if (burnIn >= 0) url += "&subtitle=$burnIn"
+        if (stereoAudio) url += "&channels=2"
+        if (startMs > 0) url += "&start=${VideoCopy.streamStart(startMs)}"
+        return url
+    }
+
     // Build the actual video URL with transcode parameters
-    val videoUrl = remember(path, selectedTranscodeModeIndex, discQuery, burnIn, stereoAudio) {
+    val videoUrl = remember(path, selectedTranscodeModeIndex, discQuery, burnIn, stereoAudio, copiesVideo) {
         if (!isSmbSource && !currentTranscodeMode.isOriginal) {
-            var url = if (path.contains("?")) "$path&transcode=1" else "$path?transcode=1"
-            url += transcodeQuery(currentTranscodeMode) // no taller than the hardware decodes
-            url += discQuery
-            if (burnIn >= 0) url += "&subtitle=$burnIn"
-            if (stereoAudio) url += "&channels=2"
-            if (transcodeStartOffset > 0) {
-                url += "&start=${transcodeStartOffset / 1000f}"
-            }
-            url
+            transcodedUrl(if (copiesVideo) copyStartMs else transcodeStartOffset)
         } else {
             path
         }
@@ -266,12 +277,24 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var isSeekingSlider by remember { mutableStateOf(false) }
     var playbackPosition by remember(path) { mutableLongStateOf(startAtMs) }
 
+    /** Switches to Compatibility (Auto) at [atMs]: a copy of the video if it can be, else a transcode. */
+    fun chooseCompatibility(atMs: Long) {
+        scope.launch {
+            val copy = videoCopy?.takeIf { !copyFailed && burnIn < 0 && !tooBigToDecode && it.possible() }
+            copyStartMs = atMs
+            transcodeStartOffset = copy?.startOf(atMs) ?: atMs
+            copiesVideo = copy != null
+            selectedTranscodeModeIndex = 1
+        }
+    }
+
     /** Chooses a server subtitle track: a picture one is burned into a transcode, from here. */
     fun chooseServerSubtitle(index: Int, atMs: Long = playbackPosition) {
         val subs = serverSubs ?: return
         val before = subs.burnIn
         subs.select(index)
         if (subs.burnIn == before) return
+        if (subs.burnIn >= 0) copiesVideo = false
         if (currentTranscodeMode.isOriginal) {
             if (subs.burnIn < 0) return
             transcodeStartOffset = atMs
@@ -362,7 +385,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             // The box can't decode the original (too big, or a codec it lacks): have the server
             // transcode it instead, from the same place.
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                if (AudioFallback.isAudioDecoderFailure(error) && !currentTranscodeMode.isOriginal && !isSmbSource && !stereoAudio) {
+                if (copiesVideo) {
+                    copyFailed = true
+                    copiesVideo = false
+                    transcodeStartOffset = playbackPosition
+                    android.widget.Toast.makeText(context, "This device can't play the video as it is. Transcoding it.",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                } else if (AudioFallback.isAudioDecoderFailure(error) && !currentTranscodeMode.isOriginal && !isSmbSource && !stereoAudio) {
                     // The transcode's surround audio didn't decode: again from here, in stereo.
                     AudioFallback.stereo = true
                     transcodeStartOffset = playbackPosition
@@ -371,9 +400,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         android.widget.Toast.LENGTH_SHORT).show()
                 } else if (currentTranscodeMode.isOriginal && !isSmbSource) {
                     // Whatever failed (decoder, container, audio output), the server may manage it.
-                    transcodeStartOffset = playbackPosition
-                    selectedTranscodeModeIndex = 1
-                    android.widget.Toast.makeText(context, "This device can't play the original. Transcoding it.",
+                    chooseCompatibility(playbackPosition)
+                    android.widget.Toast.makeText(context, "This device can't play the original. Switching to Compatibility.",
                         android.widget.Toast.LENGTH_SHORT).show()
                 } else {
                     playbackFailed = true
@@ -497,6 +525,19 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         return maxPX to maxPY
     }
 
+    /** Restarts a server stream at [targetMs]; a copied video begins at the keyframe before it. */
+    fun restartStream(targetMs: Long) {
+        fun play(beginsMs: Long) {
+            transcodeStartOffset = beginsMs
+            exoPlayer.setMediaItem(MediaItem.fromUri(transcodedUrl(targetMs)))
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+        }
+        restartJob?.cancel()
+        if (copiesVideo) restartJob = scope.launch { play(videoCopy?.startOf(targetMs) ?: targetMs) }
+        else play(targetMs)
+    }
+
     fun performSkip(amount: Int, showControlsAfter: Boolean, useAbsoluteAmount: Boolean = false) {
         if (amount == 0 && !useAbsoluteAmount) { skipFeedback = null; return }
         val currentDuration = exoPlayer.duration
@@ -505,17 +546,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (!isSmbSource && !currentTranscodeMode.isOriginal) {
             val actual = if (useAbsoluteAmount) basePlaybackPositionBeforeSkip else (exoPlayer.currentPosition + transcodeStartOffset)
             val finalTarget = (actual + amount * 1000).coerceIn(0L, if (currentDuration == C.TIME_UNSET) Long.MAX_VALUE else currentDuration + transcodeStartOffset)
-            val startTime = finalTarget / 1000f
-            var newUrl = if (path.contains("?")) path.substringBefore("?") + "?path=" + path.substringAfter("path=").substringBefore("&") + "&transcode=1"
-                         else "$path?transcode=1"
-            currentTranscodeMode.bitrate?.let { newUrl += "&bitrate=$it" }
-            currentTranscodeMode.resolution?.let { newUrl += "&resolution=$it" }
-            newUrl += discQuery
-            newUrl += "&start=$startTime"
-            transcodeStartOffset = finalTarget
-            exoPlayer.setMediaItem(MediaItem.fromUri(newUrl))
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
+            restartStream(finalTarget)
             skipFeedback = amount to (amount > 0)
         } else {
             val start = if (useAbsoluteAmount) basePlaybackPositionBeforeSkip else exoPlayer.currentPosition
@@ -528,20 +559,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     fun seekToTrickplayTarget(target: Long) {
         if (!isSmbSource && !currentTranscodeMode.isOriginal) {
-            val startTime = target / 1000f
-            var newUrl = if (path.contains("?")) {
-                path.substringBefore("?") + "?path=" + path.substringAfter("path=").substringBefore("&") + "&transcode=1"
-            } else {
-                "$path?transcode=1"
-            }
-            currentTranscodeMode.bitrate?.let { newUrl += "&bitrate=$it" }
-            currentTranscodeMode.resolution?.let { newUrl += "&resolution=$it" }
-            newUrl += discQuery
-            newUrl += "&start=$startTime"
-            transcodeStartOffset = target
-            exoPlayer.setMediaItem(MediaItem.fromUri(newUrl))
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
+            restartStream(target)
         } else {
             exoPlayer.seekTo(target)
             exoPlayer.play()
@@ -552,15 +570,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     // Skip Intro / Skip Credits (SkipSegments.kt): the intro to its end, the credits to the next video.
     fun seekAbsolute(target: Long) {
         if (!isSmbSource && !currentTranscodeMode.isOriginal) {
-            var newUrl = path.substringBefore("?") + "?path=" + path.substringAfter("path=").substringBefore("&") + "&transcode=1"
-            currentTranscodeMode.bitrate?.let { newUrl += "&bitrate=$it" }
-            currentTranscodeMode.resolution?.let { newUrl += "&resolution=$it" }
-            newUrl += discQuery
-            newUrl += "&start=${target / 1000f}"
-            transcodeStartOffset = target
-            exoPlayer.setMediaItem(MediaItem.fromUri(newUrl))
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
+            restartStream(target)
         } else {
             exoPlayer.seekTo(target)
         }
@@ -863,7 +873,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         )
 
         SpeedDialog(show = showSpeedDialog, currentSpeedIndex = currentSpeedIndex, speedIntervals = speedIntervals, onDismiss = { showSpeedDialog = false }, onSpeedSelected = { idx, speed -> exoPlayer.playbackParameters = PlaybackParameters(speed); speedFeedback = speed; currentSpeedIndex = idx; showSpeedDialog = false })
-        TranscodeDialog(show = showTranscodeDialog, selectedModeIndex = selectedTranscodeModeIndex, transcodeModes = transcodeModes, onDismiss = { showTranscodeDialog = false }, onModeSelected = { idx -> if (selectedTranscodeModeIndex != idx && !((isDisc || tooBigToDecode) && transcodeModes[idx].isOriginal)) { transcodeStartOffset = playbackPosition; selectedTranscodeModeIndex = idx }; showTranscodeDialog = false })
+        TranscodeDialog(show = showTranscodeDialog, selectedModeIndex = selectedTranscodeModeIndex, transcodeModes = transcodeModes, onDismiss = { showTranscodeDialog = false }, onModeSelected = { idx -> if (selectedTranscodeModeIndex != idx && !((isDisc || tooBigToDecode) && transcodeModes[idx].isOriginal)) { if (idx == 1) chooseCompatibility(playbackPosition) else { copiesVideo = false; transcodeStartOffset = playbackPosition; selectedTranscodeModeIndex = idx } }; showTranscodeDialog = false })
         DiscDialog(
             show = showDiscDialog,
             info = discInfo,

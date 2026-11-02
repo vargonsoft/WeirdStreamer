@@ -453,7 +453,18 @@ data class ErrorResponse(
 /** A video's subtitle tracks from GET /api/media/codecs: its own, then files beside it and downloads. */
 data class CodecsInfo(
     @SerializedName("duration") val duration: Double = 0.0,
+    @SerializedName("video") val video: VideoCodec? = null,
     @SerializedName("subtitles") val subtitles: List<SubtitleTrack>? = null,
+)
+
+data class VideoCodec(
+    @SerializedName("codec") val codec: String = "",
+    @SerializedName("pix_fmt") val pixFmt: String? = null,
+)
+
+/** Where a stream that copies the video really starts, in seconds (GET /api/media/seekpoint). */
+data class SeekPoint(
+    @SerializedName("start") val start: Double = 0.0,
 )
 
 data class SubtitleTrack(

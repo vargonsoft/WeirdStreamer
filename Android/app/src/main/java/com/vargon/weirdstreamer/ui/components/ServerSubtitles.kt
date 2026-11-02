@@ -169,13 +169,19 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
 
         /** For a stream URL from the server (…/api/media/stream?path=…): null for other sources. */
         fun forStream(streamUrl: String): ServerSubtitles? {
+            val (api, encoded) = streamApi(streamUrl) ?: return null
+            return ServerSubtitles(api, encoded)
+        }
+
+        /** The API of the server a stream URL comes from, and the video's encoded path; null for other sources. */
+        fun streamApi(streamUrl: String): Pair<ApiService, String>? {
             if (!streamUrl.contains("/api/media/stream") || !streamUrl.contains("path=")) return null
             val encoded = URLDecoder.decode(streamUrl.substringAfter("path=").substringBefore("&"), "UTF-8")
             val api = Retrofit.Builder().baseUrl(streamUrl.substringBefore("/api") + "/")
                 .client(WeirdStreamerApplication.getOkHttpClient())
                 .addConverterFactory(GsonConverterFactory.create()).build()
                 .create(ApiService::class.java)
-            return ServerSubtitles(api, encoded)
+            return api to encoded
         }
 
         private fun serverMessage(body: String?): String? =

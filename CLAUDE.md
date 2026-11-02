@@ -198,8 +198,11 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 - **TV player** (`VideoPlayer.kt`, ExoPlayer):
   - Transcode modes come from `transcodeModes` in `UiUtils.kt`, picked in a D-pad dialog in
     `PlayerDialogs.kt`. `transcodeQuery()` caps the height at what the hardware decodes.
-  - Any playback error on the original switches to Compatibility (Auto), once. If that fails
-    too, the player says it can't play the video.
+  - Any playback error on the original switches to Compatibility (Auto), once. As on the web, that
+    copies 8-bit 4:2:0 H.264 (`transcode=audio`, `VideoCopy.kt`; `/api/media/seekpoint` gives the
+    keyframe it really starts at) unless subtitles are burned in or the video is too big to
+    decode; a copy that fails gets a full transcode. If that fails too, the player says it can't
+    play the video.
   - Subtitles: `onTracksChanged` collects `C.TRACK_TYPE_TEXT` formats and labels them
     (`subtitleLabels`). `selectSubtitleTrack(index)` sets a `TrackSelectionOverride`, and
     `SubtitleMemory` remembers the choice per video. **Audio track selection should copy this

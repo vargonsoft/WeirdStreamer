@@ -180,12 +180,18 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         !isSmbSource && !isLocal && !VideoDecoders.canPlay(sourceItem?.width, sourceItem?.height)
     }
     var transcodeModeIndex by remember(path) { mutableIntStateOf(if (isDisc || tooBigToDecode) 1 else 0) }
-    var enableTranscode by remember { mutableStateOf(isDisc || tooBigToDecode) }
+    var enableTranscode by remember(path) { mutableStateOf(isDisc || tooBigToDecode) }
     var showTranscodeMenu by remember { mutableStateOf(false) }
     fun chooseTranscodeMode(index: Int) {
         transcodeModeIndex = index
         enableTranscode = index != 0
     }
+    // Compatibility (Auto) copies a video it can (VideoCopy)
+    val scope = rememberCoroutineScope()
+    val videoCopy = remember(path) { if (isSmbSource || isLocal || isDisc) null else VideoCopy.forStream(path) }
+    var copiesVideo by remember(path) { mutableStateOf(false) }
+    var copyFailed by remember(path) { mutableStateOf(false) }
+    var seekJob by remember(path) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var transcodeStartOffset by remember { mutableLongStateOf(0L) }
     var fullDuration by remember { mutableLongStateOf(0L) }
 
@@ -196,6 +202,22 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     val burnIn = serverSubs?.burnIn ?: -1
     // Stereo audio in transcodes, once a surround one has failed to decode (AudioFallback)
     var stereoAudio by remember(path) { mutableStateOf(AudioFallback.stereo) }
+
+    /** Switches to Compatibility (Auto): a copy of the video if it can be, else a transcode. */
+    fun chooseCompatibility() {
+        scope.launch {
+            copiesVideo = videoCopy != null && !copyFailed && burnIn < 0 && !tooBigToDecode && videoCopy.possible()
+            chooseTranscodeMode(1)
+        }
+    }
+
+    fun transcodedUrl(startMs: Long): String {
+        val base = path.substringBefore("?") + "?path=" + path.substringAfter("path=").substringBefore("&") + "&auto-transcode=0"
+        val video = if (copiesVideo) "&transcode=audio" else "&transcode=1" + transcodeQuery(transcodeModes[transcodeModeIndex])
+        return base + video + "&start=${VideoCopy.streamStart(startMs)}$discQuery" +
+            (if (burnIn >= 0) "&subtitle=$burnIn" else "") + (if (stereoAudio) "&channels=2" else "")
+    }
+
     var showSubtitleMenu by remember { mutableStateOf(false) }
     var showTiming by remember { mutableStateOf(false) }
     var showSubtitleSearch by remember { mutableStateOf(false) }
@@ -204,6 +226,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         val subs = serverSubs ?: return
         subs.select(index)
         // The original can't show a picture track: it's burned into a transcode.
+        if (subs.burnIn >= 0) copiesVideo = false
         if (subs.burnIn >= 0 && !enableTranscode) chooseTranscodeMode(1)
     }
     LaunchedEffect(serverSubs) {
@@ -303,7 +326,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     }
 
     // Handle MediaItem updates when path or transcode mode changes
-    LaunchedEffect(path, enableTranscode, transcodeModeIndex, discQuery, burnIn, stereoAudio) {
+    LaunchedEffect(path, enableTranscode, transcodeModeIndex, discQuery, burnIn, stereoAudio, copiesVideo) {
         // Capture current position if available
         val currentPos = discRestartAt?.also { discRestartAt = null } ?: if (exoPlayer.mediaItemCount > 0) {
             if (transcodeStartOffset > 0) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
@@ -312,13 +335,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }
 
         val url = if (!isSmbSource && !isLocal && enableTranscode) {
-            val startTimeSeconds = currentPos / 1000f
-            transcodeStartOffset = currentPos
-            val base = path.substringBefore("?")
-            val pathParam = path.substringAfter("path=").substringBefore("&")
-            "$base?path=$pathParam&auto-transcode=0&transcode=1&start=$startTimeSeconds$discQuery" +
-                transcodeQuery(transcodeModes[transcodeModeIndex]) + (if (burnIn >= 0) "&subtitle=$burnIn" else "") +
-                (if (stereoAudio) "&channels=2" else "")
+            transcodeStartOffset = if (copiesVideo) videoCopy?.startOf(currentPos) ?: currentPos else currentPos
+            transcodedUrl(currentPos)
         } else {
             transcodeStartOffset = 0L
             path
@@ -349,7 +367,13 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 val decoderProblem = error.errorCode in androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..
                     androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED
-                if (AudioFallback.isAudioDecoderFailure(error) && enableTranscode && !isSmbSource && !isLocal && !stereoAudio) {
+                if (copiesVideo) {
+                    playbackPosition = exoPlayer.currentPosition.takeIf { it > 0 }?.plus(transcodeStartOffset) ?: playbackPosition
+                    copyFailed = true
+                    copiesVideo = false
+                    android.widget.Toast.makeText(context, "This phone can't play the video as it is. Transcoding it.",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                } else if (AudioFallback.isAudioDecoderFailure(error) && enableTranscode && !isSmbSource && !isLocal && !stereoAudio) {
                     // The transcode's surround audio didn't decode: again from here, in stereo
                     // (the stream restarts where the player is).
                     AudioFallback.stereo = true
@@ -359,8 +383,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                 } else if (!enableTranscode && !isSmbSource && !isLocal) {
                     // Whatever failed (decoder, container, audio output), the server may manage it.
                     playbackPosition = exoPlayer.currentPosition.takeIf { it > 0 } ?: playbackPosition
-                    chooseTranscodeMode(1)
-                    android.widget.Toast.makeText(context, "This phone can't play the original. Transcoding it.",
+                    chooseCompatibility()
+                    android.widget.Toast.makeText(context, "This phone can't play the original. Switching to Compatibility.",
                         android.widget.Toast.LENGTH_SHORT).show()
                 } else {
                     val message = if (decoderProblem && isLocal)
@@ -417,21 +441,15 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
     fun seekPlayer(targetPos: Long) {
         if (!isSmbSource && enableTranscode) {
-            val startTimeSeconds = targetPos / 1000f
-            val baseUrlWithPath = if (path.contains("?")) {
-                val base = path.substringBefore("?")
-                val pathParam = path.substringAfter("path=").substringBefore("&")
-                "$base?path=$pathParam"
-            } else {
-                path
+            fun play(beginsMs: Long) {
+                transcodeStartOffset = beginsMs
+                exoPlayer.setMediaItem(MediaItem.fromUri(transcodedUrl(targetPos)))
+                exoPlayer.prepare()
+                exoPlayer.playWhenReady = true
             }
-            val newUrl = "$baseUrlWithPath&auto-transcode=0&transcode=1&start=$startTimeSeconds$discQuery" +
-                transcodeQuery(transcodeModes[transcodeModeIndex])
-            transcodeStartOffset = targetPos
-            val mediaItem = MediaItem.fromUri(newUrl)
-            exoPlayer.setMediaItem(mediaItem)
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
+            seekJob?.cancel()
+            if (copiesVideo) seekJob = scope.launch { play(videoCopy?.startOf(targetPos) ?: targetPos) }
+            else play(targetPos)
         } else {
             exoPlayer.seekTo(targetPos)
         }
@@ -683,7 +701,10 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                         onClick = {
                                             showTranscodeMenu = false
                                             lastInteractionTime = System.currentTimeMillis()
-                                            if (index != transcodeModeIndex) chooseTranscodeMode(index)
+                                            if (index != transcodeModeIndex) {
+                                                if (index == 1) chooseCompatibility()
+                                                else { copiesVideo = false; chooseTranscodeMode(index) }
+                                            }
                                         }
                                     )
                                 }
@@ -1067,6 +1088,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         PhoneSubtitleSearchDialog(serverSubs, onDismiss = { showSubtitleSearch = false }, onChosen = { index ->
             showSubtitleSearch = false
             // The download selected itself; an original can't show a picture track.
+            if (serverSubs.burnIn >= 0) copiesVideo = false
             if (serverSubs.burnIn >= 0 && !enableTranscode) chooseTranscodeMode(1)
             SubtitleMemory.set(context, subtitleVideo, index, serverSubs.labels.getOrNull(index))
         })
