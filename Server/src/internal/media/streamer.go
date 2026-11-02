@@ -376,20 +376,17 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 		args = append(args, "-vf", scale)
 	}
 
+	audio, audioInfo := tracks.audioArgs(false)
+	args = append(args, "-pix_fmt", "yuv420p") // 8-bit 4:2:0, which every hardware H.264 decoder plays
+	args = append(args, audio...)
 	args = append(args,
-		"-pix_fmt", "yuv420p", // 8-bit 4:2:0, which every hardware H.264 decoder plays
-		"-c:a", "aac",
-		"-b:a", "128k",
-	)
-	if tracks.Stereo {
-		args = append(args, "-ac", "2")
-	}
-	args = append(args,
-		"-movflags", "frag_keyframe+empty_moov",
+		"-movflags", tracks.movFlags(),
 		"-f", "mp4",
 		"pipe:1",
 	)
-	sess.StartTranscode(describeTranscode(args, startTime, bitrate, resolution, reason))
+	info := describeTranscode(args, startTime, bitrate, resolution, reason)
+	info.Audio = audioInfo
+	sess.StartTranscode(info)
 	return s.runTranscode(w, r, filePath, args, sess)
 }
 
@@ -470,7 +467,7 @@ func (s *Streamer) runTranscode(w http.ResponseWriter, r *http.Request, filePath
 // describeTranscode summarizes ffmpeg arguments for the Streams page.
 func describeTranscode(args []string, startTime, bitrate, resolution, reason string) TranscodeInfo {
 	info := TranscodeInfo{Reason: reason, Bitrate: bitrate, Resolution: resolution, Args: args,
-		Container: "Fragmented MP4", Audio: "AAC 128 kb/s"}
+		Container: "Fragmented MP4"}
 	info.Start, _ = strconv.ParseFloat(startTime, 64)
 	opt := map[string]string{}
 	for i := 0; i+1 < len(args); i++ {
@@ -493,9 +490,6 @@ func describeTranscode(args []string, startTime, bitrate, resolution, reason str
 		video += ", " + vf
 	}
 	info.Video = video + ")"
-	if opt["-ac"] == "2" {
-		info.Audio += ", stereo"
-	}
 	return info
 }
 

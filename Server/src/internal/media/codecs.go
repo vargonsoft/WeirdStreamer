@@ -133,10 +133,14 @@ func (c *Codecs) BrowserVideo() bool {
 
 // TrackOptions picks a file's tracks for a transcode: Audio is an index among its audio tracks
 // (-1: the default one), Subtitle one among its subtitle tracks to burn in (-1: none). Stereo
-// downmixes the audio (channels=2): for players whose decoder fails on surround AAC.
+// downmixes the audio (channels=2): for players whose decoder fails on surround AAC. AudioCodec
+// (audiocodec=) is what a player that knows its output wants done with the audio: "copy" keeps
+// it, "ac3", "eac3" and "aac" convert it to 5.1 (aac with channels=2: to stereo); "" is the
+// stream's own default.
 type TrackOptions struct {
 	Audio, Subtitle int
 	Stereo          bool
+	AudioCodec      string
 }
 
 // StereoRequested reports whether a stream request asks for stereo audio (channels=2).
@@ -151,7 +155,43 @@ func ParseTrackOptions(r *http.Request) TrackOptions {
 		}
 		return -1
 	}
-	return TrackOptions{Audio: num("audio"), Subtitle: num("subtitle"), Stereo: StereoRequested(r)}
+	codec := q.Get("audiocodec")
+	switch codec {
+	case "copy", "ac3", "eac3", "aac":
+	default:
+		codec = ""
+	}
+	return TrackOptions{Audio: num("audio"), Subtitle: num("subtitle"), Stereo: StereoRequested(r), AudioCodec: codec}
+}
+
+// audioArgs are ffmpeg's audio arguments and what they do, for the Streams page. stereo is the
+// stream's default when the player asks for nothing: a copied video's audio is always stereo.
+func (t TrackOptions) audioArgs(stereo bool) ([]string, string) {
+	switch t.AudioCodec {
+	case "copy":
+		return []string{"-c:a", "copy"}, "Copied"
+	case "ac3", "eac3":
+		return []string{"-c:a", t.AudioCodec, "-ac", "6", "-b:a", "640k"},
+			strings.ToUpper(t.AudioCodec) + " 640 kb/s 5.1"
+	case "aac":
+		if !t.Stereo {
+			return []string{"-c:a", "aac", "-ac", "6", "-b:a", "384k"}, "AAC 384 kb/s 5.1"
+		}
+	}
+	if stereo || t.Stereo {
+		return []string{"-c:a", "aac", "-ac", "2", "-b:a", "192k"}, "AAC 192 kb/s stereo"
+	}
+	return []string{"-c:a", "aac", "-b:a", "192k"}, "AAC 192 kb/s"
+}
+
+// movFlags are the stream's MP4 flags. ffmpeg can only write the header of copied audio, AC-3 and
+// E-AC-3 once it has seen their first packets, which delay_moov lets it do.
+func (t TrackOptions) movFlags() string {
+	switch t.AudioCodec {
+	case "copy", "ac3", "eac3":
+		return "frag_keyframe+empty_moov+delay_moov"
+	}
+	return "frag_keyframe+empty_moov"
 }
 
 // audioIndex is the audio track to play: the chosen one if the file has it, else the default.
@@ -249,19 +289,18 @@ func (s *Streamer) transcodeAudioAndServe(w http.ResponseWriter, r *http.Request
 			reason = fmt.Sprintf("The player asked for audio track %d (%s)", n+1, codecs.Audio[n].Codec)
 		}
 	}
+	audio, audioInfo := tracks.audioArgs(true) // browsers play surround as stereo anyway
+	args = append(args, "-c:v", "copy")
+	args = append(args, audio...)
 	args = append(args,
-		"-c:v", "copy",
-		"-c:a", "aac",
-		"-ac", "2", // browsers play surround as stereo anyway
-		"-b:a", "192k",
 		"-avoid_negative_ts", "make_zero",
-		"-movflags", "frag_keyframe+empty_moov",
+		"-movflags", tracks.movFlags(),
 		"-f", "mp4",
 		"pipe:1",
 	)
 	fmt.Printf("Transcoding audio only for: %s\n", filePath)
 	info := TranscodeInfo{Reason: reason, Args: args, Container: "Fragmented MP4",
-		Video: "Copied (H.264)", Audio: "AAC 192 kb/s stereo"}
+		Video: "Copied (H.264)", Audio: audioInfo}
 	info.Start, _ = strconv.ParseFloat(startTime, 64)
 	sess.StartTranscode(info)
 	return s.runTranscode(w, r, filePath, args, sess)

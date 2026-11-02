@@ -740,6 +740,7 @@ function defaultAudioTrack(codecs) {
 const TRANSCODE_MODES = [
     { id: 'original', name: 'Original' },
     { id: 'auto', name: 'Compatibility (Auto)' },
+    { id: 'safe', name: 'Compatibility (Safe)' }, // keeps nothing: H.264 and stereo AAC
     { id: 'q80', name: 'Quality −20%', bitrate: '80%' },
     { id: 'q65', name: 'Quality −35%', bitrate: '65%' },
     { id: 'q50', name: 'Quality −50%', bitrate: '50%' },
@@ -751,7 +752,7 @@ const TRANSCODE_MODES = [
 // The file playing: { item, codecs, duration, offset, audio, subtitle, mode, encode, failed,
 // start }. audio and subtitle are track indexes (-1: the default audio, no subtitles). mode is a
 // TRANSCODE_MODES id; encode: Compatibility transcodes the video even if it could be copied (the
-// copy didn't play); failed: the original didn't play.
+// copy didn't play); failed: the original didn't play; audioStep: how far down audioSteps it is.
 let player = null;
 let playRequest = 0; // the latest playVideo call: an older one still checking codecs gives up
 
@@ -767,7 +768,7 @@ async function playVideo(item, forceTranscode = false, startAt = 0, fromFolder =
         return;
     }
     const p = { item, codecs: null, duration: item.duration || 0, offset: 0, audio: -1, subtitle: -1,
-        mode: forceTranscode ? 'auto' : 'original', encode: false, failed: false, start: startAt, fromFolder };
+        mode: forceTranscode ? 'auto' : 'original', encode: false, failed: false, audioStep: 0, start: startAt, fromFolder };
     player = p;
     openPlayer(item.name);
     loadSegments(p);
@@ -955,6 +956,52 @@ function chooseCompatibility(p) {
     if (audioNeedsConverting(p) || burnsInSubtitles(p) || originalProblem(p.codecs)) p.mode = 'auto';
 }
 
+// Audio a stream can carry as it is (not TrueHD, which is only experimental in MP4).
+const KEPT_AUDIO = ['aac', 'ac3', 'eac3', 'mp3', 'opus', 'flac', 'dts'];
+const AUDIO_STEPS = {
+    copy: { query: '&audiocodec=copy' },
+    surround: { query: '&audiocodec=aac', label: 'AAC 5.1' },
+    stereo: { query: '&audiocodec=aac&channels=2', label: 'stereo' },
+};
+
+// Whether the browser's output has surround channels to send 5.1 to.
+let surroundOutputKnown = null;
+function surroundOutput() {
+    if (surroundOutputKnown === null) {
+        try {
+            const context = new AudioContext();
+            surroundOutputKnown = context.destination.maxChannelCount >= 6;
+            context.close();
+        } catch (error) {
+            surroundOutputKnown = false;
+        }
+    }
+    return surroundOutputKnown;
+}
+
+// The audio for a stream in the order to try it, as on Android (audioLadder in StreamChoice.kt): the
+// track as it is if the browser plays it, 5.1 if the output has it, then stereo. Safe keeps nothing;
+// a smaller stream keeps only audio that stays small.
+function audioSteps(p) {
+    if (p.mode === 'safe') return ['stereo'];
+    const mode = TRANSCODE_MODES.find(m => m.id === p.mode) || TRANSCODE_MODES[0];
+    const track = audioTrack(p), steps = [];
+    const big = (mode.bitrate || mode.resolution) && track && ['flac', 'dts'].includes(track.codec);
+    if (track && !big && KEPT_AUDIO.includes(track.codec) && browserPlaysAudio(track)) steps.push('copy');
+    if (track && track.channels > 2 && surroundOutput()) steps.push('surround');
+    steps.push('stereo');
+    return steps;
+}
+
+function audioStep(p) {
+    const steps = audioSteps(p);
+    return AUDIO_STEPS[steps[Math.min(p.audioStep, steps.length - 1)]];
+}
+
+function audioName(track) {
+    return track.codec.toUpperCase() + (track.channels >= 8 ? ' 7.1' : track.channels >= 6 ? ' 5.1' : '');
+}
+
 // What the server does to the file, for the line under the controls.
 function streamNote(p) {
     const track = audioTrack(p), video = p.codecs && p.codecs.video;
@@ -967,17 +1014,11 @@ function streamNote(p) {
     const problem = originalProblem(p.codecs);
     const why = p.failed ? 'This browser couldn’t play the original. '
         : problem ? `This browser can’t play ${problem}. ` : '';
-    if (copiesVideo(p)) {
-        const audio = unplayable ? `the audio is converted (this browser can’t play ${unplayable})`
-            : audioNeedsConverting(p) ? 'the audio is converted to play this track'
-            : 'the audio is converted to AAC';
-        const video = problem.endsWith(' files') ? 'The video is copied into MP4 as it is' : 'The video plays as it is';
-        return `${why}${video}; ${audio}.`;
-    }
-    const subs = burnsInSubtitles(p) ? ', with the subtitles burned in' : '';
-    if (problem.endsWith(' video') && !p.failed) return `This browser can’t play ${problem}, so it’s transcoded to H.264 and AAC${subs}.`;
-    const from = video && video.codec !== 'h264' ? ` (from ${video.codec.toUpperCase()})` : '';
-    return `${why}Transcoding to H.264${from} and AAC${subs}.`;
+    const step = audioStep(p);
+    const audio = step.label ? `converted to ${step.label}` : `original${track ? ` (${audioName(track)})` : ''}`;
+    const copied = copiesVideo(p) ? (problem.endsWith(' files') ? 'copied into MP4' : 'copied') : `transcoded to H.264${video && video.codec !== 'h264' ? ` from ${video.codec.toUpperCase()}` : ''}`;
+    const subs = burnsInSubtitles(p) ? ', subtitles burned in' : '';
+    return `${why}Video: ${copied}${subs} · Audio: ${audio}.`;
 }
 
 function fileStreamUrl(p, start) {
@@ -989,6 +1030,7 @@ function fileStreamUrl(p, start) {
     if (mode.resolution) url += `&resolution=${mode.resolution}`;
     if (p.audio >= 0) url += `&audio=${p.audio}`;
     if (burnsInSubtitles(p)) url += `&subtitle=${p.subtitle}`;
+    url += audioStep(p).query;
     if (start > 0) url += `&start=${start.toFixed(2)}`;
     return url;
 }
@@ -1057,14 +1099,17 @@ function onPlayerError() {
     console.error('Video error:', err);
     const p = player;
     const status = document.getElementById('player-status');
-    if (!p || !(p.mode === 'original' || copiesVideo(p))) {
+    const steps = p ? audioSteps(p) : [];
+    const canStepDown = p && (p.mode === 'original' || copiesVideo(p) || p.audioStep < steps.length - 1);
+    if (!canStepDown) {
         status.textContent = `Playback failed: ${err.message || 'error ' + err.code}`;
         document.getElementById('player-failed').hidden = false;
         return;
     }
     const at = videoPlayer.currentTime > 0 ? playerPosition() : p.start;
     if (p.mode === 'original') p.mode = 'auto';
-    else p.encode = true;
+    else if (copiesVideo(p)) p.encode = true;
+    else p.audioStep++;
     p.failed = true;
     renderFileControls();
     loadFileStream(at);
@@ -2120,13 +2165,14 @@ function setupPlayerControls() {
     on('player-stream', (mode) => changeFileStream(p => {
         p.mode = mode;
         p.encode = p.failed = false;
+        p.audioStep = 0;
         // The original as it is: no burned-in subtitles (its audio is the browser's to play).
         if (mode === 'original' && burnsInSubtitles(p)) p.subtitle = -1;
     }));
     on('player-audio', (value) => {
         const a = Number(value);
         if (disc && disc.info) { disc.audio = a; loadDiscStream(playerPosition()); return; }
-        changeFileStream(p => { p.audio = a; chooseCompatibility(p); });
+        changeFileStream(p => { p.audio = a; p.audioStep = 0; chooseCompatibility(p); });
     });
     document.getElementById('sync-earlier').onclick = () => shiftSubtitles(-1);
     document.getElementById('sync-later').onclick = () => shiftSubtitles(1);

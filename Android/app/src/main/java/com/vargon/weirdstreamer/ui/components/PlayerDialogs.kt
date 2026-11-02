@@ -122,6 +122,7 @@ fun TranscodeDialog(
     show: Boolean,
     selectedModeIndex: Int,
     transcodeModes: List<TranscodeMode>,
+    status: String? = null, // what the stream does now
     onDismiss: () -> Unit,
     onModeSelected: (Int) -> Unit
 ) {
@@ -166,6 +167,7 @@ fun TranscodeDialog(
         ) {
             Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Transcoding Options", style = MaterialTheme.typography.headlineSmall, color = Color.White)
+                if (status != null) Text(status, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f))
                 // Keeps the highlighted mode on screen as Up/Down move it (the list can be taller
                 // than the TV's screen).
                 val listScroll = rememberScrollState()

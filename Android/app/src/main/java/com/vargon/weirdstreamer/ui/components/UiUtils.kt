@@ -6,12 +6,15 @@ data class TranscodeMode(
     val name: String,
     val bitrate: String? = null,
     val resolution: String? = null,
-    val isOriginal: Boolean = false
+    val isOriginal: Boolean = false,
+    val auto: Boolean = false, // keeps what the device plays (StreamChoice)
+    val safe: Boolean = false, // keeps nothing: H.264 and stereo AAC, whatever the device says
 )
 
 val transcodeModes = listOf(
     TranscodeMode("Original", isOriginal = true),
-    TranscodeMode("Compatibility (Auto)"),
+    TranscodeMode("Compatibility (Auto)", auto = true),
+    TranscodeMode("Compatibility (Safe)", safe = true),
     TranscodeMode("Quality -20%", bitrate = "80%"),
     TranscodeMode("Quality -35%", bitrate = "65%"),
     TranscodeMode("Quality -50%", bitrate = "50%"),

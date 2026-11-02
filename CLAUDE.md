@@ -152,8 +152,11 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 ## How things work (where it matters for the TODOs)
 
 - **Streaming:** `GET /api/media/stream?path=<base64 path>`. Query options:
-  - `transcode=1` forces an ffmpeg transcode: libx264 ultrafast, AAC 128k, fragmented MP4,
+  - `transcode=1` forces an ffmpeg transcode: libx264 ultrafast, AAC 192k, fragmented MP4,
     8-bit 4:2:0.
+  - `audiocodec=` picks the audio of a transcode or a copy: `copy` keeps it (AAC, AC-3, E-AC-3,
+    MP3, Opus, FLAC and DTS travel in the stream; TrueHD is only experimental in MP4), `ac3`,
+    `eac3` and `aac` convert it to 5.1, and `aac` with `channels=2` to stereo.
   - `start=<s>`, `bitrate=` (for example `80%`) and `resolution=` (a height, never upscaled)
     also apply.
   - `auto-transcode=0` turns off the server's extension-based auto-transcode (`needsTranscoding`
@@ -168,7 +171,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   - Before playing, it reads `GET /api/media/codecs` (container, duration, video codec, audio and
     subtitle tracks). The Transcode menu has Android's modes (`TRANSCODE_MODES`): Original (the
     file as it is), Compatibility (Auto) (`transcode=audio`: the server copies browser-friendly
-    H.264 and converts only the audio, else transcodes), and the quality and size ones (full
+    H.264, else transcodes; the audio is kept if the browser plays it, `audioSteps`),
+    Compatibility (Safe) (H.264 and stereo AAC, always), and the quality and size ones (full
     transcodes). The player picks Compatibility (Auto) itself (`chooseCompatibility`) for audio
     the browser can't decode, a non-default audio track or picture subtitles, and after a
     `<video>` error on Original; a copied video that errors gets a full transcode. Original
@@ -198,11 +202,17 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 - **TV player** (`VideoPlayer.kt`, ExoPlayer):
   - Transcode modes come from `transcodeModes` in `UiUtils.kt`, picked in a D-pad dialog in
     `PlayerDialogs.kt`. `transcodeQuery()` caps the height at what the hardware decodes.
-  - Any playback error on the original switches to Compatibility (Auto), once. As on the web, that
-    copies 8-bit 4:2:0 H.264 (`transcode=audio`, `VideoCopy.kt`; `/api/media/seekpoint` gives the
-    keyframe it really starts at) unless subtitles are burned in or the video is too big to
-    decode; a copy that fails gets a full transcode. If that fails too, the player says it can't
-    play the video.
+  - Any playback error on the original switches to Compatibility (Auto), and so does a track
+    with no decoder (no error, just silence), unless Original was picked by hand.
+    `StreamChoice.kt` decides the video and the audio apart, as the web does:
+    - Video: copied if it's 8-bit 4:2:0 H.264 (`transcode=audio`; `/api/media/seekpoint` gives the
+      keyframe it really starts at), unless subtitles are burned in or it's too big to decode.
+    - Audio (`audioLadder`): the track as it is if the device plays it (`audiocodec=copy`), else
+      the best 5.1 its output takes (AC-3, E-AC-3, AAC, `AudioOutput`), else stereo AAC.
+    - What failed steps down: a copied video gets a transcode, audio the next on its ladder, an
+      error that doesn't say which does the video first. At the end the player says it can't
+      play the video.
+    - Compatibility (Safe) keeps nothing: H.264 and stereo AAC, whatever the device says.
   - Subtitles: `onTracksChanged` collects `C.TRACK_TYPE_TEXT` formats and labels them
     (`subtitleLabels`). `selectSubtitleTrack(index)` sets a `TrackSelectionOverride`, and
     `SubtitleMemory` remembers the choice per video. **Audio track selection should copy this

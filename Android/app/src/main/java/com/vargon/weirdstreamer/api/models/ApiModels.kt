@@ -454,7 +454,14 @@ data class ErrorResponse(
 data class CodecsInfo(
     @SerializedName("duration") val duration: Double = 0.0,
     @SerializedName("video") val video: VideoCodec? = null,
+    @SerializedName("audio") val audio: List<AudioTrackInfo>? = null,
     @SerializedName("subtitles") val subtitles: List<SubtitleTrack>? = null,
+)
+
+data class AudioTrackInfo(
+    @SerializedName("codec") val codec: String = "",
+    @SerializedName("channels") val channels: Int = 0,
+    @SerializedName("default") val isDefault: Boolean = false,
 )
 
 data class VideoCodec(

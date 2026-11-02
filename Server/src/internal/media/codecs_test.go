@@ -15,11 +15,41 @@ func TestParseTrackOptions(t *testing.T) {
 		"subtitle=4&title=1&a=": {Audio: -1, Subtitle: 4},
 		"channels=2":            {Audio: -1, Subtitle: -1, Stereo: true},
 		"channels=6":            {Audio: -1, Subtitle: -1},
+		"audiocodec=copy":       {Audio: -1, Subtitle: -1, AudioCodec: "copy"},
+		"audiocodec=ac3":        {Audio: -1, Subtitle: -1, AudioCodec: "ac3"},
+		"audiocodec=dts":        {Audio: -1, Subtitle: -1},
 	}
 	for query, want := range cases {
 		r := httptest.NewRequest("GET", "/api/media/stream?"+query, nil)
 		if got := ParseTrackOptions(r); got != want {
 			t.Errorf("%q: got %+v, want %+v", query, got, want)
+		}
+	}
+}
+
+func TestAudioArgs(t *testing.T) {
+	cases := []struct {
+		tracks TrackOptions
+		stereo bool
+		args   string
+		delay  bool
+	}{
+		{TrackOptions{}, false, "-c:a aac -b:a 192k", false},
+		{TrackOptions{}, true, "-c:a aac -ac 2 -b:a 192k", false},
+		{TrackOptions{Stereo: true}, false, "-c:a aac -ac 2 -b:a 192k", false},
+		{TrackOptions{AudioCodec: "copy"}, true, "-c:a copy", true},
+		{TrackOptions{AudioCodec: "ac3"}, true, "-c:a ac3 -ac 6 -b:a 640k", true},
+		{TrackOptions{AudioCodec: "eac3"}, false, "-c:a eac3 -ac 6 -b:a 640k", true},
+		{TrackOptions{AudioCodec: "aac"}, true, "-c:a aac -ac 6 -b:a 384k", false},
+		{TrackOptions{AudioCodec: "aac", Stereo: true}, false, "-c:a aac -ac 2 -b:a 192k", false},
+	}
+	for _, c := range cases {
+		args, _ := c.tracks.audioArgs(c.stereo)
+		if got := strings.Join(args, " "); got != c.args {
+			t.Errorf("%+v: got %q, want %q", c.tracks, got, c.args)
+		}
+		if got := strings.Contains(c.tracks.movFlags(), "delay_moov"); got != c.delay {
+			t.Errorf("%+v: delay_moov %v, want %v", c.tracks, got, c.delay)
 		}
 	}
 }
