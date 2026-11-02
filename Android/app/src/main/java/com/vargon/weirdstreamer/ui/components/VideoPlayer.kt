@@ -394,10 +394,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         ended = true
                         viewModel.reportPlayback(path, playbackPosition, paused = true, ended = true, discTitle = discTitle)
                     }
-                    val videos = viewModel.getVideosInCurrentFolder()
-                    val currentIndex = videos.indexOf(path)
-                    if (currentIndex != -1 && currentIndex < videos.size - 1) viewModel.playVideo(videos[currentIndex + 1])
-                    else { exoPlayer.seekTo(0); exoPlayer.play() }
+                    viewModel.playNextAfterEnd(path, replay = { exoPlayer.seekTo(0); exoPlayer.play() }, close = { onBack(path) })
                 }
                 isBuffering = state == Player.STATE_BUFFERING || state == Player.STATE_IDLE
                 val videoSize = exoPlayer.videoSize

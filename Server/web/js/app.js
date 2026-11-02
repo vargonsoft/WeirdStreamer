@@ -755,16 +755,19 @@ const TRANSCODE_MODES = [
 let player = null;
 let playRequest = 0; // the latest playVideo call: an older one still checking codecs gives up
 
-async function playVideo(item, forceTranscode = false, startAt = 0) {
+// fromFolder: whether this viewing began from a folder; playing a folder's own item says so
+// itself (a Continue Watching card for the same file is another object), and what plays next
+// passes it on.
+async function playVideo(item, forceTranscode = false, startAt = 0, fromFolder = folderVideos().includes(item)) {
     closeSubtitleSearch();
     const request = ++playRequest;
     resetPlayer();
     if (isDiscImage(item)) {
-        playDisc(item, startAt);
+        playDisc(item, startAt, fromFolder);
         return;
     }
     const p = { item, codecs: null, duration: item.duration || 0, offset: 0, audio: -1, subtitle: -1,
-        mode: forceTranscode ? 'auto' : 'original', encode: false, failed: false, start: startAt };
+        mode: forceTranscode ? 'auto' : 'original', encode: false, failed: false, start: startAt, fromFolder };
     player = p;
     openPlayer(item.name);
     loadSegments(p);
@@ -781,6 +784,35 @@ async function playVideo(item, forceTranscode = false, startAt = 0) {
     renderFileControls();
     loadFileStream(startAt);
     loadTrickplay(p);
+}
+
+// The videos of the folder on screen, in order.
+function folderVideos() {
+    return state.view === 'folders' ? state.mediaItems.filter(item => item.type === 'video') : [];
+}
+
+// Plays what follows a video that reached its end: the next in the folder, else the show's next
+// episode (any season, wherever it's played from). With nothing left, a viewing begun in a folder
+// plays the last one again, and any other closes the player. now is what's playing, a file
+// (player) or a disc, whichever title of it reached the end.
+async function playNextAfterEnd(now) {
+    // By path: a refresh of the folder (progress, thumbnails) replaces its items.
+    const videos = now.fromFolder ? folderVideos() : [];
+    const i = videos.findIndex(item => item.path === now.item.path);
+    let next = i >= 0 ? videos[i + 1] : null;
+    if (!next) {
+        const segments = now.segments || await api.getSegments(now.item.path).catch(() => null);
+        if ((player || disc) !== now) return; // closed or replaced meanwhile
+        next = segments && segments.next;
+    }
+    if (next) {
+        playVideo(next, false, resumePosition(next), now.fromFolder);
+    } else if (now.fromFolder) {
+        seekTo(0);
+        videoPlayer.play().catch(() => {});
+    } else {
+        playerModal.querySelector('.close').click();
+    }
 }
 
 function openPlayer(title) {
@@ -1579,7 +1611,10 @@ function startPlaybackReports(item) {
     playbackReportTimer = setInterval(() => send(), 5000);
     videoPlayer.onplay = () => { started = true; send(); };
     videoPlayer.onpause = () => send();
-    videoPlayer.onended = () => send(true);
+    videoPlayer.onended = () => {
+        send(true);
+        if (player || disc) playNextAfterEnd(player || disc);
+    };
 }
 
 // Sends the last position as the player closes, then shows the new progress.
@@ -1601,7 +1636,7 @@ function playerPosition() {
 // DVD disc images: always transcoded by the server, which plays one title of the disc at a time.
 // Choosing a title, chapter, angle or track restarts the stream at the right place.
 
-let disc = null; // { item, info, title, angle, audio, subtitle, offset }
+let disc = null; // { item, info, title, angle, audio, subtitle, offset, fromFolder }
 
 function isDiscImage(item) {
     return /\.iso$/i.test(item.path || item.name || '');
@@ -1712,8 +1747,8 @@ function resetPlayer() {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 
-async function playDisc(item, startAt = 0) {
-    disc = { item, info: null, title: 0, angle: 1, audio: 0, subtitle: -1, offset: 0 };
+async function playDisc(item, startAt = 0, fromFolder = false) {
+    disc = { item, info: null, title: 0, angle: 1, audio: 0, subtitle: -1, offset: 0, fromFolder };
     openPlayer(item.name + ' — reading disc…');
     document.getElementById('player-controls').hidden = true;
     let info;

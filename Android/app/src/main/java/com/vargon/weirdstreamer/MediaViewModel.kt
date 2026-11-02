@@ -929,10 +929,40 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
      * or from the beginning with [fromStart].
      */
     fun playVideo(path: String, fromStart: Boolean = false) {
+        // A viewing begins here; going on to the next video keeps where it began.
+        if (selectedVideoPath == null) startedInFolder = fileList.any { it.path == path } && playbackQueue.none { it.path == path }
         playbackStartMs = if (fromStart || path.startsWith("smb://")) 0L else (resumeSeconds(path) * 1000).toLong()
         val local = localCopyOf(path)
         localPlaybackOf = if (local != null) path else null
         selectedVideoPath = local ?: path
+    }
+
+    /** Whether this viewing began from a folder or list, not Continue Watching or a title page. */
+    private var startedInFolder = false
+
+    /**
+     * Plays what follows a video that reached its end: the next in the folder or queue, else the
+     * show's next episode (any season, wherever it's played from). With nothing left, a viewing
+     * begun in a folder runs [replay], and any other [close].
+     */
+    fun playNextAfterEnd(path: String, replay: () -> Unit, close: () -> Unit) {
+        val current = if (path.startsWith("file://")) localPlaybackOf ?: path else path
+        val videos = getVideosInCurrentFolder()
+        val i = videos.indexOf(current)
+        if (i != -1 && i < videos.size - 1) {
+            playVideo(videos[i + 1])
+            return
+        }
+        val playing = selectedVideoPath
+        viewModelScope.launch {
+            val next = runCatching { segmentsFor(current) }.getOrNull()?.next
+            if (selectedVideoPath != playing) return@launch // left the player meanwhile
+            when {
+                next != null -> playContinue(next)
+                startedInFolder -> replay()
+                else -> close()
+            }
+        }
     }
 
     /** A partly watched video picked in folder view: the UI asks Resume or Play from start. */
@@ -974,7 +1004,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val item = resumeChoice ?: return
         resumeChoice = null
         continueChoice = null
-        if (fromStart != null) playVideo(item.path, fromStart)
+        if (fromStart != null) playVideo(item.path, fromStart) else playbackQueue = emptyList()
     }
 
     /** Plays a download from the Downloads list, resuming where it was left. */
@@ -1010,6 +1040,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val viewed = if (lastViewedPath?.startsWith("file://") == true) localPlaybackOf else lastViewedPath
         viewed?.let { recordSelection(currentPath, it) }
         viewed?.let { v -> lastPlayedFile = (playbackQueue.firstOrNull { it.path == v } ?: getFileItemForPath(v))?.originalPath }
+        playbackQueue = emptyList() // else the next time from the folder would look queued
         localPlaybackOf = null
         selectedVideoPath = null
         // Back from the player, the folder selects what was played (not the toolbar, after a view toggle).

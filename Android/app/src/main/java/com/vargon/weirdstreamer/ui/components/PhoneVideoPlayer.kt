@@ -370,9 +370,12 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
-                if (state == Player.STATE_ENDED && !isSmbSource) {
-                    ended = true
-                    viewModel.reportPlayback(path, playbackPosition, paused = true, ended = true, discTitle = discTitle)
+                if (state == Player.STATE_ENDED) {
+                    if (!isSmbSource) {
+                        ended = true
+                        viewModel.reportPlayback(path, playbackPosition, paused = true, ended = true, discTitle = discTitle)
+                    }
+                    viewModel.playNextAfterEnd(path, replay = { exoPlayer.seekTo(0); exoPlayer.play() }, close = { onBack(path) })
                 }
                 if (state == Player.STATE_READY) {
                     val currentDuration = exoPlayer.duration
