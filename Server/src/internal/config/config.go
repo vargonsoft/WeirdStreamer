@@ -292,7 +292,6 @@ type AuthConfig struct {
 }
 
 type StreamingConfig struct {
-	ChunkSize         int  `json:"chunkSize" yaml:"chunkSize"`
 	EnableHTTP2       bool `json:"enableHTTP2" yaml:"enableHTTP2"`
 	AutoConvertImages bool `json:"autoConvertImages" yaml:"autoConvertImages"`
 	// Background jobs (intros and credits, trickplay, cleanup) wait while anyone is streaming,

@@ -2446,7 +2446,6 @@ async function showSettings() {
             document.getElementById('server-host').value = config.server.host;
             document.getElementById('enable-http2').checked = config.streaming.enableHTTP2;
             document.getElementById('pause-jobs-streaming').checked = !!config.streaming.pauseJobsWhileStreaming;
-            document.getElementById('chunk-size').value = config.streaming.chunkSize;
             const metadata = config.metadata || {};
             document.getElementById('tmdb-token').value = metadata.tmdbAccessToken || '';
             document.getElementById('opensubtitles-key').value = metadata.openSubtitlesApiKey || '';
@@ -2805,7 +2804,6 @@ async function handleSaveSettings() {
         state.currentConfig.server.host = document.getElementById('server-host').value;
         state.currentConfig.streaming.enableHTTP2 = document.getElementById('enable-http2').checked;
         state.currentConfig.streaming.pauseJobsWhileStreaming = document.getElementById('pause-jobs-streaming').checked;
-        state.currentConfig.streaming.chunkSize = parseInt(document.getElementById('chunk-size').value);
         state.currentConfig.metadata = {
             ...(state.currentConfig.metadata || {}),
             tmdbAccessToken: document.getElementById('tmdb-token').value.trim(),

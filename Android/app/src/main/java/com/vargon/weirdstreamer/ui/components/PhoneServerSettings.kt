@@ -179,7 +179,6 @@ fun ServerSettingsTab(server: ServerRepository) {
     var host by remember { mutableStateOf("") }
     var http2 by remember { mutableStateOf(false) }
     var pauseJobs by remember { mutableStateOf(false) }
-    var chunkSize by remember { mutableStateOf("") }
     var tmdbToken by remember { mutableStateOf("") }
     var openSubtitlesKey by remember { mutableStateOf("") }
     var showSubtitlesKey by remember { mutableStateOf(false) }
@@ -221,7 +220,6 @@ fun ServerSettingsTab(server: ServerRepository) {
         c.getAsJsonObject("streaming")?.let {
             http2 = it.get("enableHTTP2")?.asBoolean ?: false
             pauseJobs = it.get("pauseJobsWhileStreaming")?.asBoolean ?: false
-            chunkSize = it.get("chunkSize")?.asString ?: ""
         }
         c.getAsJsonObject("metadata")?.let {
             tmdbToken = it.get("tmdbAccessToken")?.asString ?: ""
@@ -256,7 +254,6 @@ fun ServerSettingsTab(server: ServerRepository) {
         c.getAsJsonObject("streaming").apply {
             addProperty("enableHTTP2", http2)
             addProperty("pauseJobsWhileStreaming", pauseJobs)
-            chunkSize.trim().toIntOrNull()?.let { addProperty("chunkSize", it) }
         }
         val metadata = c.getAsJsonObject("metadata") ?: JsonObject().also { c.add("metadata", it) }
         metadata.addProperty("tmdbAccessToken", tmdbToken.trim())
@@ -375,9 +372,6 @@ fun ServerSettingsTab(server: ServerRepository) {
                     }
                     Switch(checked = pauseJobs, onCheckedChange = { pauseJobs = it })
                 }
-                OutlinedTextField(chunkSize, { chunkSize = it.filter(Char::isDigit) }, label = { Text("Chunk size (bytes)") },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth())
             }
             item { SectionTitle("Metadata") }
             item {

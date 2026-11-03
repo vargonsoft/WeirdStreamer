@@ -89,8 +89,6 @@ auth:
   tokenExpiryHours: 720
 
 streaming:
-  # Not used any more
-  chunkSize: 1048576
   # HTTPS with HTTP/2, with server.certFile and keyFile
   enableHTTP2: true
   # Serve HEIC photos as JPEG, which browsers show
