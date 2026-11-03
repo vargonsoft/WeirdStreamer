@@ -14,7 +14,8 @@
 # dist/<version>/ then holds:
 #   weirdstreamer-server-<version>-linux-<arch>.tar.gz  the server ready to run: bin/server and
 #       bin/cli, the web UI (with this APK to download), setup.sh (writes config.yml, can create
-#       the admin user and install a systemd service), config.example.yml, LICENSE, NOTICE and VERSION.
+#       the admin user and install a systemd service), check-ffmpeg.sh, config.example.yml, LICENSE,
+#       NOTICE and VERSION.
 #       Where it runs it needs ffmpeg, nothing else.
 #   WeirdStreamer-<version>.apk                         the Android app (TV and phone)
 #   SHA256SUMS
@@ -197,7 +198,7 @@ built = datetime.datetime.fromtimestamp(os.path.getmtime(sys.argv[2]), datetime.
 print(json.dumps({"version": element["versionName"], "build": element["versionCode"],
                   "size": os.path.getsize(sys.argv[2]), "built": built.isoformat(timespec="seconds")}))
 PY
-cp Server/package/setup.sh Server/config.example.yml LICENSE NOTICE "$pkg/"
+cp Server/package/setup.sh Server/scripts/check-ffmpeg.sh Server/config.example.yml LICENSE NOTICE "$pkg/"
 echo "$version ($commit)" >"$pkg/VERSION"
 tarball="weirdstreamer-server-$version-linux-$arch.tar.gz"
 tar -C "$stage" -czf "$out/$tarball" "weirdstreamer-$version"

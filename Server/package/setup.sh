@@ -152,6 +152,9 @@ esac
 if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
     echo "Note: ffmpeg and ffprobe aren't installed. The server needs them for thumbnails and"
     echo "streaming: sudo apt install ffmpeg (or your system's package)."
+elif ! ./check-ffmpeg.sh; then
+    echo "Note: this ffmpeg lacks what's listed above (the README's ffmpeg section says how to get one"
+    echo "that has it). Setup goes on; ./check-ffmpeg.sh checks again later."
 fi
 
 if [ -f config.yml ]; then

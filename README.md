@@ -49,8 +49,70 @@ Then it opens the web UI. Sign in as the admin: Settings opens where you add you
 for movie and TV libraries, a TMDB API token.
 
 Without the service, run `./bin/server` from that folder. The server needs `ffmpeg` and
-`ffprobe` installed (`sudo apt install ffmpeg`). Every setting is explained in
-`config.example.yml`.
+`ffprobe` (see [ffmpeg](#ffmpeg) below). Every setting is explained in `config.example.yml`.
+
+### ffmpeg
+
+The server runs `ffmpeg` and `ffprobe` (both come with ffmpeg) for thumbnails, seek-bar previews,
+transcoding, subtitles and finding intros. Not every ffmpeg build has all it uses:
+
+| What it needs | For | Without it |
+| --- | --- | --- |
+| The H.264 encoder, libx264 | Transcoding video | Required |
+| libass (the `subtitles` filter) | Burning subtitles into a transcode | Required |
+| The DVD reader, `dvdvideo` (ffmpeg 7.0 or later) | Playing disc images (`.iso`) | Discs don't play |
+| Chromaprint | Finding intros and credits by the sound a season's episodes share | Only chapters named for them, and credits on black, are found |
+
+The rest (the AAC encoder, MP4 and WebVTT output, the `scale`, `overlay` and `blackdetect`
+filters) is in every ffmpeg.
+
+**The easy way:** your system's package. Debian's and Ubuntu's `ffmpeg` has all four, so
+`sudo apt install ffmpeg` is enough; with a version older than 7.0 (`ffmpeg -version` shows it),
+everything but disc images works.
+
+**Checking an ffmpeg you have:** each of these prints a line when that part is there. They check
+libx264, libass, the DVD reader and Chromaprint, in that order:
+
+```bash
+ffmpeg -hide_banner -encoders | grep -w libx264
+```
+
+```bash
+ffmpeg -hide_banner -filters | grep -w subtitles
+```
+
+```bash
+ffmpeg -hide_banner -demuxers | grep -w dvdvideo
+```
+
+```bash
+ffmpeg -hide_banner -muxers | grep -w chromaprint
+```
+
+The release package's `check-ffmpeg.sh` does all of this at once (`setup.sh` runs it), and so does
+`Server/scripts/check-ffmpeg.sh` in the repository.
+
+**Building ffmpeg yourself,** where no package has what's needed: get its source from
+[ffmpeg.org](https://ffmpeg.org/download.html) (7.0 or later) and the libraries it builds with (on
+Debian or Ubuntu):
+
+```bash
+sudo apt install build-essential nasm pkg-config libx264-dev libass-dev libchromaprint-dev libdvdread-dev libdvdnav-dev zlib1g-dev
+```
+
+Then, in ffmpeg's folder, configure it with those libraries switched on (libx264 and the DVD
+reader need `--enable-gpl`):
+
+```bash
+./configure --enable-gpl --enable-version3 --enable-libx264 --enable-libass --enable-chromaprint --enable-libdvdread --enable-libdvdnav --enable-zlib --disable-debug --disable-doc --disable-ffplay
+```
+
+```bash
+make -j"$(nproc)" && sudo make install
+```
+
+That installs `ffmpeg` and `ffprobe` in `/usr/local/bin`, which comes before the system's on the
+usual `PATH`; the systemd service finds them there too.
 
 ### Android app
 
@@ -61,7 +123,7 @@ later, and the same app works on Android TV and on phones. Install it from the f
 
 ## Build from source
 
-- **Server:** Go 1.24 with a C compiler (for SQLite), and ffmpeg. `Server/start-server.sh` builds
+- **Server:** Go 1.24 with a C compiler (for SQLite), and [ffmpeg](#ffmpeg). `Server/start-server.sh` builds
   it, walks through the configuration and runs it. See [Server/README.md](Server/README.md),
   which also covers Docker.
 - **Android app:** a JDK 17 or later and the Android SDK, then `./gradlew assembleDebug` in
