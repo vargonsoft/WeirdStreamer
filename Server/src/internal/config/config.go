@@ -8,7 +8,7 @@ import (
 
 type Config struct {
 	// The access groups: each user is in one, and each library lists those that may see it.
-	// Users and libraries may only name groups listed here.
+	// Users and libraries may only name groups listed here. The first is the default for new users.
 	Groups    []string        `json:"groups" yaml:"groups"`
 	Server    ServerConfig    `json:"server" yaml:"server"`
 	Database  DatabaseConfig  `json:"database" yaml:"database"`
@@ -171,6 +171,14 @@ const (
 	LibraryTypeMovie = "movie"
 	LibraryTypeTV    = "tv"
 )
+
+// DefaultGroup is the group new users start in: the first one listed ("" with none).
+func (c *Config) DefaultGroup() string {
+	if len(c.Groups) == 0 {
+		return ""
+	}
+	return c.Groups[0]
+}
 
 // HasGroup reports whether name is one of the defined groups.
 func (c *Config) HasGroup(name string) bool {

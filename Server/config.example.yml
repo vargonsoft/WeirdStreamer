@@ -8,7 +8,8 @@
 # It holds secrets (the JWT secret, API tokens): keep it private (chmod 600).
 
 # The access groups. Each user is in one, and each library lists the groups that may see it.
-# Users and libraries can only name groups listed here.
+# Users and libraries can only name groups listed here. The first is the default group for new
+# users (the one Create New User starts on); new groups are added at the end.
 groups: ["parents", "admins", "kids"]
 
 server:

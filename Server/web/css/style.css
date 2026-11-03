@@ -179,6 +179,18 @@ body {
     font-weight: 500;
 }
 
+/* The first group, which new users start in (like the users list's badges) */
+.group-default {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--button-bg, var(--primary-color));
+    color: var(--button-text, white);
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: normal;
+    vertical-align: middle;
+}
+
 .groups-add {
     display: flex;
     gap: 8px;

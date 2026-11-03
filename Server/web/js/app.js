@@ -2504,12 +2504,18 @@ function renderGroups() {
     if (!groups.length) {
         list.innerHTML = '<p class="settings-hint">No groups yet. Add one to give users and libraries access.</p>';
     }
-    groups.forEach(name => {
+    groups.forEach((name, i) => {
         const row = document.createElement('div');
         row.className = 'group-row';
         const label = document.createElement('span');
         label.className = 'group-name';
         label.textContent = name;
+        if (i === 0) { // new users start in it
+            const tag = document.createElement('span');
+            tag.className = 'group-default';
+            tag.textContent = 'default';
+            label.append(' ', tag);
+        }
         const rename = document.createElement('button');
         rename.type = 'button';
         rename.className = 'btn btn-small secondary';
@@ -2581,11 +2587,12 @@ async function handleRemoveGroup(name) {
     }
 }
 
-// The new user form's group menu: the groups, and "New group…" to make one on the spot.
-function renderNewUserGroups() {
+// The new user form's group menu: the groups, and "New group…" to make one on the spot. It starts
+// on the first group, the default (reset puts it back there after creating a user).
+function renderNewUserGroups(reset = false) {
     const select = document.getElementById('new-user-group');
     if (!select) return;
-    const current = select.value;
+    const current = reset ? '' : select.value;
     select.innerHTML = '<option value="" disabled>Group</option>' +
         state.availableGroups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('') +
         '<option value="__new__">New group…</option>';
@@ -2925,6 +2932,7 @@ async function handleCreateUser() {
         document.getElementById('new-username').value = '';
         document.getElementById('new-password').value = '';
         document.getElementById('new-user-admin').checked = false;
+        renderNewUserGroups(true);
         
         loadUsers();
         

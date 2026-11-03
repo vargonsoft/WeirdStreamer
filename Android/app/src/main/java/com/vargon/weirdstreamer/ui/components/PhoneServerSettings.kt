@@ -273,12 +273,17 @@ fun ServerSettingsTab(server: ServerRepository) {
             item { SectionTitle("Groups") }
             item {
                 Text("Each user is in one group, and each library lists the groups that can see it. " +
-                    "Changes here apply right away.", style = MaterialTheme.typography.bodySmall,
+                    "New users start in the first group, the default. Changes here apply right away.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             items(groupNames.toList(), key = { "group:$it" }) { g ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(g, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Text(g, style = MaterialTheme.typography.bodyLarge)
+                    if (g == groupNames.firstOrNull()) { // new users start in it
+                        Text("default", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
                     IconButton(onClick = { renaming = g }) { Icon(Icons.Default.Edit, contentDescription = "Rename $g") }
                     IconButton(onClick = {
                         scope.launch {
@@ -557,7 +562,10 @@ fun UsersTab(server: ServerRepository) {
                         val (_, err) = attempt {
                             server.api.createUser(CreateUserRequest(newName.trim(), newPassword, newAdmin, newGroup.trim()))
                         }
-                        if (err == null) { message = "Created ${newName.trim()}." to false; newName = ""; newPassword = ""; newAdmin = false }
+                        if (err == null) {
+                            message = "Created ${newName.trim()}." to false; newName = ""; newPassword = ""; newAdmin = false
+                            newGroup = groups.firstOrNull() ?: "" // back to the default group
+                        }
                         else message = err to true
                         reload()
                     }

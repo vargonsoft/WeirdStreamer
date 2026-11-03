@@ -80,7 +80,7 @@ func main() {
 func printUsage() {
 	fmt.Println("Media Server CLI")
 	fmt.Println("\nUsage:")
-	fmt.Println("  cli user create <username> --group <group> [--admin]  - Create a new user")
+	fmt.Println("  cli user create <username> [--group <group>] [--admin] - Create a new user (default: the first group)")
 	fmt.Println("  cli user list                                          - List all users")
 	fmt.Println("  cli user delete <username>                             - Delete a user")
 	fmt.Println("  cli user change-password <username>                    - Change user password")
@@ -129,6 +129,9 @@ func handleUserCommand(db *database.DB, args []string) {
 			}
 		}
 
+		if group == "" {
+			group = config.GlobalConfig.DefaultGroup() // the first group
+		}
 		if !config.GlobalConfig.HasGroup(group) {
 			fmt.Printf("Error: give the user one of the groups with --group: %s\n", strings.Join(config.GlobalConfig.Groups, ", "))
 			os.Exit(1)
