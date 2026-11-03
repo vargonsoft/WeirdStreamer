@@ -39,10 +39,12 @@ Otherwise it falls back to plain HTTP.
 package (`weirdstreamer-server-<version>-linux-<arch>.tar.gz`) with the binaries, the web UI with
 the Android app to download, `setup.sh` and `config.example.yml`, plus the APK and `SHA256SUMS`.
 
-To install the package, unpack it and run `./setup.sh` in it. It writes `config.yml`, can create
-the admin user, and can install a systemd service that starts the server at boot (later:
-`./setup.sh service`; to undo it, `./setup.sh remove-service`). Otherwise run `./bin/server` from
-that folder. It needs ffmpeg, nothing else.
+To install the package, unpack it and run `./setup.sh` in it. It asks for the server's name, port
+and HTTPS and writes `config.yml`, can create the admin user, and can install a systemd service that
+starts the server at boot (later: `./setup.sh service`; to undo it, `./setup.sh remove-service`).
+Then it prints the web UI's address and offers to start the server and open it. Sign in as the
+admin: while there are no libraries, Settings opens at Media Paths to add them (and the TMDB token).
+Otherwise run `./bin/server` from that folder. It needs ffmpeg, nothing else.
 
 ## Docker
 

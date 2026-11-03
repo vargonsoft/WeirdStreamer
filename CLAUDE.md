@@ -164,10 +164,12 @@ runs), the APK and `SHA256SUMS`. It also publishes the APK to the web download l
 doesn't). The version is the app's (`0.0.1.<commit count>`). It refuses uncommitted changes
 (`--allow-dirty` builds them as `<version>-dirty`) and installs on no device. Artifacts stay out of git.
 
-The package's `setup.sh` (`Server/package/setup.sh`) writes config.yml through `cli config init`
-(options; the TMDB token through `$WEIRDSTREAMER_TMDB_TOKEN`), can create the admin user, and can
-install a systemd service (`setup.sh service`, `setup.sh remove-service`): it runs `bin/server` as
-the user who ran setup, from the package's folder, after network mounts.
+The package's `setup.sh` (`Server/package/setup.sh`) asks only for the name, port and HTTPS and
+writes config.yml through `cli config init`, can create the admin user and install a systemd service
+(`setup.sh service`, `setup.sh remove-service`: `bin/server` as the user who ran setup, from the
+package's folder, after network mounts), then prints the web UI's address and offers to start the
+server and open it. Libraries and the TMDB token are set in Settings: while there are no libraries,
+an admin's sign-in opens Settings at Media Paths (`openLibrarySettings` in `app.js`).
 
 ## Deploying the Android app
 

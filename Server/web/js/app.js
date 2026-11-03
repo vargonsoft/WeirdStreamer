@@ -271,6 +271,8 @@ function showMainScreen() {
         api.getConfig().then(config => {
             state.currentConfig = config;
             updateAvailableGroups();
+            // A new server (setup.sh makes none): its admin starts in Settings, at the libraries
+            if (user.is_admin && !(config.media?.paths || []).length) openLibrarySettings();
         }).catch(err => {
             console.log('Could not load config:', err);
         });
@@ -2410,6 +2412,15 @@ function formatDuration(seconds) {
 }
 
 // Settings Functions
+// Settings' Server & Media tab, at Media Paths: where a server with no libraries gets its first one.
+async function openLibrarySettings() {
+    await showSettings();
+    document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'server'));
+    document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.toggle('active', c.id === 'server-tab'));
+    document.getElementById('no-libraries-hint').scrollIntoView({ block: 'center' });
+    document.getElementById('new-path-input').focus({ preventScroll: true });
+}
+
 async function showSettings() {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     // The account signed in (watch status is kept per account)
@@ -2647,6 +2658,7 @@ function setMediaPathType(mediaPath, type) {
 function renderMediaPaths(paths) {
     const pathsList = document.getElementById('media-paths-list');
     pathsList.innerHTML = '';
+    document.getElementById('no-libraries-hint').hidden = paths.length > 0;
     
     paths.forEach((mediaPath, index) => {
         const div = document.createElement('div');

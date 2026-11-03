@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Sets up a Weird Streamer release package (the folder this script is in): writes config.yml, can
-# create the admin user, and can install a systemd service that starts the server at boot.
+# create the admin user, can install a systemd service that starts the server at boot, and opens
+# the web UI, where the admin adds the libraries (Settings opens there while there are none).
 #
 #   ./setup.sh                  all of it, asking as it goes
 #   ./setup.sh service          install (or update) the systemd service only
@@ -31,7 +32,7 @@ as_root() {
 
 write_config() {
     echo "== Settings (written to config.yml; config.example.yml explains them all)"
-    local name port options=() libraries=()
+    local name port options=()
     name=$(ask "Server name, which the apps show" "$(hostname)")
     port=$(ask "Port to listen on" 8080)
     options+=(-name "$name" -port "$port")
@@ -58,26 +59,9 @@ write_config() {
         options+=(-cert "$cert_dir/cert.pem" -key "$cert_dir/key.pem")
     fi
 
-    echo "Libraries: each is a folder of media. Leave the name empty when you're done."
-    while true; do
-        local lib path type
-        lib=$(ask "Library name" "")
-        [ -n "$lib" ] || break
-        while true; do
-            path=$(ask "Folder for $lib (absolute)" "")
-            [ -d "$path" ] && break
-            echo "  $path is not a folder."
-        done
-        type=$(ask "Type for $lib (movie, tv or none)" "none")
-        case "$type" in movie|tv|none) ;; *) echo "  Unknown type; using none."; type=none ;; esac
-        options+=(-library "$lib|$path|$type")
-    done
-
-    local token
-    read -r -s -p "TMDB API read access token, for movie and TV libraries (optional, Enter to skip): " token || true
-    echo
-    WEIRDSTREAMER_TMDB_TOKEN=$token ./bin/cli config init config.example.yml "${options[@]}"
-    echo "config.yml is owner-only: it holds the JWT secret and the token."
+    # Libraries, the TMDB token and the rest are set in the web UI's Settings, as the admin.
+    ./bin/cli config init config.example.yml "${options[@]}"
+    echo "config.yml is owner-only: it holds the JWT secret."
 }
 
 install_service() {
@@ -141,6 +125,7 @@ EOF
         return 1
     fi
     echo "Its output: journalctl -u $service -f. Its auth and access logs are in config.yml's server.logsPath."
+    service_running=1
     echo "Stop it with: sudo systemctl stop $service. Remove it with: ./setup.sh remove-service"
 }
 
@@ -176,15 +161,62 @@ else
 fi
 
 echo "== Admin user"
+admin=""
 if ask_yes "Create an admin user now?" y; then
     admin=$(ask "Admin username" "admin")
     ./bin/cli user create "$admin" --admin
 fi
 
+# The address to open: this machine's, and the one other devices on the network use.
+port=$(sed -n 's/^  port: *\([0-9]*\).*/\1/p' config.yml | head -1)
+scheme=http
+grep -qE '^  certFile: *"?[^" ]+' config.yml && scheme=https
+lan=$(hostname -I 2>/dev/null | awk '{print $1}')
+local_url="$scheme://localhost:$port"
+
+# Waits until the server answers on its port (up to 30 seconds).
+wait_for_server() {
+    for _ in $(seq 1 60); do
+        (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && return 0
+        sleep 0.5
+    done
+    return 1
+}
+# Opens the web UI in a browser, where this machine has a desktop.
+offer_browser() {
+    local opener=""
+    if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open >/dev/null; then opener=xdg-open
+    elif [ "$(uname)" = Darwin ]; then opener=open
+    fi
+    [ -n "$opener" ] || return 0
+    if ask_yes "Open it in a browser now${admin:+ and sign in as $admin}?" y; then
+        "$opener" "$local_url" >/dev/null 2>&1 &
+    fi
+}
+
 echo "== Starting"
+service_running=0
 if command -v systemctl >/dev/null && [ -d /run/systemd/system ] &&
     ask_yes "Install a systemd service, so the server starts at boot?" n; then
-    install_service
+    install_service || true
+fi
+
+echo
+echo "The web UI: $local_url${lan:+ (from other devices: $scheme://$lan:$port)}"
+[ "$scheme" = https ] && echo "With a self-signed certificate, the browser asks you to accept it first."
+echo "Sign in as the admin user: Settings opens at Media Paths to add the libraries (and the TMDB token"
+echo "for movie and TV libraries) while there are none."
+if [ "$service_running" = 1 ]; then
+    offer_browser
+elif ask_yes "Start the server now, in this terminal (Ctrl-C stops it)?" y; then
+    ./bin/server &
+    server=$!
+    if wait_for_server; then
+        offer_browser
+    else
+        echo "The server hasn't answered on port $port: see its output above." >&2
+    fi
+    wait "$server"
 else
-    echo "Start the server with ./bin/server (from this folder). ./setup.sh service sets it up to start at boot later."
+    echo "Start it with ./bin/server (from this folder). ./setup.sh service sets it up to start at boot."
 fi
