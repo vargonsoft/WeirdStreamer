@@ -222,6 +222,11 @@ func (m *DownloadManager) work() {
 
 		err := m.encode(ctx, job)
 		cancel()
+		// The encode's picture size, read before the job shows as ready (clients read it then).
+		var w, h int
+		if err == nil {
+			_, w, h, _ = ProbeVideo(job.file)
+		}
 		m.mu.Lock()
 		job.cancel = nil
 		if err != nil {
@@ -234,14 +239,12 @@ func (m *DownloadManager) work() {
 			if st, err := os.Stat(job.file); err == nil {
 				job.Size = st.Size()
 			}
+			if w > 0 && h > 0 {
+				job.Width, job.Height = w, h
+			}
 		}
 		m.mu.Unlock()
 		if err == nil {
-			if _, w, h, perr := ProbeVideo(job.file); perr == nil {
-				m.mu.Lock()
-				job.Width, job.Height = w, h
-				m.mu.Unlock()
-			}
 			log.Printf("[DOWNLOAD] Ready: %s (%s)", filepath.Base(job.Path), job.describe())
 		}
 	}

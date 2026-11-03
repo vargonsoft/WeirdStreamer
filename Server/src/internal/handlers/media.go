@@ -326,6 +326,13 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 	// Get bitrate and resolution for custom transcoding
 	bitrate := r.URL.Query().Get("bitrate")
 	resolution := r.URL.Query().Get("resolution")
+	// A height in pixels: it goes into ffmpeg's filter text, where anything else could add filters.
+	if resolution != "" {
+		if n, err := strconv.Atoi(resolution); err != nil || n <= 0 {
+			respondError(w, http.StatusBadRequest, "resolution must be a height in pixels")
+			return
+		}
+	}
 
 	// Validate path is within allowed media paths
 	if !h.isValidMediaPath(path) {
@@ -584,6 +591,10 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			if mediaType == "" {
 				continue
 			}
+			// An installer or data disc image isn't a video: scans leave it out, and so does this.
+			if media.IsNonDiscISO(entryPath) {
+				continue
+			}
 
 			// Try to get from database first (for cached metadata/thumbnails)
 			item, err := h.db.GetMediaItem(entryPath)
@@ -795,6 +806,7 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 				}
 				thumbPath, _ := media.GetThumbnailPath(config.GlobalConfig.Media.ThumbnailPath, hash, thumbExt)
 				os.Remove(thumbPath)
+				h.scanner.ForgetThumbnailFailure(entryPath)
 
 				// Regenerate thumbnail
 				var thumbnailURL string

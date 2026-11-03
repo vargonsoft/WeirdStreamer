@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -12,6 +13,7 @@ import (
 // StopChildren stops the processes this server started (ffmpeg, ffprobe…) that are still running,
 // so none outlives it: asked to stop, then killed after grace.
 func StopChildren(grace time.Duration) {
+	shuttingDown.Store(true)
 	kids := children()
 	for _, pid := range kids {
 		syscall.Kill(pid, syscall.SIGTERM)
@@ -64,3 +66,6 @@ func partPath(path string) string {
 func finishPart(path string) error {
 	return os.Rename(partPath(path), path)
 }
+
+// shuttingDown is set once StopChildren runs, so the transcodes it stops don't log as failed.
+var shuttingDown atomic.Bool

@@ -8,6 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/logs"
 	"github.com/weirdstreamer/server/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -46,20 +47,25 @@ func (e *LockedError) Error() string {
 func (s *Service) Authenticate(username, password, clientIP string) (*models.LoginResponse, error) {
 	attempt, wait := s.limiter.Begin(username, clientIP)
 	if attempt == nil {
+		logs.Auth("Sign-in refused: %q from %s is locked out for %s", username, clientIP, wait.Round(time.Second))
 		return nil, &LockedError{Wait: wait}
 	}
 	user, err := s.db.GetUserByUsername(username)
 	if errors.Is(err, sql.ErrNoRows) {
 		attempt.Failed()
+		logs.Auth("Sign-in failed: no user %q, from %s", username, clientIP)
 		return nil, ErrInvalidCredentials
 	}
 	if err != nil {
 		attempt.Abandon()
+		logs.Auth("Sign-in failed: %q from %s: %v", username, clientIP, err)
 		return nil, err
 	}
 	if err := checkPassword(attempt, user, password); err != nil {
+		logs.Auth("Sign-in failed: wrong password for %q, from %s", username, clientIP)
 		return nil, err
 	}
+	logs.Auth("Signed in: %q from %s", username, clientIP)
 
 	token, expiresAt, err := s.GenerateToken(user)
 	if err != nil {
@@ -77,9 +83,14 @@ func (s *Service) Authenticate(username, password, clientIP string) (*models.Log
 func (s *Service) VerifyPassword(user *models.User, password, clientIP string) error {
 	attempt, wait := s.limiter.Begin(user.Username, clientIP)
 	if attempt == nil {
+		logs.Auth("Password check refused: %q from %s is locked out for %s", user.Username, clientIP, wait.Round(time.Second))
 		return &LockedError{Wait: wait}
 	}
-	return checkPassword(attempt, user, password)
+	err := checkPassword(attempt, user, password)
+	if err != nil {
+		logs.Auth("Password check failed: wrong current password for %q, from %s", user.Username, clientIP)
+	}
+	return err
 }
 
 // checkPassword compares password with the user's hash and ends the attempt with the result.

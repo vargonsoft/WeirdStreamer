@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -209,36 +210,89 @@ func (s *transcodeSpool) start(args []string) error {
 		cancel()
 		return fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
-	go s.logProgress(stderr)
+	started := time.Now()
+	s.mu.Lock()
+	sess := s.sess
+	s.mu.Unlock()
+	log.Printf("[TRANSCODE] Started for %s: %s (ffmpeg %s)", sess.Who(), s.filePath, strings.Join(args, " "))
+	tail := make(chan []string, 1)
+	go func() { tail <- s.readOutput(stderr) }()
 	go func() {
 		err := s.store(stdout)
-		if waited := cmd.Wait(); err == nil {
+		waited := cmd.Wait()
+		if err == nil {
 			err = waited
 		}
-		fmt.Printf("Transcoding finished for: %s\n", s.filePath)
 		s.mu.Lock()
 		s.done, s.err = true, err
+		closed, size := s.closed, s.size
 		s.changed.Broadcast()
 		s.mu.Unlock()
+		lines := <-tail
+		took := time.Since(started).Round(time.Second)
+		switch {
+		case shuttingDown.Load():
+			log.Printf("[TRANSCODE] Stopped by the server's shutdown after %s (%s made): %s", took, sizeText(size), s.filePath)
+		case closed:
+			log.Printf("[TRANSCODE] Stopped after %s (%s made; no player came back for it): %s", took, sizeText(size), s.filePath)
+		case err == nil:
+			log.Printf("[TRANSCODE] Finished in %s (%s): %s", took, sizeText(size), s.filePath)
+		default:
+			log.Printf("[TRANSCODE] Failed after %s (%s made): %s: %v", took, sizeText(size), s.filePath, err)
+			for _, line := range lines {
+				log.Printf("[TRANSCODE]   ffmpeg: %s", line)
+			}
+		}
 	}()
 	return nil
 }
 
-func (s *transcodeSpool) logProgress(stderr io.Reader) {
-	buf := make([]byte, 1024)
+// outputTail is how many of ffmpeg's last lines a failed transcode logs.
+const outputTail = 15
+
+// readOutput passes ffmpeg's messages to the stream's session (its progress, for the Streams page)
+// and returns its last lines, without the progress ones, for the log if it fails.
+func (s *transcodeSpool) readOutput(stderr io.Reader) []string {
+	var lines []string
+	var partial string
+	buf := make([]byte, 4096)
 	for {
 		n, err := stderr.Read(buf)
 		if n > 0 {
-			fmt.Printf("FFmpeg: %s", string(buf[:n]))
+			chunk := string(buf[:n])
 			s.mu.Lock()
 			sess := s.sess
 			s.mu.Unlock()
-			sess.FFmpegOutput(string(buf[:n]))
+			sess.FFmpegOutput(chunk)
+			// Progress lines end in \r, the rest in \n.
+			parts := strings.FieldsFunc(partial+chunk, func(r rune) bool { return r == '\r' || r == '\n' })
+			partial = ""
+			if last := chunk[len(chunk)-1]; last != '\r' && last != '\n' && len(parts) > 0 {
+				partial, parts = parts[len(parts)-1], parts[:len(parts)-1]
+			}
+			for _, line := range parts {
+				if line = strings.TrimSpace(line); line == "" || strings.HasPrefix(line, "frame=") || strings.HasPrefix(line, "size=") {
+					continue
+				}
+				if lines = append(lines, line); len(lines) > outputTail {
+					lines = lines[1:]
+				}
+			}
 		}
 		if err != nil {
-			return
+			if partial = strings.TrimSpace(partial); partial != "" && !strings.HasPrefix(partial, "frame=") && !strings.HasPrefix(partial, "size=") {
+				lines = append(lines, partial)
+			}
+			return lines
 		}
 	}
+}
+
+func sizeText(n int64) string {
+	if n >= 1<<30 {
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	}
+	return fmt.Sprintf("%.0f MB", float64(n)/(1<<20))
 }
 
 // room waits until ffmpeg's output is wanted: while no client is attached, or it's far enough

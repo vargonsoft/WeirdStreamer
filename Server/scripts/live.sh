@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs the live server (port 9000) in this terminal. Each start logs to its own file in the
 # server.logsPath folder of config.json
-# (server-<start time>.log), and only the last 20 are kept.
+# (server-<start time>.log), and only the last 20 are kept. The server itself keeps auth.log and
+# access.log there (internal/logs).
 # When restart-live.sh stops it, it starts again with the new binary (bin/server); Ctrl-C (or a crash) ends it.
 cd "$(dirname "$0")/.."
 marker=.restart

@@ -1,6 +1,7 @@
 package media
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -23,10 +24,29 @@ import (
 // ThumbnailGenerator handles on-demand thumbnail generation with caching
 type ThumbnailGenerator struct {
 	mu sync.Mutex // Protects concurrent generation of the same thumbnail
+	// Files whose thumbnail couldn't be made, by their size and time when it failed: browsing
+	// their folder again doesn't retry (and log) them until the file changes, the server
+	// restarts, or the folder's thumbnails are refreshed.
+	failed map[string]fileStamp
 }
 
+type fileStamp struct {
+	size    int64
+	modTime int64
+}
+
+// ErrThumbnailFailedBefore is a file whose thumbnail already failed, unchanged since.
+var ErrThumbnailFailedBefore = errors.New("its thumbnail failed before")
+
 func NewThumbnailGenerator() *ThumbnailGenerator {
-	return &ThumbnailGenerator{}
+	return &ThumbnailGenerator{failed: map[string]fileStamp{}}
+}
+
+// Forget lets filePath's thumbnail be tried again after a failure.
+func (tg *ThumbnailGenerator) Forget(filePath string) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	delete(tg.failed, filePath)
 }
 
 // GenerateThumbnailHash creates a unique hash for a file path
@@ -60,6 +80,21 @@ func GetThumbnailPath(baseDir, hash, ext string) (fullPath, urlPath string) {
 func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
+	var stamp fileStamp
+	if st, err := os.Stat(filePath); err == nil {
+		stamp = fileStamp{st.Size(), st.ModTime().UnixNano()}
+		if tg.failed[filePath] == stamp {
+			return "", ErrThumbnailFailedBefore
+		}
+	}
+	path, err := tg.generate(filePath)
+	if err != nil && stamp != (fileStamp{}) {
+		tg.failed[filePath] = stamp
+	}
+	return path, err
+}
+
+func (tg *ThumbnailGenerator) generate(filePath string) (string, error) {
 
 	// Determine media type
 	ext := strings.ToLower(filepath.Ext(filePath))

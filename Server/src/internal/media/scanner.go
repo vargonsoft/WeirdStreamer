@@ -342,11 +342,19 @@ func (s *Scanner) GenerateVideoThumbnail(videoPath string) string {
 
 	// Use the shared thumbnail generator
 	if _, err := s.thumbnailGenerator.GenerateThumbnail(videoPath); err != nil {
+		if errors.Is(err, ErrThumbnailFailedBefore) {
+			return ""
+		}
 		log.Printf("[SCANNER] WARNING: Failed to generate video thumbnail for %s: %v", videoPath, err)
 		return ""
 	}
 
 	return thumbnailURL
+}
+
+// ForgetThumbnailFailure lets path's thumbnail be tried again (refreshing a folder's thumbnails).
+func (s *Scanner) ForgetThumbnailFailure(path string) {
+	s.thumbnailGenerator.Forget(path)
 }
 
 func (s *Scanner) GenerateImageThumbnail(imagePath string) string {
@@ -366,6 +374,9 @@ func (s *Scanner) GenerateImageThumbnail(imagePath string) string {
 
 	// Use the shared thumbnail generator
 	if _, err := s.thumbnailGenerator.GenerateThumbnail(imagePath); err != nil {
+		if errors.Is(err, ErrThumbnailFailedBefore) {
+			return ""
+		}
 		log.Printf("[SCANNER] WARNING: Failed to generate image thumbnail for %s: %v", imagePath, err)
 		return ""
 	}

@@ -65,7 +65,12 @@ for each TODO item are at the end of this file.
 ## Live server
 
 - Runs from `Server/` as `./bin/server`, under `Server/scripts/live.sh` in the user's "WeirdStreamer live"
-  terminal tab. Each start logs to its own file in the folder `server.logsPath` names (the last 20 are kept). Port 9000, HTTPS. Config is `Server/config.json`
+  terminal tab. Each start logs to its own file in the folder `server.logsPath` names (the last 20 are kept). The server
+  also writes `auth.log` (sign-ins, refused tokens once an hour per address, user and password
+  changes) and `access.log` (a combined-format line per request, with the user and milliseconds)
+  there, each moved to `.1`…`.5` at 10 MB (`internal/logs`). ffmpeg's progress isn't logged:
+  transcodes log `[TRANSCODE] Started`, `Finished`, `Stopped` or `Failed` (with ffmpeg's last lines).
+  Port 9000, HTTPS. Config is `Server/config.json`
   (git-ignored). Data is in the folders `config.json` names (databases, thumbnails, trickplay, artwork, download
   encodes).
 - To deploy server code: `Server/scripts/restart-live.sh`. It checks for active streams, builds, stops

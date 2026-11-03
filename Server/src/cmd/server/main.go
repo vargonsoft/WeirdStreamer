@@ -19,6 +19,7 @@ import (
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/handlers"
+	"github.com/weirdstreamer/server/internal/logs"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/metadata"
 )
@@ -55,6 +56,10 @@ func main() {
 
 	if err := config.Load(configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+	// auth.log and access.log, beside live.sh's server-*.log
+	if err := logs.Open(config.GlobalConfig.Server.LogsPath); err != nil {
+		log.Printf("Warning: could not open the auth and access logs: %v", err)
 	}
 
 	// Ensure directories exist
@@ -250,7 +255,7 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)
 	log.Printf("Starting server on %s", addr)
 
-	srv := &http.Server{Addr: addr, Handler: r}
+	srv := &http.Server{Addr: addr, Handler: logs.Access(r)}
 	go func() {
 		var err error
 		// Check if HTTP/2 is enabled and certificates exist

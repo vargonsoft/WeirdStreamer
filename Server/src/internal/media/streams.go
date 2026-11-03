@@ -103,6 +103,26 @@ func (s *StreamSession) viewer() string {
 	return s.key
 }
 
+// Who names the session's viewer for the log: "user on client (address)".
+func (s *StreamSession) Who() string {
+	if s == nil {
+		return "nobody"
+	}
+	s.t.mu.Lock()
+	defer s.t.mu.Unlock()
+	who := s.info.User
+	if who == "" {
+		who = "anonymous"
+	}
+	if s.info.Client != "" {
+		who += " on " + s.info.Client
+	}
+	if s.info.ClientIP != "" {
+		who += " (" + s.info.ClientIP + ")"
+	}
+	return who
+}
+
 // Begin records a request for a stream (created with init the first time) and returns its
 // session; call End when the request finishes.
 func (t *StreamTracker) Begin(key string, init func(*StreamInfo)) *StreamSession {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/logs"
 	"github.com/weirdstreamer/server/internal/models"
 )
 
@@ -107,6 +108,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to create user")
 		return
 	}
+	logs.Auth("User %q created by %q (admin: %t, group: %q), from %s", user.Username, claims.Username, user.IsAdmin, user.Group, clientIP(r))
 
 	response := UserResponse{
 		ID:       user.ID,
@@ -149,6 +151,14 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to update user")
 		return
 	}
+	var changes []string
+	if req.IsAdmin != nil {
+		changes = append(changes, fmt.Sprintf("admin: %t", *req.IsAdmin))
+	}
+	if req.Group != nil {
+		changes = append(changes, fmt.Sprintf("group: %q", *req.Group))
+	}
+	logs.Auth("User %q changed by %q (%s), from %s", username, claims.Username, strings.Join(changes, ", "), clientIP(r))
 
 	respondJSON(w, http.StatusOK, map[string]string{"message": "User updated successfully"})
 }
@@ -177,6 +187,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to delete user")
 		return
 	}
+	logs.Auth("User %q deleted by %q, from %s", username, claims.Username, clientIP(r))
 
 	respondJSON(w, http.StatusOK, map[string]string{"message": "User deleted successfully"})
 }
@@ -226,6 +237,7 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to update password")
 		return
 	}
+	logs.Auth("Password changed: %q, from %s", user.Username, clientIP(r))
 
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Password changed successfully"})
 }

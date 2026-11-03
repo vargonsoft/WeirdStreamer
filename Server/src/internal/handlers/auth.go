@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/weirdstreamer/server/internal/auth"
+	"github.com/weirdstreamer/server/internal/logs"
 	"github.com/weirdstreamer/server/internal/models"
 )
 
@@ -66,6 +67,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Logout clears the browser session cookie.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	// Only for the log: whose session the cookie held (tokenFromRequest skips cookies on a POST).
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
+		if claims, err := h.authService.ValidateToken(cookie.Value); err == nil {
+			logs.Auth("Signed out: %q from %s", claims.Username, clientIP(r))
+		}
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
@@ -96,15 +103,21 @@ func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 
 		claims, err := h.authService.ValidateToken(token)
 		if err != nil {
+			// Once an hour per address: a client with an expired token is refused on every request.
+			ip := clientIP(r)
+			logs.AuthOnce("token|"+ip, "Token refused from %s (%s %s): %v", ip, r.Method, r.URL.Path, err)
 			respondError(w, http.StatusUnauthorized, "Invalid token")
 			return
 		}
 
 		user, err := h.authService.UserForClaims(claims)
 		if err != nil {
+			ip := clientIP(r)
+			logs.AuthOnce("user|"+ip+"|"+claims.Username, "Token refused from %s: user %q is gone", ip, claims.Username)
 			respondError(w, http.StatusUnauthorized, "Unknown user")
 			return
 		}
+		logs.SetUser(r, user.Username)
 
 		ctx := auth.WithClaims(r.Context(), claims)
 		ctx = auth.WithUser(ctx, user)
