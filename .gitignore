@@ -27,6 +27,8 @@ local.properties
 # Test binaries (go test -c) and coverage output
 *.test
 *.out
+# Release builds (release.sh)
+/dist/
 # Go workspace file
 go.work
 # Thumbnails cache

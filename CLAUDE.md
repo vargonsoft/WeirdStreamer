@@ -153,6 +153,15 @@ for each TODO item are at the end of this file.
   `-i subs.srt` inputs and `-metadata:s:s:N language=…` builds an MKV with many subtitle tracks.
   Put new files under `Server/e2e/sample/Movies/<Folder>/`.
 
+## Release builds
+
+`./release.sh` (repo root) runs the server tests, then builds `dist/<version>/`: the server package
+(`weirdstreamer-server-<version>-linux-<arch>.tar.gz`: `bin/server`, `bin/cli`, the web UI with this
+APK to download, `config.example.yml` and the setup and run scripts; needs ffmpeg and PyYAML, not Go),
+the APK and `SHA256SUMS`. It also publishes the APK to the web download links (`--no-web` doesn't).
+The version is the app's (`0.0.1.<commit count>`). It refuses uncommitted changes (`--allow-dirty`
+builds them as `<version>-dirty`) and installs on no device.
+
 ## Deploying the Android app
 
 `Android/deploy-release.sh` builds the R8 release APK and installs it only on the destinations

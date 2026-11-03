@@ -33,6 +33,13 @@ If `streaming.enableHTTP2` is on and the certificate and key files (`server.cert
 `server.keyFile`, default `cert.pem` and `key.pem`) exist, the server uses HTTPS (with HTTP/2).
 Otherwise it falls back to plain HTTP.
 
+## Release package
+
+`./release.sh` at the top of the repository builds a release into `dist/<version>/`: a server
+package (`weirdstreamer-server-<version>-linux-<arch>.tar.gz`) with the binaries, the web UI, the
+Android app to download, `config.example.yml` and the scripts, plus the APK and `SHA256SUMS`. Unpack
+the package and run `./start-server.sh` in it: it needs ffmpeg and Python's PyYAML, but not Go.
+
 ## Docker
 
 Files are in `docker/`. Copy `config.example.yml` to `config.yml` and edit it, then run

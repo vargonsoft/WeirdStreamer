@@ -23,15 +23,18 @@ if [ -f config.yml ]; then
 fi
 
 echo "== Checking what the server needs"
-missing=()
-command -v gcc >/dev/null || missing+=(gcc)
-command -v ffmpeg >/dev/null || missing+=(ffmpeg)
-python3 -c 'import yaml' 2>/dev/null || missing+=(python3-yaml)
+# A release package comes built: then Go and gcc aren't needed.
+build_needed=1
+[ -x bin/server ] && [ -x bin/cli ] && build_needed=0
+missing=() packages=()
+if [ "$build_needed" = 1 ] && ! command -v gcc >/dev/null; then missing+=(gcc); packages+=(build-essential); fi
+command -v ffmpeg >/dev/null || { missing+=(ffmpeg); packages+=(ffmpeg); }
+python3 -c 'import yaml' 2>/dev/null || { missing+=(python3-yaml); packages+=(python3-yaml); }
 if [ "${#missing[@]}" -gt 0 ]; then
     echo "Not installed: ${missing[*]}. gcc is needed to build; ffmpeg for thumbnails and streaming;"
     echo "PyYAML for the scripts that read config.yml."
     if command -v apt-get >/dev/null && ask_yes "Install them with apt (asks for sudo)?" y; then
-        sudo apt-get install -y build-essential ffmpeg python3-yaml
+        sudo apt-get install -y "${packages[@]}"
     elif command -v brew >/dev/null && ask_yes "Install them with Homebrew?" y; then
         brew install ffmpeg
         python3 -m pip install --user pyyaml
@@ -46,9 +49,9 @@ if ! scripts/check-ffmpeg.sh; then
     exit 1
 fi
 
-# go.mod asks for Go 1.24.4 or later
-need_go=1
-if command -v go >/dev/null; then
+# go.mod asks for Go 1.24.4 or later (only to build)
+need_go=$build_needed
+if [ "$need_go" = 1 ] && command -v go >/dev/null; then
     installed=$(go env GOVERSION | sed 's/^go//')
     lowest=$(printf '%s\n%s\n' 1.24.4 "$installed" | sort -V | head -1)
     [ "$lowest" = 1.24.4 ] && need_go=0
