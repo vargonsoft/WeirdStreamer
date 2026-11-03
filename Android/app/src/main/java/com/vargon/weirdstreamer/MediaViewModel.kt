@@ -387,6 +387,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var newItems by mutableStateOf<List<ContinueItem>>(emptyList())
         private set
 
+    /** TV: the card last focused in each row above a grid (by heading), kept while the grid
+     *  scrolls the rows out of composition: coming back, focus returns to it. */
+    val rowFocus = androidx.compose.runtime.mutableStateMapOf<String, String>()
+
     /** Whether the page leads with a row of videos: Continue Watching, Recently Added or both. */
     val hasTopRows: Boolean get() = continueItems.isNotEmpty() || newItems.isNotEmpty()
 

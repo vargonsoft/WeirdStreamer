@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Movie
@@ -31,7 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -90,12 +91,19 @@ private fun TvVideoRow(
     Column(modifier = modifier) {
         Text(heading, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 10.dp))
         // The requesters are on the row, not its first card, which scrolls away (and out of
-        // composition) along the row: focusing the row brings back the card last focused in it.
+        // composition) along the row: focusing the row goes to the card last focused in it, or
+        // the first. The view model keeps that card, as the grid scrolls the whole row out of
+        // composition too (Compose's focusRestorer then lost track of it and picked another).
+        val last = viewModel.rowFocus[heading]
+        val entryIndex = items.indexOfFirst { it.path == last }.coerceAtLeast(0)
+        val entry = remember { FocusRequester() }
+        val rowState = rememberLazyListState(initialFirstVisibleItemIndex = entryIndex)
         LazyRow(
+            state = rowState,
             horizontalArrangement = Arrangement.spacedBy(20.dp),
             contentPadding = PaddingValues(horizontal = FocusBleed, vertical = 8.dp),
             modifier = requesters.fold(Modifier.focusBleed()) { m, r -> m.focusRequester(r) }
-                .focusRestorer()
+                .focusProperties { onEnter = { entry.tryFocus() } }
                 .onPreviewKeyEvent { e ->
                     e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown && onDown()
                 }
@@ -112,6 +120,8 @@ private fun TvVideoRow(
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
+                            .then(if (index == entryIndex) Modifier.focusRequester(entry) else Modifier)
+                            .onFocusChanged { if (it.isFocused) viewModel.rowFocus[heading] = item.path }
                             .focusProperties { this.up = up }
                             .onPreviewKeyEvent { e ->
                                 val select = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
