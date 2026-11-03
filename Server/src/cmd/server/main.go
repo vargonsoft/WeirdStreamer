@@ -216,6 +216,7 @@ func main() {
 	api.HandleFunc("/groups", configHandler.GetAvailableGroups).Methods("GET")
 	api.HandleFunc("/groups", configHandler.CreateGroup).Methods("POST")
 	api.HandleFunc("/groups/{name}", configHandler.RenameGroup).Methods("PUT")
+	api.HandleFunc("/groups/{name}/default", configHandler.MakeDefaultGroup).Methods("PUT")
 	api.HandleFunc("/groups/{name}", configHandler.DeleteGroup).Methods("DELETE")
 
 	// User management endpoints

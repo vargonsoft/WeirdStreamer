@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -270,7 +271,7 @@ fun ServerSettingsTab(server: ServerRepository) {
             item { SectionTitle("Groups") }
             item {
                 Text("Each user is in one group, and each library lists the groups that can see it. " +
-                    "New users start in the first group, the default. Changes here apply right away.", style = MaterialTheme.typography.bodySmall,
+                    "New users start in the default group (the star makes another one the default). Changes here apply right away.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             items(groupNames.toList(), key = { "group:$it" }) { g ->
@@ -281,6 +282,15 @@ fun ServerSettingsTab(server: ServerRepository) {
                             color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
                     }
                     Spacer(Modifier.weight(1f))
+                    if (g != groupNames.firstOrNull()) {
+                        IconButton(onClick = {
+                            scope.launch {
+                                val (list, err) = attempt { server.api.makeDefaultGroup(g) }
+                                if (list != null && err == null) { applyGroups(list); groupMessage = "$g is the default group: new users start in it." to false }
+                                else groupMessage = (err ?: "Couldn't make $g the default") to true
+                            }
+                        }) { Icon(Icons.Default.StarBorder, contentDescription = "Make $g the default group") }
+                    }
                     IconButton(onClick = { renaming = g }) { Icon(Icons.Default.Edit, contentDescription = "Rename $g") }
                     IconButton(onClick = {
                         scope.launch {

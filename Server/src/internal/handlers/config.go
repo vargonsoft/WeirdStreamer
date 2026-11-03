@@ -201,6 +201,32 @@ func (h *ConfigHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, config.GlobalConfig.Groups)
 }
 
+// MakeDefaultGroup makes a group the default for new users, by moving it to the front of the
+// groups: PUT /api/groups/{name}/default. The others keep their order.
+func (h *ConfigHandler) MakeDefaultGroup(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	name := mux.Vars(r)["name"]
+	c := currentConfig()
+	if !c.HasGroup(name) {
+		respondError(w, http.StatusNotFound, fmt.Sprintf("The group %q doesn't exist", name))
+		return
+	}
+	groups := []string{name}
+	for _, g := range c.Groups {
+		if g != name {
+			groups = append(groups, g)
+		}
+	}
+	c.Groups = groups
+	if status, err := h.saveConfig(&c); err != nil {
+		respondError(w, status, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, config.GlobalConfig.Groups)
+}
+
 // RenameGroup renames a group, in the libraries that list it and for its users:
 // PUT /api/groups/{name} {"name": "new name"}
 func (h *ConfigHandler) RenameGroup(w http.ResponseWriter, r *http.Request) {

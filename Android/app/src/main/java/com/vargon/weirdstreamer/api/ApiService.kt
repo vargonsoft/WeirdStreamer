@@ -111,6 +111,10 @@ interface ApiService {
     @PUT("/api/groups/{name}")
     suspend fun renameGroup(@Path("name") name: String, @Body body: JsonObject): Response<List<String>>
 
+    /** Makes a group the default for new users: it moves to the front of the list. */
+    @PUT("/api/groups/{name}/default")
+    suspend fun makeDefaultGroup(@Path("name") name: String): Response<List<String>>
+
     @DELETE("/api/groups/{name}")
     suspend fun deleteGroup(@Path("name") name: String): Response<List<String>>
 

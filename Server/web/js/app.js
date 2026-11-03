@@ -2526,6 +2526,16 @@ function renderGroups() {
             tag.textContent = 'default';
             label.append(' ', tag);
         }
+        row.append(label);
+        if (i > 0) {
+            const makeDefault = document.createElement('button');
+            makeDefault.type = 'button';
+            makeDefault.className = 'btn btn-small secondary';
+            makeDefault.textContent = 'Make default';
+            makeDefault.title = `New users start in ${name}`;
+            makeDefault.onclick = () => handleMakeDefaultGroup(name);
+            row.append(makeDefault);
+        }
         const rename = document.createElement('button');
         rename.type = 'button';
         rename.className = 'btn btn-small secondary';
@@ -2536,7 +2546,7 @@ function renderGroups() {
         remove.className = 'btn btn-danger btn-small';
         remove.innerHTML = iconSvg('delete') + '<span class="btn-label">Remove</span>';
         remove.onclick = () => handleRemoveGroup(name);
-        row.append(label, rename, remove);
+        row.append(rename, remove);
         list.appendChild(row);
     });
     renderNewUserGroups();
@@ -2582,6 +2592,16 @@ async function handleRenameGroup(name) {
         setGroups(groups);
         groupsMessage(`Renamed ${name} to ${newName}, for its users and libraries`);
         if (document.getElementById('users-tab').classList.contains('active')) loadUsers();
+    } catch (error) {
+        groupsMessage(error.message, true);
+    }
+}
+
+async function handleMakeDefaultGroup(name) {
+    try {
+        setGroups(await api.makeDefaultGroup(name));
+        renderNewUserGroups(true); // Create New User starts on it now
+        groupsMessage(`${name} is the default group: new users start in it`);
     } catch (error) {
         groupsMessage(error.message, true);
     }

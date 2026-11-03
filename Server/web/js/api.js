@@ -421,6 +421,11 @@ class MediaAPI {
         return this.request(`/api/groups/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify({ name: newName }) });
     }
 
+    // Makes a group the default for new users (the first); returns the groups in their new order.
+    async makeDefaultGroup(name) {
+        return this.request(`/api/groups/${encodeURIComponent(name)}/default`, { method: 'PUT' });
+    }
+
     async deleteGroup(name) {
         return this.request(`/api/groups/${encodeURIComponent(name)}`, { method: 'DELETE' });
     }
