@@ -83,6 +83,11 @@ class ServerRepository(
         apiService.downloadOptions(Base64.encodeToString(path.toByteArray(), Base64.NO_WRAP)).body()
     }.getOrNull()
 
+    /** A file's container, video, audio and subtitle tracks; null when the server can't say. */
+    suspend fun codecs(path: String): com.vargon.weirdstreamer.api.models.CodecsInfo? = runCatching {
+        apiService.getCodecs(Base64.encodeToString(path.toByteArray(), Base64.NO_WRAP)).body()
+    }.getOrNull()
+
     /** Who the saved login is, from its token's claims: username and whether they're an admin. */
     fun signedInAs(): Pair<String?, Boolean> {
         val token = credentialManager.getServerToken(serverUrl) ?: return null to false

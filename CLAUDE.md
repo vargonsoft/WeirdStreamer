@@ -52,7 +52,13 @@ for each TODO item are at the end of this file.
   - Phone UI: `Phone*.kt` (`PhoneVideoPlayer.kt` is the phone player), `PlaybackUi.kt` (shared
     progress overlays and the phone Continue row), `PhoneDownloads.kt`.
   - `downloads/`: offline downloads (WorkManager worker, `DownloadStore`, `LocalProgress` for
-    progress played offline).
+    progress played offline). The download dialog checks each file against the phone's decoders
+    (`OfflinePlayback`: video codec, bit depth and size; the default audio track) and offers
+    Original, Compatibility (full quality, keeping what plays: the server job's `keep_video` /
+    `keep_audio`, the rest H.264 CRF 18 and stereo AAC; nothing to convert makes it an original)
+    or Compressed. Each download also saves its subtitle tracks (text as WebVTT, PGS as .sup; the
+    phone's languages, forced ones and files beside the video) in `subtitles/<id>/`, which
+    `ServerSubtitles.forDownload` reads offline. Older downloads get theirs on the worker's next run.
   - `ui/components/UiUtils.kt`: transcode modes, `VideoDecoders` (hardware decoder limits),
     `subtitlesOffByDefault`, `subtitleLabels`, `SubtitleMemory`.
 

@@ -17,8 +17,10 @@ import (
 	"time"
 )
 
-// Compressed downloads for offline viewing: the server encodes a file to a temporary MP4 (one at
-// a time), and the client downloads it with resume support, then deletes the job.
+// Compressed and compatible downloads for offline viewing: the server encodes a file to a
+// temporary MP4 (one at a time), and the client downloads it with resume support, then deletes
+// the job. A compatible copy (Compatibility) keeps the video or the audio as it is where the
+// device plays it, and encodes only the rest.
 
 // Download qualities: a target share of the original's size and of its resolution.
 var (
@@ -28,24 +30,28 @@ var (
 
 const (
 	downloadAudioBitrate = 128_000
+	fullAudioBitrate     = 192_000        // stereo AAC in a full-quality copy
 	downloadKeepReady    = 24 * time.Hour // a finished file nobody fetched is removed after this
 	maxJobsPerUser       = 50
 )
 
 // DownloadJob is one encode for a download.
 type DownloadJob struct {
-	ID       string  `json:"id"`
-	Owner    int64   `json:"-"`
-	Path     string  `json:"path"`
-	SizePct  int     `json:"size_pct"` // 100: full quality (only for discs, which can't be downloaded as they are)
-	Scale    int     `json:"scale"`
-	Status   string  `json:"status"` // queued, encoding, ready, failed
-	Progress float64 `json:"progress"`
-	Error    string  `json:"error,omitempty"`
-	Size     int64   `json:"size,omitempty"` // bytes, once ready
-	Width    int     `json:"width,omitempty"`
-	Height   int     `json:"height,omitempty"`
-	Duration float64 `json:"duration"`
+	ID      string `json:"id"`
+	Owner   int64  `json:"-"`
+	Path    string `json:"path"`
+	SizePct int    `json:"size_pct"` // 100: full quality (only for discs, which can't be downloaded as they are)
+	Scale   int    `json:"scale"`
+	// Kept as they are instead of encoded (full size and resolution only): what the device plays.
+	KeepVideo bool    `json:"keep_video,omitempty"`
+	KeepAudio bool    `json:"keep_audio,omitempty"`
+	Status    string  `json:"status"` // queued, encoding, ready, failed
+	Progress  float64 `json:"progress"`
+	Error     string  `json:"error,omitempty"`
+	Size      int64   `json:"size,omitempty"` // bytes, once ready
+	Width     int     `json:"width,omitempty"`
+	Height    int     `json:"height,omitempty"`
+	Duration  float64 `json:"duration"`
 
 	file    string
 	readyAt time.Time
@@ -115,12 +121,18 @@ func Source(path string) (*DownloadSource, error) {
 	return src, err
 }
 
-// Create queues an encode of path for owner.
-func (m *DownloadManager) Create(owner int64, path string, sizePct, scale int) (*DownloadJob, error) {
+// Create queues an encode of path for owner: at sizePct of its size and scale of its resolution,
+// keeping the video or audio as they are where keepVideo or keepAudio say (full quality only).
+func (m *DownloadManager) Create(owner int64, path string, sizePct, scale int, keepVideo, keepAudio bool) (*DownloadJob, error) {
 	if !contains(append([]int{100}, DownloadSizes...), sizePct) || !contains(DownloadScales, scale) {
 		return nil, errors.New("unknown quality")
 	}
-	if sizePct == 100 && scale == 100 && !IsDiscImage(path) {
+	full := sizePct == 100 && scale == 100
+	disc := IsDiscImage(path)
+	if (keepVideo || keepAudio) && (!full || disc) {
+		return nil, errors.New("only a full-quality copy of a file keeps its video or audio")
+	}
+	if full && !disc && keepVideo && keepAudio {
 		return nil, errors.New("original files are downloaded directly")
 	}
 	src, err := Source(path)
@@ -142,8 +154,8 @@ func (m *DownloadManager) Create(owner int64, path string, sizePct, scale int) (
 		return nil, errors.New("too many downloads being prepared")
 	}
 	id := newID()
-	job := &DownloadJob{ID: id, Owner: owner, Path: path, SizePct: sizePct, Scale: scale, Status: "queued",
-		Duration: src.Duration, file: filepath.Join(m.dir, id+".mp4")}
+	job := &DownloadJob{ID: id, Owner: owner, Path: path, SizePct: sizePct, Scale: scale, KeepVideo: keepVideo,
+		KeepAudio: keepAudio, Status: "queued", Duration: src.Duration, file: filepath.Join(m.dir, id+".mp4")}
 	m.jobs[id] = job
 	m.mu.Unlock()
 	m.queue <- job
@@ -230,12 +242,31 @@ func (m *DownloadManager) work() {
 				job.Width, job.Height = w, h
 				m.mu.Unlock()
 			}
-			log.Printf("[DOWNLOAD] Ready: %s (%d%% size, %d%% resolution)", filepath.Base(job.Path), job.SizePct, job.Scale)
+			log.Printf("[DOWNLOAD] Ready: %s (%s)", filepath.Base(job.Path), job.describe())
 		}
 	}
 }
 
-// encode writes job's MP4: H.264 at a bitrate that lands near the target size, AAC stereo.
+// describe is the job's quality, for the log.
+func (j *DownloadJob) describe() string {
+	if j.SizePct == 100 && j.Scale == 100 {
+		kept := map[bool]string{true: "kept", false: "encoded"}
+		return "full quality, video " + kept[j.KeepVideo] + ", audio " + kept[j.KeepAudio]
+	}
+	return fmt.Sprintf("%d%% size, %d%% resolution", j.SizePct, j.Scale)
+}
+
+// mp4Audio reports whether an audio codec can be copied into MP4 as it is.
+func mp4Audio(codec string) bool {
+	switch codec {
+	case "aac", "ac3", "eac3", "mp3", "opus", "flac", "alac":
+		return true
+	}
+	return false
+}
+
+// encode writes job's MP4: H.264 at a bitrate that lands near the target size (or at full quality),
+// AAC stereo, from the default audio track; what the job keeps is copied instead.
 func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 	src, err := Source(job.Path)
 	if err != nil {
@@ -247,6 +278,7 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 	}
 
 	var args []string
+	keepAudio, hevc := job.KeepAudio, false
 	if src.Disc {
 		res := ""
 		if height > 0 {
@@ -264,16 +296,30 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 			}
 		}
 	} else {
-		args = []string{"-i", job.Path, "-map", "0:v:0", "-map", "0:a:0?"}
+		codecs, err := ProbeCodecs(job.Path)
+		if err != nil {
+			return err
+		}
+		args = []string{"-i", job.Path, "-map", "0:v:0", "-map", fmt.Sprintf("0:a:%d?", codecs.DefaultAudio())}
 		if height > 0 {
 			args = append(args, "-vf", fmt.Sprintf("scale=-2:%d", height))
 		}
+		if len(codecs.Audio) > 0 && !mp4Audio(codecs.Audio[codecs.DefaultAudio()].Codec) {
+			keepAudio = false // DTS, TrueHD…: MP4 can't carry it
+		}
+		hevc = codecs.Video != nil && codecs.Video.Codec == "hevc"
 	}
 
-	args = append(args, "-c:v", "libx264", "-preset", "veryfast")
-	if job.SizePct == 100 {
-		args = append(args, "-crf", "18") // full quality (discs)
-	} else {
+	switch {
+	case job.KeepVideo:
+		args = append(args, "-c:v", "copy")
+		if hevc {
+			args = append(args, "-tag:v", "hvc1") // what Apple and Android players look for in MP4
+		}
+	case job.SizePct == 100:
+		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p") // full quality
+	default:
+		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p")
 		total := float64(src.Size) * 8 * float64(job.SizePct) / 100 / src.Duration
 		video := int64(total) - downloadAudioBitrate
 		if video < 150_000 {
@@ -282,9 +328,17 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 		b := strconv.FormatInt(video, 10)
 		args = append(args, "-b:v", b, "-maxrate", strconv.FormatInt(video*3/2, 10), "-bufsize", strconv.FormatInt(video*2, 10))
 	}
+	if keepAudio {
+		args = append(args, "-c:a", "copy")
+	} else {
+		bitrate := downloadAudioBitrate
+		if job.SizePct == 100 {
+			bitrate = fullAudioBitrate
+		}
+		args = append(args, "-c:a", "aac", "-b:a", strconv.Itoa(bitrate), "-ac", "2")
+	}
 	part := job.file + ".part"
-	args = append(args, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", strconv.Itoa(downloadAudioBitrate), "-ac", "2",
-		"-movflags", "+faststart", "-f", "mp4", "-progress", "pipe:1", "-nostats", "-y", part)
+	args = append(args, "-movflags", "+faststart", "-f", "mp4", "-progress", "pipe:1", "-nostats", "-y", part)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", append([]string{"-hide_banner", "-loglevel", "error", "-nostdin"}, args...)...)
 	stdout, err := cmd.StdoutPipe()

@@ -55,9 +55,13 @@ data class SubtitleCue(val startMs: Long, val endMs: Long, val text: AnnotatedSt
  * from the server as WebVTT, a couple of minutes at a time, and are drawn by [SubtitleOverlay], so
  * they show the same whatever the stream is (a transcode has none of its own). PGS tracks come the
  * same way, as pictures for [decodePgs]; other picture tracks (DVD) can only be burned into a
- * transcode ([burnIn]).
+ * transcode ([burnIn]). A download played on the phone has its tracks saved beside it ([saved]):
+ * they're read from there, whole, with no server.
  */
-class ServerSubtitles(private val api: ApiService, private val encodedPath: String) {
+class ServerSubtitles(private val api: ApiService?, private val encodedPath: String, private val saved: java.io.File? = null) {
+    /** Whether the server is there: for searching and downloading more, and saving timing. */
+    val online: Boolean get() = api != null
+
     var tracks by mutableStateOf<List<SubtitleTrack>>(emptyList())
         private set
     var selected by mutableIntStateOf(-1)
@@ -88,6 +92,7 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
         val moved = track.copy(offsetMs = track.offsetMs + deltaMs)
         tracks = tracks.toMutableList().also { it[selected] = moved }
         val key = moved.key ?: return
+        val api = api ?: return // a download: for this viewing only
         saving?.cancel()
         saving = saver.launch {
             delay(600)
@@ -103,9 +108,36 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
     private var generation = 0 // a new choice drops cues still arriving for the old one
 
     suspend fun load() {
-        val got = withContext(Dispatchers.IO) { runCatching { api.getCodecs(encodedPath).body() }.getOrNull() }
-        got?.subtitles?.let { tracks = it }
+        val got = withContext(Dispatchers.IO) {
+            if (saved != null) runCatching {
+                com.google.gson.Gson().fromJson(java.io.File(saved, "tracks.json").readText(), Array<SubtitleTrack>::class.java).toList()
+            }.getOrNull()
+            else runCatching { api?.getCodecs(encodedPath)?.body() }.getOrNull()?.subtitles
+        }
+        got?.let { tracks = it }
         loaded = true
+    }
+
+    private var savedGeneration = -1
+
+    /** A download's saved track, read whole once it's chosen. */
+    private suspend fun loadSaved(dir: java.io.File) {
+        if (savedGeneration == generation) return
+        val track = selectedTrack ?: return
+        val gen = generation
+        val file = java.io.File(dir, com.vargon.weirdstreamer.downloads.savedSubtitleName(track))
+        val (text, pics) = withContext(Dispatchers.IO) {
+            runCatching {
+                if (track.text) parseWebVtt(file.readText()) to emptyList<PgsSet>()
+                else emptyList<SubtitleCue>() to decodePgs(file.readBytes())
+            }.getOrDefault(emptyList<SubtitleCue>() to emptyList())
+        }
+        if (gen != generation) return
+        cues = text
+        pictures = pics
+        fromMs = 0
+        untilMs = Long.MAX_VALUE
+        savedGeneration = gen
     }
 
     fun select(index: Int) {
@@ -119,6 +151,8 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
 
     /** Loads the cues around [positionMs], and the next window before it's needed. */
     suspend fun keepAhead(playerMs: Long) {
+        saved?.let { loadSaved(it); return }
+        val api = api ?: return
         val positionMs = playerMs - offsetMs // in the subtitles' own time
         selectedTrack?.takeIf { it.drawn }?.let { track ->
             keepPicturesAhead(track, positionMs)
@@ -149,6 +183,7 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
     }
 
     private suspend fun keepPicturesAhead(track: SubtitleTrack, positionMs: Long) {
+        val api = api ?: return
         val outside = positionMs < fromMs || positionMs > untilMs
         if (!outside && positionMs < untilMs - AHEAD_MS) return
         val start = if (outside) (positionMs - 10_000).coerceAtLeast(0) else untilMs
@@ -187,6 +222,7 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
 
     /** OpenSubtitles results for the video; throws with the server's message. */
     suspend fun search(languages: List<String>): SubtitleSearch = withContext(Dispatchers.IO) {
+        val api = api ?: error("Not connected to the server")
         val res = api.searchSubtitles(encodedPath, languages.joinToString(","))
         res.body() ?: error(serverMessage(res.errorBody()?.string()) ?: "Search failed (${res.code()})")
     }
@@ -194,6 +230,7 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
     /** Downloads (or reuses) a result and selects it; throws with the server's message. */
     suspend fun download(hit: SubtitleHit): Int {
         val got = withContext(Dispatchers.IO) {
+            val api = api ?: error("Not connected to the server")
             val res = api.downloadSubtitle(SubtitleDownloadRequest(encodedPath, hit))
             res.body() ?: error(serverMessage(res.errorBody()?.string()) ?: "Download failed (${res.code()})")
         }
@@ -210,6 +247,13 @@ class ServerSubtitles(private val api: ApiService, private val encodedPath: Stri
         fun forStream(streamUrl: String): ServerSubtitles? {
             val (api, encoded) = streamApi(streamUrl) ?: return null
             return ServerSubtitles(api, encoded)
+        }
+
+        /** For a download playing from this phone (a file:// URL): its saved tracks, if it has any. */
+        fun forDownload(path: String): ServerSubtitles? {
+            val item = com.vargon.weirdstreamer.downloads.DownloadStore.ofLocalPath(path) ?: return null
+            val dir = com.vargon.weirdstreamer.downloads.DownloadStore.subtitleDir(item)
+            return if (java.io.File(dir, "tracks.json").exists()) ServerSubtitles(null, "", dir) else null
         }
 
         /** The API of the server a stream URL comes from, and the video's encoded path; null for other sources. */

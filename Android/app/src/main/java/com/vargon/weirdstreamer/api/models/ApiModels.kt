@@ -189,7 +189,10 @@ data class DownloadOptions(
 data class CreateDownloadRequest(
     @SerializedName("path") val path: String, // base64 server path
     @SerializedName("size_pct") val sizePct: Int,
-    @SerializedName("scale") val scale: Int
+    @SerializedName("scale") val scale: Int,
+    // Compatibility: kept as they are (what this device plays); the rest is encoded
+    @SerializedName("keep_video") val keepVideo: Boolean = false,
+    @SerializedName("keep_audio") val keepAudio: Boolean = false
 )
 
 /** A server-side encode for a compressed download. */
@@ -468,6 +471,7 @@ data class AudioTrackInfo(
 
 data class VideoCodec(
     @SerializedName("codec") val codec: String = "",
+    @SerializedName("profile") val profile: String? = null,
     @SerializedName("pix_fmt") val pixFmt: String? = null,
 )
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -23,13 +24,13 @@ func TestDownloadEncode(t *testing.T) {
 	st, _ := os.Stat(src)
 
 	m := NewDownloadManager(filepath.Join(dir, "jobs"))
-	if _, err := m.Create(1, src, 100, 100); err == nil {
+	if _, err := m.Create(1, src, 100, 100, true, true); err == nil {
 		t.Error("an original download of a plain file was accepted as a job")
 	}
-	if _, err := m.Create(1, src, 33, 100); err == nil {
+	if _, err := m.Create(1, src, 33, 100, false, false); err == nil {
 		t.Error("an unknown size was accepted")
 	}
-	job, err := m.Create(1, src, 25, 50)
+	job, err := m.Create(1, src, 25, 50, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +65,53 @@ func TestDownloadEncode(t *testing.T) {
 	}
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Errorf("file left after delete: %v", err)
+	}
+}
+
+// A compatible copy keeps what it's told to as it is and encodes the rest: here HEVC video kept
+// (tagged hvc1 for MP4) and AC-3 5.1 audio made stereo AAC, from the default track.
+func TestDownloadKeepsVideo(t *testing.T) {
+	for _, tool := range []string{"ffmpeg", "ffprobe"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skip(tool + " not installed")
+		}
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "clip.mkv")
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25",
+		"-f", "lavfi", "-i", "sine=frequency=440", "-f", "lavfi", "-i", "sine=frequency=880", "-t", "3",
+		"-map", "0", "-map", "1", "-map", "2", "-c:v", "libx265", "-x265-params", "log-level=error",
+		"-c:a:0", "aac", "-c:a:1", "ac3", "-ac:a:1", "6", "-disposition:a:0", "0", "-disposition:a:1", "default",
+		"-y", src).CombinedOutput(); err != nil {
+		t.Fatalf("make clip: %v %s", err, out)
+	}
+	m := NewDownloadManager(filepath.Join(dir, "jobs"))
+	if _, err := m.Create(1, src, 50, 100, true, false); err == nil {
+		t.Error("a compressed copy that keeps the video was accepted")
+	}
+	job, err := m.Create(1, src, 100, 100, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for job.Status != "ready" && job.Status != "failed" {
+		if time.Now().After(deadline) {
+			t.Fatal("encode did not finish")
+		}
+		time.Sleep(200 * time.Millisecond)
+		job = m.Get(1, job.ID)
+	}
+	if job.Status != "ready" {
+		t.Fatalf("job = %+v", job)
+	}
+	file, _ := m.File(1, job.ID)
+	out, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "stream=codec_name,codec_tag_string,channels",
+		"-of", "csv=p=0", file).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out)); got != "hevc,hvc1\naac,mp4a,2" {
+		t.Errorf("streams = %q; want the HEVC kept (hvc1) and the default AC-3 track as stereo AAC", got)
 	}
 }
 

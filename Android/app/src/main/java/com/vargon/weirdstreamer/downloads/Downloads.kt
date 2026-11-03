@@ -32,17 +32,22 @@ data class DownloadItem(
     val height: Int = 0,
     val error: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val durationSeconds: Double = 0.0 // the video's length, for progress played from the phone
+    val durationSeconds: Double = 0.0, // the video's length, for progress played from the phone
+    // Compatibility: full quality, the video and audio kept as they are where this phone plays
+    // them, the rest encoded on the server. One with nothing to encode becomes an original.
+    val compat: Boolean = false,
+    val subtitles: Boolean = false   // its subtitle tracks are saved (subtitleDir), or there are none
 ) {
     enum class State { QUEUED, PREPARING, DOWNLOADING, DONE, FAILED }
 
     val isActive get() = state == State.QUEUED || state == State.PREPARING || state == State.DOWNLOADING
-    val isOriginal get() = sizePct == 100 && scale == 100 && !isDisc
+    val isOriginal get() = sizePct == 100 && scale == 100 && !isDisc && !compat
 
-    /** "Original", "Full quality", or "50% size · 75% resolution". */
+    /** "Original", "Compatibility", "Full quality", or "50% size · 75% resolution". */
     val qualityLabel: String
         get() = when {
             isOriginal -> "Original"
+            compat -> "Compatibility"
             sizePct == 100 && scale == 100 -> "Full quality"
             else -> listOfNotNull(
                 if (sizePct < 100) "$sizePct% size" else "Full quality",
@@ -50,6 +55,9 @@ data class DownloadItem(
             ).joinToString(" · ")
         }
 }
+
+/** The file a saved subtitle track is in, in its download's subtitleDir. */
+fun savedSubtitleName(t: com.vargon.weirdstreamer.api.models.SubtitleTrack) = "${t.index}." + if (t.text) "vtt" else "sup"
 
 /**
  * The downloads on this device: kept in app storage (only this app can see them), listed in a
@@ -112,6 +120,7 @@ object DownloadStore {
         item.localFile?.let { File(it).delete() }
         item.thumbFile?.let { File(it).delete() }
         partFile(item).delete()
+        subtitleDir(item).deleteRecursively()
         save(_items.value.filter { it.id != id })
     }
 
@@ -123,6 +132,13 @@ object DownloadStore {
     }
 
     fun thumbFile(item: DownloadItem) = File(File(dir, "thumbs"), item.id + ".jpg")
+
+    /** A download's subtitle tracks: tracks.json (the server's list of them) and one file each. */
+    fun subtitleDir(item: DownloadItem) = File(File(dir, "subtitles"), item.id)
+
+    /** The finished download playing from [path] (a file:// URL), if it's one. */
+    fun ofLocalPath(path: String): DownloadItem? =
+        _items.value.firstOrNull { it.localFile != null && path == "file://${it.localFile}" }
 
     fun bytesUsed(): Long = _items.value.sumOf { d -> d.localFile?.let { File(it).length() } ?: 0L }
 

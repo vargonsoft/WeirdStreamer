@@ -198,8 +198,14 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
     // Subtitles from the server, as on the TV and the web: the video's own tracks, then files
     // beside it and downloads, drawn over the video whatever the stream. A picture track is burned
-    // into a transcode. SMB files, downloads on this phone and discs have none.
-    val serverSubs = remember(path) { if (isSmbSource || isLocal || isDisc) null else ServerSubtitles.forStream(path) }
+    // into a transcode. A download on this phone has the tracks saved with it; SMB files and discs have none.
+    val serverSubs = remember(path) {
+        when {
+            isLocal -> ServerSubtitles.forDownload(path)
+            isSmbSource || isDisc -> null
+            else -> ServerSubtitles.forStream(path)
+        }
+    }
     val burnIn = serverSubs?.burnIn ?: -1
     // Stereo audio in transcodes, once a surround one has failed to decode (AudioFallback)
     var stereoAudio by remember(path) { mutableStateOf(AudioFallback.stereo) }
@@ -229,7 +235,11 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     var showSubtitleMenu by remember { mutableStateOf(false) }
     var showTiming by remember { mutableStateOf(false) }
     var showSubtitleSearch by remember { mutableStateOf(false) }
-    val subtitleVideo = remember(path) { sourceItem?.originalPath ?: path.substringBefore("&") }
+    val subtitleVideo = remember(path) {
+        // A download remembers its choice with the video on the server.
+        sourceItem?.originalPath ?: (if (isLocal) com.vargon.weirdstreamer.downloads.DownloadStore.ofLocalPath(path)?.sourcePath else null)
+            ?: path.substringBefore("&")
+    }
     fun chooseServerSubtitle(index: Int) {
         val subs = serverSubs ?: return
         subs.select(index)
@@ -781,7 +791,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                         onClick = { showSubtitleMenu = false; showTiming = true }
                                     )
                                 }
-                                DropdownMenuItem(
+                                if (subs.online) DropdownMenuItem(
                                     text = { Text("Search online…") },
                                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                                     onClick = { showSubtitleMenu = false; showSubtitleSearch = true }

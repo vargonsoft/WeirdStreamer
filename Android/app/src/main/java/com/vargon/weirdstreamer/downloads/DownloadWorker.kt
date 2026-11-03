@@ -19,7 +19,11 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.vargon.weirdstreamer.CredentialManager
 import com.vargon.weirdstreamer.api.ApiClient
+import com.vargon.weirdstreamer.api.models.CodecsInfo
 import com.vargon.weirdstreamer.api.models.CreateDownloadRequest
+import com.vargon.weirdstreamer.ui.components.deviceSubtitleLanguages
+import com.google.gson.Gson
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -66,7 +70,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     override suspend fun doWork(): Result {
         DownloadStore.init(applicationContext)
         while (true) {
-            val item = DownloadStore.nextQueued() ?: return Result.success()
+            val item = DownloadStore.nextQueued() ?: return saveMissingSubtitles()
             setForeground(foregroundInfo(item, 0f))
             try {
                 download(item)
@@ -94,6 +98,13 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
         val options = api.downloadOptions(encodedPath).body()
         options?.let { o -> item = DownloadStore.update(item.id) { it.copy(durationSeconds = o.duration) } ?: return@withContext }
+        val codecs = api.getCodecs(encodedPath).body()
+        // Compatibility keeps what this phone plays; with nothing to convert, it's the original.
+        var keep: OfflinePlayback? = null
+        if (item.compat && !item.isDisc) {
+            keep = codecs?.let { OfflinePlayback.of(applicationContext, it, options?.width ?: 0, options?.height ?: 0) }
+            if (keep?.plays == true) item = DownloadStore.update(item.id) { it.copy(compat = false) } ?: return@withContext
+        }
         val url: String
         if (item.isOriginal) {
             options?.let { width = it.width; height = it.height }
@@ -104,7 +115,8 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             while (true) {
                 if (!stillWanted(item.id)) { jobId?.let { runCatching { api.deleteDownload(it) } }; return@withContext }
                 if (jobId == null) {
-                    val created = api.createDownload(CreateDownloadRequest(encodedPath, item.sizePct, item.scale))
+                    val created = api.createDownload(CreateDownloadRequest(encodedPath, item.sizePct, item.scale,
+                        keepVideo = keep?.video == true, keepAudio = keep?.audio == true))
                     val job = created.body() ?: throw IllegalStateException(errorText(created.errorBody()?.string()) ?: "The server couldn't prepare the file")
                     jobId = job.id
                     item = DownloadStore.update(item.id) { it.copy(jobId = job.id) } ?: return@withContext
@@ -185,6 +197,62 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
         // The server's copy isn't needed any more.
         item.jobId?.let { runCatching { api.deleteDownload(it) } }
+        // Best effort: a download without them gets them on a later run (saveMissingSubtitles).
+        DownloadStore.get(item.id)?.let { done ->
+            try { saveSubtitles(done, codecs) } catch (e: CancellationException) { throw e } catch (e: Exception) { }
+        }
+    }
+
+    /**
+     * Saves the subtitle tracks of finished downloads that don't have them yet (downloaded before
+     * this app saved them, or while the server couldn't send them). A file the server can't read
+     * is tried again next time; a network error stops the rest until then.
+     */
+    private suspend fun saveMissingSubtitles(): Result {
+        for (item in DownloadStore.items.value.filter { it.state == DownloadItem.State.DONE && !it.subtitles }) {
+            try {
+                saveSubtitles(item, null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IOException) {
+                break // offline, or the server is away
+            } catch (e: Exception) {
+                continue // this file only
+            }
+        }
+        return Result.success()
+    }
+
+    /**
+     * Saves [item]'s subtitle tracks beside it, for playing offline: the ones the players draw
+     * (text, as WebVTT, and PGS pictures), in this phone's languages, forced ones and files the
+     * server has beside the video. Each is read from the server whole, as it sends a window.
+     */
+    private suspend fun saveSubtitles(item: DownloadItem, known: CodecsInfo?) = withContext(Dispatchers.IO) {
+        val encodedPath = Base64.encodeToString(item.sourcePath.toByteArray(), Base64.NO_WRAP)
+        val info = known ?: ApiClient.create(item.serverAddress, credentials).getCodecs(encodedPath).body()
+            ?: throw IllegalStateException("The server couldn't read the file's subtitles")
+        val languages = deviceSubtitleLanguages().mapNotNull { runCatching { Locale(it).isO3Language }.getOrNull() }.toSet()
+        val wanted = info.subtitles.orEmpty().filter { t ->
+            (t.text || t.codec == "hdmv_pgs_subtitle") &&
+                (t.forced || t.external != null || t.language.isNullOrEmpty() || t.language == "und" || t.language in languages)
+        }
+        val dir = DownloadStore.subtitleDir(item).apply { mkdirs() }
+        val http = ApiClient.downloadClient(item.serverAddress, credentials)
+        val saved = wanted.filter { t ->
+            val file = File(dir, savedSubtitleName(t))
+            if (file.length() > 0) return@filter true
+            val url = "${normalizedServerUrl(item.serverAddress)}/api/media/subtitles?path=${URLEncoder.encode(encodedPath, "UTF-8")}" +
+                "&track=${t.index}&start=0&duration=0" + if (t.text) "" else "&format=sup"
+            http.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                if (!r.isSuccessful) return@filter false // this track only
+                val tmp = File(dir, file.name + ".part")
+                tmp.outputStream().use { r.body!!.byteStream().copyTo(it) }
+                tmp.renameTo(file)
+            }
+        }
+        File(dir, "tracks.json").writeText(Gson().toJson(saved))
+        DownloadStore.update(item.id) { it.copy(subtitles = true) }
     }
 
     private fun fetchThumbnail(http: okhttp3.OkHttpClient, url: String, dest: File): File? = runCatching {

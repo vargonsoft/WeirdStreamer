@@ -72,7 +72,10 @@ import com.vargon.weirdstreamer.downloads.DownloadItem
 import com.vargon.weirdstreamer.downloads.DownloadStore
 import com.vargon.weirdstreamer.downloads.DownloadWorker
 import com.vargon.weirdstreamer.repository.FileItem
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 
 /** A server file that can be downloaded: its path on the server, and how it's shown. */
@@ -185,9 +188,15 @@ private fun RemoveDownloadDialog(download: DownloadItem, onDismiss: () -> Unit) 
     }
 }
 
+/** How a download is made: the file as it is, a full-quality copy this phone plays, or a smaller one. */
+private enum class DownloadMode { ORIGINAL, COMPAT, COMPRESSED }
+
 /**
- * Asks how to download [requests]: the original file, or a compressed copy made by the server at
- * a share of the original's size and resolution. Disc images download as their main title in MP4.
+ * Asks how to download [requests]: the original file; Compatibility, a full-quality copy that
+ * keeps what this phone plays and converts the rest on the server; or a compressed copy at a share
+ * of the original's size and resolution. Disc images download as their main title in MP4. Each
+ * file is checked against this phone's decoders first: one that won't play here as it is makes
+ * Compatibility the choice, and says why.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -197,19 +206,37 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
     val pending = remember(requests) {
         requests.filter { r -> DownloadStore.find(server.address, r.sourcePath) == null }
     }
-    var compressed by remember { mutableStateOf(false) }
+    var picked by remember { mutableStateOf<DownloadMode?>(null) }
     var sizePct by remember { mutableIntStateOf(50) }
     var scale by remember { mutableIntStateOf(100) }
     // One file: its details for the estimate.
     var options by remember { mutableStateOf<DownloadOptions?>(null) }
+    // What this phone can't play as it is, by file (discs are converted anyway); null while checking.
+    var checks by remember { mutableStateOf<Map<String, com.vargon.weirdstreamer.downloads.OfflinePlayback>?>(null) }
     LaunchedEffect(pending) {
         pending.singleOrNull()?.let { r ->
             options = server.downloadOptions(r.sourcePath)
+        }
+        val limit = kotlinx.coroutines.sync.Semaphore(4)
+        checks = kotlinx.coroutines.coroutineScope {
+            pending.filter { !it.isDisc }.map { r ->
+                async {
+                    limit.withPermit {
+                        val codecs = server.codecs(r.sourcePath) ?: return@withPermit null
+                        val size = if (pending.size == 1) options else server.downloadOptions(r.sourcePath)
+                        r.sourcePath to com.vargon.weirdstreamer.downloads.OfflinePlayback.of(context, codecs, size?.width ?: 0, size?.height ?: 0)
+                    }
+                }
+            }.awaitAll().filterNotNull().toMap()
         }
     }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val allDiscs = pending.isNotEmpty() && pending.all { it.isDisc }
     val anyDiscs = pending.any { it.isDisc }
+    val unplayable = checks?.values?.filter { !it.plays }.orEmpty()
+    // Until one is picked: Compatibility when something won't play here as it is.
+    val mode = picked ?: if (unplayable.isNotEmpty()) DownloadMode.COMPAT else DownloadMode.ORIGINAL
+    val compressed = mode == DownloadMode.COMPRESSED
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -227,15 +254,32 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 QualityChoice(
-                    selected = !compressed,
+                    selected = mode == DownloadMode.ORIGINAL,
                     label = if (allDiscs) "Full quality MP4" else "Original",
                     detail = when {
                         allDiscs -> "The disc's main title, converted on the server"
                         anyDiscs -> "Discs download as their main title in MP4"
                         else -> "The file as it is"
                     }
-                ) { compressed = false }
-                QualityChoice(selected = compressed, label = "Compressed", detail = "A smaller copy, made on the server first") { compressed = true }
+                ) { picked = DownloadMode.ORIGINAL }
+                when {
+                    allDiscs -> {}
+                    checks == null -> Text("Checking what this phone plays…", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 32.dp))
+                    unplayable.isNotEmpty() -> Text(
+                        if (pending.size == 1) "This phone can't play ${unplayable[0].problem}."
+                        else "${unplayable.size} of ${pending.size} files won't play on this phone as they are.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(start = 32.dp))
+                }
+                if (!allDiscs) QualityChoice(
+                    selected = mode == DownloadMode.COMPAT,
+                    label = "Compatibility",
+                    detail = compatDetail(if (pending.size == 1) checks?.values?.firstOrNull() else null)
+                ) { picked = DownloadMode.COMPAT }
+                QualityChoice(selected = compressed, label = "Compressed", detail = "A smaller copy, made on the server first") {
+                    picked = DownloadMode.COMPRESSED
+                }
                 if (compressed) {
                     Text("Size", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -250,7 +294,7 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
                         }
                     }
                 }
-                val estimate = estimateText(pending, options, compressed, sizePct, scale)
+                val estimate = estimateText(pending, options, compressed, sizePct, scale, sizeKnown = mode != DownloadMode.COMPAT)
                 if (estimate.isNotEmpty()) {
                     Text(estimate, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
                 }
@@ -274,6 +318,7 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
                             sizePct = if (compressed) sizePct else 100,
                             scale = if (compressed) scale else 100,
                             isDisc = r.isDisc,
+                            compat = mode == DownloadMode.COMPAT && !r.isDisc,
                             bytesTotal = r.size
                         )
                     })
@@ -306,13 +351,25 @@ private fun QualityChoice(selected: Boolean, label: String, detail: String, onCl
     }
 }
 
+/** What Compatibility does with a file: converts only what this phone can't play, at full quality. */
+private fun compatDetail(check: com.vargon.weirdstreamer.downloads.OfflinePlayback?): String = when {
+    check == null -> "Full quality, converting only what this phone can't play"
+    check.plays -> "Plays here as it is: the same as the original"
+    else -> listOf(
+        if (check.video) "Video kept" else "Video converted to H.264",
+        if (check.audio) "audio kept" else "audio converted to stereo AAC"
+    ).joinToString(" · ") + ", on the server first"
+}
+
 /** "About 1.2 GB · 1280×720", from the original's size and the chosen quality. */
 private fun estimateText(
-    pending: List<DownloadRequest>, options: DownloadOptions?, compressed: Boolean, sizePct: Int, scale: Int
+    pending: List<DownloadRequest>, options: DownloadOptions?, compressed: Boolean, sizePct: Int, scale: Int,
+    sizeKnown: Boolean = true
 ): String {
     val total = options?.size ?: pending.sumOf { it.size }
     val parts = mutableListOf<String>()
     when {
+        !sizeKnown -> {} // a converted copy's size isn't known ahead
         compressed && total > 0 -> parts += "About ${formatBytes(total * sizePct / 100)}"
         // A disc's full-quality MP4 size isn't known ahead; an original is its size.
         !compressed && pending.none { it.isDisc } && total > 0 -> parts += formatBytes(total)
