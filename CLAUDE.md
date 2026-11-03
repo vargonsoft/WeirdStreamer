@@ -156,12 +156,18 @@ for each TODO item are at the end of this file.
 
 ## Release builds
 
-`./release.sh` (repo root) runs the server tests, then builds `dist/<version>/`: the server package
+`./release.sh` (repo root, on the build machine: it has the signing key) checks the tools, runs the
+server tests, then builds `dist/<version>/`, the assets for a GitHub Release: the server package
 (`weirdstreamer-server-<version>-linux-<arch>.tar.gz`: `bin/server`, `bin/cli`, the web UI with this
-APK to download, `config.example.yml` and the setup and run scripts; needs ffmpeg and PyYAML, not Go),
-the APK and `SHA256SUMS`. It also publishes the APK to the web download links (`--no-web` doesn't).
-The version is the app's (`0.0.1.<commit count>`). It refuses uncommitted changes (`--allow-dirty`
-builds them as `<version>-dirty`) and installs on no device.
+APK to download, `setup.sh`, `config.example.yml`, LICENSE and VERSION; needs only ffmpeg where it
+runs), the APK and `SHA256SUMS`. It also publishes the APK to the web download links (`--no-web`
+doesn't). The version is the app's (`0.0.1.<commit count>`). It refuses uncommitted changes
+(`--allow-dirty` builds them as `<version>-dirty`) and installs on no device. Artifacts stay out of git.
+
+The package's `setup.sh` (`Server/package/setup.sh`) writes config.yml through `cli config init`
+(options; the TMDB token through `$WEIRDSTREAMER_TMDB_TOKEN`), can create the admin user, and can
+install a systemd service (`setup.sh service`, `setup.sh remove-service`): it runs `bin/server` as
+the user who ran setup, from the package's folder, after network mounts.
 
 ## Deploying the Android app
 

@@ -9,8 +9,9 @@
 #
 # dist/<version>/ then holds:
 #   weirdstreamer-server-<version>-linux-<arch>.tar.gz  the server ready to run: bin/server and
-#       bin/cli, the web UI (with this APK to download), config.example.yml and the scripts that set
-#       it up and run it (./start-server.sh). It needs ffmpeg and PyYAML where it runs, not Go.
+#       bin/cli, the web UI (with this APK to download), setup.sh (writes config.yml, can create
+#       the admin user and install a systemd service), config.example.yml, LICENSE and VERSION.
+#       Where it runs it needs ffmpeg, nothing else.
 #   WeirdStreamer-<version>.apk                         the Android app (TV and phone)
 #   SHA256SUMS
 #
@@ -30,6 +31,66 @@ for arg in "$@"; do
         *) echo "Unknown option: $arg (see --help)" >&2; exit 2 ;;
     esac
 done
+
+# What the build needs, checked before anything runs: every problem is listed at once.
+problems=()
+problem() { problems+=("$*"); }
+newest() { ls -d "$@" 2>/dev/null | sort -V | tail -1 || true; } # the newest of the paths that exist
+
+# Go, for the server. Often installed off PATH (the go.dev tarball goes to /usr/local/go).
+if ! command -v go >/dev/null; then
+    found=$(newest /usr/local/go/bin/go "$HOME"/go/bin/go "$HOME"/.local/go/bin/go "$HOME"/sdk/go*/bin/go)
+    if [ -n "$found" ]; then
+        echo "Using Go from $(dirname "$found") (not on PATH)"
+        PATH="$(dirname "$found"):$PATH"
+    fi
+fi
+if ! command -v go >/dev/null; then
+    problem "Go isn't installed (or not on PATH): get 1.21 or later from https://go.dev/dl/. It fetches the version go.mod asks for itself."
+elif [ "$(printf '%s\n' 1.21 "$(go env GOVERSION | sed 's/^go//')" | sort -V | head -1)" != 1.21 ]; then
+    problem "Go $(go env GOVERSION) is too old: 1.21 or later can fetch the version go.mod asks for (https://go.dev/dl/)."
+fi
+# cgo, for SQLite
+command -v gcc >/dev/null || problem "gcc is missing, which the server's SQLite needs (sudo apt install build-essential)."
+# The server tests make test videos
+if [ "$tests" = 1 ]; then
+    command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null ||
+        problem "ffmpeg and ffprobe are missing, which the server tests use (sudo apt install ffmpeg), or pass --skip-tests."
+fi
+
+# A JDK for Gradle: the Android plugin needs 17 or later.
+java="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+if ! command -v "$java" >/dev/null; then
+    problem "No Java: install a JDK 17 or later (sudo apt install openjdk-21-jdk-headless), or set JAVA_HOME."
+else
+    jv=$("$java" -version 2>&1 | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -1)
+    [ "${jv:-0}" -ge 17 ] || problem "Java $jv is too old for the Android build: install a JDK 17 or later, or point JAVA_HOME at one."
+fi
+
+# The Android SDK: local.properties' sdk.dir, ANDROID_HOME, or Android Studio's usual place.
+sdk=$(sed -n 's/^sdk\.dir=//p' Android/local.properties 2>/dev/null || true)
+sdk=${sdk:-${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}}
+if [ -z "$sdk" ] && [ -d "$HOME/Android/Sdk" ]; then
+    sdk=$HOME/Android/Sdk
+    export ANDROID_HOME=$sdk
+fi
+if [ -z "$sdk" ] || [ ! -d "$sdk" ]; then
+    problem "No Android SDK: install Android Studio (or the command-line tools), then set sdk.dir in Android/local.properties or ANDROID_HOME."
+fi
+
+# The key the app is signed with (Android/app/build.gradle.kts). An APK signed with any other key
+# won't install over the app already on the devices.
+key="$HOME/.config/.android/debug.keystore"
+[ -f "$key" ] || problem "No signing key at $key: copy it from the machine that builds the app. (A new key would make an APK that won't update the installed app.)"
+
+for tool in git python3 tar sha256sum; do
+    command -v "$tool" >/dev/null || problem "$tool is missing."
+done
+if [ "${#problems[@]}" -gt 0 ]; then
+    echo "Can't build a release on this machine yet:" >&2
+    printf '  - %s\n' "${problems[@]}" >&2
+    exit 1
+fi
 
 # A release is a commit: what's built is what's in git, unless asked otherwise.
 dirty=""
@@ -63,7 +124,7 @@ echo "== Server"
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 pkg="$stage/weirdstreamer-$version"
-mkdir -p "$pkg/bin" "$pkg/scripts"
+mkdir -p "$pkg/bin"
 for cmd in server cli; do
     # (go-sqlite3's C has a harmless const warning)
     CGO_ENABLED=1 CGO_CFLAGS="-O2 -g -Wno-discarded-qualifiers" go -C Server/src build -trimpath -ldflags "-s -w" -o "$pkg/bin/$cmd" "./cmd/$cmd"
@@ -99,8 +160,7 @@ built = datetime.datetime.fromtimestamp(os.path.getmtime(sys.argv[2]), datetime.
 print(json.dumps({"version": element["versionName"], "build": element["versionCode"],
                   "size": os.path.getsize(sys.argv[2]), "built": built.isoformat(timespec="seconds")}))
 PY
-cp Server/scripts/live.sh Server/scripts/create-config.sh Server/scripts/check-ffmpeg.sh "$pkg/scripts/"
-cp Server/start-server.sh Server/config.example.yml Server/README.md LICENSE "$pkg/"
+cp Server/package/setup.sh Server/config.example.yml LICENSE "$pkg/"
 echo "$version ($commit)" >"$pkg/VERSION"
 tarball="weirdstreamer-server-$version-linux-$arch.tar.gz"
 tar -C "$stage" -czf "$out/$tarball" "weirdstreamer-$version"

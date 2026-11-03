@@ -119,34 +119,16 @@ echo
 
 echo "== Writing config.yml"
 mkdir -p var
-# The values, from the example's, as JSON for the CLI: it writes them with the example's comments.
-python3 - "$port" "$use_tls" "${cert_dir:-}" "${tmdb_token:-}" ${libraries[@]+"${libraries[@]}"} <<'PY' |
-import json, secrets, sys, yaml
-port, use_tls, cert_dir, tmdb = sys.argv[1], sys.argv[2] == "1", sys.argv[3], sys.argv[4]
-libraries = sys.argv[5:]
-config = yaml.safe_load(open("config.example.yml"))
-config["server"]["port"] = int(port)
-config["server"]["host"] = "0.0.0.0"
-config["server"]["certFile"] = ""
-config["server"]["keyFile"] = ""
-config["server"]["trustedProxies"] = []  # none until there's a proxy in front
-if use_tls:
-    config["server"]["certFile"] = f"{cert_dir}/cert.pem"
-    config["server"]["keyFile"] = f"{cert_dir}/key.pem"
-config["streaming"]["enableHTTP2"] = use_tls
-config["auth"]["jwtSecret"] = secrets.token_hex(32)
-config["metadata"]["tmdbAccessToken"] = tmdb
-paths = []
-for entry in libraries:
-    name, path, kind = entry.split("|")
-    library = {"name": name, "path": path, "groups": config["groups"]}
-    if kind != "none":
-        library["type"] = kind
-    paths.append(library)
-config["media"]["paths"] = paths
-json.dump(config, sys.stdout)
-PY
-    ./bin/cli config init config.example.yml
+# The CLI writes it from the example, with its comments; the token goes through the environment,
+# not the command line.
+options=(-port "$port")
+if [ "$use_tls" = 1 ]; then
+    options+=(-cert "$cert_dir/cert.pem" -key "$cert_dir/key.pem")
+fi
+for entry in ${libraries[@]+"${libraries[@]}"}; do
+    options+=(-library "$entry")
+done
+WEIRDSTREAMER_TMDB_TOKEN=${tmdb_token:-} ./bin/cli config init config.example.yml "${options[@]}"
 echo "config.yml is owner-only: it holds the JWT secret."
 
 echo "== Admin user"

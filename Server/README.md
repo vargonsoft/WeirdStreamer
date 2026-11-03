@@ -36,9 +36,13 @@ Otherwise it falls back to plain HTTP.
 ## Release package
 
 `./release.sh` at the top of the repository builds a release into `dist/<version>/`: a server
-package (`weirdstreamer-server-<version>-linux-<arch>.tar.gz`) with the binaries, the web UI, the
-Android app to download, `config.example.yml` and the scripts, plus the APK and `SHA256SUMS`. Unpack
-the package and run `./start-server.sh` in it: it needs ffmpeg and Python's PyYAML, but not Go.
+package (`weirdstreamer-server-<version>-linux-<arch>.tar.gz`) with the binaries, the web UI with
+the Android app to download, `setup.sh` and `config.example.yml`, plus the APK and `SHA256SUMS`.
+
+To install the package, unpack it and run `./setup.sh` in it. It writes `config.yml`, can create
+the admin user, and can install a systemd service that starts the server at boot (later:
+`./setup.sh service`; to undo it, `./setup.sh remove-service`). Otherwise run `./bin/server` from
+that folder. It needs ffmpeg, nothing else.
 
 ## Docker
 

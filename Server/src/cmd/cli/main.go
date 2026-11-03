@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"crypto/rand"
+	"encoding/hex"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -94,9 +96,9 @@ func printUsage() {
 	fmt.Println("  cli trickplay clean                                    - Remove trickplay images for non-existent paths")
 	fmt.Println("  cli cleanup [--force]                                  - Forget files that are gone (thumbnails, frames too)")
 	fmt.Println("      --force                                            - Even from a library losing more than half its files")
-	fmt.Println("  cli config init <template> < values.json               - Write the config (CONFIG_PATH, else")
-	fmt.Println("                                                           config.yml) from JSON values, with the")
-	fmt.Println("                                                           template's comments (config.example.yml)")
+	fmt.Println("  cli config init <template> [options]                   - Write a new config (CONFIG_PATH, else")
+	fmt.Println("                                                           config.yml) from the template")
+	fmt.Println("                                                           (config.example.yml); -h for the options")
 	fmt.Println("  cli config add-path <path>                             - Add media directory")
 	fmt.Println("  cli config list-paths                                  - List media directories")
 }
@@ -410,26 +412,76 @@ func handleConfigCommand(args []string) {
 	}
 }
 
-// initConfig writes a new config to path: the whole config as JSON on stdin (scripts build it),
-// laid out with the comments of the template (config.example.yml). An existing config is left
-// alone.
+// initConfig writes a new config to path: the template's settings (config.example.yml) and
+// comments, with the values given as options, a new JWT secret, and no proxies trusted. The TMDB
+// token comes from $WEIRDSTREAMER_TMDB_TOKEN, so it isn't on the command line. An existing config
+// is left alone.
 func initConfig(args []string, path string) {
-	if len(args) != 1 {
-		log.Fatal("Usage: cli config init <template> < values.json")
+	fs := flag.NewFlagSet("config init", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage: cli config init <template> [options]")
+		fs.PrintDefaults()
+	}
+	name := fs.String("name", "", "the server's name, which the apps show (default: the template's)")
+	port := fs.Int("port", 0, "the port to listen on (default: the template's)")
+	host := fs.String("host", "0.0.0.0", "the address to listen on")
+	cert := fs.String("cert", "", "HTTPS certificate file (with -key); without them, plain HTTP")
+	key := fs.String("key", "", "HTTPS private key file")
+	var libraries []string
+	fs.Func("library", `a library, "name|folder|type" (type: movie, tv or none); repeat for more. `+
+		"Every group may see it. Without any, the config has none (add them in Settings)", func(v string) error {
+		libraries = append(libraries, v)
+		return nil
+	})
+	if len(args) < 1 || strings.HasPrefix(args[0], "-") {
+		fs.Usage()
+		os.Exit(2)
+	}
+	template := args[0]
+	fs.Parse(args[1:])
+	if (*cert == "") != (*key == "") {
+		log.Fatal("Give both -cert and -key, or neither")
 	}
 	if _, err := os.Stat(path); err == nil {
 		log.Fatalf("%s already exists: edit it, or move it aside first", path)
 	}
-	var c config.Config
-	dec := json.NewDecoder(os.Stdin)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
-		log.Fatalf("Reading the values: %v", err)
+
+	if err := config.Load(template); err != nil {
+		log.Fatalf("Reading the template: %v", err)
+	}
+	c := *config.GlobalConfig
+	if *name != "" {
+		c.Server.Name = *name
+	}
+	if *port != 0 {
+		c.Server.Port = *port
+	}
+	c.Server.Host = *host
+	c.Server.CertFile, c.Server.KeyFile = *cert, *key
+	c.Streaming.EnableHTTP2 = *cert != ""
+	c.Server.TrustedProxies = []string{} // none until there's a proxy in front
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		log.Fatal(err)
+	}
+	c.Auth.JWTSecret = hex.EncodeToString(secret)
+	c.Metadata.TMDBAccessToken = os.Getenv("WEIRDSTREAMER_TMDB_TOKEN")
+	c.Media.Paths = []config.MediaPath{}
+	for _, l := range libraries {
+		parts := strings.Split(l, "|")
+		if len(parts) != 3 || parts[0] == "" || parts[1] == "" {
+			log.Fatalf(`-library %q: want "name|folder|type"`, l)
+		}
+		p := config.MediaPath{Name: parts[0], Path: parts[1], Groups: append([]string(nil), c.Groups...)}
+		if t := parts[2]; t != "" && t != "none" {
+			p.Type = t
+		}
+		c.Media.Paths = append(c.Media.Paths, p)
 	}
 	if err := c.Validate(); err != nil {
 		log.Fatalf("Invalid config: %v", err)
 	}
-	if err := config.SaveFrom(args[0], path, &c); err != nil {
+	if err := config.SaveFrom(template, path, &c); err != nil {
 		log.Fatalf("Writing %s: %v", path, err)
 	}
 	if err := config.Load(path); err != nil {

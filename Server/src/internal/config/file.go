@@ -273,7 +273,9 @@ func mergeNode(old, fresh *yaml.Node, t reflect.Type, commentOut bool) {
 				continue
 			}
 			used[match] = true
-			mergeNode(match, n, elem, commentOut)
+			// A list item's settings that are left out just go: the example's other libraries
+			// aren't documentation for this one.
+			mergeNode(match, n, elem, false)
 			content = append(content, match)
 		}
 		old.Content = content
