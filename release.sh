@@ -6,6 +6,10 @@
 #   --no-web                  leave the web UI's download links as they are
 #   --skip-tests              don't run the server tests first
 #   --allow-dirty             build with uncommitted changes (the version then ends in "-dirty")
+#   --publish                 then publish it on GitHub: tag the commit v<version>, push the tag to the
+#                             "github" remote, and create the release with dist/<version>/'s files.
+#                             Needs gh, signed in (gh auth login), and a clean tree. Checked before
+#                             anything is built; a release that already exists is never replaced.
 #
 # dist/<version>/ then holds:
 #   weirdstreamer-server-<version>-linux-<arch>.tar.gz  the server ready to run: bin/server and
@@ -21,13 +25,14 @@ set -euo pipefail
 cd "$(dirname "$0")"
 root=$PWD
 
-web=1 tests=1 dirty_ok=0
+web=1 tests=1 dirty_ok=0 publish=0
 for arg in "$@"; do
     case "$arg" in
         --no-web) web=0 ;;
         --skip-tests) tests=0 ;;
         --allow-dirty) dirty_ok=1 ;;
-        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+        --publish) publish=1 ;;
+        -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
         *) echo "Unknown option: $arg (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -86,6 +91,18 @@ key="$HOME/.config/.android/debug.keystore"
 for tool in git python3 tar sha256sum; do
     command -v "$tool" >/dev/null || problem "$tool is missing."
 done
+
+# Publishing: gh, signed in, and the GitHub remote it goes to ("owner/name", from its URL).
+if [ "$publish" = 1 ]; then
+    [ "$dirty_ok" = 0 ] || problem "--publish and --allow-dirty don't go together: a release is a commit."
+    if ! command -v gh >/dev/null; then
+        problem "gh, GitHub's command-line tool, is missing (sudo apt install gh), which --publish uses."
+    elif ! gh auth status >/dev/null 2>&1; then
+        problem "gh isn't signed in to GitHub: run gh auth login."
+    fi
+    repo=$({ git config --get remote.github.url || true; } | sed -nE 's#^(git@github\.com:|https://github\.com/|ssh://git@github\.com/)([^/]+/[^/]+)$#\2#p' | sed 's/\.git$//')
+    [ -n "$repo" ] || problem "No \"github\" remote pointing at github.com, which --publish pushes the tag to."
+fi
 if [ "${#problems[@]}" -gt 0 ]; then
     echo "Can't build a release on this machine yet:" >&2
     printf '  - %s\n' "${problems[@]}" >&2
@@ -109,6 +126,26 @@ version="$base.$(git rev-list --count HEAD)$dirty"
 commit=$(git rev-parse --short HEAD)
 arch=$(go env GOARCH)
 out="dist/$version"
+tag="v$version"
+
+# Before building: the tag must be free (or already on this commit), and the release new.
+if [ "$publish" = 1 ]; then
+    head=$(git rev-parse HEAD)
+    local_tag=$(git rev-parse -q --verify "refs/tags/$tag^{commit}" || true)
+    remote_tag=$(git ls-remote github "refs/tags/$tag^{}" "refs/tags/$tag" | sort -r | head -1 | cut -f1)
+    if [ -n "$local_tag" ] && [ "$local_tag" != "$head" ]; then
+        echo "The tag $tag is on another commit ($(git rev-parse --short "$local_tag")), not $commit." >&2
+        exit 1
+    fi
+    if [ -n "$remote_tag" ] && [ "$remote_tag" != "$head" ]; then
+        echo "GitHub's tag $tag is on another commit, not $commit." >&2
+        exit 1
+    fi
+    if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+        echo "The release $tag is already on GitHub ($repo): nothing to publish." >&2
+        exit 1
+    fi
+fi
 echo "== Release $version ($commit)"
 rm -rf "$out"
 mkdir -p "$out"
@@ -168,3 +205,13 @@ tar -C "$stage" -czf "$out/$tarball" "weirdstreamer-$version"
 (cd "$out" && sha256sum -- * >SHA256SUMS)
 echo "== Done: $root/$out"
 (cd "$out" && ls -l --block-size=K -- * | awk '{print "   " $5 "  " $NF}')
+
+if [ "$publish" = 1 ]; then
+    echo "== Publishing $tag on GitHub ($repo)"
+    git rev-parse -q --verify "refs/tags/$tag" >/dev/null || git tag -a "$tag" -m "Weird Streamer $version"
+    git push -q github "refs/tags/$tag"
+    # Its notes list the commits since the last release; edit them on GitHub as you like.
+    url=$(gh release create "$tag" "$out"/* --repo "$repo" --verify-tag \
+        --title "Weird Streamer $version" --generate-notes)
+    echo "   $url"
+fi

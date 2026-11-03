@@ -164,6 +164,9 @@ APK to download, `setup.sh`, `config.example.yml`, LICENSE and VERSION; needs on
 runs), the APK and `SHA256SUMS`. It also publishes the APK to the web download links (`--no-web`
 doesn't). The version is the app's (`0.0.1.<commit count>`). It refuses uncommitted changes
 (`--allow-dirty` builds them as `<version>-dirty`) and installs on no device. Artifacts stay out of git.
+`--publish` then tags the commit `v<version>`, pushes the tag to the `github` remote and creates the
+GitHub Release with the three files (`gh`, signed in; checked before building; it never replaces a
+release, nor moves a tag that's on another commit).
 
 The package's `setup.sh` (`Server/package/setup.sh`) asks only for the name, port and HTTPS and
 writes config.yml through `cli config init`, can create the admin user and install a systemd service
