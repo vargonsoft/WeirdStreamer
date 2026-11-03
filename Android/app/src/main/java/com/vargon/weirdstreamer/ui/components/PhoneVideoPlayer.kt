@@ -139,6 +139,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     var duration by remember(path) { mutableLongStateOf(0L) }
     var isBuffering by remember { mutableStateOf(true) }
     var playbackFailed by remember { mutableStateOf(false) }
+    var failureReason by remember { mutableStateOf<String?>(null) }
     var ended by remember(path) { mutableStateOf(false) }
 
     // Keep screen on while playing or buffering
@@ -374,6 +375,13 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             // The phone can't decode the original (too big, or a codec it lacks): have the server
             // transcode it instead, from the same place. A download can't be transcoded: say so.
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                unreadableReason(error)?.let { reason ->
+                    // The server can't read the file: no transcode would help either.
+                    playbackFailed = true
+                    failureReason = reason
+                    android.widget.Toast.makeText(context, reason, android.widget.Toast.LENGTH_LONG).show()
+                    return
+                }
                 val decoderProblem = error.errorCode in androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..
                     androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED
                 val next = if (enableTranscode) choice?.nextAfter(failedSide(error)) else null
@@ -414,7 +422,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
-                if (state != Player.STATE_IDLE) playbackFailed = false
+                if (state != Player.STATE_IDLE) { playbackFailed = false; failureReason = null }
                 if (state == Player.STATE_ENDED) {
                     if (!isSmbSource) {
                         ended = true
@@ -634,7 +642,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
         // Loading Spinner
         if (playbackFailed) {
-            PlaybackFailedMessage(Modifier.align(Alignment.Center))
+            PlaybackFailedMessage(Modifier.align(Alignment.Center), failureReason)
         } else if (isBuffering) {
             CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),

@@ -290,6 +290,9 @@ func (h *MediaHandler) GetCodecs(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
+	if respondUnreadable(w, path) {
+		return
+	}
 	codecs, err := media.ProbeCodecs(path)
 	if err != nil {
 		respondError(w, http.StatusUnprocessableEntity, "Could not read the file's codecs")

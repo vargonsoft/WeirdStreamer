@@ -2505,6 +2505,8 @@ body.has-az #main-screen .content { padding-right: 28px; }
     pointer-events: none;
 }
 .player-failed[hidden] { display: none; }
+.player-failed-reason { display: block; max-width: 60vw; margin-top: 4px; font-size: 15px; white-space: normal; text-align: center; }
+.player-failed-reason:empty { display: none; }
 .subtitle-style-mode { display: flex; gap: 20px; margin-bottom: 12px; }
 .subtitle-style-options { display: flex; flex-direction: column; gap: 10px; }
 .subtitle-style-options label { display: flex; gap: 10px; align-items: center; }

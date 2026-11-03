@@ -176,6 +176,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var isPaused by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(true) }
     var playbackFailed by remember { mutableStateOf(false) }
+    var failureReason by remember { mutableStateOf<String?>(null) }
     var showControls by remember { mutableStateOf(false) }
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var lastControlsHideTime by remember { mutableLongStateOf(0L) }
@@ -401,6 +402,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             // The box can't decode the original (too big, or a codec it lacks): have the server
             // transcode it instead, from the same place.
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                unreadableReason(error)?.let { reason ->
+                    // The server can't read the file: no transcode would help either.
+                    playbackFailed = true
+                    failureReason = reason
+                    android.widget.Toast.makeText(context, reason, android.widget.Toast.LENGTH_LONG).show()
+                    return
+                }
                 val next = if (currentTranscodeMode.isOriginal) null else choice?.nextAfter(failedSide(error))
                 if (next != null) {
                     scope.launch {
@@ -427,7 +435,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             }
 
             override fun onPlaybackStateChanged(state: Int) {
-                if (state != Player.STATE_IDLE) playbackFailed = false
+                if (state != Player.STATE_IDLE) { playbackFailed = false; failureReason = null }
                 if (state == Player.STATE_READY) {
                     val currentDuration = exoPlayer.duration
                     if (fullDuration > 0) duration = fullDuration
@@ -836,7 +844,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             }
         }
 
-        if (playbackFailed) PlaybackFailedMessage(Modifier.align(Alignment.Center))
+        if (playbackFailed) PlaybackFailedMessage(Modifier.align(Alignment.Center), failureReason)
         else if (isBuffering) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = WeirdStreamerTheme.spec.spinnerColor.takeOrElse { MaterialTheme.colorScheme.primary })
 
         FilenameOverlay(show = showControls, filename = filename, title = playerTitle, modifier = Modifier.align(Alignment.TopStart))

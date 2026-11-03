@@ -806,12 +806,18 @@ async function playVideo(item, forceTranscode = false, startAt = 0, fromFolder =
     player = p;
     openPlayer(item.name);
     loadSegments(p);
+    let unreadable = null;
     try {
         p.codecs = await api.getCodecs(item.path);
     } catch (error) {
         console.warn('Could not read the codecs:', error);
+        if (error.unreadable) unreadable = error.message;
     }
     if (request !== playRequest || player !== p) return; // closed or replaced meanwhile
+    if (unreadable) {
+        showPlaybackFailed(unreadable, unreadable);
+        return;
+    }
     if (p.codecs) {
         if (p.codecs.duration) p.duration = p.codecs.duration;
         restoreTracks(p);
@@ -1130,19 +1136,38 @@ function attachStream(url, item, seekOnLoad = 0) {
     updatePlayerButtons();
 }
 
+// Shows that the video can't play, and why; detail (the server's reason) goes under the message too.
+function showPlaybackFailed(reason, detail = '') {
+    document.getElementById('player-status').textContent = reason;
+    document.getElementById('player-failed-reason').textContent = detail;
+    document.getElementById('player-failed').hidden = false;
+}
+
 // The browser can't play the stream (its video codec, its container): Original switches to
-// Compatibility (Auto), as on Android, and a copied video gets transcoded.
-function onPlayerError() {
+// Compatibility (Auto), as on Android, and a copied video gets transcoded. Unless the server can't
+// read the file at all (a share refusing it, say): then it says so, as no other stream would help.
+async function onPlayerError() {
     const err = videoPlayer.error;
     if (!err || !videoPlayer.getAttribute('src')) return; // closed
     console.error('Video error:', err);
     const p = player;
-    const status = document.getElementById('player-status');
+    const src = videoPlayer.getAttribute('src');
+    if (p) {
+        try {
+            await api.getCodecs(p.item.path);
+        } catch (error) {
+            if (player !== p || videoPlayer.getAttribute('src') !== src) return; // moved on meanwhile
+            if (error.unreadable) {
+                showPlaybackFailed(error.message, error.message);
+                return;
+            }
+        }
+        if (player !== p || videoPlayer.getAttribute('src') !== src) return;
+    }
     const steps = p ? audioSteps(p) : [];
     const canStepDown = p && (p.mode === 'original' || copiesVideo(p) || p.audioStep < steps.length - 1);
     if (!canStepDown) {
-        status.textContent = `Playback failed: ${err.message || 'error ' + err.code}`;
-        document.getElementById('player-failed').hidden = false;
+        showPlaybackFailed(`Playback failed: ${err.message || 'error ' + err.code}`);
         return;
     }
     const at = videoPlayer.currentTime > 0 ? playerPosition() : p.start;

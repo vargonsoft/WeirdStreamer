@@ -13,6 +13,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.audio.AudioCapabilities
 import com.vargon.weirdstreamer.api.ApiService
@@ -44,6 +45,23 @@ fun failedSide(error: PlaybackException): FailedSide {
         MimeTypes.isVideo(mime) -> FailedSide.VIDEO
         else -> FailedSide.UNKNOWN
     }
+}
+
+/**
+ * The server's reason when it can't read the video at all (gone, or a share refusing it), from its
+ * answer marked `X-Stream-Error: unreadable`; null for any other error. No other stream would help.
+ */
+@OptIn(UnstableApi::class)
+fun unreadableReason(error: PlaybackException): String? {
+    var cause: Throwable? = error.cause
+    while (cause != null && cause !is HttpDataSource.InvalidResponseCodeException) cause = cause.cause
+    val http = cause as? HttpDataSource.InvalidResponseCodeException ?: return null
+    val marked = http.headerFields.any { (name, values) ->
+        name.equals("X-Stream-Error", ignoreCase = true) && "unreadable" in values
+    }
+    if (!marked) return null
+    return runCatching { org.json.JSONObject(String(http.responseBody)).optString("message") }
+        .getOrNull()?.takeIf { it.isNotBlank() } ?: "The server can't read this file."
 }
 
 /** What the device can do with audio right now: asked at each playback, as outputs come and go. */

@@ -26,17 +26,27 @@ import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import java.util.*
 import kotlin.math.abs
 
-/** Stays on screen in place of the spinner once a video can't play. */
+/** Stays on screen in place of the spinner once a video can't play; reason, if known, beneath. */
 @Composable
-fun PlaybackFailedMessage(modifier: Modifier = Modifier) {
-    Text(
-        text = "Can't play this video",
-        style = MaterialTheme.typography.titleLarge,
-        color = Color.White,
+fun PlaybackFailedMessage(modifier: Modifier = Modifier, reason: String? = null) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
+            .widthIn(max = 560.dp)
             .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
             .padding(horizontal = 16.dp, vertical = 8.dp)
-    )
+    ) {
+        Text(text = "Can't play this video", style = MaterialTheme.typography.titleLarge, color = Color.White)
+        if (reason != null) {
+            Text(
+                text = reason,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
 }
 
 @Composable

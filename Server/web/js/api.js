@@ -43,6 +43,8 @@ class MediaAPI {
             const failure = new Error(error.message || 'Request failed');
             // Set on 429: seconds until the server accepts another try
             failure.retryAfter = error.retry_after || 0;
+            // The server can't read the video at all: no other way of playing it will help.
+            failure.unreadable = response.headers.get('X-Stream-Error') === 'unreadable';
             throw failure;
         }
         if (response.status === 204) return null;

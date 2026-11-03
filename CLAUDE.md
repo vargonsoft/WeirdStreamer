@@ -209,6 +209,12 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   - ffmpeg runs at most 96 MB ahead of the furthest read, and 512 MB is kept behind it.
   - With no client for 60 seconds a transcode is stopped and its chunks removed (`reapIdle`, its
     own timer). Startup clears the folder.
+- **Unreadable files:** the stream and codecs endpoints first open and read the file
+  (`media.CheckReadable`). If they can't (gone: 404; refused by the disk or share, or an I/O
+  error: 503), they log `[STREAM] Can't read …` and answer with the reason and
+  `X-Stream-Error: unreadable`. Players then skip every fallback and show the reason under "Can't
+  play this video" (`unreadableReason` on Android; the web checks codecs again on a `<video>`
+  error). A read that fails partway through an original logs `Stopped serving …`.
 - **Streams with track options:** file transcodes take `audio=N` (index among the audio tracks)
   and `subtitle=N` (burn in that subtitle track, scaled to the video), in `TrackOptions`
   (`media/codecs.go`).

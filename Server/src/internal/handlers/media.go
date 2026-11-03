@@ -344,14 +344,39 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "Media not found")
 		return
 	}
+	if respondUnreadable(w, path) {
+		return
+	}
 
 	sess := h.beginStream(r, item)
 	defer sess.End()
 
 	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, audioTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages, bitrate, resolution, sess); err != nil {
+		log.Printf("[STREAM] Failed to stream %s: %v", path, err)
 		respondError(w, http.StatusInternalServerError, "Failed to stream media")
 		return
 	}
+}
+
+// unreadableHeader marks a response for a video the server can't read, so players stop trying
+// other ways to play it and show the message instead.
+const unreadableHeader = "X-Stream-Error"
+
+// respondUnreadable answers with why path can't be read, if it can't, and logs it.
+func respondUnreadable(w http.ResponseWriter, path string) bool {
+	problem := media.CheckReadable(path)
+	if problem == nil {
+		return false
+	}
+	reason := problem.Err
+	var pathErr *os.PathError
+	if errors.As(reason, &pathErr) {
+		reason = pathErr.Err // the path is in the line already
+	}
+	log.Printf("[STREAM] Can't read %s: %v", path, reason)
+	w.Header().Set(unreadableHeader, "unreadable")
+	respondError(w, problem.Status, problem.Message+".")
+	return true
 }
 
 // GetMediaMetadata godoc

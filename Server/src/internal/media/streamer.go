@@ -89,7 +89,9 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 		// No range request, serve entire file
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		w.WriteHeader(http.StatusOK)
-		io.Copy(&trackedWriter{w: w, sess: sess}, file)
+		src := &watchedFile{f: file}
+		io.Copy(&trackedWriter{w: w, sess: sess}, src)
+		logReadFailure(filePath, src)
 		return nil
 	}
 
@@ -114,8 +116,32 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 	w.WriteHeader(http.StatusPartialContent)
 
 	// Stream the requested range
-	io.CopyN(&trackedWriter{w: w, sess: sess, offset: ra.start}, file, ra.end-ra.start+1)
+	src := &watchedFile{f: file}
+	io.CopyN(&trackedWriter{w: w, sess: sess, offset: ra.start}, src, ra.end-ra.start+1)
+	logReadFailure(filePath, src)
 	return nil
+}
+
+// watchedFile notes a read error, so a copy that stopped because the disk or share failed partway
+// through can be told from one the client left. The response has begun by then, so the player only
+// sees it end; the log says why.
+type watchedFile struct {
+	f   *os.File
+	err error
+}
+
+func (w *watchedFile) Read(p []byte) (int, error) {
+	n, err := w.f.Read(p)
+	if err != nil && err != io.EOF {
+		w.err = err
+	}
+	return n, err
+}
+
+func logReadFailure(filePath string, file *watchedFile) {
+	if file.err != nil {
+		fmt.Printf("Stopped serving %s: %v\n", filePath, file.err)
+	}
 }
 
 // trackedWriter counts what is sent for a tracked stream, and how far into the file it reaches.
@@ -312,6 +338,39 @@ func (s *Streamer) serveOriginalFile(w http.ResponseWriter, r *http.Request, fil
 
 	http.ServeContent(w, r, filePath, stat.ModTime(), file)
 	return nil
+}
+
+// UnreadableFile is a video the server can't open or read: gone from the disk, or refused by the
+// disk or share. Message is for the viewer; Err is what the system said.
+type UnreadableFile struct {
+	Status  int // 404 when it's gone, 503 otherwise (often passing: a share briefly refusing)
+	Message string
+	Err     error
+}
+
+func (e *UnreadableFile) Error() string { return e.Message + ": " + e.Err.Error() }
+
+// CheckReadable opens filePath and reads its first byte, so a stream or a transcode fails with
+// the real reason before it starts, not with an empty response or a player error.
+func CheckReadable(filePath string) *UnreadableFile {
+	f, err := os.Open(filePath)
+	if err == nil {
+		defer f.Close()
+		_, err = f.Read(make([]byte, 1))
+		if err == io.EOF {
+			err = nil // empty: readable, just nothing to play
+		}
+	}
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, os.ErrNotExist):
+		return &UnreadableFile{http.StatusNotFound, "The video file is missing from the server's disk or share", err}
+	case errors.Is(err, os.ErrPermission):
+		return &UnreadableFile{http.StatusServiceUnavailable, "The server isn't allowed to read this file (the disk or share refused it)", err}
+	default:
+		return &UnreadableFile{http.StatusServiceUnavailable, "The server can't read this file from its disk or share", err}
+	}
 }
 
 // needsTranscoding checks if a file format needs transcoding for browser compatibility
