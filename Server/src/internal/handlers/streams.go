@@ -256,7 +256,8 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 
 // GetSeekPoint reports where a stream that copies the video (transcode=audio) starts when asked to
 // start at start: {"start": seconds} (GET /api/media/seekpoint?path=<base64 path>&start=<s>, with
-// start as in the stream request).
+// start as in the stream request). With next=1, the first keyframe at or after start instead, and
+// "ask": the start to request for it.
 func (h *MediaHandler) GetSeekPoint(w http.ResponseWriter, r *http.Request) {
 	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
 	if err != nil || len(decoded) == 0 {
@@ -271,6 +272,17 @@ func (h *MediaHandler) GetSeekPoint(w http.ResponseWriter, r *http.Request) {
 	start := r.URL.Query().Get("start")
 	if t, err := strconv.ParseFloat(start, 64); err != nil || t < 0 {
 		respondError(w, http.StatusBadRequest, "Invalid start")
+		return
+	}
+	if r.URL.Query().Get("next") == "1" {
+		// The keyframe at or after start instead, for a jump forward that would land where it began.
+		t, _ := strconv.ParseFloat(start, 64)
+		ask, begins, err := media.NextStart(path, t)
+		if err != nil {
+			respondError(w, http.StatusUnprocessableEntity, "No keyframe after that time")
+			return
+		}
+		respondJSON(w, http.StatusOK, map[string]any{"start": begins, "ask": ask})
 		return
 	}
 	point, err := media.SeekPoint(path, start)

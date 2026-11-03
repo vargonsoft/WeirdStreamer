@@ -466,15 +466,19 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
     fun seekPlayer(targetPos: Long) {
         if (!isSmbSource && enableTranscode) {
-            fun play(beginsMs: Long) {
+            fun play(askMs: Long, beginsMs: Long) {
                 transcodeStartOffset = beginsMs
-                exoPlayer.setMediaItem(MediaItem.fromUri(transcodedUrl(targetPos)))
+                exoPlayer.setMediaItem(MediaItem.fromUri(transcodedUrl(askMs)))
                 exoPlayer.prepare()
                 exoPlayer.playWhenReady = true
             }
             seekJob?.cancel()
-            if (choice?.copiesVideo == true) seekJob = scope.launch { play(choice.startOf(targetPos)) }
-            else play(targetPos)
+            val from = playbackPosition
+            if (choice?.copiesVideo == true) seekJob = scope.launch {
+                val (ask, begins) = choice.jump(from, targetPos)
+                play(ask, begins)
+            }
+            else play(targetPos, targetPos)
         } else {
             exoPlayer.seekTo(targetPos)
         }

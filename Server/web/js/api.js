@@ -243,9 +243,10 @@ class MediaAPI {
     }
 
     // Where a stream that copies the video starts when asked to start at start (a string, exactly
-    // as in the stream URL): { start: seconds }
-    async getSeekPoint(path, start) {
-        return this.request(`/api/media/seekpoint?path=${encodeURIComponent(this.encodePath(path))}&start=${start}`);
+    // as in the stream URL): { start: seconds }. next: the first keyframe at or after it instead,
+    // and ask: the start to request for it.
+    async getSeekPoint(path, start, next = false) {
+        return this.request(`/api/media/seekpoint?path=${encodeURIComponent(this.encodePath(path))}&start=${start}${next ? '&next=1' : ''}`);
     }
 
     async getDisc(path) {

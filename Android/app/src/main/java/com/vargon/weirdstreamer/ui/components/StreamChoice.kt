@@ -214,6 +214,20 @@ class StreamChoice(private val api: ApiService, private val encodedPath: String)
         return point?.let { (it.start * 1000).toLong() }?.takeIf { it >= 0 } ?: ms
     }
 
+    /** Where to ask a stream to start for a jump from [fromMs] to [targetMs], and where it then begins.
+     *  A jump forward that the keyframe before [targetMs] would undo (keyframes far apart, a short
+     *  jump) goes on to the next keyframe instead, further than asked: otherwise it never moves. */
+    suspend fun jump(fromMs: Long, targetMs: Long): Pair<Long, Long> {
+        val begins = startOf(targetMs)
+        if (targetMs <= fromMs || begins > fromMs) return targetMs to begins
+        val next = withContext(Dispatchers.IO) {
+            runCatching { api.getSeekPoint(encodedPath, streamStart(targetMs), next = 1).body() }.getOrNull()
+        } ?: return targetMs to begins
+        val ask = next.ask?.toDoubleOrNull()?.let { Math.round(it * 1000) } ?: return targetMs to begins
+        val nextBegins = (next.start * 1000).toLong()
+        return if (nextBegins > fromMs) ask to nextBegins else targetMs to begins
+    }
+
     companion object {
         /** For a stream URL from the server: null for other sources. */
         fun forStream(streamUrl: String): StreamChoice? =

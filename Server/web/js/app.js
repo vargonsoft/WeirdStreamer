@@ -1093,13 +1093,30 @@ async function streamStart(p, start) {
     }
 }
 
-async function loadFileStream(start) {
+// A jump forward from `from` that the keyframe before start would undo (keyframes far apart, a
+// short jump) goes on to the next keyframe instead, further than asked: otherwise it never moves.
+async function jumpStart(p, from, start) {
+    let begins = await streamStart(p, start);
+    if (from == null || start <= from || begins > from || !copiesVideo(p)) return { start, begins };
+    try {
+        const next = await api.getSeekPoint(p.item.path, start.toFixed(2), true);
+        if (!(next.start > from) || !(parseFloat(next.ask) > 0)) return { start, begins };
+        return { start: parseFloat(next.ask), begins: next.start };
+    } catch (error) {
+        console.warn('No keyframe after the jump:', error);
+        return { start, begins };
+    }
+}
+
+// Starts the stream at start (seconds into the file); from: where a jump began, if it's one.
+async function loadFileStream(start, from = null) {
     const p = player;
     if (p.duration) start = Math.min(start, Math.max(p.duration - 1, 0));
     start = Math.max(0, start);
     const original = playsOriginalFile(p);
     const load = p.load = (p.load || 0) + 1;
-    const begins = original ? 0 : await streamStart(p, start);
+    let begins = 0;
+    if (!original) ({ start, begins } = await jumpStart(p, from, start));
     if (player !== p || p.load !== load) return; // closed, or another seek meanwhile
     p.offset = begins;
     p.start = start;
@@ -1197,7 +1214,7 @@ function seekTo(t) {
         seekSubtitles(t);
         updatePlayerPosition();
     } else {
-        loadFileStream(t);
+        loadFileStream(t, playerPosition());
     }
 }
 

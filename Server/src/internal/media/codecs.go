@@ -242,6 +242,68 @@ func SeekPoint(filePath, start string) (float64, error) {
 	return parseFrameTime(string(out))
 }
 
+// NextStart is where to ask a copied stream to start (as -ss, two decimals) so that it begins at
+// the first keyframe at or after start, and where it then begins: for a short jump forward in a
+// video with sparse keyframes, which the keyframe before start would undo. ffmpeg's seek lands on
+// a keyframe only some way past it (it goes by decode times), so a few times after it are tried.
+func NextStart(filePath string, start float64) (ask string, begins float64, err error) {
+	key, err := nextKeyframe(filePath, start)
+	if err != nil {
+		return "", 0, err
+	}
+	for _, past := range []float64{0.01, 0.1, 0.25, 0.5, 1, 2} {
+		ask = fmt.Sprintf("%.2f", key+past)
+		if begins, err = SeekPoint(filePath, ask); err == nil && begins > key-0.05 {
+			return ask, begins, nil
+		}
+	}
+	return "", 0, fmt.Errorf("no seek lands on the keyframe at %v", key)
+}
+
+// nextKeyframe is the first video keyframe at or after start (seconds from the file's start, as
+// ffmpeg's -ss counts), within a minute.
+func nextKeyframe(filePath string, start float64) (float64, error) {
+	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
+		"-read_intervals", fmt.Sprintf("%.3f%%+60", start),
+		"-show_entries", "packet=pts_time,dts_time,flags:format=start_time", "-of", "json", filePath).Output()
+	if err != nil {
+		return 0, err
+	}
+	return parseNextKeyframe(out, start)
+}
+
+func parseNextKeyframe(out []byte, start float64) (float64, error) {
+	var probe struct {
+		Packets []struct {
+			Pts   string `json:"pts_time"`
+			Dts   string `json:"dts_time"`
+			Flags string `json:"flags"`
+		} `json:"packets"`
+		Format struct {
+			StartTime string `json:"start_time"`
+		} `json:"format"`
+	}
+	if err := json.Unmarshal(out, &probe); err != nil {
+		return 0, err
+	}
+	offset, _ := strconv.ParseFloat(probe.Format.StartTime, 64)
+	for _, p := range probe.Packets {
+		if !strings.Contains(p.Flags, "K") {
+			continue
+		}
+		t, err := strconv.ParseFloat(p.Pts, 64)
+		if err != nil { // an AVI's packets have only a dts
+			if t, err = strconv.ParseFloat(p.Dts, 64); err != nil {
+				continue
+			}
+		}
+		if t -= offset; t >= start {
+			return t, nil
+		}
+	}
+	return 0, fmt.Errorf("no keyframe within a minute after %v", start)
+}
+
 // noTimestamp is what framecrc prints for a packet without one (AV_NOPTS_VALUE): an AVI's
 // packets have no pts, only a dts.
 const noTimestamp = "-9223372036854775808"

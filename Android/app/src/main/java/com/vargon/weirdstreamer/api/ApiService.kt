@@ -76,7 +76,8 @@ interface ApiService {
     suspend fun getCodecs(@Query("path") path: String): Response<CodecsInfo>
 
     @GET("/api/media/seekpoint")
-    suspend fun getSeekPoint(@Query("path") path: String, @Query("start") start: String): Response<SeekPoint>
+    suspend fun getSeekPoint(@Query("path") path: String, @Query("start") start: String,
+                             @Query("next") next: Int? = null): Response<SeekPoint>
 
     @GET("/api/media/subtitles")
     suspend fun getSubtitles(@Query("path") path: String, @Query("track") track: Int,

@@ -1,6 +1,7 @@
 package media
 
 import (
+	"math"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -95,6 +96,27 @@ func TestParseFrameTime(t *testing.T) {
 	}
 	if _, err := parseFrameTime("#tb 0: 1/25\n0, -9223372036854775808, -9223372036854775808, 1, 1, 0x0\n"); err == nil {
 		t.Error("no time at all: want an error")
+	}
+}
+
+func TestParseNextKeyframe(t *testing.T) {
+	// From the file's start (1.4 s here), the first keyframe at or after 15 s.
+	out := `{"packets": [
+		{"pts_time": "11.405", "dts_time": "11.325", "flags": "K__"},
+		{"pts_time": "15.405", "dts_time": "15.325", "flags": "___"},
+		{"pts_time": "21.405", "dts_time": "21.325", "flags": "K__"}],
+		"format": {"start_time": "1.400000"}}`
+	if got, err := parseNextKeyframe([]byte(out), 15); err != nil || math.Abs(got-20.005) > 1e-9 {
+		t.Errorf("got %v, %v; want 20.005", got, err)
+	}
+	// An AVI's packets: no pts, only a dts.
+	avi := `{"packets": [{"dts_time": "14.000000", "flags": "K__"}, {"dts_time": "16.000000", "flags": "K__"}],
+		"format": {"start_time": "0.000000"}}`
+	if got, err := parseNextKeyframe([]byte(avi), 15); err != nil || got != 16 {
+		t.Errorf("AVI: got %v, %v; want 16", got, err)
+	}
+	if _, err := parseNextKeyframe([]byte(avi), 30); err == nil {
+		t.Error("no keyframe after: want an error")
 	}
 }
 

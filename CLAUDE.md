@@ -91,6 +91,8 @@ for each TODO item are at the end of this file.
   - `Movies/HEVC Test`, `Hi10 Test` (10-bit H.264), `AVI Test` (MPEG-4 Part 2 and MP3),
     `VP9 Test` (WebM) and `AV1 Test`: 30-second clips for the browser codec checks. New files
     only stream once a scan has added them (`api.scanMedia()`, or Scan Media in the web UI).
+  - `Movies/Sparse Keyframes`: 2 minutes of H.264 with a keyframe every 10 seconds and AC-3
+    audio (so it plays as a copy): for short jumps forward in a copied video.
   - `Movies/AVI BFrame Test`: 30 seconds of H.264 with B-frames in AVI, whose packets have no
     pts (framecrc prints -9223372036854775808): `SeekPoint` reads the dts instead.
   - `TV Shows/Example Show/Season 1/`: two episodes. S01E01 is a 60-second clip; S01E02 is empty.
@@ -186,7 +188,10 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     whose H.264 Compatibility (Auto) copies into MP4.
   - A copied video starts at the keyframe ffmpeg's seek lands on (`-noaccurate_seek`, so the audio
     starts there too instead of after seconds of silence). `GET /api/media/seekpoint` (ffprobe's
-    seek, which lands on the same keyframe) tells the player that start, for its offset.
+    seek, which lands on the same keyframe) tells the player that start, for its offset. A jump
+    forward that keyframe would undo (keyframes far apart, a short jump) asks `next=1` instead: the
+    next keyframe and the `ask` start that lands on it (ffmpeg's seek goes by decode times, so it
+    needs a bit past it). TV and phone `StreamChoice.jump`, web `jumpStart`.
   - A transcoded stream restarts at an offset when seeking past what has arrived (`seekTo`,
     `player.offset`, `disc.offset`), as on Android, so the player tracks the absolute position
     itself (`playerPosition`). Seeks within the buffer don't restart it.

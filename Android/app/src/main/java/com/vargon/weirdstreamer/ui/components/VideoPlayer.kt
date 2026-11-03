@@ -560,15 +560,19 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
 
     /** Restarts a server stream at [targetMs]; a copied video begins at the keyframe before it. */
     fun restartStream(targetMs: Long) {
-        fun play(beginsMs: Long) {
+        fun play(askMs: Long, beginsMs: Long) {
             transcodeStartOffset = beginsMs
-            exoPlayer.setMediaItem(MediaItem.fromUri(transcodedUrl(targetMs)))
+            exoPlayer.setMediaItem(MediaItem.fromUri(transcodedUrl(askMs)))
             exoPlayer.prepare()
             exoPlayer.playWhenReady = true
         }
         restartJob?.cancel()
-        if (choice?.copiesVideo == true) restartJob = scope.launch { play(choice?.startOf(targetMs) ?: targetMs) }
-        else play(targetMs)
+        val from = playbackPosition
+        if (choice?.copiesVideo == true) restartJob = scope.launch {
+            val (ask, begins) = choice?.jump(from, targetMs) ?: (targetMs to targetMs)
+            play(ask, begins)
+        }
+        else play(targetMs, targetMs)
     }
 
     fun performSkip(amount: Int, showControlsAfter: Boolean, useAbsoluteAmount: Boolean = false) {

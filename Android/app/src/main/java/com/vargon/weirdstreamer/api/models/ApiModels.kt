@@ -474,6 +474,7 @@ data class VideoCodec(
 /** Where a stream that copies the video really starts, in seconds (GET /api/media/seekpoint). */
 data class SeekPoint(
     @SerializedName("start") val start: Double = 0.0,
+    @SerializedName("ask") val ask: String? = null, // with next=1: the start to request for it
 )
 
 data class SubtitleTrack(
