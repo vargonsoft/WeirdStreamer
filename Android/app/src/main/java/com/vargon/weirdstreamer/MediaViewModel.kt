@@ -391,6 +391,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
      *  scrolls the rows out of composition: coming back, focus returns to it. */
     val rowFocus = androidx.compose.runtime.mutableStateMapOf<String, String>()
 
+    /** Phone: the Settings tab shown, by name; kept while a video plays over Settings. */
+    var settingsTab by mutableStateOf("App")
+
     /** Whether the page leads with a row of videos: Continue Watching, Recently Added or both. */
     val hasTopRows: Boolean get() = continueItems.isNotEmpty() || newItems.isNotEmpty()
 

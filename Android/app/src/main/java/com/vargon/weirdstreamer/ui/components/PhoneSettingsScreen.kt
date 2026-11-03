@@ -18,7 +18,6 @@ import com.vargon.weirdstreamer.update.AppUpdater
 import com.vargon.weirdstreamer.update.UpdateState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -62,14 +61,16 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                 add("Account")
             }
         }
-        var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-        val tab = tabs[selectedTab.coerceIn(tabs.indices)]
+        // In the view model: playing a download from its tab replaces this screen, and coming back
+        // returns to the tab (by name, as the list changes with the server).
+        val selectedTab = tabs.indexOf(viewModel.settingsTab).coerceAtLeast(0)
+        val tab = tabs[selectedTab]
         PhoneContentPanel(modifier = Modifier.fillMaxSize().padding(padding)) {
         Column(modifier = Modifier.fillMaxSize()) {
         if (tabs.size > 1) {
             PrimaryScrollableTabRow(selectedTabIndex = selectedTab.coerceIn(tabs.indices), edgePadding = 8.dp) {
                 tabs.forEachIndexed { index, name ->
-                    Tab(selected = index == selectedTab, onClick = { selectedTab = index }, text = { Text(name) })
+                    Tab(selected = index == selectedTab, onClick = { viewModel.settingsTab = name }, text = { Text(name) })
                 }
             }
         }
