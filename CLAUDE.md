@@ -1,7 +1,8 @@
 # WeirdStreamer
 
 A self-hosted media server (Go) with a web UI (vanilla JS) and an Android app (Kotlin/Compose)
-that runs as both an Android TV app and a phone app. Pending work is in [TODO.md](TODO.md); notes
+that runs as both an Android TV app and a phone app. License: AGPL-3.0-or-later (`LICENSE`, and the
+copyright notice in `NOTICE`); the history was rewritten so no version was ever MIT. Pending work is in [TODO.md](TODO.md); notes
 for each TODO item are at the end of this file.
 
 ## Rules (from the user)

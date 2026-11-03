@@ -148,3 +148,10 @@ Use `./internal/...`, not `./...`: the stray `main` files in `src/` (`test_auth.
 
 `./scripts/run-e2e.sh` builds the server and runs a test instance from `e2e/` (git-ignored, with its own
 config, accounts and sample media) on http://localhost:9100.
+
+## License
+
+Copyright (C) 2026 Ash Gandhi. Weird Streamer is free software under the GNU Affero General Public
+License, version 3 or (at your option) any later version: see `LICENSE` and `NOTICE` at the top of
+the repository. If you run a modified version for others over a network, the AGPL asks you to offer
+them its source.
