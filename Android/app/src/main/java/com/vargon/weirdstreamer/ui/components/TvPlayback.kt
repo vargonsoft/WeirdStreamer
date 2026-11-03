@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -47,47 +48,57 @@ import com.vargon.weirdstreamer.MediaViewModel
 /**
  * TV: the rows above a folder or library grid: Continue Watching, the videos in progress, and
  * Recently Added, the last to arrive in the library. Up goes to the toolbar ([up]); Down from the last
- * row hands focus to the grid ([onDown]). [firstRequester] focuses the first card.
+ * row hands focus to the grid ([onDown]). [topRequester] focuses the top row and [bottomRequester]
+ * the bottom one (the grid's Up), each on the card last focused there, or its first.
  */
 @Composable
 fun TvContinueRow(
     viewModel: MediaViewModel,
-    firstRequester: FocusRequester,
+    topRequester: FocusRequester,
+    bottomRequester: FocusRequester,
     up: FocusRequester,
     onDown: () -> Boolean,
     modifier: Modifier = Modifier
 ) {
     val inProgress = viewModel.continueItems
     val newlyAdded = viewModel.newItems
-    val newRequester = remember { FocusRequester() }
     val both = inProgress.isNotEmpty() && newlyAdded.isNotEmpty()
     Column(modifier = modifier) {
-        if (inProgress.isNotEmpty()) TvVideoRow(viewModel, "Continue Watching", inProgress, firstRequester, up,
-            onDown = { if (both) runCatching { newRequester.requestFocus() }.isSuccess else onDown() })
+        if (inProgress.isNotEmpty()) TvVideoRow(viewModel, "Continue Watching", inProgress,
+            if (both) listOf(topRequester) else listOf(topRequester, bottomRequester), up,
+            onDown = { if (both) bottomRequester.tryFocus() else onDown() })
         if (newlyAdded.isNotEmpty()) TvVideoRow(viewModel, "Recently Added", newlyAdded,
-            if (both) newRequester else firstRequester, if (both) firstRequester else up, onDown,
+            if (both) listOf(bottomRequester) else listOf(topRequester, bottomRequester),
+            if (both) topRequester else up, onDown,
             modifier = if (both) Modifier.padding(top = 16.dp) else Modifier)
     }
 }
+
+/** Focuses what this requester is on; false when nothing is (not composed, or can't take focus). */
+fun FocusRequester.tryFocus(): Boolean = runCatching { requestFocus() }.getOrDefault(false)
 
 @Composable
 private fun TvVideoRow(
     viewModel: MediaViewModel,
     heading: String,
     items: List<com.vargon.weirdstreamer.api.models.ContinueItem>,
-    firstRequester: FocusRequester,
+    requesters: List<FocusRequester>,
     up: FocusRequester,
     onDown: () -> Boolean,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
         Text(heading, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 10.dp))
+        // The requesters are on the row, not its first card, which scrolls away (and out of
+        // composition) along the row: focusing the row brings back the card last focused in it.
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(20.dp),
             contentPadding = PaddingValues(horizontal = FocusBleed, vertical = 8.dp),
-            modifier = Modifier.focusBleed().onPreviewKeyEvent { e ->
-                e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown && onDown()
-            }
+            modifier = requesters.fold(Modifier.focusBleed()) { m, r -> m.focusRequester(r) }
+                .focusRestorer()
+                .onPreviewKeyEvent { e ->
+                    e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown && onDown()
+                }
         ) {
             itemsIndexed(items, key = { _, it -> it.path }) { index, item ->
                 val (title, subtitle) = item.titleLines
@@ -101,7 +112,6 @@ private fun TvVideoRow(
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
-                            .then(if (index == 0) Modifier.focusRequester(firstRequester) else Modifier)
                             .focusProperties { this.up = up }
                             .onPreviewKeyEvent { e ->
                                 val select = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter

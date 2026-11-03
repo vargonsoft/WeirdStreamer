@@ -212,7 +212,16 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                 val target = place + rows * POSTER_COLUMNS
                 val position = when {
                     target < 0 -> {
-                        if (inTitles) return false // the top row: the rows above, or the toolbar
+                        if (inTitles && hasContinue) {
+                            // Up to the row just above, scrolled out of composition if need be.
+                            if (requesters[CONTINUE_BOTTOM]?.tryFocus() != true) scope.launch {
+                                gridState.scrollToItem(0)
+                                awaitFrame()
+                                requesters[CONTINUE_BOTTOM]?.tryFocus()
+                            }
+                            return true
+                        }
+                        if (inTitles) return false // the top row: the toolbar
                         minOf((titles - 1) / POSTER_COLUMNS * POSTER_COLUMNS + column, titles - 1)
                     }
                     target < size -> start + target
@@ -253,14 +262,19 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                 if (hasContinue) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = CONTINUE_ROW) {
                         val continueRequester = remember { FocusRequester() }
+                        val bottomRequester = remember { FocusRequester() }
                         DisposableEffect(Unit) {
                             requesters[CONTINUE_ROW] = continueRequester
-                            onDispose { if (requesters[CONTINUE_ROW] === continueRequester) requesters.remove(CONTINUE_ROW) }
+                            requesters[CONTINUE_BOTTOM] = bottomRequester
+                            onDispose {
+                                if (requesters[CONTINUE_ROW] === continueRequester) requesters.remove(CONTINUE_ROW)
+                                if (requesters[CONTINUE_BOTTOM] === bottomRequester) requesters.remove(CONTINUE_BOTTOM)
+                            }
                         }
                         // While these rows have focus, Up and Down are theirs (moveVertically).
                         Box(Modifier.onFocusChanged { if (it.hasFocus) focusedPosition[0] = -1 }) {
-                            TvContinueRow(viewModel, continueRequester, up = toolbarFocusRequester,
-                                onDown = { runCatching { firstRequester.requestFocus() }.isSuccess })
+                            TvContinueRow(viewModel, continueRequester, bottomRequester, up = toolbarFocusRequester,
+                                onDown = { firstRequester.tryFocus() })
                         }
                     }
                 }
@@ -353,6 +367,7 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
 
 private const val UNMATCHED_HEADER = "unmatched-header"
 private const val CONTINUE_ROW = "continue-row"
+private const val CONTINUE_BOTTOM = "continue-bottom" // the lower of the rows (Recently Added), for Up
 
 /** Attaches a focus requester recorded in [requesters] under [key] while the item is composed. */
 @Composable

@@ -560,11 +560,12 @@ private fun FileBrowserScreen(
     // The server's front page leads with what's in progress. The row sits above the grid: Down
     // from the toolbar lands on it, and Down from it on the grid.
     val showContinue = viewModel.hasTopRows
-    val continueRequester = remember { FocusRequester() }
+    val continueRequester = remember { FocusRequester() } // the top row
+    val rowsBottomRequester = remember { FocusRequester() } // the row just above the folders
     val gridEntry = remember { ContentEntry() }
     DisposableEffect(contentEntry, showContinue) {
         val focusTop: () -> Boolean = {
-            if (showContinue) runCatching { continueRequester.requestFocus() }.isSuccess
+            if (showContinue) continueRequester.tryFocus()
             else gridEntry.focusTop?.invoke() ?: false
         }
         contentEntry.focusTop = focusTop
@@ -579,7 +580,7 @@ private fun FileBrowserScreen(
     LaunchedEffect(viewModel.continueRemovals) {
         if (viewModel.continueRemovals == 0) return@LaunchedEffect
         withFrameNanos { }
-        if (!(showContinue && runCatching { continueRequester.requestFocus() }.isSuccess)) gridEntry.focusTop?.invoke()
+        if (!(showContinue && continueRequester.tryFocus())) gridEntry.focusTop?.invoke()
     }
     run {
         BrowserGrid(
@@ -590,12 +591,12 @@ private fun FileBrowserScreen(
             toolbarFocusRequester = toolbarFocusRequester,
             contentEntry = gridEntry,
             takeFocus = !viewModel.toolbarKeepsFocus,
-            upFocusRequester = if (showContinue) continueRequester else toolbarFocusRequester,
+            upFocusRequester = if (showContinue) rowsBottomRequester else toolbarFocusRequester,
             // Scrolls away with the folders as focus moves down them.
             headerFocus = if (showContinue) continueRequester else null,
             header = if (showContinue) {
                 {
-                    TvContinueRow(viewModel, continueRequester, up = toolbarFocusRequester,
+                    TvContinueRow(viewModel, continueRequester, rowsBottomRequester, up = toolbarFocusRequester,
                         onDown = { gridEntry.focusTop?.invoke() ?: false },
                         modifier = Modifier.padding(bottom = 12.dp))
                 }

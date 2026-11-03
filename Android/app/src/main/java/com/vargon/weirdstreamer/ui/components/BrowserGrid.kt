@@ -132,7 +132,16 @@ fun BrowserGrid(
         val from = focusedIndex[0]
         if (from !in list.indices) return false
         var target = from + rows * columns
-        if (target < 0) return false // top row: focusProperties sends it to the toolbar
+        if (target < 0) {
+            if (header == null) return false // top row: focusProperties sends it to the toolbar
+            // Up to the rows above, scrolled out of composition if the grid went past them.
+            if (!upFocusRequester.tryFocus()) scope.launch {
+                gridState.scrollToItem(0)
+                withFrameNanos { }
+                upFocusRequester.tryFocus()
+            }
+            return true
+        }
         if (target >= list.size) {
             if (from / columns == (list.size - 1) / columns) return true // already on the last row
             target = list.size - 1
