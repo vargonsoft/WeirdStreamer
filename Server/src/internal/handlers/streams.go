@@ -120,6 +120,10 @@ func (h *MediaHandler) ReportStreamProgress(w http.ResponseWriter, r *http.Reque
 		respondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
+	if req.Position < 0 { // a player that lost track of time; it would become the resume point
+		respondError(w, http.StatusBadRequest, "Invalid position")
+		return
+	}
 	decoded, err := base64.StdEncoding.DecodeString(req.Path)
 	if err != nil || len(decoded) == 0 {
 		respondError(w, http.StatusBadRequest, "Invalid path encoding")
@@ -270,6 +274,9 @@ func (h *MediaHandler) GetSeekPoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	point, err := media.SeekPoint(path, start)
+	if err == nil && point < 0 {
+		err = fmt.Errorf("seek point %v", point) // a time ffmpeg couldn't give
+	}
 	if err != nil {
 		respondError(w, http.StatusUnprocessableEntity, "Could not read the file")
 		return

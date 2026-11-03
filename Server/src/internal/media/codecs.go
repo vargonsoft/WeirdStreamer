@@ -242,8 +242,13 @@ func SeekPoint(filePath, start string) (float64, error) {
 	return parseFrameTime(string(out))
 }
 
+// noTimestamp is what framecrc prints for a packet without one (AV_NOPTS_VALUE): an AVI's
+// packets have no pts, only a dts.
+const noTimestamp = "-9223372036854775808"
+
 // parseFrameTime reads the first frame's time from ffmpeg's framecrc output: a "#tb 0: 1/1000"
-// time base line, then "stream, dts, pts, duration, size, crc" lines.
+// time base line, then "stream, dts, pts, duration, size, crc" lines. The pts, or the dts when
+// the packet has none (a keyframe's are the same).
 func parseFrameTime(out string) (float64, error) {
 	num, den := 0.0, 0.0
 	for _, line := range strings.Split(out, "\n") {
@@ -255,7 +260,14 @@ func parseFrameTime(out string) (float64, error) {
 		if strings.HasPrefix(line, "#") || len(fields) < 3 || den == 0 {
 			continue
 		}
-		pts, err := strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
+		stamp := strings.TrimSpace(fields[2])
+		if stamp == noTimestamp {
+			stamp = strings.TrimSpace(fields[1])
+		}
+		if stamp == noTimestamp {
+			return 0, fmt.Errorf("the first frame has no time")
+		}
+		pts, err := strconv.ParseFloat(stamp, 64)
 		if err != nil {
 			return 0, err
 		}

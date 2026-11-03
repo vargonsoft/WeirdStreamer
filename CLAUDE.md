@@ -91,6 +91,8 @@ for each TODO item are at the end of this file.
   - `Movies/HEVC Test`, `Hi10 Test` (10-bit H.264), `AVI Test` (MPEG-4 Part 2 and MP3),
     `VP9 Test` (WebM) and `AV1 Test`: 30-second clips for the browser codec checks. New files
     only stream once a scan has added them (`api.scanMedia()`, or Scan Media in the web UI).
+  - `Movies/AVI BFrame Test`: 30 seconds of H.264 with B-frames in AVI, whose packets have no
+    pts (framecrc prints -9223372036854775808): `SeekPoint` reads the dts instead.
   - `TV Shows/Example Show/Season 1/`: two episodes. S01E01 is a 60-second clip; S01E02 is empty.
 - Emulators: `emulator-5554` is Android TV (AVD `Television_1080p_API_34`) and `emulator-5556`
   is a phone (AVD `Medium_Phone_API_35`). `Android/tools/start-emulators.sh` starts whichever

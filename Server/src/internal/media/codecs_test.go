@@ -88,6 +88,14 @@ func TestParseFrameTime(t *testing.T) {
 	if _, err := parseFrameTime("#tb 0: 1/1000\n"); err == nil {
 		t.Error("no frame: want an error")
 	}
+	// An AVI's packets have no pts (framecrc prints AV_NOPTS_VALUE), only a dts.
+	avi := "#tb 0: 1/25\n0,        289, -9223372036854775808,        1,    16087, 0x699eec5f\n"
+	if got, err := parseFrameTime(avi); err != nil || got != 11.56 {
+		t.Errorf("got %v, %v; want the dts, 11.56", got, err)
+	}
+	if _, err := parseFrameTime("#tb 0: 1/25\n0, -9223372036854775808, -9223372036854775808, 1, 1, 0x0\n"); err == nil {
+		t.Error("no time at all: want an error")
+	}
 }
 
 func TestPictureSubtitleArgs(t *testing.T) {

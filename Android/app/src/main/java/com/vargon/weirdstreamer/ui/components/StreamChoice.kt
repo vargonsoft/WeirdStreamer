@@ -210,7 +210,8 @@ class StreamChoice(private val api: ApiService, private val encodedPath: String)
         val point = withContext(Dispatchers.IO) {
             runCatching { api.getSeekPoint(encodedPath, streamStart(ms)).body() }.getOrNull()
         }
-        return point?.let { (it.start * 1000).toLong() } ?: ms
+        // Below 0 is no time at all (an older server reading an AVI's missing timestamp).
+        return point?.let { (it.start * 1000).toLong() }?.takeIf { it >= 0 } ?: ms
     }
 
     companion object {

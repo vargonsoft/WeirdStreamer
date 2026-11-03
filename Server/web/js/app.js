@@ -1085,7 +1085,8 @@ function fileStreamUrl(p, start) {
 async function streamStart(p, start) {
     if (!(start > 0) || !copiesVideo(p)) return start;
     try {
-        return (await api.getSeekPoint(p.item.path, start.toFixed(2))).start;
+        const begins = (await api.getSeekPoint(p.item.path, start.toFixed(2))).start;
+        return begins >= 0 ? begins : start; // below 0: no time at all (an older server, an AVI)
     } catch (error) {
         console.warn('Could not find where the stream starts:', error);
         return start;
