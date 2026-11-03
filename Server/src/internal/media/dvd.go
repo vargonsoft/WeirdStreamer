@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -277,6 +278,23 @@ func mainTitle(titles []DiscTitle) int {
 	return titles[best].Number
 }
 
+// withoutDVDLibLines drops the lines libdvdread and libdvdnav print to stdout (a damaged
+// navigation packet: "libdvdread: CHECK_VALUE failed in nav_read.c..."), which land in the middle
+// of ffprobe's JSON. A disc with one such packet read as having no titles.
+func withoutDVDLibLines(out []byte) []byte {
+	if !bytes.Contains(out, []byte("libdvd")) {
+		return out
+	}
+	lines := bytes.SplitAfter(out, []byte("\n"))
+	kept := lines[:0]
+	for _, line := range lines {
+		if !bytes.HasPrefix(bytes.TrimSpace(line), []byte("libdvdread:")) && !bytes.HasPrefix(bytes.TrimSpace(line), []byte("libdvdnav:")) {
+			kept = append(kept, line)
+		}
+	}
+	return bytes.Join(kept, nil)
+}
+
 func probeTitle(path string, n int) (*DiscTitle, error) {
 	out, err := exec.Command("ffprobe", "-v", "error", "-f", "dvdvideo", "-title", strconv.Itoa(n), "-i", path,
 		"-show_format", "-show_chapters", "-show_streams", "-of", "json").Output()
@@ -302,7 +320,7 @@ func probeTitle(path string, n int) (*DiscTitle, error) {
 			} `json:"tags"`
 		} `json:"streams"`
 	}
-	if err := json.Unmarshal(out, &probe); err != nil {
+	if err := json.Unmarshal(withoutDVDLibLines(out), &probe); err != nil {
 		return nil, err
 	}
 	t := &DiscTitle{Number: n, Chapters: []float64{}, Audio: []DiscTrack{}, Subtitles: []DiscTrack{}}

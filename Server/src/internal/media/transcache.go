@@ -196,19 +196,10 @@ func (s *transcodeSpool) start(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	cmd := exec.CommandContext(ctx, transcodeCommand, args...)
-	stdout, err := cmd.StdoutPipe()
+	stdout, stderr, err := transcodePipes(cmd)
 	if err != nil {
 		cancel()
-		return fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		cancel()
-		return fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		cancel()
-		return fmt.Errorf("failed to start ffmpeg: %w", err)
+		return err
 	}
 	started := time.Now()
 	s.mu.Lock()
@@ -229,6 +220,8 @@ func (s *transcodeSpool) start(args []string) error {
 		s.changed.Broadcast()
 		s.mu.Unlock()
 		lines := <-tail
+		stdout.Close()
+		stderr.Close()
 		took := time.Since(started).Round(time.Second)
 		switch {
 		case shuttingDown.Load():
@@ -245,6 +238,48 @@ func (s *transcodeSpool) start(args []string) error {
 		}
 	}()
 	return nil
+}
+
+// transcodePipes starts cmd with a pipe for its output and one for its messages. ffmpeg's output
+// to stdout ("pipe:1") goes to its own pipe (fd 3) instead: libraries ffmpeg uses print to stdout
+// too (libdvdread, on a damaged navigation packet), which landed in the middle of a stream. What
+// they print joins ffmpeg's messages. The caller closes both readers when ffmpeg is done.
+func transcodePipes(cmd *exec.Cmd) (output, messages io.ReadCloser, err error) {
+	if n := len(cmd.Args); n < 2 || cmd.Args[n-1] != "pipe:1" {
+		if output, err = cmd.StdoutPipe(); err != nil {
+			return nil, nil, fmt.Errorf("failed to create stdout pipe: %w", err)
+		}
+		if messages, err = cmd.StderrPipe(); err != nil {
+			return nil, nil, fmt.Errorf("failed to create stderr pipe: %w", err)
+		}
+		if err := cmd.Start(); err != nil {
+			return nil, nil, fmt.Errorf("failed to start ffmpeg: %w", err)
+		}
+		return output, messages, nil
+	}
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create the output pipe: %w", err)
+	}
+	msgR, msgW, err := os.Pipe()
+	if err != nil {
+		outR.Close()
+		outW.Close()
+		return nil, nil, fmt.Errorf("failed to create the message pipe: %w", err)
+	}
+	cmd.Args[len(cmd.Args)-1] = "pipe:3"
+	cmd.ExtraFiles = []*os.File{outW}
+	cmd.Stdout, cmd.Stderr = msgW, msgW
+	err = cmd.Start()
+	// ffmpeg has its own copies of the write ends: closing these lets the readers see its end.
+	outW.Close()
+	msgW.Close()
+	if err != nil {
+		outR.Close()
+		msgR.Close()
+		return nil, nil, fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+	return outR, msgR, nil
 }
 
 // outputTail is how many of ffmpeg's last lines a failed transcode logs.

@@ -1,7 +1,9 @@
 package media
 
 import (
+	"encoding/json"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -29,5 +31,37 @@ func TestReadOutputKeepsMessagesNotProgress(t *testing.T) {
 	want := []string{"Input #0, matroska", "Stream #0:0: Video: h264", "[aac @ 0x1] Too many bits", "Conversion failed!"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// What a library prints to stdout during a transcode stays out of the stream.
+func TestTranscodeOutputHasItsOwnPipe(t *testing.T) {
+	cmd := exec.Command("sh", "-c", `echo "libdvdread: CHECK_VALUE failed"; printf video >&3`, "sh", "pipe:1")
+	output, messages, err := transcodePipes(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	video, _ := io.ReadAll(output)
+	said, _ := io.ReadAll(messages)
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if string(video) != "video" {
+		t.Errorf("output %q, want only the video", video)
+	}
+	if !strings.Contains(string(said), "CHECK_VALUE") {
+		t.Errorf("messages %q lack the library's line", said)
+	}
+}
+
+func TestDVDLibLinesLeaveProbeJSON(t *testing.T) {
+	out := []byte("{\nlibdvdread: CHECK_VALUE failed in ../src/nav_read.c:271 for dsi->dsi_gi.zero1 == 0\n    \"format\": {\"duration\": \"4173.1\"}\n}\n")
+	var probe struct {
+		Format struct {
+			Duration string `json:"duration"`
+		} `json:"format"`
+	}
+	if err := json.Unmarshal(withoutDVDLibLines(out), &probe); err != nil || probe.Format.Duration != "4173.1" {
+		t.Fatalf("duration %q, err %v", probe.Format.Duration, err)
 	}
 }
