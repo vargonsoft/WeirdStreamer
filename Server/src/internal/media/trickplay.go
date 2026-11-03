@@ -30,6 +30,9 @@ func NewTrickplayGenerator(db *database.DB) *TrickplayGenerator {
 }
 
 func (tg *TrickplayGenerator) Generate(videoPath string) error {
+	if IsDiscImage(videoPath) {
+		return tg.generateDisc(context.Background(), videoPath, nil, nil)
+	}
 	return tg.generate(context.Background(), videoPath, nil)
 }
 
@@ -531,6 +534,8 @@ func (tg *TrickplayGenerator) generateDisc(ctx context.Context, path string, wai
 		return err
 	}
 	removeParts(dir)
+	// As for files: a line when a disc starts and when it's done (or why it stopped, from the job).
+	fmt.Printf("Generating trickplay frames for %s (title %d, %s)\n", path, title.Number, formatLength(title.Duration))
 	for i, seg := range title.Segments {
 		if ctx.Err() != nil || (wait != nil && !wait()) {
 			return ctx.Err()
@@ -539,7 +544,21 @@ func (tg *TrickplayGenerator) generateDisc(ctx context.Context, path string, wai
 			return err
 		}
 	}
-	return os.WriteFile(filepath.Join(dir, trickplayDone), []byte(strconv.Itoa(title.Number)), 0644)
+	if err := os.WriteFile(filepath.Join(dir, trickplayDone), []byte(strconv.Itoa(title.Number)), 0644); err != nil {
+		return err
+	}
+	frames, _ := filepath.Glob(filepath.Join(dir, "frame-*.jpg"))
+	fmt.Printf("Finished generating trickplay frames for %s (%d frames)\n", path, len(frames))
+	return nil
+}
+
+// formatLength is a length for the log: "1h09m33s", "4m05s".
+func formatLength(seconds float64) string {
+	d := time.Duration(seconds) * time.Second
+	if d >= time.Hour {
+		return fmt.Sprintf("%dh%02dm%02ds", int(d.Hours()), int(d.Minutes())%60, int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
 func (tg *TrickplayGenerator) discSegmentFrames(ctx context.Context, path string, title *DiscTitle, i int, seg DiscSegment, dir string, busy func() bool) error {
