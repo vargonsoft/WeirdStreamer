@@ -3,9 +3,10 @@ package logs
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/clientip"
 )
 
 type accessKey struct{}
@@ -38,10 +39,7 @@ func Access(next http.Handler) http.Handler {
 		if rec.status == 0 {
 			rec.status = http.StatusOK
 		}
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			host = r.RemoteAddr
-		}
+		host := clientip.Of(r)
 		fmt.Fprintf(accessLog, "%s - %s [%s] %q %d %d %q %q %dms\n",
 			host, req.user, start.Format("02/Jan/2006:15:04:05 -0700"),
 			r.Method+" "+r.URL.RequestURI()+" "+r.Proto, rec.status, rec.bytes,

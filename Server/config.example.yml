@@ -1,0 +1,114 @@
+# Weird Streamer's settings. Copy this to config.yml (scripts/create-config.sh does, asking for the
+# main ones) and edit it. The server reads ./config.yml, or the file CONFIG_PATH names. Relative
+# paths are from the folder it runs in (Server/).
+#
+# The server also saves this file (Settings, the Jobs page, cli config add-path): it changes only
+# the values that changed, so comments and the order of settings stay as you wrote them.
+#
+# It holds secrets (the JWT secret, API tokens): keep it private (chmod 600).
+
+# The access groups. Each user is in one, and each library lists the groups that may see it.
+# Users and libraries can only name groups listed here.
+groups: ["parents", "admins", "kids"]
+
+server:
+  # The name the apps show for this server (empty: they show its address)
+  name: "Weird Streamer"
+  port: 8080
+  # The address to listen on: 0.0.0.0 for every network, 127.0.0.1 for this machine only
+  host: 0.0.0.0
+  # HTTPS certificate and private key (with streaming.enableHTTP2). Without them the server
+  # falls back to plain HTTP.
+  certFile: cert.pem
+  keyFile: key.pem
+  # The folder for the logs: scripts/live.sh writes server-<start time>.log there (the last 20 are
+  # kept), and the server writes auth.log (sign-ins) and access.log (one line per request).
+  logsPath: ./var/logs
+  # Reverse proxies in front of the server (such as nginx), as addresses or networks
+  # ("10.0.0.0/8"). From them, X-Forwarded-For (or X-Real-IP) names the client, for the logs,
+  # sign-in limits and the Streams page. From anyone else those headers are ignored, since any
+  # client could send them. Leave it out without a proxy. nginx sends them with:
+  #   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  #   proxy_set_header X-Real-IP $remote_addr;
+  trustedProxies: ["127.0.0.1"]
+
+# The users and playback database, and the media database (items, TMDB matches, discs)
+database:
+  userPath: ./var/data/users.db
+  mediaPath: ./var/data/media.db
+
+media:
+  # The libraries. Each has a name, a folder and the groups that may see it, and the server gives
+  # it an id (keep it: the apps and the databases know a library by it).
+  paths:
+    # type: "movie" or "tv" makes a library of TMDB titles (needs metadata.tmdbAccessToken);
+    # without one it's a plain folder.
+    # continueWatchingMode: where its videos in progress show on Continue Watching: "on" (the home
+    # screen's row and the library's own page, the default), "libraryOnly" or "off".
+    # showNewAdditions: where its newest videos show on Recently Added: "on" (the home screen's row
+    # and the library's own page), "libraryOnly" or "off" (the default).
+    - name: Movies
+      path: /path/to/media/movies
+      groups: ["parents", "admins"]
+      type: movie
+    - name: TV Shows
+      path: /path/to/media/tv
+      groups: ["kids", "parents", "admins"]
+      type: tv
+      showNewAdditions: "on"
+    - name: Photos
+      path: /path/to/media/photos
+      groups: ["parents", "admins"]
+  # Where the server keeps what it makes:
+  # thumbnails (required)
+  thumbnailPath: ./var/thumbnails
+  # Seek-bar frames (none without it)
+  trickplayPath: ./var/trickplay
+  # TMDB posters and backdrops (default ./artwork)
+  artworkPath: ./var/artwork
+  # Encodes for offline downloads (default: "downloads" beside the thumbnails folder)
+  downloadPath: ./var/downloads
+  # Transcodes while they play, so a player can reconnect (default: "transcodes" beside the
+  # thumbnails folder). Emptied when the server starts.
+  transcodeCachePath: ./var/transcodes
+  # Subtitles downloaded from OpenSubtitles (needed to download them)
+  subtitlePath: ./var/subtitles
+  # The file types it lists, by extension
+  supportedVideoFormats: [".mp4", ".mkv", ".avi", ".divx", ".xvid", ".iso", ".mov", ".wmv", ".flv", ".webm", ".3gp", ".3gpp", ".m4v", ".mpg", ".mpeg", ".ts", ".mp2"]
+  supportedImageFormats: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"]
+  supportedDocFormats: [".pdf"]
+  # Leave out macOS's extra files (._name, .DS_Store, .AppleDouble folders)
+  ignoreMacFiles: false
+
+auth:
+  # Signs the sign-in tokens: a long random string (create-config.sh makes one). Changing it
+  # signs everyone out.
+  jwtSecret: "change-this-to-a-random-secret-key"
+  # How long a sign-in lasts
+  tokenExpiryHours: 720
+
+streaming:
+  # Not used any more
+  chunkSize: 1048576
+  # HTTPS with HTTP/2, with server.certFile and keyFile
+  enableHTTP2: true
+  # Serve HEIC photos as JPEG, which browsers show
+  autoConvertImages: true
+  # Background jobs (intros and credits, trickplay, cleanup) wait while anyone is streaming,
+  # whatever the machine's load: a failsafe
+  pauseJobsWhileStreaming: false
+
+metadata:
+  # TMDB API read access token (Bearer), for movie and tv libraries
+  tmdbAccessToken: ""
+  # TMDB's language for titles and overviews (default en-US)
+  language: en-US
+  # OpenSubtitles.com API key, for searching and downloading subtitles (empty: no online search)
+  openSubtitlesApiKey: ""
+
+# The trickplay job's speed (the Jobs page changes these)
+jobs:
+  # Videos it makes frames for at once: 1 to 8
+  trickplayRunners: 3
+  # Frames one ffmpeg process makes: 1 to 50. Runners times frames is at most 100 (memory).
+  trickplayFramesPerRunner: 25

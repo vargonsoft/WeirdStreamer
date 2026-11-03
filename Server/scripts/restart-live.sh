@@ -53,7 +53,10 @@ fi
 if [ "$build" = 1 ]; then
     mkdir -p bin
     go -C src build -o ../bin/server.new ./cmd/server
+    # The CLI too: it reads the same config and databases
+    go -C src build -o ../bin/cli.new ./cmd/cli
     mv bin/server.new bin/server
+    mv bin/cli.new bin/cli
 fi
 
 touch .restart
@@ -69,5 +72,5 @@ for _ in $(seq 1 60); do
     fi
     sleep 0.5
 done
-echo "The live server hasn't come back after 30s: see the newest log file (server.logsPath in config.json)." >&2
+echo "The live server hasn't come back after 30s: see the newest log file (server.logsPath in config.yml)." >&2
 exit 1

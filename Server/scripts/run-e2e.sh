@@ -8,4 +8,4 @@ cd "$(dirname "$0")/.."
 mkdir -p ../bin
 go -C src build -o ../bin/e2e-server ./cmd/server
 cd e2e
-exec env CONFIG_PATH=./config.json ../bin/e2e-server
+exec env CONFIG_PATH=./config.yml ../bin/e2e-server

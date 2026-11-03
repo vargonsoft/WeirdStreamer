@@ -22,7 +22,7 @@ type jobsResponse struct {
 	Trickplay      trickplaySettings  `json:"trickplay"`
 }
 
-// trickplaySettings are the trickplay job's settings on the Jobs page (kept in config.json),
+// trickplaySettings are the trickplay job's settings on the Jobs page (kept in config.yml),
 // and their limits.
 type trickplaySettings struct {
 	Runners         int `json:"runners"`
@@ -53,7 +53,7 @@ func (h *MediaHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 
 // ControlJob runs, pauses or resumes a job, or changes its settings (admins):
 // POST /api/admin/jobs/{id}/{run|pause|resume|settings}. Trickplay's settings ({"runners",
-// "frames_per_runner"}) are saved to config.json and apply from its next batch.
+// "frames_per_runner"}) are saved to config.yml and apply from its next batch.
 func (h *MediaHandler) ControlJob(w http.ResponseWriter, r *http.Request) {
 	if claims := auth.GetClaims(r.Context()); claims == nil || !claims.IsAdmin {
 		respondError(w, http.StatusForbidden, "Admin access required")

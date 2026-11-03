@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/weirdstreamer/server/internal/auth"
+	"github.com/weirdstreamer/server/internal/clientip"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/models"
 	"github.com/weirdstreamer/server/internal/subtitles"
@@ -26,12 +27,9 @@ func streamKey(r *http.Request, path string) string {
 	return user + "|" + clientIP(r) + "|" + path
 }
 
+// clientIP is the client's address, from a trusted proxy's headers behind one.
 func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return clientip.Of(r)
 }
 
 // beginStream tracks a video request; the returned session (nil for other media) must be ended.
@@ -160,7 +158,8 @@ func (h *MediaHandler) ListStreams(w http.ResponseWriter, r *http.Request) {
 // LocalStreamSummary says how many streams are active, without what is playing, to tools on the
 // server itself (checking before a restart). It answers only loopback connections.
 func (h *MediaHandler) LocalStreamSummary(w http.ResponseWriter, r *http.Request) {
-	if ip := net.ParseIP(clientIP(r)); ip == nil || !ip.IsLoopback() {
+	// The connection's own address: a forwarded one could claim to be local.
+	if ip := net.ParseIP(clientip.Peer(r)); ip == nil || !ip.IsLoopback() {
 		http.NotFound(w, r)
 		return
 	}

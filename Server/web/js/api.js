@@ -267,7 +267,7 @@ class MediaAPI {
         return this.request(`/api/admin/jobs/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
     }
 
-    // Trickplay's runners and frames per runner (saved to config.json); returns the jobs status.
+    // Trickplay's runners and frames per runner (saved to config.yml); returns the jobs status.
     async setTrickplaySettings(runners, framesPerRunner) {
         return this.request('/api/admin/jobs/trickplay/settings', {
             method: 'POST',

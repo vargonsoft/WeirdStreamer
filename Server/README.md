@@ -8,23 +8,25 @@ and serves the web UI. The Android TV and phone app talks to the same API.
 
 - Go 1.24 with CGO (SQLite is `mattn/go-sqlite3`), so a C compiler too.
 - `ffmpeg` and `ffprobe` on `PATH`, for thumbnails, trickplay, transcoding and disc playback.
+- Python 3 with PyYAML (`python3-yaml`), for the scripts that read `config.yml`.
 - Optional: a TMDB API read access token for movie and TV metadata.
 
 ## Build and run
 
 Without Docker, `./start-server.sh` does everything:
 
-- The first time, there's no `config.json`, so it runs `scripts/create-config.sh`. That checks the
-  tools (Go, gcc, ffmpeg, and openssl for a certificate), asks for the port, the libraries and whether
-  to use HTTPS, generates a self-signed certificate if you want one, and writes `config.json` from
-  `config.example.json` with a fresh JWT secret. It can also create the admin user.
 - If `bin/` is missing, it runs `scripts/build.sh`, which builds `bin/server` and `bin/cli`.
+- The first time, there's no `config.yml`, so it runs `scripts/create-config.sh`. That checks the
+  tools (Go, gcc, ffmpeg, PyYAML, and openssl for a certificate), asks for the port, the libraries
+  and whether to use HTTPS, generates a self-signed certificate if you want one, and writes
+  `config.yml` from `config.example.yml` (with its comments) and a fresh JWT secret. It can also
+  create the admin user.
 - Then it runs `scripts/live.sh`, which keeps the server in this terminal and logs to
   `server.logsPath`.
 
-You can also build with `make build` or `scripts/build.sh`, and create `config.json` with
-`scripts/create-config.sh` or by copying `config.example.json` and editing it. The server reads
-`./config.json`, or the file named by `CONFIG_PATH`. It serves the web UI from `./web`, so run it from
+You can also build with `make build` or `scripts/build.sh`, and create `config.yml` with
+`scripts/create-config.sh` or by copying `config.example.yml` and editing it. The server reads
+`./config.yml`, or the file named by `CONFIG_PATH`. It serves the web UI from `./web`, so run it from
 this directory. Create the admin user with `./bin/cli user create <name> --admin --group parents`.
 
 If `streaming.enableHTTP2` is on and the certificate and key files (`server.certFile` and
@@ -33,9 +35,9 @@ Otherwise it falls back to plain HTTP.
 
 ## Docker
 
-Files are in `docker/`. Copy `config.example.json` to `config.json` and edit it, then run
+Files are in `docker/`. Copy `config.example.yml` to `config.yml` and edit it, then run
 `make docker-compose-up`. That writes `docker/docker-compose.override.yml` (one read-only mount per
-library, at the same path inside the container) and `docker/config.container.json` (the config the
+library, at the same path inside the container) and `docker/config.container.yml` (the config the
 container runs with, its data under `var/`), then builds and starts the server on port 8080.
 
 `make docker-config` asks which user the container runs as: you (the default, so it can read the
@@ -48,7 +50,7 @@ and the container config holds the secrets. Create the admin user with
 
 ## Configuration
 
-See `config.example.json`. The main sections:
+See `config.example.yml`, which explains each setting in its comments. The main sections:
 
 - `server`: `host`, `port`, and the TLS `certFile` and `keyFile` for HTTPS.
 - `database`: paths for the users database (accounts, playback progress) and the media database
@@ -69,7 +71,11 @@ See `config.example.json`. The main sections:
 Admins can also change libraries, groups and the TMDB token from the web UI's Settings. A change
 there starts a metadata sync without a restart.
 
-`config.json` holds secrets and is git-ignored.
+The server saves the file too (Settings, the Jobs page, `cli config add-path`). A save changes
+only the values that changed: your comments, blank lines, the order of settings and anything the
+server doesn't know stay as you wrote them.
+
+`config.yml` holds secrets and is git-ignored.
 
 ## Users and access
 

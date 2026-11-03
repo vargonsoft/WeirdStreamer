@@ -40,7 +40,7 @@ echo ""
 FIRST_DIR=$(echo "$RESPONSE" | grep -o '"path":"[^"]*"' | head -1 | cut -d'"' -f4)
 
 if [ -z "$FIRST_DIR" ]; then
-    echo "⚠️  No directories found. Check your media paths in config.json"
+    echo "⚠️  No directories found. Check your media paths in config.yml"
     exit 0
 fi
 

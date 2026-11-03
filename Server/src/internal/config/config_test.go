@@ -7,9 +7,10 @@ import (
 	"testing"
 )
 
-func loadJSON(t *testing.T, body string) error {
+// loadConfig loads body (JSON is YAML too, so the cases can stay on one line).
+func loadConfig(t *testing.T, body string) error {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "config.json")
+	path := filepath.Join(t.TempDir(), "config.yml")
 	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +31,7 @@ func TestLibraryType(t *testing.T) {
 		{"only one", `, "type": ["movie", "tv"]`, "cannot unmarshal"},
 	}
 	for _, c := range cases {
-		err := loadJSON(t, `{"groups": ["a"], "media": {"paths": [{"name": "Lib", "path": "/x", "groups": ["a"]`+c.typeVal+`}]}}`)
+		err := loadConfig(t, `{"groups": ["a"], "media": {"paths": [{"name": "Lib", "path": "/x", "groups": ["a"]`+c.typeVal+`}]}}`)
 		if c.wantErr == "" {
 			if err != nil {
 				t.Errorf("%s: unexpected error %v", c.name, err)
@@ -53,7 +54,7 @@ func TestShowNewAdditions(t *testing.T) {
 	want := []struct {
 		mode          string
 		home, library bool
-	}{{ContinueOff, false, false}, {ContinueOn, true, true}, {ContinueLibraryOnly, false, true}, {ContinueOff, false, false}}
+	}{{"", false, false}, {ContinueOn, true, true}, {ContinueLibraryOnly, false, true}, {ContinueOff, false, false}}
 	for i, p := range cfg.Media.Paths {
 		if p.ShowNewAdditions != want[i].mode || p.OnNewAdditions(false) != want[i].home || p.OnNewAdditions(true) != want[i].library {
 			t.Errorf("%s: %q, home %v, library %v; want %+v", p.Name, p.ShowNewAdditions, p.OnNewAdditions(false), p.OnNewAdditions(true), want[i])
@@ -72,7 +73,7 @@ func TestContinueWatchingMode(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{ContinueOn, ContinueLibraryOnly, ContinueOff}
+	want := []string{"", ContinueLibraryOnly, ContinueOff} // empty stays empty, meaning on
 	for i, p := range c.Media.Paths {
 		if p.ContinueWatchingMode != want[i] {
 			t.Errorf("%s: mode %q, want %q (any case, written back canonically; empty is on)", p.Name, p.ContinueWatchingMode, want[i])
@@ -94,7 +95,7 @@ func TestContinueWatchingMode(t *testing.T) {
 
 func TestGroups(t *testing.T) {
 	ok := `{"groups": ["adults", "kids"], "media": {"paths": [{"name": "Lib", "path": "/x", "groups": ["adults", "kids"]}]}}`
-	if err := loadJSON(t, ok); err != nil {
+	if err := loadConfig(t, ok); err != nil {
 		t.Fatalf("defined groups: %v", err)
 	}
 	if !GlobalConfig.HasGroup("kids") || GlobalConfig.HasGroup("Kids") || GlobalConfig.HasGroup("") {
@@ -108,7 +109,7 @@ func TestGroups(t *testing.T) {
 		"spaces":    `{"groups": [" kids"]}`,
 		"no groups": `{"media": {"paths": [{"name": "Lib", "path": "/x", "groups": ["adults"]}]}}`,
 	} {
-		if err := loadJSON(t, body); err == nil {
+		if err := loadConfig(t, body); err == nil {
 			t.Errorf("%s: want an error", name)
 		}
 	}
@@ -131,7 +132,7 @@ func TestTLSFilesDefaultAndExplicit(t *testing.T) {
 
 // Saving rewrites every field, so a field the config struct doesn't name would be dropped.
 func TestSaveKeepsLogsPath(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
+	path := filepath.Join(t.TempDir(), "config.yml")
 	if err := Save(path, &Config{Server: ServerConfig{LogsPath: "./var/logs"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +140,7 @@ func TestSaveKeepsLogsPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"logsPath": "./var/logs"`) {
+	if !strings.Contains(string(data), `logsPath: ./var/logs`) {
 		t.Errorf("saved config lost logsPath: %s", data)
 	}
 }

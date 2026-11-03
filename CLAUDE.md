@@ -9,7 +9,7 @@ for each TODO item are at the end of this file.
 - **Off limits:** the `k` and `p` libraries (`/home/USER/.personal/...`) and `p2`
   (`/home/USER/.personal2/...`). Don't browse, list, play or screenshot them. The one exception
   so far: reading codec/format details (ffprobe, no frames) of a file the user names.
-- **Secrets:** the TMDB token is in `Server/config.json` and the test password is in
+- **Secrets:** the TMDB token is in `Server/config.yml` and the test password is in
   `Server/e2e/pw`. Never print or repeat either.
 - **Live server restarts:** only when asked, with `Server/scripts/restart-live.sh` (below). It won't
   restart while someone is watching (exit code 2, listing the streams): then say who's watching
@@ -70,8 +70,15 @@ for each TODO item are at the end of this file.
   changes) and `access.log` (a combined-format line per request, with the user and milliseconds)
   there, each moved to `.1`…`.5` at 10 MB (`internal/logs`). ffmpeg's progress isn't logged:
   transcodes log `[TRANSCODE] Started`, `Finished`, `Stopped` or `Failed` (with ffmpeg's last lines).
-  Port 9000, HTTPS. Config is `Server/config.json`
-  (git-ignored). Data is in the folders `config.json` names (databases, thumbnails, trickplay, artwork, download
+  Behind nginx, `server.trustedProxies` (addresses or networks) lets `X-Forwarded-For` / `X-Real-IP`
+  name the client (`internal/clientip`) for the logs, sign-in limits and Streams page; from anyone
+  else those headers are ignored.
+  Port 9000, HTTPS. Config is `Server/config.yml`
+  (git-ignored; `config.example.yml` explains every setting). The server saves it too (Settings, Jobs,
+  `cli config add-path`) through `internal/config/file.go`, which changes only the values that changed
+  and keeps comments, blank lines, order and unknown keys. `cli config init <template>` writes a new
+  one from JSON values with the template's comments (`create-config.sh`). Scripts read it with PyYAML.
+  Data is in the folders `config.yml` names (databases, thumbnails, trickplay, artwork, download
   encodes).
 - To deploy server code: `Server/scripts/restart-live.sh`. It checks for active streams, builds, stops
   the live server and waits for `live.sh` to start the new one (`--no-build` restarts the binary
@@ -277,7 +284,7 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   `ThemedControls.kt` draw with it. On the phone `surface` is transparent, so lists and bars show
   their box. Android also has Light, Dark and Auto Light/Dark (`AppTheme`); the web's old purple
   default is now Purple.
-- **Recently Added:** `showNewAdditions` (`config.json` or Settings) is `on`, `libraryOnly` or `off`
+- **Recently Added:** `showNewAdditions` (`config.yml` or Settings) is `on`, `libraryOnly` or `off`
   (the default): the last 10 videos show under Continue Watching on the library's own Library and
   top folder pages, and with `on` they also blend into the home screen's row
   (`GET /api/library/new`, with or without `lib`). The `media_added` table dates each file once:

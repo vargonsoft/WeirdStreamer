@@ -3,7 +3,7 @@
 # rewritten by make docker-config, so put extra mounts here, not in them.
 #
 # Example: a folder outside every library, mounted at the same path so absolute symlinks to it work
-# (the path must also be a library, or be listed in config.json's media paths for it to be served):
+# (the path must also be a library, or be listed in config.yml's media paths for it to be served):
 #
 # services:
 #   weirdstreamer:

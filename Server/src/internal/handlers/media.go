@@ -234,7 +234,7 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 
 	trickplayDir := config.GlobalConfig.Media.TrickplayPath
 	if trickplayDir == "" {
-		log.Printf("[TRICKPLAY] Error: Trickplay path not configured in config.json")
+		log.Printf("[TRICKPLAY] Error: Trickplay path not configured in config.yml")
 		respondError(w, http.StatusInternalServerError, "Trickplay path not configured")
 		return
 	}

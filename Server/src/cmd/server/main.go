@@ -16,6 +16,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/weirdstreamer/server/internal/auth"
+	"github.com/weirdstreamer/server/internal/clientip"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/handlers"
@@ -51,12 +52,13 @@ func main() {
 	// Load configuration
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
-		configPath = "./config.json"
+		configPath = "./config.yml"
 	}
 
 	if err := config.Load(configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	clientip.SetTrusted(config.GlobalConfig.Server.TrustedProxies)
 	// auth.log and access.log, beside live.sh's server-*.log
 	if err := logs.Open(config.GlobalConfig.Server.LogsPath); err != nil {
 		log.Printf("Warning: could not open the auth and access logs: %v", err)
@@ -91,11 +93,11 @@ func main() {
 	}
 	media.SetDiscStore(db)
 	// Users can only be given defined groups; ones from before (or a group removed from
-	// config.json by hand) see nothing until moved to one.
+	// the config by hand) see nothing until moved to one.
 	if users, err := db.ListUsers(); err == nil {
 		for _, u := range users {
 			if !config.GlobalConfig.HasGroup(u.Group) {
-				log.Printf("Warning: user %q is in the group %q, which isn't defined in config.json's groups", u.Username, u.Group)
+				log.Printf("Warning: user %q is in the group %q, which isn't defined in the config's groups", u.Username, u.Group)
 			}
 		}
 	}

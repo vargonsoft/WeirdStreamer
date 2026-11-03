@@ -60,7 +60,7 @@ COPY --from=ffmpeg /opt/ffmpeg /opt/ffmpeg
 ENV PATH=/opt/ffmpeg/bin:$PATH \
     LD_LIBRARY_PATH=/opt/ffmpeg/lib
 
-# The server reads ./config.json and ./web from here. Its databases, thumbnails and other
+# The server reads ./config.yml and ./web from here. Its databases, thumbnails and other
 # data go under ./var, which docker-compose.yml mounts.
 COPY --from=builder /out/server /out/cli /app/
 COPY web ./web

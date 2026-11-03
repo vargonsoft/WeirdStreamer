@@ -1,12 +1,7 @@
 package config
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 )
@@ -14,20 +9,20 @@ import (
 type Config struct {
 	// The access groups: each user is in one, and each library lists those that may see it.
 	// Users and libraries may only name groups listed here.
-	Groups    []string        `json:"groups"`
-	Server    ServerConfig    `json:"server"`
-	Database  DatabaseConfig  `json:"database"`
-	Media     MediaConfig     `json:"media"`
-	Auth      AuthConfig      `json:"auth"`
-	Streaming StreamingConfig `json:"streaming"`
-	Metadata  MetadataConfig  `json:"metadata"`
-	Jobs      JobsConfig      `json:"jobs"`
+	Groups    []string        `json:"groups" yaml:"groups"`
+	Server    ServerConfig    `json:"server" yaml:"server"`
+	Database  DatabaseConfig  `json:"database" yaml:"database"`
+	Media     MediaConfig     `json:"media" yaml:"media"`
+	Auth      AuthConfig      `json:"auth" yaml:"auth"`
+	Streaming StreamingConfig `json:"streaming" yaml:"streaming"`
+	Metadata  MetadataConfig  `json:"metadata" yaml:"metadata"`
+	Jobs      JobsConfig      `json:"jobs" yaml:"jobs"`
 }
 
 // JobsConfig tunes the trickplay job, which the Jobs page changes live.
 type JobsConfig struct {
-	TrickplayRunners         int `json:"trickplayRunners"`         // videos made at once: 1 to 8 (0: 3)
-	TrickplayFramesPerRunner int `json:"trickplayFramesPerRunner"` // frames per ffmpeg process: 1 to 50 (0: 25)
+	TrickplayRunners         int `json:"trickplayRunners" yaml:"trickplayRunners"`                 // videos made at once: 1 to 8 (0: 3)
+	TrickplayFramesPerRunner int `json:"trickplayFramesPerRunner" yaml:"trickplayFramesPerRunner"` // frames per ffmpeg process: 1 to 50 (0: 25)
 }
 
 const (
@@ -64,7 +59,7 @@ func TrickplayFramesPerRunner() int {
 	return DefaultTrickplayFramesPerRunner
 }
 
-// UpdateJobs saves new trickplay settings to config.json and reloads them.
+// UpdateJobs saves new trickplay settings to the config file and reloads them.
 func UpdateJobs(runners, frames int) error {
 	c := *GlobalConfig
 	c.Jobs = JobsConfig{TrickplayRunners: runners, TrickplayFramesPerRunner: frames}
@@ -79,23 +74,26 @@ func UpdateJobs(runners, frames int) error {
 
 // MetadataConfig configures lookups for "movie" and "tv" libraries.
 type MetadataConfig struct {
-	TMDBAccessToken string `json:"tmdbAccessToken"` // TMDB API read access token (Bearer)
-	Language        string `json:"language"`        // e.g. "en-US"; empty means en-US
+	TMDBAccessToken string `json:"tmdbAccessToken" yaml:"tmdbAccessToken"` // TMDB API read access token (Bearer)
+	Language        string `json:"language" yaml:"language"`               // e.g. "en-US"; empty means en-US
 	// OpenSubtitles.com API key, for searching and downloading subtitles (empty: no online search)
-	OpenSubtitlesAPIKey string `json:"openSubtitlesApiKey,omitempty"`
+	OpenSubtitlesAPIKey string `json:"openSubtitlesApiKey,omitempty" yaml:"openSubtitlesApiKey"`
 }
 
 type ServerConfig struct {
 	// The server's name, which apps show for it (empty: they show its address)
-	Name string `json:"name"`
-	Port int    `json:"port"`
-	Host string `json:"host"`
+	Name string `json:"name" yaml:"name"`
+	Port int    `json:"port" yaml:"port"`
+	Host string `json:"host" yaml:"host"`
 	// TLS certificate and private key for HTTPS (with streaming.enableHTTP2). Relative paths are
 	// from the working directory. Empty: cert.pem and key.pem.
-	CertFile string `json:"certFile,omitempty"`
-	KeyFile  string `json:"keyFile,omitempty"`
+	CertFile string `json:"certFile,omitempty" yaml:"certFile"`
+	KeyFile  string `json:"keyFile,omitempty" yaml:"keyFile"`
 	// Where live.sh writes the server's log files, one per start. Relative paths are from Server/.
-	LogsPath string `json:"logsPath,omitempty"`
+	LogsPath string `json:"logsPath,omitempty" yaml:"logsPath"`
+	// Reverse proxies (addresses or networks, such as an nginx in front) whose X-Forwarded-For or
+	// X-Real-IP name the client: the logs, sign-in limits and the Streams page use that address.
+	TrustedProxies []string `json:"trustedProxies,omitempty" yaml:"trustedProxies"`
 }
 
 const (
@@ -116,24 +114,24 @@ func (s ServerConfig) TLSFiles() (certFile, keyFile string) {
 }
 
 type DatabaseConfig struct {
-	UserPath  string `json:"userPath"`
-	MediaPath string `json:"mediaPath"`
+	UserPath  string `json:"userPath" yaml:"userPath"`
+	MediaPath string `json:"mediaPath" yaml:"mediaPath"`
 }
 
 type MediaPath struct {
-	Name   string   `json:"name"`
-	Path   string   `json:"path"`
-	ID     string   `json:"id,omitempty"`
-	Groups []string `json:"groups"`         // Groups that have access to this library
-	Type   string   `json:"type,omitempty"` // Optional: LibraryTypeMovie or LibraryTypeTV
+	Name   string   `json:"name" yaml:"name"`
+	Path   string   `json:"path" yaml:"path"`
+	ID     string   `json:"id,omitempty" yaml:"id,omitempty"`
+	Groups []string `json:"groups" yaml:"groups"`                 // Groups that have access to this library
+	Type   string   `json:"type,omitempty" yaml:"type,omitempty"` // Optional: LibraryTypeMovie or LibraryTypeTV
 	// Where this library's videos in progress show on Continue Watching: ContinueOn (the default,
 	// also when empty), ContinueLibraryOnly or ContinueOff. Their progress is kept and shown
 	// either way.
-	ContinueWatchingMode string `json:"continueWatchingMode,omitempty"`
+	ContinueWatchingMode string `json:"continueWatchingMode,omitempty" yaml:"continueWatchingMode,omitempty"`
 	// Where this library's last videos to arrive show on Recently Added: ContinueOn (the home
 	// screen's row, which blends the libraries, and the library's own), ContinueLibraryOnly, or
 	// ContinueOff (the default, also when empty).
-	ShowNewAdditions string `json:"showNewAdditions,omitempty"`
+	ShowNewAdditions string `json:"showNewAdditions,omitempty" yaml:"showNewAdditions,omitempty"`
 }
 
 // Continue Watching modes (MediaPath.ContinueWatchingMode)
@@ -200,7 +198,7 @@ func (c *Config) CheckGroupName(name string) error {
 	return nil
 }
 
-// Validate checks values that can't be expressed by the JSON structure alone.
+// Validate checks values that can't be expressed by the file's structure alone.
 func (c *Config) Validate() error {
 	c.Server.Name = strings.TrimSpace(c.Server.Name)
 	if c.Jobs.TrickplayRunners == 0 {
@@ -240,10 +238,10 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("media path %q: invalid type %q (allowed: %q, %q, or none)", p.Name, p.Type, LibraryTypeMovie, LibraryTypeTV)
 		}
 		var err error
-		if p.ContinueWatchingMode, err = canonicalMode(p.ContinueWatchingMode, ContinueOn); err != nil {
+		if p.ContinueWatchingMode, err = canonicalMode(p.ContinueWatchingMode); err != nil {
 			return fmt.Errorf("media path %q: invalid continueWatchingMode %w", p.Name, err)
 		}
-		if p.ShowNewAdditions, err = canonicalMode(p.ShowNewAdditions, ContinueOff); err != nil {
+		if p.ShowNewAdditions, err = canonicalMode(p.ShowNewAdditions); err != nil {
 			return fmt.Errorf("media path %q: invalid showNewAdditions %w", p.Name, err)
 		}
 	}
@@ -251,11 +249,11 @@ func (c *Config) Validate() error {
 }
 
 // canonicalMode reads an on/libraryOnly/off option in any capitalization, written back in the
-// canonical one; empty is empty's meaning.
-func canonicalMode(mode, empty string) (string, error) {
+// canonical one. Empty stays empty (the option's default), so saving doesn't add it to the file.
+func canonicalMode(mode string) (string, error) {
 	switch {
 	case mode == "":
-		return empty, nil
+		return "", nil
 	case strings.EqualFold(mode, ContinueOn):
 		return ContinueOn, nil
 	case strings.EqualFold(mode, ContinueLibraryOnly):
@@ -267,31 +265,31 @@ func canonicalMode(mode, empty string) (string, error) {
 }
 
 type MediaConfig struct {
-	Paths                 []MediaPath `json:"paths"`
-	ThumbnailPath         string      `json:"thumbnailPath"`
-	TrickplayPath         string      `json:"trickplayPath,omitempty"`
-	ArtworkPath           string      `json:"artworkPath,omitempty"`        // Downloaded TMDB posters, backdrops, etc.
-	DownloadPath          string      `json:"downloadPath,omitempty"`       // Temporary encodes for offline downloads
-	TranscodeCachePath    string      `json:"transcodeCachePath,omitempty"` // Transcodes while they play, so a client can resume
-	SubtitlePath          string      `json:"subtitlePath,omitempty"`       // Subtitles downloaded from OpenSubtitles
-	SupportedVideoFormats []string    `json:"supportedVideoFormats"`
-	SupportedImageFormats []string    `json:"supportedImageFormats"`
-	SupportedDocFormats   []string    `json:"supportedDocFormats"`
-	IgnoreMacFiles        bool        `json:"ignoreMacFiles"`
+	Paths                 []MediaPath `json:"paths" yaml:"paths"`
+	ThumbnailPath         string      `json:"thumbnailPath" yaml:"thumbnailPath"`
+	TrickplayPath         string      `json:"trickplayPath,omitempty" yaml:"trickplayPath"`
+	ArtworkPath           string      `json:"artworkPath,omitempty" yaml:"artworkPath"`               // Downloaded TMDB posters, backdrops, etc.
+	DownloadPath          string      `json:"downloadPath,omitempty" yaml:"downloadPath"`             // Temporary encodes for offline downloads
+	TranscodeCachePath    string      `json:"transcodeCachePath,omitempty" yaml:"transcodeCachePath"` // Transcodes while they play, so a client can resume
+	SubtitlePath          string      `json:"subtitlePath,omitempty" yaml:"subtitlePath"`             // Subtitles downloaded from OpenSubtitles
+	SupportedVideoFormats []string    `json:"supportedVideoFormats" yaml:"supportedVideoFormats"`
+	SupportedImageFormats []string    `json:"supportedImageFormats" yaml:"supportedImageFormats"`
+	SupportedDocFormats   []string    `json:"supportedDocFormats" yaml:"supportedDocFormats"`
+	IgnoreMacFiles        bool        `json:"ignoreMacFiles" yaml:"ignoreMacFiles"`
 }
 
 type AuthConfig struct {
-	JWTSecret        string `json:"jwtSecret"`
-	TokenExpiryHours int    `json:"tokenExpiryHours"`
+	JWTSecret        string `json:"jwtSecret" yaml:"jwtSecret"`
+	TokenExpiryHours int    `json:"tokenExpiryHours" yaml:"tokenExpiryHours"`
 }
 
 type StreamingConfig struct {
-	ChunkSize         int  `json:"chunkSize"`
-	EnableHTTP2       bool `json:"enableHTTP2"`
-	AutoConvertImages bool `json:"autoConvertImages"`
+	ChunkSize         int  `json:"chunkSize" yaml:"chunkSize"`
+	EnableHTTP2       bool `json:"enableHTTP2" yaml:"enableHTTP2"`
+	AutoConvertImages bool `json:"autoConvertImages" yaml:"autoConvertImages"`
 	// Background jobs (intros and credits, trickplay, cleanup) wait while anyone is streaming,
 	// whatever the machine's load: a failsafe
-	PauseJobsWhileStreaming bool `json:"pauseJobsWhileStreaming,omitempty"`
+	PauseJobsWhileStreaming bool `json:"pauseJobsWhileStreaming,omitempty" yaml:"pauseJobsWhileStreaming"`
 }
 
 var GlobalConfig *Config
@@ -302,110 +300,4 @@ var loadedPath string
 // Path returns the file the current configuration was loaded from.
 func Path() string {
 	return loadedPath
-}
-
-func Load(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	// First try to unmarshal to detect format
-	var rawConfig map[string]interface{}
-	if err := json.Unmarshal(data, &rawConfig); err != nil {
-		return err
-	}
-
-	config := &Config{}
-
-	// Check if we need to migrate from old format
-	needsMigration := false
-	if mediaConfig, ok := rawConfig["media"].(map[string]interface{}); ok {
-		if paths, ok := mediaConfig["paths"].([]interface{}); ok && len(paths) > 0 {
-			if _, isString := paths[0].(string); isString {
-				needsMigration = true
-			}
-		}
-	}
-
-	if needsMigration {
-		// Load as old format
-		var oldConfig struct {
-			Server   ServerConfig   `json:"server"`
-			Database DatabaseConfig `json:"database"`
-			Media    struct {
-				Paths                 []string `json:"paths"`
-				ThumbnailPath         string   `json:"thumbnailPath"`
-				SupportedVideoFormats []string `json:"supportedVideoFormats"`
-				SupportedImageFormats []string `json:"supportedImageFormats"`
-				SupportedDocFormats   []string `json:"supportedDocFormats"`
-			} `json:"media"`
-			Auth      AuthConfig      `json:"auth"`
-			Streaming StreamingConfig `json:"streaming"`
-		}
-
-		if err := json.Unmarshal(data, &oldConfig); err != nil {
-			return err
-		}
-
-		// Migrate to new format
-		config.Server = oldConfig.Server
-		config.Database = oldConfig.Database
-		config.Auth = oldConfig.Auth
-		config.Streaming = oldConfig.Streaming
-
-		config.Media.ThumbnailPath = oldConfig.Media.ThumbnailPath
-		config.Media.SupportedVideoFormats = oldConfig.Media.SupportedVideoFormats
-		config.Media.SupportedImageFormats = oldConfig.Media.SupportedImageFormats
-		config.Media.SupportedDocFormats = oldConfig.Media.SupportedDocFormats
-
-		config.Media.Paths = make([]MediaPath, len(oldConfig.Media.Paths))
-		for i, p := range oldConfig.Media.Paths {
-			mp := MediaPath{
-				Name: filepath.Base(p),
-				Path: p,
-			}
-			// Generate stable ID from the absolute path
-			if abs, err := filepath.Abs(p); err == nil {
-				sum := sha1.Sum([]byte(abs))
-				mp.ID = hex.EncodeToString(sum[:])[:8]
-			}
-			config.Media.Paths[i] = mp
-		}
-	} else {
-		// Load as new format
-		if err := json.Unmarshal(data, config); err != nil {
-			return err
-		}
-		// Ensure each configured media path has a stable ID (for clients)
-		for i := range config.Media.Paths {
-			if config.Media.Paths[i].ID == "" {
-				if abs, err := filepath.Abs(config.Media.Paths[i].Path); err == nil {
-					sum := sha1.Sum([]byte(abs))
-					config.Media.Paths[i].ID = hex.EncodeToString(sum[:])[:8]
-				}
-			}
-		}
-	}
-
-	if err := config.Validate(); err != nil {
-		return err
-	}
-
-	GlobalConfig = config
-	loadedPath = path
-	SetTrickplaySettings(config.Jobs.TrickplayRunners, config.Jobs.TrickplayFramesPerRunner)
-	return nil
-}
-
-func Save(path string, config *Config) error {
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(config)
 }

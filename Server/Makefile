@@ -51,7 +51,7 @@ clean: ## Remove build artifacts
 # Your own container settings (docker/docker-compose.extra.yml, from the example) are loaded when present
 COMPOSE = docker compose -f docker/docker-compose.yml -f docker/docker-compose.override.yml $(if $(wildcard docker/docker-compose.extra.yml),-f docker/docker-compose.extra.yml)
 
-docker-config: ## Write the Docker library mounts and container config from config.json
+docker-config: ## Write the Docker library mounts and container config from config.yml
 	python3 docker/generate.py $(if $(DOCKER_USER),--user $(DOCKER_USER))
 
 docker-build: ## Build the Docker image
@@ -66,7 +66,7 @@ docker-compose-down: ## Stop the container
 docker-compose-logs: ## Follow the container's logs
 	$(COMPOSE) logs -f
 
-setup: ## Guided config.json creation (scripts/create-config.sh), which can also create the admin user
+setup: ## Guided config.yml creation (scripts/create-config.sh), which can also create the admin user
 	scripts/create-config.sh
 
 create-admin: ## Create admin user (interactive)

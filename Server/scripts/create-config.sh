@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Guided creation of config.json from config.example.json, for running without Docker: asks for the
-# port, libraries and HTTPS settings, makes a self-signed certificate if you want one, and creates an
-# admin user. Run from anywhere. start-server.sh runs it when there's no config.json.
+# Guided creation of config.yml from config.example.yml (with its comments), for running without
+# Docker: asks for the port, libraries and HTTPS settings, makes a self-signed certificate if you want
+# one, and creates an admin user. Run from anywhere. start-server.sh runs it when there's no config.yml.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -17,8 +17,8 @@ ask_yes() { # ask_yes PROMPT DEFAULT(y|n) -> returns 0 for yes
     [[ "$answer" =~ ^[Yy] ]]
 }
 
-if [ -f config.json ]; then
-    echo "config.json already exists. Edit it, or move it aside to set up again."
+if [ -f config.yml ]; then
+    echo "config.yml already exists. Edit it, or move it aside to set up again."
     exit 0
 fi
 
@@ -26,12 +26,15 @@ echo "== Checking what the server needs"
 missing=()
 command -v gcc >/dev/null || missing+=(gcc)
 command -v ffmpeg >/dev/null || missing+=(ffmpeg)
+python3 -c 'import yaml' 2>/dev/null || missing+=(python3-yaml)
 if [ "${#missing[@]}" -gt 0 ]; then
-    echo "Not installed: ${missing[*]}. gcc is needed to build; ffmpeg for thumbnails and streaming."
+    echo "Not installed: ${missing[*]}. gcc is needed to build; ffmpeg for thumbnails and streaming;"
+    echo "PyYAML for the scripts that read config.yml."
     if command -v apt-get >/dev/null && ask_yes "Install them with apt (asks for sudo)?" y; then
-        sudo apt-get install -y build-essential ffmpeg
+        sudo apt-get install -y build-essential ffmpeg python3-yaml
     elif command -v brew >/dev/null && ask_yes "Install them with Homebrew?" y; then
         brew install ffmpeg
+        python3 -m pip install --user pyyaml
     else
         echo "Install ${missing[*]} and run this again." >&2
         exit 1
@@ -58,6 +61,12 @@ if [ "$need_go" = 1 ]; then
         echo "Install Go from https://go.dev/dl/ and run this again." >&2
         exit 1
     fi
+fi
+
+# The CLI writes the config (and creates the admin user)
+if [ ! -x bin/cli ]; then
+    echo "== Building"
+    scripts/build.sh
 fi
 
 echo
@@ -105,17 +114,19 @@ done
 read -r -s -p "TMDB API read access token (optional, Enter to skip): " tmdb_token || true
 echo
 
-echo "== Writing config.json"
+echo "== Writing config.yml"
 mkdir -p var
-python3 - "$port" "$use_tls" "${cert_dir:-}" "${tmdb_token:-}" ${libraries[@]+"${libraries[@]}"} <<'PY'
-import copy, json, secrets, sys
+# The values, from the example's, as JSON for the CLI: it writes them with the example's comments.
+python3 - "$port" "$use_tls" "${cert_dir:-}" "${tmdb_token:-}" ${libraries[@]+"${libraries[@]}"} <<'PY' |
+import json, secrets, sys, yaml
 port, use_tls, cert_dir, tmdb = sys.argv[1], sys.argv[2] == "1", sys.argv[3], sys.argv[4]
 libraries = sys.argv[5:]
-config = json.load(open("config.example.json"))
+config = yaml.safe_load(open("config.example.yml"))
 config["server"]["port"] = int(port)
 config["server"]["host"] = "0.0.0.0"
-config["server"].pop("certFile", None)
-config["server"].pop("keyFile", None)
+config["server"]["certFile"] = ""
+config["server"]["keyFile"] = ""
+config["server"]["trustedProxies"] = []  # none until there's a proxy in front
 if use_tls:
     config["server"]["certFile"] = f"{cert_dir}/cert.pem"
     config["server"]["keyFile"] = f"{cert_dir}/key.pem"
@@ -130,12 +141,10 @@ for entry in libraries:
         library["type"] = kind
     paths.append(library)
 config["media"]["paths"] = paths
-with open("config.json", "w") as f:
-    json.dump(config, f, indent=2)
-    f.write("\n")
+json.dump(config, sys.stdout)
 PY
-chmod 600 config.json
-echo "Wrote config.json (keep it private: it holds the JWT secret)."
+    ./bin/cli config init config.example.yml
+echo "config.yml is owner-only: it holds the JWT secret."
 
 echo "== Admin user"
 if ask_yes "Create an admin user now?" y; then
@@ -144,4 +153,4 @@ if ask_yes "Create an admin user now?" y; then
 fi
 
 echo
-echo "config.json is ready. Build with scripts/build.sh, then run ./start-server.sh."
+echo "config.yml is ready. Run ./start-server.sh."

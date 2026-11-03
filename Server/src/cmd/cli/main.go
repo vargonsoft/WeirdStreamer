@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -26,7 +27,12 @@ func main() {
 	// Load configuration
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
-		configPath = "./config.json"
+		configPath = "./config.yml"
+	}
+	// Writes the config, so there's none to load yet.
+	if len(os.Args) >= 3 && os.Args[1] == "config" && os.Args[2] == "init" {
+		initConfig(os.Args[3:], configPath)
+		return
 	}
 
 	if err := config.Load(configPath); err != nil {
@@ -88,6 +94,9 @@ func printUsage() {
 	fmt.Println("  cli trickplay clean                                    - Remove trickplay images for non-existent paths")
 	fmt.Println("  cli cleanup [--force]                                  - Forget files that are gone (thumbnails, frames too)")
 	fmt.Println("      --force                                            - Even from a library losing more than half its files")
+	fmt.Println("  cli config init <template> < values.json               - Write the config (CONFIG_PATH, else")
+	fmt.Println("                                                           config.yml) from JSON values, with the")
+	fmt.Println("                                                           template's comments (config.example.yml)")
 	fmt.Println("  cli config add-path <path>                             - Add media directory")
 	fmt.Println("  cli config list-paths                                  - List media directories")
 }
@@ -375,12 +384,7 @@ func handleConfigCommand(args []string) {
 		})
 
 		// Save config
-		configPath := os.Getenv("CONFIG_PATH")
-		if configPath == "" {
-			configPath = "./config.json"
-		}
-
-		if err := config.Save(configPath, config.GlobalConfig); err != nil {
+		if err := config.Save(config.Path(), config.GlobalConfig); err != nil {
 			log.Fatalf("Failed to save config: %v", err)
 		}
 
@@ -401,4 +405,32 @@ func handleConfigCommand(args []string) {
 		printUsage()
 		os.Exit(1)
 	}
+}
+
+// initConfig writes a new config to path: the whole config as JSON on stdin (scripts build it),
+// laid out with the comments of the template (config.example.yml). An existing config is left
+// alone.
+func initConfig(args []string, path string) {
+	if len(args) != 1 {
+		log.Fatal("Usage: cli config init <template> < values.json")
+	}
+	if _, err := os.Stat(path); err == nil {
+		log.Fatalf("%s already exists: edit it, or move it aside first", path)
+	}
+	var c config.Config
+	dec := json.NewDecoder(os.Stdin)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil {
+		log.Fatalf("Reading the values: %v", err)
+	}
+	if err := c.Validate(); err != nil {
+		log.Fatalf("Invalid config: %v", err)
+	}
+	if err := config.SaveFrom(args[0], path, &c); err != nil {
+		log.Fatalf("Writing %s: %v", path, err)
+	}
+	if err := config.Load(path); err != nil {
+		log.Fatalf("The written %s doesn't load: %v", path, err)
+	}
+	fmt.Printf("Wrote %s\n", path)
 }
