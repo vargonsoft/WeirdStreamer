@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
-# Builds the release APK and installs it on the destinations given, and only those:
+# Builds the release APK and installs it on the destinations given, and only those. Run with
+# --help for the destinations: --emulators, --web, and the real devices listed in devices.local.
 #
-#   --emulators   the running emulators: installs, launches and checks for a crash (smoke test)
-#   --onn         the Onn TV box (onn. 4K Plus Streaming)
-#   --moto        the Moto G (moto g power - 2025)
-#   --fold7       the Galaxy Fold 7 (SM-F966U1)
-#   --web         the web UI's download links (Server/web/downloads/WeirdStreamer.apk)
-#   --no-build    use the APK already built
-#
-# For example: ./deploy-release.sh --emulators --moto --fold7
+# For example: ./deploy-release.sh --emulators --web
 # Emulators go first: if the app crashes on one, nothing else is installed. Exits non-zero if the
 # build fails, the app crashes, or a destination given isn't connected or its install fails.
 set -euo pipefail
@@ -18,42 +12,93 @@ ADB="${ADB:-$HOME/Android/Sdk/platform-tools/adb}"
 APK=app/build/outputs/apk/release/app-release.apk
 PACKAGE=com.vargon.weirdstreamer
 ACTIVITY=$PACKAGE/.MainActivity
+DEVICES=devices.local
 
-build=1 emulators=0 onn=0 moto=0 fold7=0 web=0
+# The real devices, from devices.local (git-ignored: one per line, "flag|display name|model
+# prefix"). The flag is the option (--flag); the prefix starts the device's ro.product.model.
+local_flags=() local_names=() local_models=() local_wanted=()
+if [ -f "$DEVICES" ]; then
+    lineno=0
+    while IFS='|' read -r flag name model || [ -n "$flag$name$model" ]; do
+        lineno=$((lineno + 1))
+        [[ -z "$flag" || "$flag" == \#* ]] && continue
+        if [[ ! "$flag" =~ ^[a-z][a-z0-9-]*$ ]] || [ -z "$name" ] || [ -z "$model" ]; then
+            echo "$DEVICES line $lineno: want flag|display name|model prefix, got: $flag|$name|$model" >&2
+            exit 2
+        fi
+        case "$flag" in emulators|web|no-build|help)
+            echo "$DEVICES line $lineno: '$flag' is a built-in option, pick another flag" >&2
+            exit 2 ;;
+        esac
+        local_flags+=("$flag") local_names+=("$name") local_models+=("$model") local_wanted+=(0)
+    done <"$DEVICES"
+fi
+
+usage() {
+    cat <<EOF
+Usage: deploy-release.sh [destinations] [--no-build]
+
+Builds the release APK and installs it on the destinations given, and only those:
+
+  --emulators   the running emulators: installs, launches and checks for a crash (smoke test)
+  --web         the web UI's download links (Server/web/downloads/WeirdStreamer.apk)
+  --no-build    use the APK already built
+EOF
+    if [ "${#local_flags[@]}" -gt 0 ]; then
+        echo
+        echo "Real devices (from Android/$DEVICES):"
+        for i in "${!local_flags[@]}"; do
+            printf '  --%-12s %s (model starts "%s")\n' "${local_flags[$i]}" "${local_names[$i]}" "${local_models[$i]}"
+        done
+    fi
+    cat <<EOF
+
+Devices: add a line to Android/$DEVICES (git-ignored), one per device:
+
+  flag|display name|model prefix
+
+  flag          the option, lowercase: --flag
+  display name  shown in messages
+  model prefix  the start of the device's model, from: adb shell getprop ro.product.model
+
+For example, a phone whose model is "Pixel 8 Pro" becomes this line, and then --pixel installs on it:
+
+  pixel|Pixel|Pixel 8
+
+Lines starting with # are comments. Only a device whose model matches is installed on, and it must
+be connected. The file is never committed, so the list stays with its owner.
+EOF
+}
+
+build=1 emulators=0 web=0
 for arg in "$@"; do
     case "$arg" in
         --emulators) emulators=1 ;;
-        --onn) onn=1 ;;
-        --moto) moto=1 ;;
-        --fold7) fold7=1 ;;
         --no-build) build=0 ;;
         --web) web=1 ;;
-        -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
-        *) echo "Unknown option: $arg" >&2; exit 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *)
+            matched=0
+            for i in "${!local_flags[@]}"; do
+                if [ "$arg" = "--${local_flags[$i]}" ]; then
+                    local_wanted[$i]=1
+                    matched=1
+                fi
+            done
+            if [ "$matched" = 0 ]; then
+                echo "Unknown option: $arg" >&2
+                exit 2
+            fi
+            ;;
     esac
 done
-if [ $((emulators + onn + moto + fold7 + web)) = 0 ]; then
-    echo "No destination given: pass --emulators, --onn, --moto, --fold7 and/or --web (see --help)." >&2
+
+selected=0
+for w in "${local_wanted[@]+"${local_wanted[@]}"}"; do selected=$((selected + w)); done
+if [ $((emulators + web + selected)) = 0 ]; then
+    echo "No destination given: pass --emulators, --web and/or a device from $DEVICES (see --help)." >&2
     exit 2
 fi
-
-# The real devices, by model (ro.product.model): their name, and whether they were asked for.
-device_name() {
-    case "$1" in
-        "moto g power"*) echo "Moto G" ;;
-        SM-F966*) echo "Galaxy Fold 7" ;;   # Galaxy Z Fold7 (the user's reports SM-F966U1)
-        "onn. 4K Plus"*) echo "Onn" ;;
-    esac
-    return 0
-}
-wanted() {
-    case "$1" in
-        "Moto G") [ "$moto" = 1 ] ;;
-        "Galaxy Fold 7") [ "$fold7" = 1 ] ;;
-        Onn) [ "$onn" = 1 ] ;;
-        *) return 1 ;;
-    esac
-}
 
 if [ "$build" = 1 ]; then
     echo "== Building release"
@@ -120,12 +165,13 @@ PY
 fi
 
 installed=0
-for name in "Onn" "Galaxy Fold 7" "Moto G"; do
-    wanted "$name" || continue
-    serial=""
+for i in "${!local_flags[@]}"; do
+    [ "${local_wanted[$i]}" = 1 ] || continue
+    name=${local_names[$i]} prefix=${local_models[$i]}
+    serial="" model=""
     for d in "${devices[@]}"; do
         [[ "${d%%|*}" == emulator-* ]] && continue
-        [ "$(device_name "${d#*|}")" = "$name" ] && serial=${d%%|*} model=${d#*|}
+        if [[ "${d#*|}" == "$prefix"* ]]; then serial=${d%%|*} model=${d#*|}; fi
     done
     if [ -z "$serial" ]; then
         echo "== $name isn't connected" >&2

@@ -47,6 +47,8 @@ config.json
 /Server/var
 # The Android app published for download by Android/deploy-release.sh --web
 /Server/web/downloads
+# The real devices deploy-release.sh installs on (one per line; see its --help)
+/Android/devices.local
 
 # Local test server (its own config, accounts and sample media)
 /Server/e2e

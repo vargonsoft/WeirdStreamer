@@ -14,10 +14,11 @@ for each TODO item are at the end of this file.
 - **Live server restarts:** only when asked, with `Server/scripts/restart-live.sh` (below). It won't
   restart while someone is watching (exit code 2, listing the streams): then say who's watching
   and ask before running it with `--force`.
-- **Onn TV box:** no testing or installing on it during the day. Use the emulators.
+- **Personal devices:** the real ones are listed in `Android/devices.local` (git-ignored; `deploy-release.sh --help`
+  shows them). The TV box among them: no testing or installing on it during the day. Use the emulators.
 - **Deploying the Android app:** only through `Android/deploy-release.sh` (below), never manual
   `adb install` of a debug build on real devices. Deploy only to the destinations the user names
-  (`--onn` only when they ask for the Onn).
+  (a device's flag only when they ask for that device).
 - **Commits:** only when asked. End messages with
   `Co-Authored-By: <the model that made the change> <noreply@anthropic.com>` (the model running the session that edited the code). `origin` is a local bare repo
   (`../repos/WeirdStreamer`); push only when asked. There's also a `github` remote.
@@ -166,8 +167,8 @@ builds them as `<version>-dirty`) and installs on no device.
 
 `Android/deploy-release.sh` builds the R8 release APK and installs it only on the destinations
 given: `--emulators` (the running emulators, with a launch-and-crash check; emulators go first and
-a crash stops the rest), `--onn` (`onn. 4K Plus Streaming`), `--moto` (`moto g power - 2025`) and
-`--fold7` (`SM-F966U1`), and `--web`: copies it to `Server/web/downloads/WeirdStreamer.apk`
+a crash stops the rest), one flag per real device in `Android/devices.local` (git-ignored, one line
+each: `flag|display name|model prefix`; `--help` lists them), and `--web`: copies it to `Server/web/downloads/WeirdStreamer.apk`
 (git-ignored), which the web UI's sign-in page and Settings (My Account) link to for downloading;
 the links hide when there's no APK. With none it builds nothing. `--no-build` reuses the built APK. A
 destination that isn't connected, or a failed install, makes it exit non-zero.
@@ -175,7 +176,7 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 - Versions: `versionCode` (the build number) is the git commit count, and `versionName` is a
   hand-set version plus the build number (`0.0.1.254`), in `app/build.gradle.kts`. `--web` also
   writes `WeirdStreamer.json` (version, build, size, date), which the download links show.
-- Real devices must get release builds. Debug builds are visibly sluggish on the Onn.
+- Real devices must get release builds. Debug builds are visibly sluggish on the TV box.
 - R8 needs keep rules (`Android/app/proguard-rules.pro`) for anything Gson stores by field name
   or created by reflection. Missing ones once crashed release builds at startup (WorkManager's
   Room database) and would have scrambled the saved downloads list.
