@@ -298,7 +298,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     brightness, volume) must not break pinch-zoom: handle single-finger drags separately.
     Brightness can go through `window.attributes.screenBrightness`, volume through
     `AudioManager`.
-  - It has no subtitle or audio track UI yet.
+  - It has a subtitle menu like the TV's (tracks, online search, timing), but no audio track
+    choice yet (only a disc's).
   - Picture-in-picture (`PhonePip.kt`): going home while a video plays shrinks it into a window
     (auto-enter from Android 12, `onUserLeaveHint` in `MainActivity` before), with a play/pause
     button; the player hides its controls there (`viewModel.inPictureInPicture`). Closing the

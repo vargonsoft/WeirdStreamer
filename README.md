@@ -21,12 +21,30 @@ and to one Android app that runs on both Android TV and phones.
   from OpenSubtitles. Forced subtitles show on their own; choices are remembered per video.
 - **Picks up where you left off:** progress is kept per user across every device, with Continue
   Watching, Recently Added, and seek-bar previews.
-- **Skips intros and credits** in the Android app, from what the server finds in each season.
+- **Skips intros and credits** on the web and in the Android app, from what the server finds in
+  each season (chapters, the sound a season's episodes share, dark frames) or an admin marks: a
+  Skip button, or Auto Skip per show. Skipping credits, or reaching the end, goes on to the next
+  episode.
+- **The video players** (web, TV and phone) have their own controls, the same Transcode menu,
+  seek-bar previews, and title, chapter, angle and audio choices for DVD images. Each has a
+  subtitle menu with online search and a timing correction (kept on the server, for every player).
+  Besides that:
+  - **TV:** zoom, fill, aspect ratio (16:9, 21:9, 4:3…), rotation and playback speed, all from
+    the remote.
+  - **Phone:** pinch to zoom and pan, aspect ratio, rotation and playback speed, and
+    picture-in-picture when you go home while a video plays.
+  - **Web:** a choice of audio track (on Android, only a disc's), and fullscreen with controls
+    that hide.
 - **Offline downloads** on the phone: the original, a copy converted for the phone where it can't
   play the original, or a smaller version, with their subtitles.
 - **Users and groups:** each user is in a group, and each library lists the groups that may see
   it. Admins manage libraries, users and groups from Settings on the web or the phone, and see who
   is watching what on the Streams page.
+- **Photos and PDFs** in the Android app: swipe through a folder's photos, zoom and pan (on the TV
+  with the D-pad, and rotate), and motion photos from Samsung and Google cameras play their clip in
+  a loop. PDFs page by swipe or D-pad, zoom, and show all their pages as thumbnails; the TV also
+  shows two pages side by side. HEIC photos show too (see [HEIC photos](#heic-photos)). The web UI
+  shows photos and opens PDFs in the browser.
 - **The Android app** also browses SMB shares directly, without a server.
 - **Runs at home:** HTTPS with HTTP/2, works behind a reverse proxy such as nginx, and keeps sign-in
   and access logs.
