@@ -5,6 +5,8 @@ import jcifs.CIFSContext
 import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbAuthException
 import jcifs.smb.SmbFile
+import jcifs.smb.SmbRandomAccessFile
+import com.vargon.weirdstreamer.LivePhotoUtil
 import jcifs.smb.SmbUnsupportedOperationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -51,6 +53,7 @@ class SmbRepository(
                     file.close()
                     item
                 }.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+                    .let { LivePhotoUtil.pairAppleLivePhotos(it) { mov -> isLivePhotoVideo(mov, context) } }
                 
                 Result.success(items)
             }
@@ -61,6 +64,22 @@ class SmbRepository(
         }
     }
     
+    // Which .MOVs are Live Photos' videos, by path and size: a listing checks each one only once.
+    private val liveVideos = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Boolean>>()
+
+    private fun isLivePhotoVideo(mov: FileItem, context: CIFSContext): Boolean {
+        liveVideos[mov.path]?.takeIf { it.first == mov.size }?.let { return it.second }
+        val live = try {
+            SmbRandomAccessFile(SmbFile(mov.path, context), "r").use { f ->
+                LivePhotoUtil.isLivePhotoVideo(mov.size) { pos, buf -> f.seek(pos); f.readFully(buf) }
+            }
+        } catch (e: Exception) {
+            false
+        }
+        liveVideos[mov.path] = mov.size to live
+        return live
+    }
+
     override suspend fun authenticate(username: String?, password: String?): Result<Boolean> = withContext(Dispatchers.IO) {
         Result.success(true)
     }

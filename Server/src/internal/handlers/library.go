@@ -112,8 +112,8 @@ func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 	}
 	var arrivals []arrival
 	for _, lib := range libs {
-		// Some may be gone from the disk: read a few extra.
-		added, err := h.db.NewestMedia(lib.Path, newAdditionsLimit*2)
+		// Some may be gone from the disk, or be Live Photos' videos: read extra.
+		added, err := h.db.NewestMedia(lib.Path, newAdditionsLimit*10)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "Failed to list new additions")
 			return
@@ -125,7 +125,7 @@ func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 	items := []continueItem{}
 	pb := h.requestPlayback(r)
 	for _, a := range arrivals {
-		if _, err := os.Stat(a.Path); err != nil {
+		if _, err := os.Stat(a.Path); err != nil || media.IsLivePhotoPartner(a.Path) {
 			continue
 		}
 		item := h.continueEntry(a.lib, a.Path)

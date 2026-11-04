@@ -605,8 +605,40 @@ header h1 {
 #image-viewer {
     max-width: 100%;
     height: auto;
-    margin-top: 20px;
     display: block;
+}
+
+/* An Apple Live Photo: its video plays over the still, then the still shows again */
+.live-photo {
+    position: relative;
+    margin-top: 20px;
+}
+
+#live-photo-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+}
+
+.live-photo-button {
+    align-self: flex-start; /* the modal is a flex column, which would stretch it */
+    padding: 2px 10px;
+    border: 1px solid currentColor;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--heading-color, #667eea);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+}
+
+.live-photo-button:hover {
+    background: var(--button-focus, #667eea);
+    color: var(--button-focus-text, #fff);
 }
 
 #player-title,

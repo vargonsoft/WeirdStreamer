@@ -1,12 +1,13 @@
 package com.vargon.weirdstreamer
 
-import android.media.MediaMetadataRetriever
 import android.util.Log
+import com.vargon.weirdstreamer.repository.FileItem
 import java.io.File
 import java.io.RandomAccessFile
 
 enum class LivePhotoType {
-    SAMSUNG, APPLE
+    SAMSUNG, // the video inside the photo (Samsung and Google motion photos), at videoOffset
+    APPLE    // a separate video file (an Apple Live Photo's .MOV)
 }
 
 data class LivePhotoInfo(
@@ -32,10 +33,6 @@ object LivePhotoUtil {
         // 2. Check XMP metadata (common in Google Camera and newer Samsung)
         val xmpInfo = findXmpMicroVideo(file)
         if (xmpInfo != null) return xmpInfo
-        
-        // 3. Check Apple (HEIC with embedded video track)
-        val appleInfo = findAppleLivePhoto(file)
-        if (appleInfo != null) return appleInfo
         
         Log.i(TAG, "No Live Photo markers found in ${file.name}")
         return null
@@ -168,18 +165,56 @@ object LivePhotoUtil {
         return null
     }
 
-    private fun findAppleLivePhoto(file: File): LivePhotoInfo? {
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(file.absolutePath)
-            val hasVideo = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO)
-            if (hasVideo == "yes") {
-                Log.i(TAG, "Found Apple Live Photo (embedded video track)")
-                return LivePhotoInfo(LivePhotoType.APPLE, 0, file.length())
+    private val LIVE_STILLS = setOf("heic", "heif", "jpg", "jpeg")
+
+    /**
+     * Apple Live Photos in an SMB folder's files, as the server pairs them in its listings: an
+     * iPhone saves each as a photo and a .MOV of the same name (IMG_1234.HEIC, IMG_1234.MOV),
+     * marked as a Live Photo's ([isLive], [isLivePhotoVideo]). The photo gets the video as its
+     * liveVideo, and the video leaves the list. Any other .MOV stays.
+     */
+    fun pairAppleLivePhotos(items: List<FileItem>, isLive: (FileItem) -> Boolean): List<FileItem> {
+        fun key(name: String) = name.substringBeforeLast('.').lowercase()
+        fun ext(name: String) = name.substringAfterLast('.', "").lowercase()
+        val movs = items.filter { !it.isDirectory && ext(it.name) == "mov" }.associateBy { key(it.name) }
+        if (movs.isEmpty()) return items
+        val paired = mutableSetOf<FileItem>()
+        val withVideos = items.map { item ->
+            val mov = if (!item.isDirectory && ext(item.name) in LIVE_STILLS) movs[key(item.name)] else null
+            if (mov != null && mov !in paired && isLive(mov)) item.copy(liveVideo = mov.path).also { paired.add(mov) } else item
+        }
+        return withVideos.filter { it !in paired }
+    }
+
+    private val LIVE_KEY = "com.apple.quicktime.content.identifier".toByteArray(Charsets.US_ASCII)
+
+    /**
+     * Whether a QuickTime file is a Live Photo's video: its index (the moov box, at the start or
+     * the end) has the content identifier an iPhone writes. [read] fills a buffer from a position.
+     */
+    fun isLivePhotoVideo(size: Long, read: (pos: Long, buf: ByteArray) -> Unit): Boolean = try {
+        val moov = readMoov(size, read)
+        moov != null && findInByteArray(moov, LIVE_KEY) != -1
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun readMoov(size: Long, read: (Long, ByteArray) -> Unit): ByteArray? {
+        var pos = 0L
+        while (pos + 8 <= size) {
+            val h = ByteArray(8).also { read(pos, it) }
+            var boxSize = java.nio.ByteBuffer.wrap(h).int.toLong() and 0xFFFFFFFFL
+            var headerSize = 8L
+            when (boxSize) {
+                0L -> boxSize = size - pos
+                1L -> { val l = ByteArray(8).also { read(pos + 8, it) }; boxSize = java.nio.ByteBuffer.wrap(l).long; headerSize = 16 }
             }
-        } catch (_: Exception) {
-        } finally {
-            retriever.release()
+            if (boxSize < headerSize || pos + boxSize > size) return null
+            if (String(h, 4, 4, Charsets.US_ASCII) == "moov") {
+                if (boxSize > 8L * 1024 * 1024) return null
+                return ByteArray((boxSize - headerSize).toInt()).also { read(pos + headerSize, it) }
+            }
+            pos += boxSize
         }
         return null
     }

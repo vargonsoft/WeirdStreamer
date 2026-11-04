@@ -27,6 +27,10 @@ type MediaItem struct {
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 
+	// An Apple Live Photo's video: the .MOV of the same name beside this photo, which folder
+	// listings then leave out (media.PairLivePhotos)
+	LiveVideo string `json:"live_video,omitempty"`
+
 	Metadata *ItemMetadata `json:"metadata,omitempty"` // TMDB info, for files in movie/tv libraries
 	Playback *Playback     `json:"playback,omitempty"` // the signed-in user's progress, for videos
 }

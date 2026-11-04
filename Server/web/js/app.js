@@ -34,6 +34,8 @@ const playerModal = document.getElementById('player-modal');
 const imageModal = document.getElementById('image-modal');
 const videoPlayer = document.getElementById('video-player');
 const imageViewer = document.getElementById('image-viewer');
+const livePhotoVideo = document.getElementById('live-photo-video');
+const livePhotoButton = document.getElementById('live-photo-button');
 const playerTitle = document.getElementById('player-title');
 const imageTitle = document.getElementById('image-title');
 
@@ -213,6 +215,7 @@ function setupEventListeners() {
             imageViewer.onload = null;
             imageViewer.onerror = null;
             imageViewer.src = '';
+            stopLivePhoto();
         });
     });
     
@@ -236,6 +239,7 @@ function setupEventListeners() {
             imageViewer.onload = null;
             imageViewer.onerror = null;
             imageViewer.src = '';
+            stopLivePhoto();
         }
     });
 }
@@ -2364,16 +2368,14 @@ function setupPlayerControls() {
 }
 
 function viewImage(item) {
-    console.log('Viewing image:', item);
-    console.log('API token exists:', !!api.token);
     const streamUrl = api.getStreamUrl(item.path);
-    console.log('Final image URL:', streamUrl);
     imageTitle.textContent = item.name;
+    stopLivePhoto();
     imageViewer.src = '';
     imageViewer.alt = item.name;
     imageViewer.onload = () => {
-        console.log('Image loaded successfully');
         imageModal.classList.add('active');
+        if (item.live_video) startLivePhoto(item.live_video);
     };
     imageViewer.onerror = () => {
         console.error('Failed to load image:', item.path);
@@ -2381,6 +2383,35 @@ function viewImage(item) {
     };
     imageViewer.src = streamUrl;
 }
+
+// Apple Live Photos: the server pairs a photo with the .MOV of the same name (live_video). Its
+// video plays once over the still, muted, when the photo opens, and LIVE plays it again with sound.
+// It comes as Compatibility (Auto), since an iPhone's HEVC doesn't play in every browser.
+function startLivePhoto(path) {
+    livePhotoButton.hidden = false;
+    livePhotoVideo.src = api.getStreamUrl(path, 'audio');
+    playLivePhoto(true);
+}
+
+function playLivePhoto(muted) {
+    if (!livePhotoVideo.src) return;
+    livePhotoVideo.muted = muted;
+    livePhotoVideo.currentTime = 0;
+    livePhotoVideo.hidden = false;
+    livePhotoVideo.play().catch(() => { livePhotoVideo.hidden = true; });
+}
+
+function stopLivePhoto() {
+    livePhotoButton.hidden = true;
+    livePhotoVideo.hidden = true;
+    livePhotoVideo.pause();
+    livePhotoVideo.removeAttribute('src');
+    livePhotoVideo.load(); // ends the request
+}
+
+livePhotoVideo.addEventListener('ended', () => { livePhotoVideo.hidden = true; });
+livePhotoVideo.addEventListener('error', () => { livePhotoVideo.hidden = true; });
+livePhotoButton.addEventListener('click', () => playLivePhoto(false));
 
 // A large Material icon (HTML) standing in for a missing thumbnail.
 function getMediaIcon(type) {

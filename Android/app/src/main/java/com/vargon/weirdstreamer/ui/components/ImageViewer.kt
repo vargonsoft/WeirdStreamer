@@ -102,7 +102,9 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
             val file = viewModel.downloadToTempFile(currentSmbPath, context, ".$extension")
             if (file != null) {
                 tempFile = file; localImagePath = file.absolutePath
-                val info = LivePhotoUtil.findLivePhotoInfo(file)
+                val liveVideo = viewModel.liveVideoFile(currentSmbPath, context)
+                val info = liveVideo?.let { LivePhotoInfo(LivePhotoType.APPLE, 0, it.length()) }
+                    ?: LivePhotoUtil.findLivePhotoInfo(file)
                 if (info != null) {
                     livePhotoInfo = info
                     if (info.type == LivePhotoType.SAMSUNG) {
@@ -122,7 +124,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
                             if (videoFile.exists() && videoFile.length() > 0) exoPlayer.setMediaItem(MediaItem.fromUri(videoFile.absolutePath))
                             else livePhotoInfo = null
                         } catch (e: Exception) { livePhotoInfo = null }
-                    } else exoPlayer.setMediaItem(MediaItem.fromUri(file.absolutePath))
+                    } else exoPlayer.setMediaItem(MediaItem.fromUri(liveVideo!!.absolutePath))
                     if (livePhotoInfo != null) exoPlayer.prepare()
                 }
             } else localImagePath = currentSmbPath

@@ -661,6 +661,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			items = append(items, *item)
 		}
 	}
+	items = media.PairLivePhotos(items)
 
 	if h.meta != nil {
 		if absTarget, err := filepath.Abs(targetPath); err == nil {

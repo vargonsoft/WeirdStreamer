@@ -63,6 +63,12 @@ for each TODO item are at the end of this file.
     ones have none, and every account sees them). Each download also saves its subtitle tracks (text as WebVTT, PGS as .sup; the
     phone's languages, forced ones and files beside the video) in `subtitles/<id>/`, which
     `ServerSubtitles.forDownload` reads offline. Older downloads get theirs on the worker's next run.
+  - Photos: `PhoneImageViewer.kt` and `ImageViewer.kt` (TV) loop a motion photo's clip
+    (`LivePhotoUtil`): one inside the photo (Samsung, Google), or an Apple Live Photo's .MOV. The
+    server pairs those in folder listings (`media.PairLivePhotos`: a .MOV of the photo's name whose
+    moov box has `com.apple.quicktime.content.identifier`), giving the photo `live_video` and
+    leaving the .MOV out; on SMB shares `SmbRepository` does the same. The web plays it in the image
+    viewer (`startLivePhoto`, as Compatibility (Auto) for iPhones' HEVC).
   - `ui/components/UiUtils.kt`: transcode modes, `VideoDecoders` (hardware decoder limits),
     `subtitlesOffByDefault`, `subtitleLabels`, `SubtitleMemory`.
 
@@ -120,6 +126,9 @@ for each TODO item are at the end of this file.
     audio (so it plays as a copy): for short jumps forward in a copied video.
   - `Movies/AVI BFrame Test`: 30 seconds of H.264 with B-frames in AVI, whose packets have no
     pts (framecrc prints -9223372036854775808): `SeekPoint` reads the dts instead.
+  - `Clips/Live Photos/`: Apple Live Photos as an iPhone saves them, a photo and a .MOV of the
+    same name carrying Apple's content identifier: `IMG_0001.HEIC` (HEVC clip) and `IMG_0002.JPG`
+    (H.264). `IMG_0003.JPG` and `.MOV` share a name without the identifier, so both stay listed.
   - `TV Shows/Example Show/Season 1/`: four episodes. S01E01 is a 60-second clip; S01E02 is empty;
     S01E03 and S01E04 are 8-second clips with their episode drawn on them (for going on to the
     next episode).

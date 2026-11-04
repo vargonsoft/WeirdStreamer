@@ -41,10 +41,11 @@ and to one Android app that runs on both Android TV and phones.
   it. Admins manage libraries, users and groups from Settings on the web or the phone, and see who
   is watching what on the Streams page.
 - **Photos and PDFs** in the Android app: swipe through a folder's photos, zoom and pan (on the TV
-  with the D-pad, and rotate), and motion photos from Samsung and Google cameras play their clip in
-  a loop. PDFs page by swipe or D-pad, zoom, and show all their pages as thumbnails; the TV also
-  shows two pages side by side. HEIC photos show too (see [HEIC photos](#heic-photos)). The web UI
-  shows photos and opens PDFs in the browser.
+  with the D-pad, and rotate), and motion photos play their clip in a loop: Samsung's and Google's,
+  and Apple Live Photos (the photo and its .MOV show as one). PDFs page by swipe or D-pad, zoom, and
+  show all their pages as thumbnails; the TV also shows two pages side by side. HEIC photos show too
+  (see [HEIC photos](#heic-photos)). The web UI shows photos, plays a Live Photo's clip once when it
+  opens (LIVE plays it again, with sound), and opens PDFs in the browser.
 - **The Android app** also browses SMB shares directly, without a server.
 - **Runs at home:** HTTPS with HTTP/2, works behind a reverse proxy such as nginx, and keeps sign-in
   and access logs.

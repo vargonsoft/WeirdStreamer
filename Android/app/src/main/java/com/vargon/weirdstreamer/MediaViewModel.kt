@@ -1156,6 +1156,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         return currentRepository?.getDisplayName(path) ?: path.substringAfterLast('/')
     }
 
+    /** An Apple Live Photo's video (the .MOV beside the photo at [path]) in a temp file; null for other photos. */
+    suspend fun liveVideoFile(path: String, context: Context): File? =
+        fileList.firstOrNull { it.path == path }?.liveVideo?.let { downloadToTempFile(it, context, ".mov") }
+
     fun getImagesInCurrentFolder(): List<String> {
         return getFilteredFileList().filter { !it.isDirectory && isImage(it.path) }.map { it.path }
     }

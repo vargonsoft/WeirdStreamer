@@ -35,6 +35,7 @@ data class FileItem(
     val size: Long = 0,
     val mimeType: String? = null,
     val type: String? = null, // the server's: video, image or document (its config's formats); null on SMB shares
+    val liveVideo: String? = null, // an Apple Live Photo's video (the .MOV of the same name), as a path to open
     val thumbnailUrl: String? = null,
     val duration: Double? = null,
     val width: Int? = null,

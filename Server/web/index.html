@@ -346,7 +346,11 @@
             <div class="modal-content">
                 <span class="close">&times;</span>
                 <h2 id="image-title"></h2>
-                <img id="image-viewer" src="" alt="">
+                <button id="live-photo-button" class="live-photo-button" type="button" hidden title="Play the Live Photo">LIVE</button>
+                <div class="live-photo">
+                    <img id="image-viewer" src="" alt="">
+                    <video id="live-photo-video" playsinline hidden></video>
+                </div>
             </div>
         </div>
     </div>

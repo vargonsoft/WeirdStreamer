@@ -217,7 +217,9 @@ fun ZoomableImage(
                 tempFile = file
                 localImagePath = file.absolutePath
                 
-                val info = LivePhotoUtil.findLivePhotoInfo(file)
+                val liveVideo = viewModel.liveVideoFile(path, context)
+                val info = liveVideo?.let { LivePhotoInfo(LivePhotoType.APPLE, 0, it.length()) }
+                    ?: LivePhotoUtil.findLivePhotoInfo(file)
                 if (info != null) {
                     Log.i("ZoomableImage", "Found Live Photo info: $info")
                     livePhotoInfo = info
@@ -255,8 +257,7 @@ fun ZoomableImage(
                             Log.e("ZoomableImage", "Error extracting Samsung video", e)
                         }
                     } else {
-                        Log.i("ZoomableImage", "Using whole file as video for Apple/Generic")
-                        exoPlayer.setMediaItem(MediaItem.fromUri(file.absolutePath))
+                        exoPlayer.setMediaItem(MediaItem.fromUri(liveVideo!!.absolutePath))
                     }
                     if (livePhotoInfo != null) {
                         exoPlayer.prepare()

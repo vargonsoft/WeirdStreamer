@@ -22,7 +22,8 @@ data class MediaItem(
     @SerializedName("height") val height: Int? = null,
     @SerializedName("created_at") val createdAt: String,
     @SerializedName("updated_at") val updatedAt: String,
-    @SerializedName("playback") val playback: Playback? = null
+    @SerializedName("playback") val playback: Playback? = null,
+    @SerializedName("live_video") val liveVideo: String? = null // an Apple Live Photo's .MOV
 )
 
 /** Where the signed-in user is in a video (seconds); position is 0 once it's been watched. */

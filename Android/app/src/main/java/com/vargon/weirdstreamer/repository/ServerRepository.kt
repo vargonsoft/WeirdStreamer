@@ -238,6 +238,7 @@ class ServerRepository(
                                 size = mediaItem.size,
                                 mimeType = mediaItem.mimeType,
                                 type = mediaItem.type,
+                                liveVideo = mediaItem.liveVideo?.let { getStreamUrl(it) },
                                 thumbnailUrl = mediaItem.thumbnailUrl?.let { 
                                     val baseUrl = if (it.startsWith("http")) it else "$requestBase$it"
                                     if (cacheVersion > 0) "$baseUrl?v=$cacheVersion" else baseUrl
@@ -286,6 +287,7 @@ class ServerRepository(
                             size = mediaItem.size,
                             mimeType = mediaItem.mimeType,
                             type = mediaItem.type,
+                            liveVideo = mediaItem.liveVideo?.let { getStreamUrl(it) },
                             thumbnailUrl = item.thumbnailUrl,
                             duration = mediaItem.duration,
                             width = mediaItem.width,
