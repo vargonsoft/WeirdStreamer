@@ -385,14 +385,15 @@ private fun estimateText(
 }
 
 /**
- * Settings › Downloads: what's on this phone, what's downloading, and the Wi-Fi setting. Each
- * server's list is its account in use's own downloads.
+ * Settings › Downloads: what's on this phone, what's downloading, and the Wi-Fi setting: the
+ * downloads of the server and account open.
  */
 @Composable
 fun DownloadsTab(viewModel: MediaViewModel) {
     val context = LocalContext.current
     val all by DownloadStore.items.collectAsState()
-    val items = remember(all) { DownloadStore.mine(all) }
+    val server = viewModel.connectedServer?.address
+    val items = remember(all, server) { DownloadStore.mine(all).filter { it.serverAddress == server } }
     var wifiOnly by remember { mutableStateOf(DownloadStore.wifiOnly) }
     var confirm by remember { mutableStateOf<DownloadItem?>(null) }
     val sorted = remember(items) { com.vargon.weirdstreamer.downloads.downloadsInOrder(items) }

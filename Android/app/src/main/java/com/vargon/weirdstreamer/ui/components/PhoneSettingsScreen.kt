@@ -55,8 +55,9 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
         val isAdmin = remember(server?.address, authStateRefresh) { server?.signedInAs()?.second ?: false }
         val tabs = buildList {
             add("App")
-            add("Downloads")
+            // Downloads are the account's: there's none until a server's account is open.
             if (server != null) {
+                add("Downloads")
                 if (isAdmin) addAll(listOf("Server", "Users", "Streams", "Jobs"))
                 add("Account")
             }
@@ -74,7 +75,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                 }
             }
         }
-        if (server == null && tab != "Downloads") {
+        if (server == null) {
             Text(
                 "Open a WeirdStreamer server to manage it here.",
                 style = MaterialTheme.typography.bodySmall,
