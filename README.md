@@ -49,7 +49,8 @@ Then it opens the web UI. Sign in as the admin: Settings opens where you add you
 for movie and TV libraries, a TMDB API token.
 
 Without the service, run `./bin/server` from that folder. The server needs `ffmpeg` and
-`ffprobe` (see [ffmpeg](#ffmpeg) below). Every setting is explained in `config.example.yml`.
+`ffprobe` (see [ffmpeg](#ffmpeg) below), and HEIC photos need `heif-convert` (see
+[HEIC photos](#heic-photos)). Every setting is explained in `config.example.yml`.
 
 ### ffmpeg
 
@@ -113,6 +114,17 @@ make -j"$(nproc)" && sudo make install
 
 That installs `ffmpeg` and `ffprobe` in `/usr/local/bin`, which comes before the system's on the
 usual `PATH`; the systemd service finds them there too.
+
+### HEIC photos
+
+Phones save photos as HEIC (`.heic`, `.heif`). The server uses `heif-convert`, from libheif's
+tools, to make their thumbnails and to send them to browsers as JPEG (`autoConvertImages`).
+Without it, these photos still list but have no thumbnails, and most browsers can't show them.
+On Debian or Ubuntu:
+
+```bash
+sudo apt install libheif-examples
+```
 
 ### Android app
 
