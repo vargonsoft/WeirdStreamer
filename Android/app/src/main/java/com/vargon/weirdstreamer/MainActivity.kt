@@ -1,6 +1,8 @@
 package com.vargon.weirdstreamer
 
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -50,6 +52,24 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    // Picture-in-picture (PhonePip): from Android 12 it opens on its own when going home.
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (!isTv && Build.VERSION.SDK_INT < Build.VERSION_CODES.S && PhonePip.wanted) {
+            PhonePip.params?.let { runCatching { enterPictureInPictureMode(it) } }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        viewModel.inPictureInPicture = isInPictureInPictureMode
+        // Leaving it while stopped is the window being closed (not expanded): the viewing ends,
+        // as if Back was pressed, so it saves where it was and doesn't play on unseen.
+        if (!isInPictureInPictureMode && lifecycle.currentState == androidx.lifecycle.Lifecycle.State.CREATED) {
+            viewModel.selectedVideoPath?.let { viewModel.stopPlayback(it) }
         }
     }
 

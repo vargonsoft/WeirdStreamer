@@ -961,6 +961,9 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         selectedVideoPath = local ?: path
     }
 
+    /** The phone player is in its picture-in-picture window (PhonePip): only the video shows. */
+    var inPictureInPicture by mutableStateOf(false)
+
     /** Whether this viewing began from a folder or list, not Continue Watching or a title page. */
     private var startedInFolder = false
 

@@ -537,6 +537,12 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }
     }
 
+    // Going home while it plays shrinks it into a window (PhonePip), of the picture's shape.
+    val inPip = viewModel.inPictureInPicture
+    PhonePip.Track(activity, playing = isPlaying && !playbackFailed,
+        aspect = (currentAspectRatio ?: videoAspectRatio).let { if ((rotation / 90f).toInt() % 2 != 0) 1f / it else it },
+        onPlayPause = { if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play() })
+
     BackHandler { 
         if (showTiming) {
             showTiming = false
@@ -650,7 +656,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
         SubtitleOverlay(serverSubs, position = {
             if (transcodeStartOffset > 0) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
-        }, fontSize = 18.sp, bottomPadding = if (showControls) 160.dp else 32.dp, videoAspect = {
+        }, fontSize = if (inPip) 9.sp else 18.sp,
+            bottomPadding = if (inPip) 4.dp else if (showControls) 160.dp else 32.dp, videoAspect = {
             exoPlayer.videoSize.let { if (it.height > 0) it.width * it.pixelWidthHeightRatio / it.height else 0f }
         })
 
@@ -665,7 +672,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }
 
         AnimatedVisibility(
-            visible = showControls,
+            visible = showControls && !inPip,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -1032,7 +1039,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }
 
         // Over the picture's lower right, above the controls when they show
-        skip?.let { (prompt, segments) ->
+        if (!inPip) skip?.let { (prompt, segments) ->
             PhoneSkipButton(prompt, onClick = { doSkip(prompt, segments) },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = if (showControls) 150.dp else 40.dp))
         }

@@ -296,6 +296,11 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     Brightness can go through `window.attributes.screenBrightness`, volume through
     `AudioManager`.
   - It has no subtitle or audio track UI yet.
+  - Picture-in-picture (`PhonePip.kt`): going home while a video plays shrinks it into a window
+    (auto-enter from Android 12, `onUserLeaveHint` in `MainActivity` before), with a play/pause
+    button; the player hides its controls there (`viewModel.inPictureInPicture`). Closing the
+    window ends the viewing like Back. The manifest's `configChanges` keep the activity (and the
+    player) alive through the window's size changes.
 - **Themes:** Default is Ember (the logo's aubergine, gold and cream) on web and Android, and the
   two should match: a dark background (#1C0F1B) with aubergine boxes (#321B2F) for the header and
   content, plum buttons (#6A3A62) with cream labels, gold (#F6C445) with aubergine text for a
