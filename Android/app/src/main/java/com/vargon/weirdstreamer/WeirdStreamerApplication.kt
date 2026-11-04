@@ -41,6 +41,11 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // Photos and PDFs a viewer downloaded (temp_), and motion clips (clip_, temp_video_ before):
+        // only in use while a viewer is open, so any left from before are stale.
+        Thread {
+            cacheDir.listFiles { f -> f.isFile && (f.name.startsWith("temp_") || f.name.startsWith("clip_")) }?.forEach { it.delete() }
+        }.start()
         com.vargon.weirdstreamer.downloads.DownloadStore.init(this)
         com.vargon.weirdstreamer.downloads.LocalProgress.init(this)
         val accounts = CredentialManager(this)

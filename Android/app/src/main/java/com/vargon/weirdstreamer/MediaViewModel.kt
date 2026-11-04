@@ -38,6 +38,7 @@ import jcifs.context.BaseContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.job
@@ -1189,42 +1190,59 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         return item.id?.let { fetchTrickplayInfo(it) }
     }
 
+    /**
+     * Downloads [path] to a temp file of its own (viewers load neighbours at once, so names can't
+     * be shared). A copy shorter than the size the listing gave is tried once more, then given up:
+     * a cut-off photo would show only its top. Cancelled, it leaves no file behind.
+     */
     suspend fun downloadToTempFile(path: String, context: Context, suffix: String = ".pdf"): File? = withContext(Dispatchers.IO) {
+        val expected = fileList.firstOrNull { it.path == path }?.size?.takeIf { it > 0 }
         try {
-            withContext(Dispatchers.Main) { downloadProgress = 0f }
-            val repository = currentRepository ?: return@withContext null
-            val tempFile = File(context.cacheDir, "temp_${System.currentTimeMillis()}$suffix")
-            val result = repository.getInputStream(path)
+            repeat(2) { attempt ->
+                downloadOnce(path, context, suffix)?.let { file ->
+                    if (expected == null || file.length() == expected) return@withContext file
+                    Log.w("MediaViewModel", "Download of $path was cut off (${file.length()} of $expected bytes), attempt ${attempt + 1}")
+                    file.delete()
+                }
+            }
+            null
+        } finally {
+            withContext(NonCancellable + Dispatchers.Main) { downloadProgress = null }
+        }
+    }
 
-            if (result.isSuccess) {
-                result.getOrNull()?.use { input ->
-                    tempFile.outputStream().use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        var bytesRead: Int
-                        var totalRead = 0L
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
-                            totalRead += bytesRead
-                            if (totalRead % (256 * 1024) == 0L) {
-                                withContext(Dispatchers.Main) {
-                                    downloadProgress = totalRead.toFloat() / 1000000f
-                                }
-                            }
+    private suspend fun downloadOnce(path: String, context: Context, suffix: String): File? {
+        val repository = currentRepository ?: return null
+        withContext(Dispatchers.Main) { downloadProgress = 0f }
+        val tempFile = File.createTempFile("temp_", suffix, context.cacheDir)
+        try {
+            val input = repository.getInputStream(path).getOrNull() ?: return null.also { tempFile.delete() }
+            input.use {
+                tempFile.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var totalRead = 0L
+                    var reported = 0L
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        output.write(buffer, 0, n)
+                        totalRead += n
+                        if (totalRead - reported >= 256 * 1024) {
+                            reported = totalRead
+                            withContext(Dispatchers.Main) { downloadProgress = totalRead.toFloat() / 1000000f }
                         }
                     }
                 }
-                withContext(Dispatchers.Main) { downloadProgress = null }
-                tempFile
-            } else {
-                withContext(Dispatchers.Main) { downloadProgress = null }
-                null
             }
+            return tempFile
         } catch (e: Exception) {
-            withContext(Dispatchers.Main) { downloadProgress = null }
-            null
+            tempFile.delete()
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w("MediaViewModel", "Download of $path failed", e)
+            return null
         }
     }
-    
+
     fun startThumbnailUpdates(serverUrl: String, token: String) {
         stopThumbnailUpdates()
         thumbnailListener = ThumbnailUpdateListener(serverUrl, token)

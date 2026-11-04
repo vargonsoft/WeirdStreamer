@@ -39,13 +39,10 @@ import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import coil.size.Size as CoilSize
 import com.vargon.weirdstreamer.LivePhotoInfo
-import com.vargon.weirdstreamer.LivePhotoType
-import com.vargon.weirdstreamer.LivePhotoUtil
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.R
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import kotlinx.coroutines.delay
-import java.io.File
 import kotlin.OptIn
 
 @OptIn(UnstableApi::class, ExperimentalTvMaterial3Api::class)
@@ -72,7 +69,7 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
     val currentSmbPath = images.getOrNull(currentIndex) ?: initialPath
 
     var localImagePath by remember { mutableStateOf<String?>(null) }
-    var tempFile by remember { mutableStateOf<File?>(null) }
+    var photo by remember { mutableStateOf<LoadedPhoto?>(null) }
     var livePhotoInfo by remember { mutableStateOf<LivePhotoInfo?>(null) }
     var showVideo by remember { mutableStateOf(false) }
     var isVideoPlaying by remember { mutableStateOf(false) }
@@ -90,42 +87,22 @@ fun ImageViewer(viewModel: MediaViewModel, initialPath: String, onBack: (String)
         }
     }
 
-    DisposableEffect(Unit) { onDispose { exoPlayer.release(); tempFile?.delete() } }
+    DisposableEffect(Unit) { onDispose { exoPlayer.release(); photo?.delete() } }
 
     LaunchedEffect(currentSmbPath) {
         filenameTimerTrigger = System.currentTimeMillis(); isLoading = true; errorMessage = null; imageIntrinsicSize = null
         rotation = 0f; livePhotoInfo = null; showVideo = false; isVideoPlaying = false; isPaused = false; showPauseIcon = false
-        exoPlayer.stop(); exoPlayer.clearMediaItems(); tempFile?.delete(); tempFile = null
+        exoPlayer.stop(); exoPlayer.clearMediaItems(); photo?.delete(); photo = null
 
         if (viewModel.isImage(currentSmbPath)) {
-            val extension = viewModel.getFileExtension(currentSmbPath)
-            val file = viewModel.downloadToTempFile(currentSmbPath, context, ".$extension")
-            if (file != null) {
-                tempFile = file; localImagePath = file.absolutePath
-                val liveVideo = viewModel.liveVideoFile(currentSmbPath, context)
-                val info = liveVideo?.let { LivePhotoInfo(LivePhotoType.APPLE, 0, it.length()) }
-                    ?: LivePhotoUtil.findLivePhotoInfo(file)
-                if (info != null) {
-                    livePhotoInfo = info
-                    if (info.type == LivePhotoType.SAMSUNG) {
-                        try {
-                            val videoFile = File(context.cacheDir, "temp_video_${System.currentTimeMillis()}.mp4")
-                            file.inputStream().use { input ->
-                                var toSkip = info.videoOffset
-                                while (toSkip > 0) { val skipped = input.skip(toSkip); if (skipped <= 0) break; toSkip -= skipped }
-                                videoFile.outputStream().use { output ->
-                                    val buffer = ByteArray(64 * 1024); var bytesRead = 0; var totalRead = 0L
-                                    while (totalRead < info.videoLength && input.read(buffer).also { bytesRead = it } != -1) {
-                                        val toWrite = minOf(bytesRead.toLong(), info.videoLength - totalRead).toInt()
-                                        output.write(buffer, 0, toWrite); totalRead += bytesRead
-                                    }
-                                }
-                            }
-                            if (videoFile.exists() && videoFile.length() > 0) exoPlayer.setMediaItem(MediaItem.fromUri(videoFile.absolutePath))
-                            else livePhotoInfo = null
-                        } catch (e: Exception) { livePhotoInfo = null }
-                    } else exoPlayer.setMediaItem(MediaItem.fromUri(liveVideo!!.absolutePath))
-                    if (livePhotoInfo != null) exoPlayer.prepare()
+            val loaded = loadPhoto(viewModel, currentSmbPath, context)
+            photo = loaded
+            if (loaded != null) {
+                localImagePath = loaded.image.absolutePath
+                if (loaded.clip != null) {
+                    livePhotoInfo = loaded.info
+                    exoPlayer.setMediaItem(MediaItem.fromUri(loaded.clip.absolutePath))
+                    exoPlayer.prepare()
                 }
             } else localImagePath = currentSmbPath
         } else localImagePath = currentSmbPath

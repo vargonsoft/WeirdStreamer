@@ -129,6 +129,8 @@ for each TODO item are at the end of this file.
   - `Clips/Live Photos/`: Apple Live Photos as an iPhone saves them, a photo and a .MOV of the
     same name carrying Apple's content identifier: `IMG_0001.HEIC` (HEVC clip) and `IMG_0002.JPG`
     (H.264). `IMG_0003.JPG` and `.MOV` share a name without the identifier, so both stay listed.
+  - `Clips/Motion Photos/`: six Samsung-style motion photos (a 4000×3000 JPEG with an MP4 after
+    `MotionPhoto_Data`, about 9.6 MB each), for paging through them in the viewers.
   - `TV Shows/Example Show/Season 1/`: four episodes. S01E01 is a 60-second clip; S01E02 is empty;
     S01E03 and S01E04 are 8-second clips with their episode drawn on them (for going on to the
     next episode).

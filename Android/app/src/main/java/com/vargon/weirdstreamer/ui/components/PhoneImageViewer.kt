@@ -38,12 +38,9 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.vargon.weirdstreamer.LivePhotoInfo
-import com.vargon.weirdstreamer.LivePhotoType
-import com.vargon.weirdstreamer.LivePhotoUtil
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.delay
-import java.io.File
 import kotlin.OptIn
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -171,7 +168,7 @@ fun ZoomableImage(
     var offset by remember { mutableStateOf(Offset.Zero) }
     
     var localImagePath by remember { mutableStateOf<String?>(null) }
-    var tempFile by remember { mutableStateOf<File?>(null) }
+    var photo by remember { mutableStateOf<LoadedPhoto?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
     // Live Photo state
@@ -203,67 +200,18 @@ fun ZoomableImage(
         showPauseIcon = false
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
-        
-        tempFile?.delete()
-        tempFile = null
-        
+        photo?.delete()
+        photo = null
+
         if (viewModel.isImage(path)) {
-            val extension = viewModel.getFileExtension(path)
-            Log.i("ZoomableImage", "Loading image: $path (ext: $extension)")
-            
-            // Always download to check for Live Photo metadata/appended video
-            val file = viewModel.downloadToTempFile(path, context, ".$extension")
-            if (file != null) {
-                tempFile = file
-                localImagePath = file.absolutePath
-                
-                val liveVideo = viewModel.liveVideoFile(path, context)
-                val info = liveVideo?.let { LivePhotoInfo(LivePhotoType.APPLE, 0, it.length()) }
-                    ?: LivePhotoUtil.findLivePhotoInfo(file)
-                if (info != null) {
-                    Log.i("ZoomableImage", "Found Live Photo info: $info")
-                    livePhotoInfo = info
-                    if (info.type == LivePhotoType.SAMSUNG) {
-                        try {
-                            val videoFile = File(context.cacheDir, "temp_video_${System.currentTimeMillis()}.mp4")
-                            file.inputStream().use { input ->
-                                // Reliable skip
-                                var toSkip = info.videoOffset
-                                while (toSkip > 0) {
-                                    val skipped = input.skip(toSkip)
-                                    if (skipped <= 0) break
-                                    toSkip -= skipped
-                                }
-                                
-                                videoFile.outputStream().use { output ->
-                                    val buffer = ByteArray(64 * 1024)
-                                    var bytesRead = 0
-                                    var totalRead = 0L
-                                    while (totalRead < info.videoLength && input.read(buffer).also { bytesRead = it } != -1) {
-                                        val toWrite = minOf(bytesRead.toLong(), info.videoLength - totalRead).toInt()
-                                        output.write(buffer, 0, toWrite)
-                                        totalRead += bytesRead
-                                    }
-                                }
-                            }
-                            if (videoFile.exists() && videoFile.length() > 0) {
-                                Log.i("ZoomableImage", "Extracted video to ${videoFile.absolutePath} (${videoFile.length()} bytes)")
-                                exoPlayer.setMediaItem(MediaItem.fromUri(videoFile.absolutePath))
-                            } else {
-                                Log.e("ZoomableImage", "Extracted video file is empty or missing")
-                                livePhotoInfo = null
-                            }
-                        } catch (e: Exception) {
-                            Log.e("ZoomableImage", "Error extracting Samsung video", e)
-                        }
-                    } else {
-                        exoPlayer.setMediaItem(MediaItem.fromUri(liveVideo!!.absolutePath))
-                    }
-                    if (livePhotoInfo != null) {
-                        exoPlayer.prepare()
-                    }
-                } else {
-                    Log.i("ZoomableImage", "No Live Photo info found for file")
+            val loaded = loadPhoto(viewModel, path, context)
+            photo = loaded
+            if (loaded != null) {
+                localImagePath = loaded.image.absolutePath
+                if (loaded.clip != null) {
+                    livePhotoInfo = loaded.info
+                    exoPlayer.setMediaItem(MediaItem.fromUri(loaded.clip.absolutePath))
+                    exoPlayer.prepare()
                 }
             } else {
                 Log.w("ZoomableImage", "Failed to download image to temp file")
@@ -329,7 +277,7 @@ fun ZoomableImage(
     DisposableEffect(path) {
         onDispose {
             exoPlayer.release()
-            tempFile?.delete()
+            photo?.delete()
         }
     }
 
