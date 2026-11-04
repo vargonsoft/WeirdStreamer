@@ -16,7 +16,7 @@
 #       bin/cli, the web UI (with this APK to download), setup.sh (writes config.yml, can create
 #       the admin user and install a systemd service), check-ffmpeg.sh, config.example.yml, LICENSE,
 #       NOTICE and VERSION.
-#       Where it runs it needs ffmpeg, nothing else.
+#       Where it runs it needs ffmpeg, and for HEIC photos heif-convert (libheif's tools).
 #   WeirdStreamer-<version>.apk                         the Android app (TV and phone)
 #   SHA256SUMS
 #

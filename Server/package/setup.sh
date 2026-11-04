@@ -156,6 +156,12 @@ elif ! ./check-ffmpeg.sh; then
     echo "Note: this ffmpeg lacks what's listed above (the README's ffmpeg section says how to get one"
     echo "that has it). Setup goes on; ./check-ffmpeg.sh checks again later."
 fi
+# Optional: only HEIC/HEIF photos need it (their thumbnails, and JPEG for browsers).
+if ! command -v heif-convert >/dev/null; then
+    echo "Note: heif-convert isn't installed, so HEIC photos (iPhones' and many phones') will have no"
+    echo "thumbnails and won't show in browsers: sudo apt install libheif-examples (or your system's"
+    echo "libheif tools). Everything else works without it."
+fi
 
 if [ -f config.yml ]; then
     echo "config.yml already exists: leaving it. (Move it aside to set up again.)"
