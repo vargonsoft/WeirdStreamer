@@ -256,9 +256,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     // Files of the title being played from, so the player can find the item and its neighbours
     private var playbackQueue: List<FileItem> = emptyList()
 
-    /** The WeirdStreamer server being browsed, if any (for its admin settings). */
+    /**
+     * The WeirdStreamer server being browsed, if any (for its admin settings). None on the source
+     * list, though the last one opened is kept behind it.
+     */
     val connectedServer: ServerRepository?
-        get() = serverRepository
+        get() = serverRepository?.takeIf { currentSource != null }
 
     private val serverRepository: ServerRepository?
         get() = currentRepository as? ServerRepository
