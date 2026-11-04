@@ -8,6 +8,7 @@ import (
 )
 
 func TestResolveFileTV(t *testing.T) {
+	useVideoFormats(t, ".mkv", ".mp4")
 	root := "/media/tv"
 	lib := config.MediaPath{Path: root, ID: "t", Type: config.LibraryTypeTV}
 	cases := []struct {
@@ -67,6 +68,7 @@ func TestResolveFileTV(t *testing.T) {
 }
 
 func TestResolveFileMovie(t *testing.T) {
+	useVideoFormats(t, ".mkv", ".mp4")
 	root := "/media/movies"
 	lib := config.MediaPath{Path: root, ID: "m", Type: config.LibraryTypeMovie}
 	cases := map[string]string{

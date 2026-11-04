@@ -57,7 +57,7 @@ func (s *Scanner) ScanMediaPaths() error {
 	totalFiles := 0
 	for _, mediaPath := range config.GlobalConfig.Media.Paths {
 		filepath.Walk(mediaPath.Path, func(p string, info os.FileInfo, err error) error {
-			if err == nil && !info.IsDir() && s.getMediaType(p) != "" {
+			if err == nil && !info.IsDir() && config.MediaType(p) != "" {
 				totalFiles++
 			}
 			return nil
@@ -122,7 +122,7 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 			return nil
 		}
 
-		mediaType := s.getMediaType(path)
+		mediaType := config.MediaType(path)
 		if mediaType == "" {
 			return nil // Skip unsupported files
 		}
@@ -155,7 +155,7 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 			Name:     info.Name(),
 			Type:     mediaType,
 			Size:     info.Size(),
-			MimeType: s.getMimeType(path),
+			MimeType: MimeType(path),
 		}
 
 		// Get metadata based on type
@@ -186,9 +186,9 @@ func (s *Scanner) GetFileMetadata(path string) (*models.MediaItem, error) {
 	item := &models.MediaItem{
 		Path:     path,
 		Name:     filepath.Base(path),
-		Type:     s.getMediaType(path),
+		Type:     config.MediaType(path),
 		Size:     info.Size(),
-		MimeType: s.getMimeType(path),
+		MimeType: MimeType(path),
 	}
 
 	// Get metadata based on type
@@ -219,63 +219,6 @@ func (s *Scanner) GetFileMetadata(path string) (*models.MediaItem, error) {
 	}
 
 	return item, nil
-}
-
-func (s *Scanner) getMediaType(path string) string {
-	ext := strings.ToLower(filepath.Ext(path))
-
-	for _, videoExt := range config.GlobalConfig.Media.SupportedVideoFormats {
-		if ext == videoExt {
-			return "video"
-		}
-	}
-
-	for _, imageExt := range config.GlobalConfig.Media.SupportedImageFormats {
-		if ext == imageExt {
-			return "image"
-		}
-	}
-
-	for _, docExt := range config.GlobalConfig.Media.SupportedDocFormats {
-		if ext == docExt {
-			return "document"
-		}
-	}
-
-	return ""
-}
-
-func (s *Scanner) getMimeType(path string) string {
-	ext := strings.ToLower(filepath.Ext(path))
-	mimeTypes := map[string]string{
-		".mp4":  "video/mp4",
-		".mkv":  "video/x-matroska",
-		".avi":  "video/x-msvideo",
-		".divx": "video/x-msvideo", // DivX and Xvid files are AVI containers
-		".xvid": "video/x-msvideo",
-		".iso":  "application/x-iso9660-image", // DVD images, played transcoded
-		".mov":  "video/quicktime",
-		".wmv":  "video/x-ms-wmv",
-		".asf":  "video/x-ms-asf",
-		".flv":  "video/x-flv",
-		".webm": "video/webm",
-		".3gp":  "video/3gpp",
-		".3gpp": "video/3gpp",
-		".jpg":  "image/jpeg",
-		".jpeg": "image/jpeg",
-		".png":  "image/png",
-		".gif":  "image/gif",
-		".bmp":  "image/bmp",
-		".webp": "image/webp",
-		".heif": "image/heif",
-		".heic": "image/heic",
-		".pdf":  "application/pdf",
-	}
-
-	if mime, ok := mimeTypes[ext]; ok {
-		return mime
-	}
-	return "application/octet-stream"
 }
 
 func (s *Scanner) getVideoMetadata(item *models.MediaItem) error {

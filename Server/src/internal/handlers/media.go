@@ -585,7 +585,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 
 			// Determine media type based on extension
 			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			mediaType := h.getMediaTypeFromExtension(ext)
+			mediaType := config.MediaType(ext)
 
 			// Only include supported media files
 			if mediaType == "" {
@@ -605,7 +605,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 					Name:     entry.Name(),
 					Type:     mediaType,
 					Size:     fileInfo.Size(),
-					MimeType: h.getMimeTypeFromExtension(ext),
+					MimeType: media.MimeType(ext),
 				}
 
 				// Generate thumbnail in background for images and videos
@@ -793,7 +793,7 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 
 			entryPath := filepath.Join(targetPath, entry.Name())
 			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			mediaType := h.getMediaTypeFromExtension(ext)
+			mediaType := config.MediaType(ext)
 
 			if mediaType == "image" || mediaType == "video" {
 				// Delete existing thumbnail
@@ -923,65 +923,6 @@ func isPathHash(s string) bool {
 func (h *MediaHandler) isValidMediaPath(path string) bool {
 	_, ok := libraryForPath(path)
 	return ok
-}
-
-// getMediaTypeFromExtension determines the media type based on file extension
-func (h *MediaHandler) getMediaTypeFromExtension(ext string) string {
-	// Check against configured formats
-	for _, videoExt := range config.GlobalConfig.Media.SupportedVideoFormats {
-		if ext == videoExt {
-			return "video"
-		}
-	}
-	for _, imageExt := range config.GlobalConfig.Media.SupportedImageFormats {
-		if ext == imageExt {
-			return "image"
-		}
-	}
-	for _, docExt := range config.GlobalConfig.Media.SupportedDocFormats {
-		if ext == docExt {
-			return "document"
-		}
-	}
-	return ""
-}
-
-// getMimeTypeFromExtension returns the MIME type for a file extension
-func (h *MediaHandler) getMimeTypeFromExtension(ext string) string {
-	mimeTypes := map[string]string{
-		// Video
-		".mp4":  "video/mp4",
-		".mkv":  "video/x-matroska",
-		".avi":  "video/x-msvideo",
-		".divx": "video/x-msvideo", // DivX and Xvid files are AVI containers
-		".xvid": "video/x-msvideo",
-		".iso":  "application/x-iso9660-image", // DVD images, played transcoded
-		".mov":  "video/quicktime",
-		".wmv":  "video/x-ms-wmv",
-		".flv":  "video/x-flv",
-		".webm": "video/webm",
-		".3gp":  "video/3gpp",
-		".3gpp": "video/3gpp",
-		".m4v":  "video/x-m4v",
-		".mpg":  "video/mpeg",
-		".mpeg": "video/mpeg",
-		".ts":   "video/mp2t",
-		".mp2":  "video/mpeg",
-		// Image
-		".jpg":  "image/jpeg",
-		".jpeg": "image/jpeg",
-		".png":  "image/png",
-		".gif":  "image/gif",
-		".bmp":  "image/bmp",
-		".webp": "image/webp",
-		// Document
-		".pdf": "application/pdf",
-	}
-
-	if mimeType, ok := mimeTypes[ext]; ok {
-		return mimeType
-	}
-	return "application/octet-stream"
 }
 
 // ThumbnailUpdates streams thumbnail-ready events over SSE. It sits behind AuthMiddleware, and

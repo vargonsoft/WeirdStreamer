@@ -96,18 +96,9 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 
 func (tg *ThumbnailGenerator) generate(filePath string) (string, error) {
 
-	// Determine media type
 	ext := strings.ToLower(filepath.Ext(filePath))
-	var mediaType string
-
-	switch ext {
-	case ".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".mpg", ".mpeg", ".3gp", ".3gpp", ".ts", ".mp2", ".divx", ".xvid", ".iso":
-		mediaType = "video"
-	case ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".jfif", ".heif", ".heic":
-		mediaType = "image"
-	case ".pdf":
-		mediaType = "document"
-	default:
+	mediaType := config.MediaType(filePath)
+	if mediaType == "" {
 		return "", fmt.Errorf("unsupported media type: %s", ext)
 	}
 

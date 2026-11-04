@@ -406,7 +406,7 @@ private fun handlePhoneFileClick(viewModel: MediaViewModel, item: FileItem) {
         }
     } else {
         when {
-            viewModel.isVideo(item.path) -> viewModel.openVideo(item)
+            viewModel.isVideo(item) -> viewModel.openVideo(item)
             viewModel.isImage(item.path) -> viewModel.showImage(item.path)
             viewModel.isPdf(item.path) -> viewModel.showPdf(item.path)
         }

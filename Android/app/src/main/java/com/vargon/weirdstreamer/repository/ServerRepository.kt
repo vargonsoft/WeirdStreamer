@@ -62,16 +62,12 @@ class ServerRepository(
             items.forEach { item ->
                 when {
                     item.isDirectory && item.path != "UP" && item.name != ".." -> pending.add(item.path)
-                    !item.isDirectory && isDownloadableVideo(item.name) -> found.add(item)
+                    !item.isDirectory && item.type == "video" -> found.add(item)
                 }
             }
         }
         return found.take(limit)
     }
-
-    private fun isDownloadableVideo(name: String) =
-        name.substringAfterLast('.', "").lowercase() in setOf(
-            "mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2", "divx", "xvid", "iso")
 
     /** The server's API, for the admin settings screens. */
     val api: ApiService get() = apiService
@@ -106,6 +102,7 @@ class ServerRepository(
         name = file.name,
         path = getStreamUrl(file.path),
         isDirectory = false,
+        type = "video",
         size = file.size,
         thumbnailUrl = absoluteUrl(file.thumbnailUrl),
         duration = file.duration,
@@ -182,6 +179,7 @@ class ServerRepository(
         name = item.name,
         path = getStreamUrl(item.path),
         isDirectory = false,
+        type = "video",
         size = item.size,
         thumbnailUrl = absoluteUrl(item.thumbnailUrl),
         duration = item.duration,
@@ -239,6 +237,7 @@ class ServerRepository(
                                 isDirectory = false,
                                 size = mediaItem.size,
                                 mimeType = mediaItem.mimeType,
+                                type = mediaItem.type,
                                 thumbnailUrl = mediaItem.thumbnailUrl?.let { 
                                     val baseUrl = if (it.startsWith("http")) it else "$requestBase$it"
                                     if (cacheVersion > 0) "$baseUrl?v=$cacheVersion" else baseUrl
@@ -286,6 +285,7 @@ class ServerRepository(
                             isDirectory = false,
                             size = mediaItem.size,
                             mimeType = mediaItem.mimeType,
+                            type = mediaItem.type,
                             thumbnailUrl = item.thumbnailUrl,
                             duration = mediaItem.duration,
                             width = mediaItem.width,

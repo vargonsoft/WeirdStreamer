@@ -250,17 +250,6 @@ func ResolveFolder(lib config.MediaPath, path, folderKey string) (Ref, bool) {
 	return Ref{}, false
 }
 
-// isVideo reports whether name has one of the configured video extensions.
-func isVideo(name string) bool {
-	ext := strings.ToLower(filepath.Ext(name))
-	for _, v := range config.GlobalConfig.Media.SupportedVideoFormats {
-		if ext == v {
-			return true
-		}
-	}
-	return false
-}
-
 func skipEntry(d os.DirEntry) bool {
 	name := d.Name()
 	if strings.HasPrefix(name, ".") || strings.EqualFold(name, "@eaDir") {

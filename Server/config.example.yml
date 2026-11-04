@@ -76,7 +76,7 @@ media:
   # Subtitles downloaded from OpenSubtitles (needed to download them)
   subtitlePath: ./var/subtitles
   # The file types it lists, by extension
-  supportedVideoFormats: [".mp4", ".mkv", ".avi", ".divx", ".xvid", ".iso", ".mov", ".wmv", ".flv", ".webm", ".3gp", ".3gpp", ".m4v", ".mpg", ".mpeg", ".ts", ".mp2"]
+  supportedVideoFormats: [".mp4", ".mkv", ".avi", ".divx", ".xvid", ".iso", ".mov", ".wmv", ".asf", ".flv", ".webm", ".3gp", ".3gpp", ".m4v", ".mpg", ".mpeg", ".ts", ".mp2"]
   supportedImageFormats: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"]
   supportedDocFormats: [".pdf"]
   # Leave out macOS's extra files (._name, .DS_Store, .AppleDouble folders)

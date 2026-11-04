@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -23,16 +22,7 @@ import (
 
 // externalSubtitles lists the subtitle files for a video: beside it, then downloaded.
 func externalSubtitles(path string) []subtitles.Track {
-	isVideo := func(name string) bool {
-		ext := strings.ToLower(filepath.Ext(name))
-		for _, v := range config.GlobalConfig.Media.SupportedVideoFormats {
-			if ext == v {
-				return true
-			}
-		}
-		return false
-	}
-	tracks := subtitles.Sidecars(path, isVideo)
+	tracks := subtitles.Sidecars(path, config.IsVideo)
 	return append(tracks, subtitles.Downloaded(config.GlobalConfig.Media.SubtitlePath, path)...)
 }
 

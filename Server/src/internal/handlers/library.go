@@ -13,6 +13,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/metadata"
 	"github.com/weirdstreamer/server/internal/models"
 )
@@ -191,7 +192,7 @@ func (h *MediaHandler) libraryFileInfo(path string) models.LibraryFile {
 			file.Size = st.Size()
 		}
 		item = &models.MediaItem{Path: path, Name: file.Name, Type: "video", Size: file.Size,
-			MimeType: h.getMimeTypeFromExtension(filepath.Ext(path))}
+			MimeType: media.MimeType(path)}
 	}
 
 	n := 0

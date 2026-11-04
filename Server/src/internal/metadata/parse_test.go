@@ -3,6 +3,7 @@ package metadata
 import "testing"
 
 func TestParseTitleYear(t *testing.T) {
+	useVideoFormats(t, ".mkv", ".mp4")
 	cases := []struct {
 		in    string
 		title string
@@ -48,6 +49,7 @@ func TestParseTitleYear(t *testing.T) {
 }
 
 func TestParseEpisode(t *testing.T) {
+	useVideoFormats(t, ".mkv", ".mp4")
 	cases := []struct {
 		in      string
 		season  int
@@ -73,6 +75,7 @@ func TestParseEpisode(t *testing.T) {
 }
 
 func TestParseEpisodeShow(t *testing.T) {
+	useVideoFormats(t, ".mkv", ".mp4")
 	cases := map[string]string{
 		"1923 - S01E02 - Nature's Empty Throne Bluray-1080p.mkv": "1923",
 		"The Walking Dead - 4x13 - Alone.mkv":                    "The Walking Dead",
@@ -87,6 +90,7 @@ func TestParseEpisodeShow(t *testing.T) {
 }
 
 func TestParseSeasonFolder(t *testing.T) {
+	useVideoFormats(t, ".mkv", ".mp4")
 	cases := map[string]int{"Season 1": 1, "Season 01": 1, "S02": 2, "Specials": 0, "season 12": 12}
 	for in, want := range cases {
 		if got, ok := ParseSeasonFolder(in); !ok || got != want {
@@ -101,6 +105,7 @@ func TestParseSeasonFolder(t *testing.T) {
 }
 
 func TestNormalizeTitle(t *testing.T) {
+	useVideoFormats(t, ".mkv", ".mp4")
 	pairs := [][2]string{
 		{"A Knights Tale", "A Knight's Tale"},
 		{"Cats & Dogs - The Revenge of Kitty Galore", "Cats & Dogs: The Revenge of Kitty Galore"},
@@ -120,6 +125,7 @@ func TestNormalizeTitle(t *testing.T) {
 }
 
 func TestParseShowFolder(t *testing.T) {
+	useVideoFormats(t, ".mkv", ".mp4")
 	cases := []struct {
 		in, title string
 		year      int

@@ -100,7 +100,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             val filtered = when (currentFilter) {
                 ContentFilter.ALL -> currentFiles
                 ContentFilter.IMAGE -> currentFiles.filter { it.isDirectory || isImage(it.path) }
-                ContentFilter.VIDEO -> currentFiles.filter { it.isDirectory || isVideo(it.path) }
+                ContentFilter.VIDEO -> currentFiles.filter { it.isDirectory || isVideo(it) }
                 ContentFilter.PDF -> currentFiles.filter { it.isDirectory || isPdf(it.path) }
             }
 
@@ -757,7 +757,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val visiblePaths = visibleItems.mapTo(HashSet()) { it.path }
         metadataJobs.keys.filter { it !in visiblePaths }.forEach { cancelMetadata(it) }
         visibleItems.forEach { item ->
-            if (!item.isDirectory && isVideo(item.path)) fetchMetadata(item)
+            if (!item.isDirectory && isVideo(item)) fetchMetadata(item)
         }
     }
 
@@ -1117,7 +1117,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun isImage(path: String): Boolean = getFileExtension(path) in IMAGE_EXTENSIONS
 
-    fun isVideo(path: String): Boolean = getFileExtension(path) in VIDEO_EXTENSIONS
+    /** Whether a file is a video: as the server says (its config's formats), or on an SMB share by its extension. */
+    fun isVideo(item: FileItem): Boolean = item.type?.let { it == "video" } ?: isVideo(item.path)
+
+    private fun isVideo(path: String): Boolean = getFileExtension(path) in VIDEO_EXTENSIONS
 
     fun isPdf(path: String): Boolean {
         val ext = getFileExtension(path)
@@ -1159,7 +1162,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getVideosInCurrentFolder(): List<String> {
         if (playbackQueue.any { it.path == selectedVideoPath }) return playbackQueue.map { it.path }
-        return getFilteredFileList().filter { !it.isDirectory && isVideo(it.path) }.map { it.path }
+        return getFilteredFileList().filter { !it.isDirectory && isVideo(it) }.map { it.path }
     }
 
     fun getFileItemForPath(path: String): FileItem? {
@@ -1264,7 +1267,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private val NATURAL_TOKEN_REGEX = Regex("(\\d+)|(\\D+)")
         private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "jfif", "heif", "heic")
-        private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2", "divx", "xvid", "iso")
+        // SMB shares' videos (the server's files say what they are)
+        private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "asf", "m4v", "mpg", "mpeg", "3gp", "3gpp", "ts", "mp2", "divx", "xvid", "iso")
         private const val METADATA_BATCH_SIZE = 12
         private const val METADATA_FLUSH_INTERVAL_MS = 500L
         private const val METADATA_CONCURRENCY = 4

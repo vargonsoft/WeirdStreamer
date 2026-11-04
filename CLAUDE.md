@@ -82,6 +82,9 @@ for each TODO item are at the end of this file.
   `cli config add-path`) through `internal/config/file.go`, which changes only the values that changed
   and keeps comments, blank lines, order and unknown keys. `cli config init <template>` writes a new
   one from JSON values with the template's comments (`create-config.sh`). Scripts read it with PyYAML.
+  Which files are videos, images or documents is the config's `supportedVideoFormats` (and image and
+  doc formats), through `config.MediaType` / `config.IsVideo`; MIME types are `media.MimeType`. The
+  Android app takes the server's `type` for its files and keeps its own list only for SMB shares.
   Data is in the folders `config.yml` names (databases, thumbnails, trickplay, artwork, download
   encodes).
 - To deploy server code: `Server/scripts/restart-live.sh`. It checks for active streams, builds, stops
@@ -111,7 +114,7 @@ for each TODO item are at the end of this file.
     default, AAC "commentary" at 880 Hz) and English and Spanish subtitles every 4 seconds that
     name the second they're at. Has trickplay frames.
   - `Movies/HEVC Test`, `Hi10 Test` (10-bit H.264), `AVI Test` (MPEG-4 Part 2 and MP3),
-    `VP9 Test` (WebM) and `AV1 Test`: 30-second clips for the browser codec checks. New files
+    `VP9 Test` (WebM), `AV1 Test` and `ASF Test` (WMV 8 and WMA in ASF): clips for the codec checks. New files
     only stream once a scan has added them (`api.scanMedia()`, or Scan Media in the web UI).
   - `Movies/Sparse Keyframes`: 2 minutes of H.264 with a keyframe every 10 seconds and AC-3
     audio (so it plays as a copy): for short jumps forward in a copied video.

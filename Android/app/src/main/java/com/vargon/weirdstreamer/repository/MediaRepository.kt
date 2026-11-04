@@ -34,6 +34,7 @@ data class FileItem(
     val isDirectory: Boolean,
     val size: Long = 0,
     val mimeType: String? = null,
+    val type: String? = null, // the server's: video, image or document (its config's formats); null on SMB shares
     val thumbnailUrl: String? = null,
     val duration: Double? = null,
     val width: Int? = null,

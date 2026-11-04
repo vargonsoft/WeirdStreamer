@@ -66,7 +66,7 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
     val playback = if (item.isDirectory || isParent) null else viewModel.playbackFor(item.path)
 
     LaunchedEffect(item.path) {
-        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
+        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item)) {
             viewModel.fetchMetadata(item)
         }
     }
@@ -92,7 +92,7 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
             }
         } else null,
         // Videos on a WeirdStreamer server can be downloaded for offline viewing.
-        trailingContent = if (!item.isDirectory && !isParent && viewModel.connectedServer != null && viewModel.isVideo(item.path)) {
+        trailingContent = if (!item.isDirectory && !isParent && viewModel.connectedServer != null && viewModel.isVideo(item)) {
             { DownloadRequest.of(item)?.let { DownloadButton(viewModel, it) } }
         } else null,
         leadingContent = {
@@ -128,7 +128,7 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                 }
                 PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 14.dp)
                 // Long press: Play from start, and Mark watched (server videos).
-                if (playback != null || (item.originalPath != null && viewModel.isVideo(item.path))) {
+                if (playback != null || (item.originalPath != null && viewModel.isVideo(item))) {
                     DropdownMenu(border = phoneMenuBorder(), expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         if ((playback?.resumeAt ?: 0.0) > 0) {
                             DropdownMenuItem(text = { Text("Play from start") }, onClick = {
@@ -148,7 +148,7 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
             }
         },
         modifier = modifier.combinedClickable(onClick = onClick, onLongClick = {
-            if (!item.isDirectory && !isParent && item.originalPath != null && viewModel.isVideo(item.path)) menuOpen = true
+            if (!item.isDirectory && !isParent && item.originalPath != null && viewModel.isVideo(item)) menuOpen = true
         })
     )
 }
@@ -160,7 +160,7 @@ fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: ()
     val playback = if (item.isDirectory || isParent) null else viewModel.playbackFor(item.path)
 
     LaunchedEffect(item.path) {
-        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item.path)) {
+        if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item)) {
             viewModel.fetchMetadata(item)
         }
     }

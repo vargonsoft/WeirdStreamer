@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/weirdstreamer/server/internal/config"
 )
 
 var (
@@ -199,15 +201,9 @@ func cleanTitle(name string) string {
 	return strings.Trim(name, " -._")
 }
 
-var videoExts = map[string]bool{
-	".mkv": true, ".mp4": true, ".m4v": true, ".avi": true, ".mov": true, ".wmv": true, ".flv": true,
-	".webm": true, ".ts": true, ".mpg": true, ".mpeg": true, ".3gp": true, ".3gpp": true, ".mp2": true,
-	".divx": true, ".xvid": true, ".iso": true,
-}
-
 func stripVideoExt(name string) string {
-	if ext := filepath.Ext(name); videoExts[strings.ToLower(ext)] {
-		return strings.TrimSuffix(name, ext)
+	if config.IsVideo(name) {
+		return strings.TrimSuffix(name, filepath.Ext(name))
 	}
 	return name
 }
