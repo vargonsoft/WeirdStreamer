@@ -85,6 +85,12 @@ func main() {
 	if config.GlobalConfig.Media.DownloadPath == "" {
 		config.GlobalConfig.Media.DownloadPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "downloads")
 	}
+	if config.GlobalConfig.Media.TempPath == "" {
+		config.GlobalConfig.Media.TempPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "tmp")
+	}
+	if err := media.SetTempDir(config.GlobalConfig.Media.TempPath); err != nil {
+		log.Printf("Warning: could not prepare the temp folder %s: %v", config.GlobalConfig.Media.TempPath, err)
+	}
 
 	// Initialize database
 	db, err := database.New(config.GlobalConfig.Database.UserPath, config.GlobalConfig.Database.MediaPath)

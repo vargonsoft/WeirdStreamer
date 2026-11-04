@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type Streamer struct{}
@@ -240,7 +239,10 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 
 	// Use heif-convert to properly handle tiled/grid HEIC images
 	// Create a temporary file since heif-convert doesn't support stdout
-	tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("heic_stream_%d.jpg", time.Now().UnixNano()))
+	tempFile, err := tempFileName("heic-*.jpg")
+	if err != nil {
+		return err
+	}
 	defer os.Remove(tempFile)
 
 	cmd := exec.CommandContext(r.Context(), "heif-convert", filePath, tempFile)

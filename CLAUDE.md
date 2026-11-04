@@ -92,7 +92,9 @@ for each TODO item are at the end of this file.
   doc formats), through `config.MediaType` / `config.IsVideo`; MIME types are `media.MimeType`. The
   Android app takes the server's `type` for its files and keeps its own list only for SMB shares.
   Data is in the folders `config.yml` names (databases, thumbnails, trickplay, artwork, download
-  encodes).
+  encodes). Short-lived work files (HEIC photos converted to JPEG, a trickplay check frame) go in
+  `media.tempPath` (default `tmp` beside the thumbnails folder, `media.TempDir`), never `/tmp`;
+  their names start `weirdstreamer-`, and startup removes only those.
 - To deploy server code: `Server/scripts/restart-live.sh`. It checks for active streams, builds, stops
   the live server and waits for `live.sh` to start the new one (`--no-build` restarts the binary
   as it is). It refuses if the server wasn't started by `live.sh`; then the user has to stop it

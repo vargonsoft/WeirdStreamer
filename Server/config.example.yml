@@ -75,6 +75,9 @@ media:
   transcodeCachePath: ./var/transcodes
   # Subtitles downloaded from OpenSubtitles (needed to download them)
   subtitlePath: ./var/subtitles
+  # Short-lived work files, such as HEIC photos converted to JPEG (default: "tmp" beside the
+  # thumbnails folder). The server's own files there are removed when it starts.
+  tempPath: ./var/tmp
   # The file types it lists, by extension. HEIC and HEIF photos need heif-convert (libheif's
   # tools, e.g. the libheif-examples package) for their thumbnails and to show in browsers.
   supportedVideoFormats: [".mp4", ".mkv", ".avi", ".divx", ".xvid", ".iso", ".mov", ".wmv", ".asf", ".flv", ".webm", ".3gp", ".3gpp", ".m4v", ".mpg", ".mpeg", ".ts", ".mp2"]

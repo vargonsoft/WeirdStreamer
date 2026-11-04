@@ -280,6 +280,7 @@ type MediaConfig struct {
 	DownloadPath          string      `json:"downloadPath,omitempty" yaml:"downloadPath"`             // Temporary encodes for offline downloads
 	TranscodeCachePath    string      `json:"transcodeCachePath,omitempty" yaml:"transcodeCachePath"` // Transcodes while they play, so a client can resume
 	SubtitlePath          string      `json:"subtitlePath,omitempty" yaml:"subtitlePath"`             // Subtitles downloaded from OpenSubtitles
+	TempPath              string      `json:"tempPath,omitempty" yaml:"tempPath"`                     // Short-lived work files (HEIC conversions)
 	SupportedVideoFormats []string    `json:"supportedVideoFormats" yaml:"supportedVideoFormats"`
 	SupportedImageFormats []string    `json:"supportedImageFormats" yaml:"supportedImageFormats"`
 	SupportedDocFormats   []string    `json:"supportedDocFormats" yaml:"supportedDocFormats"`

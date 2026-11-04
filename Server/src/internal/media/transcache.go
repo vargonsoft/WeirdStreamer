@@ -78,7 +78,7 @@ func (c *transcodeCache) attach(filePath string, args []string, offset int64, se
 		return nil, errCannotResume
 	}
 	if c.dir == "" {
-		c.dir = filepath.Join(os.TempDir(), "weirdstreamer-transcodes")
+		c.dir = filepath.Join(TempDir(), "weirdstreamer-transcodes")
 		if err := os.MkdirAll(c.dir, 0755); err != nil {
 			return nil, err
 		}

@@ -315,13 +315,12 @@ func (tg *TrickplayGenerator) stillReadable(ctx context.Context, videoPath strin
 	if err != nil || now.Size() != start.Size() || !now.ModTime().Equal(start.ModTime()) {
 		return false
 	}
-	check, err := os.CreateTemp("", "trickplay-check-*.jpg")
+	check, err := tempFileName("trickplay-check-*.jpg")
 	if err != nil {
 		return false
 	}
-	check.Close()
-	defer os.Remove(check.Name())
-	return tg.extractFrame(ctx, videoPath, check.Name(), seconds, codec)
+	defer os.Remove(check)
+	return tg.extractFrame(ctx, videoPath, check, seconds, codec)
 }
 
 func (tg *TrickplayGenerator) generateFrame(ctx context.Context, videoPath, outputDir string, seekTime float64, frameIndex int, codec string) error {

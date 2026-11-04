@@ -227,10 +227,13 @@ func (tg *ThumbnailGenerator) generate(filePath string) (string, error) {
 		var imageFile string
 		if strings.ToLower(ext) == ".heic" || strings.ToLower(ext) == ".heif" {
 			// Create a temporary JPEG from HEIC using libheif
-			tempFile := filepath.Join(os.TempDir(), hash+"_converted.jpg")
-			cmd := exec.Command("heif-convert", filePath, tempFile)
-			output, err := cmd.CombinedOutput()
+			tempFile, err := tempFileName("heic-thumb-*.jpg")
+			var output []byte
+			if err == nil {
+				output, err = exec.Command("heif-convert", filePath, tempFile).CombinedOutput()
+			}
 			if err != nil {
+				os.Remove(tempFile)
 				log.Printf("[THUMBNAIL] heif-convert failed for %s (possibly a mislabeled JPEG): %v\nOutput: %s", filePath, err, string(output))
 				// Fallback: try using the original file directly, maybe it's actually a JPEG
 				imageFile = filePath
