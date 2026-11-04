@@ -56,6 +56,45 @@ data class DownloadItem(
         }
 }
 
+/** Which episode of which show a download is: its show's name (lowercased) and its numbers. */
+data class DownloadEpisode(val show: String, val season: Int, val episode: Int)
+
+// "Example Show S01E02 · Example Episode", the title a library download gets
+private val TITLE_EPISODE = Regex("""^(.+?) S(\d+)E(\d+)(?: · |$)""")
+// "Example Show.S01E02.720p.mkv", "Example Show - s1e2.mkv", "S01E02.mkv"
+private val NAME_EPISODE = Regex("""^(.*?)[\s._-]*[Ss](\d{1,2})[\s._-]?[Ee](\d{1,3})""")
+private val SEASON_FOLDER = Regex("""(?i)^(season|series|s)[\s._-]*\d+$""")
+
+/**
+ * The episode a download is, from its title (library downloads) or else its file name; a file
+ * named only for its episode ("S01E02.mkv") takes its show from its folders. Null for a movie.
+ */
+val DownloadItem.episode: DownloadEpisode?
+    get() {
+        title?.let { TITLE_EPISODE.find(it) }?.let { m ->
+            return DownloadEpisode(showKey(m.groupValues[1]), m.groupValues[2].toInt(), m.groupValues[3].toInt())
+        }
+        val m = NAME_EPISODE.find(name) ?: return null
+        val show = showKey(m.groupValues[1]).ifEmpty {
+            val folders = sourcePath.split('/').dropLast(1).filter { it.isNotEmpty() }
+            showKey(folders.lastOrNull { !SEASON_FOLDER.matches(it) } ?: "")
+        }
+        return DownloadEpisode(show, m.groupValues[2].toInt(), m.groupValues[3].toInt())
+    }
+
+private fun showKey(name: String) = name.replace(Regex("""[\s._-]+"""), " ").trim().lowercase()
+
+/**
+ * The Downloads list's order: what's downloading or failed first, then the rest, each newest first,
+ * except that a show's episodes stay together in episode order, where its newest one would be.
+ */
+fun downloadsInOrder(items: List<DownloadItem>): List<DownloadItem> =
+    items.partition { it.isActive || it.state == DownloadItem.State.FAILED }.toList().flatMap { part ->
+        part.groupBy { d -> d.episode?.let { d.serverAddress to it.show } ?: d.id }.values
+            .sortedByDescending { group -> group.maxOf { it.createdAt } }
+            .flatMap { group -> group.sortedWith(compareBy({ it.episode?.season }, { it.episode?.episode })) }
+    }
+
 /** The file a saved subtitle track is in, in its download's subtitleDir. */
 fun savedSubtitleName(t: com.vargon.weirdstreamer.api.models.SubtitleTrack) = "${t.index}." + if (t.text) "vtt" else "sup"
 
@@ -139,6 +178,17 @@ object DownloadStore {
     /** The finished download playing from [path] (a file:// URL), if it's one. */
     fun ofLocalPath(path: String): DownloadItem? =
         _items.value.firstOrNull { it.localFile != null && path == "file://${it.localFile}" }
+
+    /** The downloaded episode of the same show (and server) that comes after [item], if there is one. */
+    fun nextEpisode(item: DownloadItem): DownloadItem? {
+        val ep = item.episode ?: return null
+        return _items.value.asSequence()
+            .filter { it.serverAddress == item.serverAddress && it.state == DownloadItem.State.DONE }
+            .filter { it.localFile?.let { f -> File(f).exists() } == true }
+            .mapNotNull { d -> d.episode?.takeIf { it.show == ep.show }?.let { d to it } }
+            .filter { (_, e) -> e.season > ep.season || (e.season == ep.season && e.episode > ep.episode) }
+            .minWithOrNull(compareBy({ it.second.season }, { it.second.episode }))?.first
+    }
 
     fun bytesUsed(): Long = _items.value.sumOf { d -> d.localFile?.let { File(it).length() } ?: 0L }
 

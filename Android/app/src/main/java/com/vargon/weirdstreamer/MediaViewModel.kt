@@ -964,9 +964,15 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Plays what follows a video that reached its end: the next in the folder or queue, else the
      * show's next episode (any season, wherever it's played from). With nothing left, a viewing
-     * begun in a folder runs [replay], and any other [close].
+     * begun in a folder runs [replay], and any other [close]. One played from the Downloads list
+     * goes on to the show's next downloaded episode, else closes (it may be offline).
      */
     fun playNextAfterEnd(path: String, replay: () -> Unit, close: () -> Unit) {
+        if (path.startsWith("file://") && localPlaybackOf == null) {
+            val next = DownloadStore.ofLocalPath(path)?.let { DownloadStore.nextEpisode(it) }
+            if (next != null) playDownload(next) else close()
+            return
+        }
         val current = if (path.startsWith("file://")) localPlaybackOf ?: path else path
         val videos = getVideosInCurrentFolder()
         val i = videos.indexOf(current)

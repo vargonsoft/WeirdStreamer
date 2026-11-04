@@ -115,7 +115,9 @@ for each TODO item are at the end of this file.
     audio (so it plays as a copy): for short jumps forward in a copied video.
   - `Movies/AVI BFrame Test`: 30 seconds of H.264 with B-frames in AVI, whose packets have no
     pts (framecrc prints -9223372036854775808): `SeekPoint` reads the dts instead.
-  - `TV Shows/Example Show/Season 1/`: two episodes. S01E01 is a 60-second clip; S01E02 is empty.
+  - `TV Shows/Example Show/Season 1/`: four episodes. S01E01 is a 60-second clip; S01E02 is empty;
+    S01E03 and S01E04 are 8-second clips with their episode drawn on them (for going on to the
+    next episode).
 - Emulators: `emulator-5554` is Android TV (AVD `Television_1080p_API_34`) and `emulator-5556`
   is a phone (AVD `Medium_Phone_API_35`). `Android/tools/start-emulators.sh` starts whichever
   isn't running and waits for boot. The adb binary is `~/Android/Sdk/platform-tools/adb` (not

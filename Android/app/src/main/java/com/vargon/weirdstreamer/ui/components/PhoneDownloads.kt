@@ -390,7 +390,7 @@ fun DownloadsTab(viewModel: MediaViewModel) {
     val items by DownloadStore.items.collectAsState()
     var wifiOnly by remember { mutableStateOf(DownloadStore.wifiOnly) }
     var confirm by remember { mutableStateOf<DownloadItem?>(null) }
-    val sorted = remember(items) { items.sortedWith(compareBy<DownloadItem> { !it.isActive && it.state != DownloadItem.State.FAILED }.thenByDescending { it.createdAt }) }
+    val sorted = remember(items) { com.vargon.weirdstreamer.downloads.downloadsInOrder(items) }
 
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "wifi") {
