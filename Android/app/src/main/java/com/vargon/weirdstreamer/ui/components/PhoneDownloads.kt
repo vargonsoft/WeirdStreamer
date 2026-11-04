@@ -104,7 +104,7 @@ data class DownloadRequest(
 private fun rememberDownload(viewModel: MediaViewModel, sourcePath: String): DownloadItem? {
     val items by DownloadStore.items.collectAsState()
     val server = viewModel.connectedServer?.address ?: return null
-    return items.firstOrNull { it.serverAddress == server && it.sourcePath == sourcePath }
+    return items.firstOrNull { it.serverAddress == server && it.sourcePath == sourcePath && DownloadStore.isMine(it) }
 }
 
 /**
@@ -311,6 +311,7 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
                     DownloadStore.add(pending.map { r ->
                         DownloadItem(
                             serverAddress = server.address,
+                            account = DownloadStore.accountOf(server.address),
                             sourcePath = r.sourcePath,
                             name = r.name,
                             title = r.title,
@@ -383,11 +384,15 @@ private fun estimateText(
     return parts.joinToString(" · ")
 }
 
-/** Settings › Downloads: what's on this phone, what's downloading, and the Wi-Fi setting. */
+/**
+ * Settings › Downloads: what's on this phone, what's downloading, and the Wi-Fi setting. Each
+ * server's list is its account in use's own downloads.
+ */
 @Composable
 fun DownloadsTab(viewModel: MediaViewModel) {
     val context = LocalContext.current
-    val items by DownloadStore.items.collectAsState()
+    val all by DownloadStore.items.collectAsState()
+    val items = remember(all) { DownloadStore.mine(all) }
     var wifiOnly by remember { mutableStateOf(DownloadStore.wifiOnly) }
     var confirm by remember { mutableStateOf<DownloadItem?>(null) }
     val sorted = remember(items) { com.vargon.weirdstreamer.downloads.downloadsInOrder(items) }
@@ -435,13 +440,17 @@ fun DownloadsTab(viewModel: MediaViewModel) {
 }
 
 /**
- * The phone's storage as a bar (downloads, everything else, free) with the totals: what the
- * downloads take on disk, partial files included, and how much of the phone is used.
+ * The phone's storage as a bar (downloads, everything else, free) with the totals: what [items]
+ * (the account's downloads) take on disk, partial files and subtitles included, and how much of
+ * the phone is used. Other accounts' downloads count as everything else.
  */
 @Composable
 private fun DownloadStorage(items: List<DownloadItem>) {
     val storage = remember(items) {
-        val ours = DownloadStore.directory.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        val ours = items.sumOf { d ->
+            listOfNotNull(d.localFile?.let(::File), d.thumbFile?.let(::File), DownloadStore.partFile(d)).sumOf { it.length() } +
+                DownloadStore.subtitleDir(d).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        }
         val stat = android.os.StatFs(DownloadStore.directory.path)
         Triple(ours, stat.totalBytes, stat.availableBytes)
     }

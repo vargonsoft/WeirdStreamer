@@ -58,7 +58,9 @@ for each TODO item are at the end of this file.
     (`OfflinePlayback`: video codec, bit depth and size; the default audio track) and offers
     Original, Compatibility (full quality, keeping what plays: the server job's `keep_video` /
     `keep_audio`, the rest H.264 CRF 18 and stereo AAC; nothing to convert makes it an original)
-    or Compressed. Each download also saves its subtitle tracks (text as WebVTT, PGS as .sup; the
+    or Compressed. A download belongs to the account it was made in (`DownloadItem.account`): only
+    that account sees and plays it, and the worker downloads it with that account's token (older
+    ones have none, and every account sees them). Each download also saves its subtitle tracks (text as WebVTT, PGS as .sup; the
     phone's languages, forced ones and files beside the video) in `subtitles/<id>/`, which
     `ServerSubtitles.forDownload` reads offline. Older downloads get theirs on the worker's next run.
   - `ui/components/UiUtils.kt`: transcode modes, `VideoDecoders` (hardware decoder limits),

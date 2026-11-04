@@ -239,6 +239,18 @@ class CredentialManager(context: Context) {
      */
     fun getServerAccount(serverUrl: String): String? = getServerToken(serverUrl)?.let(::usernameIn)
 
+    /**
+     * The account in use on a server even when its sign-in has expired (as it may have while
+     * offline): whose downloads and offline progress the phone shows. Null when signed out.
+     */
+    fun accountInUse(serverUrl: String): String? =
+        sharedPreferences.getString("${serverUrl}_token", null)?.let(::usernameIn)
+
+    /** [username]'s own token on a server, whichever account is in use; null if it's signed out or expired. */
+    fun tokenOf(serverUrl: String, username: String): String? =
+        storedAccounts(serverUrl).firstOrNull { it.username == username }
+            ?.takeIf { System.currentTimeMillis() / 1000 < it.expiresAt }?.token
+
     /** Signs out every account of a server (when it's removed). */
     fun clearServerToken(serverUrl: String) {
         sharedPreferences.edit().remove("${serverUrl}_accounts").apply()

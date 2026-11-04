@@ -89,8 +89,12 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     private fun stillWanted(id: String) = DownloadStore.get(id) != null
 
     private suspend fun download(start: DownloadItem) = withContext(Dispatchers.IO) {
-        val api = ApiClient.create(start.serverAddress, credentials)
-        val http = ApiClient.downloadClient(start.serverAddress, credentials)
+        // Downloaded as the account it's for, whichever is in use now.
+        if (start.account != null && credentials.tokenOf(start.serverAddress, start.account) == null) {
+            throw IllegalStateException("Sign in to the server as ${start.account} again, then retry")
+        }
+        val api = ApiClient.create(start.serverAddress, credentials, start.account)
+        val http = ApiClient.downloadClient(start.serverAddress, credentials, start.account)
         val encodedPath = Base64.encodeToString(start.sourcePath.toByteArray(), Base64.NO_WRAP)
         var item = start
         var width = 0
@@ -230,7 +234,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
      */
     private suspend fun saveSubtitles(item: DownloadItem, known: CodecsInfo?) = withContext(Dispatchers.IO) {
         val encodedPath = Base64.encodeToString(item.sourcePath.toByteArray(), Base64.NO_WRAP)
-        val info = known ?: ApiClient.create(item.serverAddress, credentials).getCodecs(encodedPath).body()
+        val info = known ?: ApiClient.create(item.serverAddress, credentials, item.account).getCodecs(encodedPath).body()
             ?: throw IllegalStateException("The server couldn't read the file's subtitles")
         val languages = deviceSubtitleLanguages().mapNotNull { runCatching { Locale(it).isO3Language }.getOrNull() }.toSet()
         val wanted = info.subtitles.orEmpty().filter { t ->
@@ -238,7 +242,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 (t.forced || t.external != null || t.language.isNullOrEmpty() || t.language == "und" || t.language in languages)
         }
         val dir = DownloadStore.subtitleDir(item).apply { mkdirs() }
-        val http = ApiClient.downloadClient(item.serverAddress, credentials)
+        val http = ApiClient.downloadClient(item.serverAddress, credentials, item.account)
         val saved = wanted.filter { t ->
             val file = File(dir, savedSubtitleName(t))
             if (file.length() > 0) return@filter true

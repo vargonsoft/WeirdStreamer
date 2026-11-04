@@ -13,6 +13,7 @@ import java.util.UUID
 data class DownloadItem(
     val id: String = UUID.randomUUID().toString(),
     val serverAddress: String,
+    val account: String?,            // the account it was downloaded in, the only one that sees it
     val sourcePath: String,          // the file's path on the server
     val name: String,                // its file name
     val title: String? = null,       // what it is: "Example Movie (2008)", "Example Show S01E02 · ..."
@@ -128,21 +129,36 @@ object DownloadStore {
 
     val directory: File get() = dir
 
+    /** The account in use on a server (set by the app), even with its sign-in expired. */
+    var accountOf: (server: String) -> String? = { null }
+
+    /**
+     * Whether a download is the account in use's: each account sees only its own. Downloads
+     * from before they were kept per account have none, and every account sees them.
+     */
+    fun isMine(item: DownloadItem) = item.account == null || item.account == accountOf(item.serverAddress)
+
+    /** The downloads the account in use on each server sees. */
+    fun mine(items: List<DownloadItem>) = items.filter(::isMine)
+
     /** Downloads only use Wi-Fi (unmetered networks) unless this is turned off. */
     var wifiOnly: Boolean
         get() = prefs.getBoolean("wifi_only", true)
         set(value) { prefs.edit().putBoolean("wifi_only", value).apply() }
 
+    /** The account in use's download of a server file. */
     fun find(serverAddress: String, sourcePath: String): DownloadItem? =
-        _items.value.firstOrNull { it.serverAddress == serverAddress && it.sourcePath == sourcePath }
+        _items.value.firstOrNull { it.serverAddress == serverAddress && it.sourcePath == sourcePath && isMine(it) }
 
     fun get(id: String): DownloadItem? = _items.value.firstOrNull { it.id == id }
 
     fun nextQueued(): DownloadItem? = _items.value.filter { it.state == DownloadItem.State.QUEUED }.minByOrNull { it.createdAt }
 
-    /** Adds downloads, skipping files already downloaded or downloading. */
+    /** Adds downloads, skipping files their account already downloaded or is downloading. */
     fun add(items: List<DownloadItem>): Int = synchronized(lock) {
-        val fresh = items.filter { n -> _items.value.none { it.serverAddress == n.serverAddress && it.sourcePath == n.sourcePath } }
+        val fresh = items.filter { n ->
+            _items.value.none { it.serverAddress == n.serverAddress && it.sourcePath == n.sourcePath && (it.account == null || it.account == n.account) }
+        }
         if (fresh.isNotEmpty()) save(_items.value + fresh)
         fresh.size
     }
@@ -183,7 +199,7 @@ object DownloadStore {
     fun nextEpisode(item: DownloadItem): DownloadItem? {
         val ep = item.episode ?: return null
         return _items.value.asSequence()
-            .filter { it.serverAddress == item.serverAddress && it.state == DownloadItem.State.DONE }
+            .filter { it.serverAddress == item.serverAddress && it.account == item.account && it.state == DownloadItem.State.DONE }
             .filter { it.localFile?.let { f -> File(f).exists() } == true }
             .mapNotNull { d -> d.episode?.takeIf { it.show == ep.show }?.let { d to it } }
             .filter { (_, e) -> e.season > ep.season || (e.season == ep.season && e.episode > ep.episode) }

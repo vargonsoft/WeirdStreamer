@@ -6,7 +6,8 @@ import okhttp3.Response
 
 class AuthInterceptor(
     private val credentialManager: CredentialManager,
-    private val serverUrl: String
+    private val serverUrl: String,
+    private val account: String? = null // signs in as this account, not the one in use
 ) : Interceptor {
     
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -18,7 +19,7 @@ class AuthInterceptor(
         }
         
         // Get token from credential manager
-        val token = credentialManager.getServerToken(serverUrl)
+        val token = if (account != null) credentialManager.tokenOf(serverUrl, account) else credentialManager.getServerToken(serverUrl)
         
         if (token != null) {
             // Add Authorization header with Bearer token

@@ -53,25 +53,33 @@ object ApiClient {
             .followRedirects(false)
     ).build()
 
-    /** An HTTP client that signs in to [serverUrl], for large file downloads (no read timeout). */
-    fun downloadClient(serverUrl: String, credentialManager: CredentialManager): OkHttpClient =
+    /**
+     * An HTTP client that signs in to [serverUrl], for large file downloads (no read timeout): as
+     * [account] when given, else the account in use.
+     */
+    fun downloadClient(serverUrl: String, credentialManager: CredentialManager, account: String? = null): OkHttpClient =
         getUnsafeOkHttpClient(
             OkHttpClient.Builder()
-                .addInterceptor(AuthInterceptor(credentialManager, serverUrl))
+                .addInterceptor(AuthInterceptor(credentialManager, serverUrl, account))
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(2, TimeUnit.MINUTES)
         ).build()
 
+    /** The API of [serverUrl], signed in as [account] when given, else as the account in use. */
     fun create(
         serverUrl: String,
-        credentialManager: CredentialManager
-    ): ApiService = services.getOrPut(serverUrl) { build(serverUrl, credentialManager) }
+        credentialManager: CredentialManager,
+        account: String? = null
+    ): ApiService = services.getOrPut(if (account == null) serverUrl else "$serverUrl|@$account") {
+        build(serverUrl, credentialManager, account)
+    }
 
     private fun build(
         serverUrl: String,
-        credentialManager: CredentialManager
+        credentialManager: CredentialManager,
+        account: String?
     ): ApiService {
-        val authInterceptor = AuthInterceptor(credentialManager, serverUrl)
+        val authInterceptor = AuthInterceptor(credentialManager, serverUrl, account)
         
         val okHttpClientBuilder = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
