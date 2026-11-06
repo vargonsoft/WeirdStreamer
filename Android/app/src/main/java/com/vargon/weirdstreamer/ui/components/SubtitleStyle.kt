@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 
 // The look of text subtitles on this device (Settings → Subtitle style): Android's own caption
@@ -44,6 +45,18 @@ enum class SubtitleForeground(val label: String) { WHITE("White"), BLACK("Black"
 enum class SubtitleFont(val label: String) { DEFAULT("Default"), SERIF("Serif"), MONOSPACE("Monospace"), CASUAL("Casual"), CONDENSED("Condensed") }
 enum class SubtitleSize(val label: String, val scale: Float) {
     TINY("Tiny", 0.6f), SMALL("Small", 0.8f), NORMAL("Normal", 1f), LARGE("Large", 1.3f), HUGE("Huge", 1.6f)
+}
+
+/**
+ * The phone player's Normal subtitle size: 18sp on a phone, growing with the screen's short side
+ * past a phone's (about 411dp), a little less than in proportion: a tablet or an unfolded Fold
+ * (750–800dp) gets about 1.6×, what Huge was there before.
+ */
+@Composable
+fun phoneSubtitleFontSize(): TextUnit {
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val shortSide = minOf(config.screenWidthDp, config.screenHeightDp).toFloat()
+    return 18.sp * Math.pow(shortSide / 411.0, 0.8).toFloat().coerceAtLeast(1f)
 }
 
 /** How see-through a background box is: 25% to solid. */
