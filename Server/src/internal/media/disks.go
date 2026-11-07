@@ -10,26 +10,38 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Files' devices, remembered: a busy check runs at every step of a job, for its file and for
-// every stream, and a file doesn't change devices.
+// Folders' devices, remembered: a busy check runs at every step of a job, for its file and for
+// every stream, and a folder doesn't change devices. By folder, not by file: a job goes through
+// every file in the libraries, and remembering each one would hold them all.
 var devices struct {
-	mu   sync.Mutex
-	byID map[string]uint64
+	mu    sync.Mutex
+	byDir map[string]uint64
 }
 
 // deviceOf returns the device a file is on: a disk partition, or a network mount (each has its
-// own), so two files are on the same disk or share when their devices match.
+// own), so two files are on the same disk or share when their devices match. A file is on its
+// folder's device, unless it's a symlink: then it's on the folder of the file it points to.
 func deviceOf(path string) (uint64, bool) {
 	if path == "" {
 		return 0, false
 	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return 0, false
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		if path, err = filepath.EvalSymlinks(path); err != nil {
+			return 0, false
+		}
+	}
+	dir := filepath.Dir(path)
 	devices.mu.Lock()
-	dev, ok := devices.byID[path]
+	dev, ok := devices.byDir[dir]
 	devices.mu.Unlock()
 	if ok {
 		return dev, true
 	}
-	info, err := os.Stat(path)
+	info, err = os.Stat(dir)
 	if err != nil {
 		return 0, false
 	}
@@ -38,10 +50,10 @@ func deviceOf(path string) (uint64, bool) {
 		return 0, false
 	}
 	devices.mu.Lock()
-	if devices.byID == nil {
-		devices.byID = map[string]uint64{}
+	if devices.byDir == nil {
+		devices.byDir = map[string]uint64{}
 	}
-	devices.byID[path] = uint64(st.Dev)
+	devices.byDir[dir] = uint64(st.Dev)
 	devices.mu.Unlock()
 	return uint64(st.Dev), true
 }

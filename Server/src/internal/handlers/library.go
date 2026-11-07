@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
@@ -210,11 +209,6 @@ func sortNewAdditions(items []continueItem) {
 	})
 }
 
-// thumbnailsInFlight limits how many missing thumbnails a library page starts generating at once.
-var thumbnailsInFlight sync.Map
-
-const maxThumbnailsInFlight = 64
-
 // libraryFileInfo describes a file for Library view from the media database, starting thumbnail
 // generation (as browsing does) for files that have none yet.
 func (h *MediaHandler) libraryFileInfo(path string) models.LibraryFile {
@@ -233,19 +227,6 @@ func (h *MediaHandler) libraryFileInfo(path string) models.LibraryFile {
 			MimeType: media.MimeType(path)}
 	}
 
-	n := 0
-	thumbnailsInFlight.Range(func(_, _ any) bool { n++; return n < maxThumbnailsInFlight })
-	if n >= maxThumbnailsInFlight {
-		return file // the next visit to the page starts the rest
-	}
-	if _, busy := thumbnailsInFlight.LoadOrStore(path, true); busy {
-		return file
-	}
-	go func(item *models.MediaItem) {
-		defer thumbnailsInFlight.Delete(item.Path)
-		item.ThumbnailURL = h.scanner.GenerateVideoThumbnail(item.Path)
-		h.db.SaveMediaItem(item)
-		h.notifyThumbnailReady(item.Path, item.ThumbnailURL)
-	}(item)
+	h.thumbnails.add(*item, false)
 	return file
 }

@@ -266,7 +266,14 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)
 	log.Printf("Starting server on %s", addr)
 
-	srv := &http.Server{Addr: addr, Handler: logs.Access(r)}
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: logs.Access(limitBodies(r)),
+		// A client that connects and never finishes its request's headers, or leaves a connection
+		// open doing nothing, doesn't hold it for good. (No limit on a response: streams are long.)
+		ReadHeaderTimeout: 20 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
 	go func() {
 		var err error
 		// Check if HTTP/2 is enabled and certificates exist
@@ -310,4 +317,19 @@ func shutdown(srv *http.Server, db *database.DB) {
 		log.Printf("Closing the databases: %v", err)
 	}
 	log.Printf("Stopped")
+}
+
+// maxRequestBody is the most a request may send. The largest the apps send (Settings, a phone's
+// progress played offline) are a few hundred KB; nothing is uploaded.
+const maxRequestBody = 8 << 20
+
+// limitBodies refuses request bodies past maxRequestBody, so no one (signing in needs no account)
+// can make the server hold an endless one in memory.
+func limitBodies(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
 }

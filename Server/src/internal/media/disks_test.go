@@ -94,3 +94,38 @@ func TestLoadForFindsTheShare(t *testing.T) {
 		t.Errorf("didn't wait at 100 ms with someone playing from the share (%q)", why)
 	}
 }
+
+// Devices are remembered by folder (one entry for a folder's files), and a symlinked file by the
+// folder of the file it points to.
+func TestDeviceOfByFolder(t *testing.T) {
+	devices.mu.Lock()
+	devices.byDir = nil
+	devices.mu.Unlock()
+	dir, other := t.TempDir(), t.TempDir()
+	for _, p := range []string{filepath.Join(dir, "a.mkv"), filepath.Join(dir, "b.mkv"), filepath.Join(other, "real.mkv")} {
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(dir, "link.mkv")
+	if err := os.Symlink(filepath.Join(other, "real.mkv"), link); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(dir, "a.mkv"), filepath.Join(dir, "b.mkv"), link} {
+		if _, ok := deviceOf(p); !ok {
+			t.Fatalf("no device for %s", p)
+		}
+	}
+	if _, ok := deviceOf(filepath.Join(dir, "gone.mkv")); ok {
+		t.Error("a missing file has a device")
+	}
+	devices.mu.Lock()
+	defer devices.mu.Unlock()
+	realOther, _ := filepath.EvalSymlinks(other)
+	if len(devices.byDir) != 2 {
+		t.Errorf("remembered %v, want the two folders", devices.byDir)
+	}
+	if _, ok := devices.byDir[realOther]; !ok {
+		t.Errorf("the symlink's target folder %s isn't remembered: %v", realOther, devices.byDir)
+	}
+}

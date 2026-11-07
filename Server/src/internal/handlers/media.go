@@ -40,6 +40,7 @@ type MediaHandler struct {
 	segments           *media.SegmentAnalyzer // nil until StartSegmentAnalysis
 	pruner             *media.Pruner          // nil until StartCleanup
 	trickplay          *media.TrickplayJob    // nil until StartTrickplay
+	thumbnails         *thumbnailQueue        // missing thumbnails pages asked for
 }
 
 // StartTrickplay makes missing trickplay frames in the background until ctx ends.
@@ -124,6 +125,7 @@ func NewMediaHandler(db *database.DB, authService *auth.Service) *MediaHandler {
 		authService:        authService,
 		streams:            media.NewStreamTracker(),
 	}
+	h.thumbnails = newThumbnailQueue(h.makeThumbnail)
 	if j := jobs.Get("scan"); j != nil {
 		j.OnRunNow(h.startScan)
 	}
@@ -607,26 +609,9 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 					MimeType: media.MimeType(ext),
 				}
 
-				// Generate thumbnail in background for images and videos
-				// Don't block the browse request
+				// Its thumbnail is made in the background (images and videos); browsing doesn't wait
 				if mediaType == "image" || mediaType == "video" {
-					go func(itemCopy *models.MediaItem) {
-						var thumbnailURL string
-						if itemCopy.Type == "image" {
-							thumbnailURL = h.scanner.GenerateImageThumbnail(itemCopy.Path)
-						} else {
-							thumbnailURL = h.scanner.GenerateVideoThumbnail(itemCopy.Path)
-						}
-						itemCopy.ThumbnailURL = thumbnailURL
-
-						// Re-fetch metadata to get duration if missing
-						h.scanner.GetFileMetadata(itemCopy.Path)
-
-						h.db.SaveMediaItem(itemCopy)
-
-						// Notify thumbnail ready via SSE
-						h.notifyThumbnailReady(itemCopy.Path, thumbnailURL)
-					}(item)
+					h.thumbnails.add(*item, true)
 				} else {
 					// Save non-media items immediately
 					go h.db.SaveMediaItem(item)
@@ -641,19 +626,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 				}
 				// If thumbnail URL is empty, regenerate it in background
 				if item.ThumbnailURL == "" && (mediaType == "image" || mediaType == "video") {
-					go func(itemCopy *models.MediaItem) {
-						var thumbnailURL string
-						if itemCopy.Type == "image" {
-							thumbnailURL = h.scanner.GenerateImageThumbnail(itemCopy.Path)
-						} else {
-							thumbnailURL = h.scanner.GenerateVideoThumbnail(itemCopy.Path)
-						}
-						itemCopy.ThumbnailURL = thumbnailURL
-						h.db.SaveMediaItem(itemCopy)
-
-						// Notify thumbnail ready via SSE
-						h.notifyThumbnailReady(itemCopy.Path, thumbnailURL)
-					}(item)
+					h.thumbnails.add(*item, false)
 				}
 			}
 
@@ -994,6 +967,24 @@ func (h *MediaHandler) ThumbnailUpdates(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+}
+
+// makeThumbnail makes a queued thumbnail, saves it with the file and tells the pages showing it.
+func (h *MediaHandler) makeThumbnail(job thumbnailJob) {
+	item := job.item
+	if item.Type == "image" {
+		item.ThumbnailURL = h.scanner.GenerateImageThumbnail(item.Path)
+	} else {
+		item.ThumbnailURL = h.scanner.GenerateVideoThumbnail(item.Path)
+	}
+	if job.probe {
+		// Its length and size, for a file new to the database
+		if probed, err := h.scanner.GetFileMetadata(item.Path); err == nil {
+			item.Duration, item.Width, item.Height = probed.Duration, probed.Width, probed.Height
+		}
+	}
+	h.db.SaveMediaItem(&item)
+	h.notifyThumbnailReady(item.Path, item.ThumbnailURL)
 }
 
 // notifyThumbnailReady tells SSE clients that may access filePath about its new thumbnail
