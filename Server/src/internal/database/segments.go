@@ -128,21 +128,28 @@ func (db *DB) SetManualSegment(path, kind string, span *Span) error {
 	return err
 }
 
-// AnalyzedVersions returns, for the given videos, the analyzer version that last looked at each.
-func (db *DB) AnalyzedVersions() (map[string]int, error) {
-	rows, err := db.mediaConn.Query(`SELECT path, analyzed FROM segments`)
+// Analysis is how far the analyzer got with a video: the version that last looked, and whether
+// the video has credits.
+type Analysis struct {
+	Version int
+	Credits bool
+}
+
+// AnalyzedVersions returns, for each video in the segments table, how far the analyzer got.
+func (db *DB) AnalyzedVersions() (map[string]Analysis, error) {
+	rows, err := db.mediaConn.Query(`SELECT path, analyzed, credits_start IS NOT NULL FROM segments`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]int{}
+	out := map[string]Analysis{}
 	for rows.Next() {
 		var path string
-		var v int
-		if err := rows.Scan(&path, &v); err != nil {
+		var a Analysis
+		if err := rows.Scan(&path, &a.Version, &a.Credits); err != nil {
 			return nil, err
 		}
-		out[path] = v
+		out[path] = a
 	}
 	return out, rows.Err()
 }

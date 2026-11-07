@@ -143,37 +143,51 @@ func SharedSegment(a, b []uint32, fromA, fromB, minLen, maxLen float64) (inA, in
 
 var blackLine = regexp.MustCompile(`black_start:([\d.]+) black_end:([\d.]+)`)
 
-// BlackCredits looks for rolling credits on black in the last `span` seconds of a file: the
-// start of the first long stretch, ending near the end, where the picture is nearly all black.
-// Only keyframes are decoded, so this is quick but coarse.
+// Credits on black: stretches at least this long, joined across gaps (a title card, a logo) of
+// up to blackGap seconds, and reaching to within blackEnd seconds of the end. A stretch shorter
+// than blackLead seconds (a scene fading out) doesn't start them, only joins them.
+const (
+	blackMinCredits = 12.0
+	blackGap        = 12.0
+	blackEnd        = 30.0
+	blackLead       = 4.0
+)
+
+// BlackCredits looks for credits on black in the last `span` seconds of a file: the start of the
+// stretch, reaching to near the end, where the picture is nearly all black (white text on black
+// still is). Two frames a second are looked at: a still black screen has few keyframes, so
+// keyframes alone miss most of it.
 func BlackCredits(ctx context.Context, path string, duration, span float64) (*Segment, error) {
 	from := max(0, duration-span)
-	cmd := backgroundCommand(ctx, "ffmpeg", "-hide_banner", "-nostdin", "-skip_frame", "nokey",
+	cmd := backgroundCommand(ctx, "ffmpeg", "-hide_banner", "-nostdin", "-skip_frame", "noref",
 		"-ss", fmt.Sprintf("%.3f", from), "-i", path, "-an", "-sn", "-map", "0:v:0",
-		"-vf", "scale=320:-2,blackdetect=d=0:pic_th=0.85:pix_th=0.12", "-f", "null", "-")
+		"-vf", "fps=2,scale=320:-2,blackdetect=d=0:pic_th=0.90:pix_th=0.03", "-f", "null", "-")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("blackdetect %s: %w", path, err)
 	}
-	// Merge black stretches into spans broken only by short gaps (credits with a picture between).
-	type span2 struct{ start, end float64 }
-	var spans []span2
-	for _, m := range blackLine.FindAllStringSubmatch(stderr.String(), -1) {
+	return blackCredits(stderr.String(), from, duration), nil
+}
+
+// blackCredits reads blackdetect's output (times from `from` seconds into the file).
+func blackCredits(output string, from, duration float64) *Segment {
+	type stretch struct{ start, end float64 }
+	var spans []stretch
+	for _, m := range blackLine.FindAllStringSubmatch(output, -1) {
 		s, _ := strconv.ParseFloat(m[1], 64)
 		e, _ := strconv.ParseFloat(m[2], 64)
 		s, e = from+s, from+e
-		if n := len(spans); n > 0 && s-spans[n-1].end <= 12 {
+		if n := len(spans); n > 0 && s-spans[n-1].end <= blackGap && spans[n-1].end-spans[n-1].start >= blackLead {
 			spans[n-1].end = e
 		} else {
-			spans = append(spans, span2{s, e})
+			spans = append(spans, stretch{s, e})
 		}
 	}
-	// Credits: a dark stretch of at least 30 seconds reaching to near the end.
 	for _, s := range spans {
-		if s.end-s.start >= 30 && duration-s.end <= 30 {
-			return &Segment{Start: s.start, End: duration}, nil
+		if s.end-s.start >= blackMinCredits && duration-s.end <= blackEnd {
+			return &Segment{Start: s.start, End: duration}
 		}
 	}
-	return nil, nil
+	return nil
 }

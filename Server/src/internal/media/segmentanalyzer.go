@@ -15,9 +15,14 @@ import (
 	"github.com/weirdstreamer/server/internal/jobs"
 )
 
-// SegmentAnalysisVersion is stored with each video's segments; raising it has every video looked
-// at again (after the analysis improves).
-const SegmentAnalysisVersion = 1
+// SegmentAnalysisVersion is stored with each video's segments; raising it has videos looked at
+// again (after the analysis improves). Videos a version from creditsRecheckFrom on looked at are
+// looked at again only when an episode or movie has no credits: version 2 finds shorter credits
+// on black.
+const (
+	SegmentAnalysisVersion = 2
+	creditsRecheckFrom     = 1
+)
 
 // SegmentAnalyzer finds videos' intros and credits in the background, a folder at a time (a TV
 // season's episodes are compared with each other), pausing while anyone is streaming.
@@ -98,7 +103,7 @@ func (a *SegmentAnalyzer) pass(ctx context.Context) {
 	var todo []string
 	for _, d := range dirs {
 		for _, p := range byDir[d] {
-			if done[p] < SegmentAnalysisVersion {
+			if a.stale(p, done[p]) {
 				todo = append(todo, d)
 				break
 			}
@@ -119,6 +124,18 @@ func (a *SegmentAnalyzer) pass(ctx context.Context) {
 		log.Printf("segments: analyzed %d folder(s)", n)
 	}
 	a.job.End(plural(n, "folder") + " analyzed")
+}
+
+// stale: a video this version should look at again.
+func (a *SegmentAnalyzer) stale(path string, done database.Analysis) bool {
+	if done.Version >= SegmentAnalysisVersion {
+		return false
+	}
+	if done.Version < creditsRecheckFrom {
+		return true
+	}
+	kind, _ := a.LibraryKind(path)
+	return !done.Credits && (kind == "tv" || kind == "movie")
 }
 
 // plural: "1 folder", "3 folders".

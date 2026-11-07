@@ -76,3 +76,29 @@ func TestChapterNames(t *testing.T) {
 		}
 	}
 }
+
+// Suits S07E02's ending: about 16 seconds of credits on black, a company card, black to the end.
+func TestBlackCreditsShortRun(t *testing.T) {
+	out := `[blackdetect @ 0x1] black_start:148.5 black_end:149.5 black_duration:1
+[blackdetect @ 0x1] black_start:276 black_end:292.5 black_duration:16.5
+[blackdetect @ 0x1] black_start:294 black_end:294.5 black_duration:0.5
+[blackdetect @ 0x1] black_start:298 black_end:299.5 black_duration:1.5`
+	got := blackCredits(out, 2196, 2496)
+	if got == nil || got.Start != 2472 || got.End != 2496 {
+		t.Fatalf("got %+v, want credits 2472–2496", got)
+	}
+	// Suits S06E04: a scene fades out, one more shot, then the credits.
+	if got := blackCredits(`black_start:39 black_end:41.5
+black_start:46.5 black_end:72
+black_start:79 black_end:79.5`, 2441, 2521); got == nil || got.Start != 2487.5 {
+		t.Fatalf("got %+v, want credits from 2487.5", got)
+	}
+	// A short fade to black near the end isn't credits.
+	if got := blackCredits(`black_start:290 black_end:299.5`, 2196, 2496); got != nil {
+		t.Fatalf("a 9.5-second fade became credits: %+v", got)
+	}
+	// Nor is black that ends long before the end.
+	if got := blackCredits(`black_start:100 black_end:160`, 2196, 2496); got != nil {
+		t.Fatalf("black far from the end became credits: %+v", got)
+	}
+}
