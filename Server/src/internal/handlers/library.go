@@ -124,6 +124,14 @@ func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 				out = append(out, libraryAdditions{lib.ID, lib.Name, items})
 			}
 		}
+		// The library with the newest arrival first; libraries' order in the config breaks ties.
+		newest := func(l libraryAdditions) (at int64) {
+			for _, item := range l.Items {
+				at = max(at, item.AddedAt)
+			}
+			return at
+		}
+		sort.SliceStable(out, func(i, j int) bool { return newest(out[i]) > newest(out[j]) })
 		respondJSON(w, http.StatusOK, out)
 		return
 	}
