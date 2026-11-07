@@ -334,8 +334,9 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   default is now Purple.
 - **Recently Added:** `showNewAdditions` (`config.yml` or Settings) is `on`, `libraryOnly` or `off`
   (the default): the last 10 videos show under Continue Watching on the library's own Library and
-  top folder pages, and with `on` they also blend into the home screen's row
-  (`GET /api/library/new`, with or without `lib`). The `media_added` table dates each file by its time on
+  top folder pages ("Recently Added", `GET /api/library/new?lib=`), and with `on` also on the home
+  screen, a row per library ("Recently Added in Movies", `?by=library`; without it, the blended
+  list older apps show). On the TV, Up and Down go row by row (`TvContinueRow`). The `media_added` table dates each file by its time on
   disk: when it's saved (`SaveMediaItem`), and every known file again at startup (`DateMediaAdded`).
   Only files in the media database are listed, so a scan runs every hour by itself (`StartScans`,
   the first 10 minutes after start) as well as on Scan Media. The newest day comes first, and a day's videos in viewing order (show,

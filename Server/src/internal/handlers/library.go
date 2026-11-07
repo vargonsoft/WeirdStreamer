@@ -85,9 +85,10 @@ func (h *MediaHandler) GetLibraryTitle(w http.ResponseWriter, r *http.Request) {
 
 const newAdditionsLimit = 10
 
-// NewAdditions lists the videos that arrived last, newest first, for the Recently Added row: in a
-// library (GET /api/library/new?lib=<id>), or blended from the libraries that show on the home
-// screen (without lib). Empty where the showNewAdditions option leaves it off.
+// NewAdditions lists the videos that arrived last, newest first, for the Recently Added rows: in a
+// library (GET /api/library/new?lib=<id>), or from the libraries that show on the home screen
+// (without lib): one list per library with by=library, else blended into one (older apps). Empty
+// where the showNewAdditions option leaves it off.
 func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 	libs := []config.MediaPath{}
 	if id := r.URL.Query().Get("lib"); id != "" {
@@ -106,6 +107,36 @@ func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if r.URL.Query().Get("by") == "library" {
+		type libraryAdditions struct {
+			LibraryID   string         `json:"library_id"`
+			LibraryName string         `json:"library_name"`
+			Items       []continueItem `json:"items"`
+		}
+		out := []libraryAdditions{}
+		for _, lib := range libs {
+			items, err := h.newAdditions(r, []config.MediaPath{lib})
+			if err != nil {
+				respondError(w, http.StatusInternalServerError, "Failed to list new additions")
+				return
+			}
+			if len(items) > 0 {
+				out = append(out, libraryAdditions{lib.ID, lib.Name, items})
+			}
+		}
+		respondJSON(w, http.StatusOK, out)
+		return
+	}
+	items, err := h.newAdditions(r, libs)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list new additions")
+		return
+	}
+	respondJSON(w, http.StatusOK, items)
+}
+
+// newAdditions lists the last videos to arrive in libs, blended: the newest days first.
+func (h *MediaHandler) newAdditions(r *http.Request, libs []config.MediaPath) ([]continueItem, error) {
 	type arrival struct {
 		database.AddedMedia
 		lib config.MediaPath
@@ -115,8 +146,7 @@ func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 		// Some may be gone from the disk, or be Live Photos' videos: read extra.
 		added, err := h.db.NewestMedia(lib.Path, newAdditionsLimit*10)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "Failed to list new additions")
-			return
+			return nil, err
 		}
 		for _, a := range added {
 			arrivals = append(arrivals, arrival{a, lib})
@@ -139,7 +169,7 @@ func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 	if len(items) > newAdditionsLimit {
 		items = items[:newAdditionsLimit]
 	}
-	respondJSON(w, http.StatusOK, items)
+	return items, nil
 }
 
 // sortNewAdditions puts the newest day first, and a day's videos in viewing order: by show, season

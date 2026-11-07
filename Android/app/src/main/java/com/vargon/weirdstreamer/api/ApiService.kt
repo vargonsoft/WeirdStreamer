@@ -181,6 +181,9 @@ interface ApiService {
     @GET("/api/library/new")
     suspend fun newAdditions(@Query("lib") libraryId: String?): Response<List<ContinueItem>>
 
+    @GET("/api/library/new?by=library")
+    suspend fun newAdditionsByLibrary(): Response<List<com.vargon.weirdstreamer.api.models.LibraryAdditions>>
+
     @GET("/api/playback/continue")
     suspend fun continueWatching(@Query("lib") libraryId: String? = null): Response<List<ContinueItem>>
 

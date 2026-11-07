@@ -130,7 +130,7 @@ fun timeLeftText(playback: Playback?, duration: Double?): String? {
 fun PhoneContinueRow(viewModel: MediaViewModel, modifier: Modifier = Modifier, sidePadding: Dp = 16.dp) {
     Column(modifier = modifier) {
         PhoneVideoRow(viewModel, "Continue Watching", viewModel.continueItems, sidePadding)
-        PhoneVideoRow(viewModel, "Recently Added", viewModel.newItems, sidePadding)
+        viewModel.newRows.forEach { (heading, items) -> PhoneVideoRow(viewModel, heading, items, sidePadding) }
     }
 }
 

@@ -607,8 +607,8 @@ function renderMedia() {
     if (!state.currentPath || atLibrary) {
         const path = state.currentPath;
         Promise.all([createContinueRow(atLibrary ? state.libraryId : ''),
-            createNewAdditionsRow(atLibrary ? state.libraryId : '')]).then(rows => {
-            const shown = rows.filter(Boolean);
+            atLibrary ? createNewAdditionsRow(state.libraryId) : createNewAdditionsRows()]).then(rows => {
+            const shown = rows.flat().filter(Boolean);
             if (shown.length && state.view === 'folders' && state.currentPath === path) {
                 directoryList.innerHTML = '';
                 directoryList.append(...shown);
@@ -4496,18 +4496,32 @@ async function createContinueRow(lib = '') {
     return section;
 }
 
-// Recently Added: the videos that arrived last in a library, or blended from the libraries that
-// show on the home screen (the showNewAdditions option).
-async function createNewAdditionsRow(lib = '') {
+// Recently Added: the videos that arrived last in a library (the showNewAdditions option).
+async function createNewAdditionsRow(lib) {
     let items;
     try {
         items = await api.newAdditions(lib);
     } catch (error) {
         return null;
     }
+    return newAdditionsSection('Recently Added', items);
+}
+
+// The home screen's: a Recently Added row for each library that shows there.
+async function createNewAdditionsRows() {
+    let libraries;
+    try {
+        libraries = await api.newAdditionsByLibrary();
+    } catch (error) {
+        return [];
+    }
+    return (libraries || []).map(lib => newAdditionsSection(`Recently Added in ${lib.library_name}`, lib.items));
+}
+
+function newAdditionsSection(heading, items) {
     if (!items || !items.length) return null;
     const section = el('section', 'continue-row');
-    section.appendChild(el('h2', 'library-section', 'Recently Added'));
+    section.appendChild(el('h2', 'library-section', heading));
     const row = el('div', 'continue-items');
     items.forEach(item => row.appendChild(createContinueCard(item)));
     section.appendChild(row);

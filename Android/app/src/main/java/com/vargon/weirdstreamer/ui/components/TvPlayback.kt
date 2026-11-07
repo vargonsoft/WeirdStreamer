@@ -48,9 +48,10 @@ import com.vargon.weirdstreamer.MediaViewModel
 /** Progress lines and checks on TV: white reads on every theme's dark backgrounds. */
 /**
  * TV: the rows above a folder or library grid: Continue Watching, the videos in progress, and
- * Recently Added, the last to arrive in the library. Up goes to the toolbar ([up]); Down from the last
- * row hands focus to the grid ([onDown]). [topRequester] focuses the top row and [bottomRequester]
- * the bottom one (the grid's Up), each on the card last focused there, or its first.
+ * Recently Added, the last to arrive (the library's, or a row per library on the home screen). Up
+ * goes to the row above, and from the top row to the toolbar ([up]); Down to the row below, and
+ * from the last row hands focus to the grid ([onDown]). [topRequester] focuses the top row and
+ * [bottomRequester] the bottom one (the grid's Up), each on the card last focused there, or its first.
  */
 @Composable
 fun TvContinueRow(
@@ -61,17 +62,24 @@ fun TvContinueRow(
     onDown: () -> Boolean,
     modifier: Modifier = Modifier
 ) {
-    val inProgress = viewModel.continueItems
-    val newlyAdded = viewModel.newItems
-    val both = inProgress.isNotEmpty() && newlyAdded.isNotEmpty()
+    val rows = buildList {
+        if (viewModel.continueItems.isNotEmpty()) add("Continue Watching" to viewModel.continueItems)
+        addAll(viewModel.newRows)
+    }
+    // Each row's own requester: the top and bottom ones are the caller's (one row is both).
+    val middle = remember(rows.size) { List(rows.size) { FocusRequester() } }
+    fun requestersOf(i: Int) = buildList {
+        if (i == 0) add(topRequester)
+        if (i == rows.lastIndex) add(bottomRequester)
+        if (isEmpty()) add(middle[i])
+    }
     Column(modifier = modifier) {
-        if (inProgress.isNotEmpty()) TvVideoRow(viewModel, "Continue Watching", inProgress,
-            if (both) listOf(topRequester) else listOf(topRequester, bottomRequester), up,
-            onDown = { if (both) bottomRequester.tryFocus() else onDown() })
-        if (newlyAdded.isNotEmpty()) TvVideoRow(viewModel, "Recently Added", newlyAdded,
-            if (both) listOf(bottomRequester) else listOf(topRequester, bottomRequester),
-            if (both) topRequester else up, onDown,
-            modifier = if (both) Modifier.padding(top = 16.dp) else Modifier)
+        rows.forEachIndexed { i, (heading, items) ->
+            TvVideoRow(viewModel, heading, items, requestersOf(i),
+                up = if (i == 0) up else requestersOf(i - 1).first(),
+                onDown = { if (i < rows.lastIndex) requestersOf(i + 1).first().tryFocus() else onDown() },
+                modifier = if (i > 0) Modifier.padding(top = 16.dp) else Modifier)
+        }
     }
 }
 

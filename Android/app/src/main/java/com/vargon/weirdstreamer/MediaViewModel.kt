@@ -387,8 +387,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var continueItems by mutableStateOf<List<ContinueItem>>(emptyList())
         private set
 
-    /** The videos that arrived last in this library, or the libraries on the home screen, for the Recently Added row. */
-    var newItems by mutableStateOf<List<ContinueItem>>(emptyList())
+    /** The Recently Added rows, by heading: this library's, or one per library on the home screen. */
+    var newRows by mutableStateOf<List<Pair<String, List<ContinueItem>>>>(emptyList())
         private set
 
     /** TV: the card last focused in each row above a grid (by heading), kept while the grid
@@ -399,7 +399,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var settingsTab by mutableStateOf("App")
 
     /** Whether the page leads with a row of videos: Continue Watching, Recently Added or both. */
-    val hasTopRows: Boolean get() = continueItems.isNotEmpty() || newItems.isNotEmpty()
+    val hasTopRows: Boolean get() = continueItems.isNotEmpty() || newRows.isNotEmpty()
 
     /** False while the Continue Watching row is being asked for, so the TV can start focus on it. */
     var continueReady by mutableStateOf(true)
@@ -450,7 +450,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { syncLocalProgress(repo) }
         if (!isLibraryView && !atLibraryRoot && repo.getParentPath(currentPath) != null) {
             continueItems = emptyList()
-            newItems = emptyList()
+            newRows = emptyList()
             continueReady = true
             return
         }
@@ -459,7 +459,13 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             // Offline, the row keeps what it had.
             try {
                 repo.continueWatching(libraryId).getOrNull()?.let { continueItems = it }
-                newItems = repo.newAdditions(libraryId).getOrNull().orEmpty()
+                newRows = if (isLibraryView || atLibraryRoot) {
+                    libraryId?.let { repo.newAdditions(it).getOrNull() }.orEmpty().takeIf { it.isNotEmpty() }
+                        ?.let { listOf("Recently Added" to it) }.orEmpty()
+                } else {
+                    repo.newAdditionsByLibrary().getOrNull().orEmpty()
+                        .filter { it.items.isNotEmpty() }.map { "Recently Added in ${it.libraryName}" to it.items }
+                }
             } finally {
                 continueReady = true
             }

@@ -334,6 +334,11 @@ class MediaAPI {
         return this.request('/api/library/new' + (lib ? `?lib=${encodeURIComponent(lib)}` : ''));
     }
 
+    // The home screen's: [{library_id, library_name, items}], a list per library
+    async newAdditionsByLibrary() {
+        return this.request('/api/library/new?by=library');
+    }
+
     async removeFromContinue(path) {
         return this.request(`/api/playback/continue?path=${encodeURIComponent(this.encodePath(path))}`, { method: 'DELETE' });
     }

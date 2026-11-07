@@ -48,6 +48,13 @@ data class Playback(
 }
 
 /** A video in progress, for Continue Watching. */
+/** The home screen's Recently Added rows: a library's last videos to arrive. */
+data class LibraryAdditions(
+    @SerializedName("library_id") val libraryId: String,
+    @SerializedName("library_name") val libraryName: String,
+    @SerializedName("items") val items: List<ContinueItem> = emptyList()
+)
+
 data class ContinueItem(
     @SerializedName("id") val id: Long? = null,
     @SerializedName("path") val path: String,

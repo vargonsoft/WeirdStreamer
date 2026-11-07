@@ -154,10 +154,18 @@ class ServerRepository(
         }
     }
 
-    /** The videos that arrived last in [libraryId], or blended for the home screen; empty where showNewAdditions is off. */
-    suspend fun newAdditions(libraryId: String?): Result<List<ContinueItem>> = withContext(Dispatchers.IO) {
+    /** The videos that arrived last in [libraryId]; empty where showNewAdditions is off. */
+    suspend fun newAdditions(libraryId: String): Result<List<ContinueItem>> = withContext(Dispatchers.IO) {
         runCatching {
             val r = apiService.newAdditions(libraryId)
+            r.body()?.takeIf { r.isSuccessful } ?: throw Exception("Server error: ${r.code()}")
+        }
+    }
+
+    /** The home screen's: the videos that arrived last in each library that shows there. */
+    suspend fun newAdditionsByLibrary(): Result<List<com.vargon.weirdstreamer.api.models.LibraryAdditions>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.newAdditionsByLibrary()
             r.body()?.takeIf { r.isSuccessful } ?: throw Exception("Server error: ${r.code()}")
         }
     }
