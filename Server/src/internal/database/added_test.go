@@ -30,30 +30,25 @@ func saveVideo(t *testing.T, db *DB, path string) {
 func TestMediaAdded(t *testing.T) {
 	db := testDB(t)
 	dir := t.TempDir()
-	old := filepath.Join(dir, "lib", "old.mp4")
-	if err := os.MkdirAll(filepath.Dir(old), 0o755); err != nil {
-		t.Fatal(err)
+	write := func(name string, at time.Time) string {
+		t.Helper()
+		path := filepath.Join(dir, "lib", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+		return path
 	}
-	if err := os.WriteFile(old, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	onDisk := time.Now().Add(-72 * time.Hour)
-	if err := os.Chtimes(old, onDisk, onDisk); err != nil {
-		t.Fatal(err)
-	}
-	saveVideo(t, db, old) // already known when arrival times start being kept
-	if err := db.FillMediaAdded(); err != nil {
-		t.Fatal(err)
-	}
-
-	// A file found now is dated now, whatever its time on disk says.
-	found := filepath.Join(dir, "lib", "found.mp4")
-	if err := os.WriteFile(found, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(found, onDisk.Add(-time.Hour), onDisk.Add(-time.Hour)); err != nil {
-		t.Fatal(err)
-	}
+	onDisk := time.Now().Add(-72 * time.Hour).Truncate(time.Second)
+	old := write("old.mp4", onDisk)
+	// Found long after it arrived: dated by its time on disk, not by when the server saw it.
+	found := write("found.mp4", onDisk.Add(time.Hour))
+	saveVideo(t, db, old)
 	saveVideo(t, db, found)
 	saveVideo(t, db, filepath.Join(dir, "library2", "other.mp4")) // another library, its name a prefix
 
@@ -64,23 +59,28 @@ func TestMediaAdded(t *testing.T) {
 	if len(got) != 2 || got[0].Path != found || got[1].Path != old {
 		t.Fatalf("got %+v", got)
 	}
-	if got[1].AddedAt != onDisk.Unix() {
-		t.Errorf("existing file dated %d, want its time on disk %d", got[1].AddedAt, onDisk.Unix())
+	if got[0].AddedAt != onDisk.Add(time.Hour).Unix() || got[1].AddedAt != onDisk.Unix() {
+		t.Errorf("dated %d and %d, want their times on disk", got[0].AddedAt, got[1].AddedAt)
+	}
+
+	// A date that differs from the disk's (one dated by when the server first saw it) is
+	// corrected, and a time on disk ahead of the clock counts as now.
+	db.mediaConn.Exec(`UPDATE media_added SET added_at = ? WHERE path = ?`, time.Now().Unix(), old)
+	future := write("future.mp4", time.Now().Add(48*time.Hour))
+	saveVideo(t, db, future)
+	db.mediaConn.Exec(`DELETE FROM media_added WHERE path = ?`, found)
+	if err := db.DateMediaAdded(); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = db.NewestMedia(filepath.Join(dir, "lib"), 10)
+	if len(got) != 3 || got[0].Path != future || got[1].AddedAt != onDisk.Add(time.Hour).Unix() || got[2].AddedAt != onDisk.Unix() {
+		t.Fatalf("after DateMediaAdded: %+v", got)
 	}
 	if time.Since(time.Unix(got[0].AddedAt, 0)) > time.Minute {
-		t.Errorf("new file dated %d, want now", got[0].AddedAt)
+		t.Errorf("a file from the future dated %d, want now", got[0].AddedAt)
 	}
 
-	// Saving again (a scan, a thumbnail) doesn't move a file's date.
-	first := got[0].AddedAt
-	db.mediaConn.Exec(`UPDATE media_added SET added_at = ? WHERE path = ?`, first-500, found)
-	saveVideo(t, db, found)
-	got, _ = db.NewestMedia(filepath.Join(dir, "lib"), 1)
-	if len(got) != 1 || got[0].AddedAt != first-500 {
-		t.Errorf("a save moved the date: %+v", got)
-	}
-
-	if err := db.ForgetMedia([]string{found}); err != nil {
+	if err := db.ForgetMedia([]string{found, future}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ = db.NewestMedia(filepath.Join(dir, "lib"), 10); len(got) != 1 || got[0].Path != old {

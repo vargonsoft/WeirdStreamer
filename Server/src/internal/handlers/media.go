@@ -125,7 +125,6 @@ func NewMediaHandler(db *database.DB, authService *auth.Service) *MediaHandler {
 		streams:            media.NewStreamTracker(),
 	}
 	if j := jobs.Get("scan"); j != nil {
-		j.Schedule("On Scan Media")
 		j.OnRunNow(h.startScan)
 	}
 	return h
@@ -702,25 +701,56 @@ func (h *MediaHandler) ScanMedia(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "scan started"})
 }
 
-// startScan scans the libraries in the background, then has the other jobs pick up what changed;
-// the TMDB sync runs alongside. (Scan Media, and the scan's Run now on the Jobs page.)
+// scanInterval is how often the libraries are scanned for new files on their own, so they reach
+// Recently Added, the Library view and the other jobs without anyone pressing Scan Media.
+const scanInterval = time.Hour
+
+// StartScans scans the libraries every scanInterval until ctx ends (the first soon after start,
+// once the server's own startup work is done).
+func (h *MediaHandler) StartScans(ctx context.Context) {
+	j := jobs.Get("scan")
+	wait := 10 * time.Minute
+	for {
+		if j != nil {
+			j.NextIn(wait)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		h.scan()
+		if h.meta != nil {
+			h.meta.SyncAll(ctx)
+		}
+		wait = scanInterval
+	}
+}
+
+// startScan scans the libraries in the background; the TMDB sync runs alongside. (Scan Media,
+// and the scan's Run now on the Jobs page.)
 func (h *MediaHandler) startScan() {
-	go func() {
-		if err := h.scanner.ScanMediaPaths(); errors.Is(err, media.ErrScanRunning) {
-			return // the scan running wakes them when it's done
-		}
-		if h.segments != nil {
-			h.segments.Wake() // new videos' intros and credits
-		}
-		if h.pruner != nil {
-			h.pruner.Wake() // and forget those gone
-		}
-		if h.trickplay != nil {
-			h.trickplay.Wake() // and new videos' seek-bar pictures
-		}
-	}()
+	go h.scan()
 	if h.meta != nil {
 		go h.meta.SyncAll(context.Background())
+	}
+}
+
+// scan adds new and changed files, then has the other jobs pick up what changed.
+func (h *MediaHandler) scan() {
+	if err := h.scanner.ScanMediaPaths(); errors.Is(err, media.ErrScanRunning) {
+		return // the scan running wakes them when it's done
+	} else if err != nil {
+		log.Printf("[SCAN] %v", err)
+	}
+	if h.segments != nil {
+		h.segments.Wake() // new videos' intros and credits
+	}
+	if h.pruner != nil {
+		h.pruner.Wake() // and forget those gone
+	}
+	if h.trickplay != nil {
+		h.trickplay.Wake() // and new videos' seek-bar pictures
 	}
 }
 

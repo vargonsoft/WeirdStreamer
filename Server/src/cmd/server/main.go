@@ -136,10 +136,12 @@ func main() {
 	mediaHandler.StartCleanup(ctx)
 	// Trickplay frames (the pictures over the seek bars) for videos without them.
 	mediaHandler.StartTrickplay(ctx)
+	// New files, found every hour (and on Scan Media).
+	go mediaHandler.StartScans(ctx)
 	go media.CountStorage() // the data folders' sizes, for Settings → Jobs
-	// When files arrived, for Recently Added: old files by their time on disk, new ones as they're found.
+	// When files arrived, for Recently Added: their time on disk (new ones are dated as they're saved).
 	go func() {
-		if err := db.FillMediaAdded(); err != nil {
+		if err := db.DateMediaAdded(); err != nil {
 			log.Printf("Warning: could not date the media files: %v", err)
 		}
 	}()

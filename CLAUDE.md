@@ -335,9 +335,10 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 - **Recently Added:** `showNewAdditions` (`config.yml` or Settings) is `on`, `libraryOnly` or `off`
   (the default): the last 10 videos show under Continue Watching on the library's own Library and
   top folder pages, and with `on` they also blend into the home screen's row
-  (`GET /api/library/new`, with or without `lib`). The `media_added` table dates each file once:
-  files already known by their time on disk (`FillMediaAdded`, at startup), new ones when the
-  server first saves them. The newest day comes first, and a day's videos in viewing order (show,
+  (`GET /api/library/new`, with or without `lib`). The `media_added` table dates each file by its time on
+  disk: when it's saved (`SaveMediaItem`), and every known file again at startup (`DateMediaAdded`).
+  Only files in the media database are listed, so a scan runs every hour by itself (`StartScans`,
+  the first 10 minutes after start) as well as on Scan Media. The newest day comes first, and a day's videos in viewing order (show,
   season, episode). `media_items`' `created_at` is no use for this: every save replaces the
   row. Clients turn `added_at` into "Added 2 days ago" on their own calendar.
 - **Update banners:** the apps run `AppUpdater`'s check when they open, on another server and every

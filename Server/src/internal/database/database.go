@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"sync/atomic"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -15,9 +14,6 @@ import (
 type DB struct {
 	userConn  *sql.DB
 	mediaConn *sql.DB
-	// Set once the files already known have their dates (FillMediaAdded): until then a save can't
-	// tell a new file from an old one.
-	datesNewMedia atomic.Bool
 }
 
 func New(userDBPath, mediaDBPath string) (*DB, error) {
@@ -309,10 +305,7 @@ func (db *DB) SaveMediaItem(item *models.MediaItem) error {
 
 	id, _ := result.LastInsertId()
 	item.ID = id
-	if db.datesNewMedia.Load() {
-		return recordAdded(db.mediaConn, item.Path, time.Now())
-	}
-	return nil
+	return db.recordArrival(item.Path)
 }
 
 func (db *DB) GetMediaItem(path string) (*models.MediaItem, error) {
