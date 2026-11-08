@@ -164,9 +164,9 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
             // Theme Menu Buttons (when expanded)
             if (themeMenuExpanded) {
                 item {
-                    // Two rows: Up and Down go between them, Left and Right along each.
+                    // Rows of up to 7: Up and Down go between them, Left and Right along each.
                     val themes = AppTheme.entries.map { Triple(it.name, it.label, themeButtonFocus[it.ordinal]) }
-                    val rows = themes.chunked((themes.size + 1) / 2)
+                    val rows = themes.chunked(7)
                     rows.forEachIndexed { r, row ->
                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                             row.forEachIndexed { index, (themeKey, themeName, focusReq) ->

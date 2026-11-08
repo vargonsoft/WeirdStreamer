@@ -23,7 +23,13 @@ enum class AppTheme(val label: String) {
     PURPLE("Purple"),
     GRAY("Gray"),
     YELLOW("Yellow"),
-    GREEN("Green");
+    GREEN("Green"),
+    HARBOR_LIGHTS("Harbor Lights"),
+    MOSS_AND_ROSE("Moss and Rose"),
+    DESERT_BLOOM("Desert Bloom"),
+    ARCTIC_BERRY("Arctic Berry"),
+    COPPER_SEA("Copper Sea"),
+    NEON_ARCADE("Neon Arcade");
 
     /** The theme to draw: Auto as Light or Dark, from the device's setting. */
     @Composable
@@ -99,6 +105,12 @@ private val purpleSpec = PaletteThemeSpec(PurplePalette)
 private val graySpec = PaletteThemeSpec(GrayPalette)
 private val yellowSpec = PaletteThemeSpec(YellowPalette)
 private val greenSpec = PaletteThemeSpec(GreenPalette)
+private val harborLightsSpec = PaletteThemeSpec(HarborLightsPalette)
+private val mossAndRoseSpec = PaletteThemeSpec(MossAndRosePalette)
+private val desertBloomSpec = PaletteThemeSpec(DesertBloomPalette)
+private val arcticBerrySpec = PaletteThemeSpec(ArcticBerryPalette)
+private val copperSeaSpec = PaletteThemeSpec(CopperSeaPalette)
+private val neonArcadeSpec = PaletteThemeSpec(NeonArcadePalette)
 
 val LocalThemeSpec = staticCompositionLocalOf<WeirdStreamerThemeSpec> { DefaultThemeSpec }
 
@@ -124,6 +136,12 @@ fun AppTheme.palette(): ThemePalette = when (resolved()) {
     AppTheme.GRAY -> GrayPalette
     AppTheme.YELLOW -> YellowPalette
     AppTheme.GREEN -> GreenPalette
+    AppTheme.HARBOR_LIGHTS -> HarborLightsPalette
+    AppTheme.MOSS_AND_ROSE -> MossAndRosePalette
+    AppTheme.DESERT_BLOOM -> DesertBloomPalette
+    AppTheme.ARCTIC_BERRY -> ArcticBerryPalette
+    AppTheme.COPPER_SEA -> CopperSeaPalette
+    AppTheme.NEON_ARCADE -> NeonArcadePalette
 }
 
 /** The spec (icon tints, boxes, buttons, background image) that goes with a theme, on TV and phone. */
@@ -141,6 +159,12 @@ fun AppTheme.spec(): WeirdStreamerThemeSpec = when (resolved()) {
     AppTheme.GRAY -> graySpec
     AppTheme.YELLOW -> yellowSpec
     AppTheme.GREEN -> greenSpec
+    AppTheme.HARBOR_LIGHTS -> harborLightsSpec
+    AppTheme.MOSS_AND_ROSE -> mossAndRoseSpec
+    AppTheme.DESERT_BLOOM -> desertBloomSpec
+    AppTheme.ARCTIC_BERRY -> arcticBerrySpec
+    AppTheme.COPPER_SEA -> copperSeaSpec
+    AppTheme.NEON_ARCADE -> neonArcadeSpec
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)

@@ -209,3 +209,93 @@ val GreenPalette = ThemePalette(
     onAccent = Color(0xFF12261A),
     secondary = Color(0xFFE8C55A),
 )
+
+// Harbor Lights: navy boxes, brick buttons and lamp gold
+val HarborLightsPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF0C1626),
+    panel = Color(0xFF14243D),
+    raised = Color(0xFF322A39),
+    button = Color(0xFF8C3B2E),
+    buttonLabel = Color(0xFFF3EAD8),
+    text = Color(0xFFF3EAD8),
+    mutedText = Color(0xFFBBB8B1),
+    accent = Color(0xFFF2B544),
+    onAccent = Color(0xFF14243D),
+    secondary = Color(0xFFB0786A),
+)
+
+// Moss and Rose: forest boxes, dusty rose buttons and cream gold
+val MossAndRosePalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF0F1F18),
+    panel = Color(0xFF1D372B),
+    raised = Color(0xFF393A36),
+    button = Color(0xFF8E4458),
+    buttonLabel = Color(0xFFF4EEDF),
+    text = Color(0xFFF4EEDF),
+    mutedText = Color(0xFFBEC0B2),
+    accent = Color(0xFFF1D49B),
+    onAccent = Color(0xFF1D372B),
+    secondary = Color(0xFFB28087),
+)
+
+// Desert Bloom: plum-brown boxes, terracotta buttons and turquoise
+val DesertBloomPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF1E0F17),
+    panel = Color(0xFF38202B),
+    raised = Color(0xFF542C2B),
+    button = Color(0xFFA84E2A),
+    buttonLabel = Color(0xFFFBEDE3),
+    text = Color(0xFFFBEDE3),
+    mutedText = Color(0xFFCABAB5),
+    accent = Color(0xFF4FD1C5),
+    onAccent = Color(0xFF1E0F17),
+    secondary = Color(0xFFC5866B),
+)
+
+// Arctic Berry: slate blue boxes, raspberry buttons and ice mint
+val ArcticBerryPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF10172A),
+    panel = Color(0xFF1F2A44),
+    raised = Color(0xFF402B4A),
+    button = Color(0xFFA32E5B),
+    buttonLabel = Color(0xFFEEF2FA),
+    text = Color(0xFFEEF2FA),
+    mutedText = Color(0xFFBAC0CC),
+    accent = Color(0xFF9BE7D8),
+    onAccent = Color(0xFF10172A),
+    secondary = Color(0xFFBD7393),
+)
+
+// Copper Sea: deep teal boxes, copper buttons and sand
+val CopperSeaPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF082221),
+    panel = Color(0xFF0F3B3A),
+    raised = Color(0xFF324238),
+    button = Color(0xFF9C5530),
+    buttonLabel = Color(0xFFF1EBDD),
+    text = Color(0xFFF1EBDD),
+    mutedText = Color(0xFFB8BFB4),
+    accent = Color(0xFFEAD7A1),
+    onAccent = Color(0xFF0F3B3A),
+    secondary = Color(0xFFBA8A6D),
+)
+
+// Neon Arcade: charcoal boxes, electric violet buttons and lime
+val NeonArcadePalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF111116),
+    panel = Color(0xFF1D1D26),
+    raised = Color(0xFF2C234D),
+    button = Color(0xFF5B36C2),
+    buttonLabel = Color(0xFFF1EEFF),
+    text = Color(0xFFF1EEFF),
+    mutedText = Color(0xFFBCBAC9),
+    accent = Color(0xFFB8F04A),
+    onAccent = Color(0xFF16161E),
+    secondary = Color(0xFF9076D7),
+)
