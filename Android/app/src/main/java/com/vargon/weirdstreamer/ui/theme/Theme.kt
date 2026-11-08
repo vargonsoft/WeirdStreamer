@@ -16,7 +16,14 @@ enum class AppTheme(val label: String) {
     DARK("Dark"),
     AUTO("Auto Light/Dark"), // Light or Dark, following the device's dark theme setting
     CINEMA_BLUE("Cinema Blue"),
-    CINEMA_RED("Cinema Red");
+    CINEMA_RED("Cinema Red"),
+    TEAL("Teal"),
+    ORANGE("Orange"),
+    BROWN("Brown"),
+    PURPLE("Purple"),
+    GRAY("Gray"),
+    YELLOW("Yellow"),
+    GREEN("Green");
 
     /** The theme to draw: Auto as Light or Dark, from the device's setting. */
     @Composable
@@ -85,6 +92,13 @@ private val lightSpec = PaletteThemeSpec(LightPalette)
 private val darkSpec = PaletteThemeSpec(DarkPalette)
 private val cinemaBlueSpec = PaletteThemeSpec(CinemaBluePalette, backgroundImage = R.drawable.film_reel)
 private val cinemaRedSpec = PaletteThemeSpec(CinemaRedPalette)
+private val tealSpec = PaletteThemeSpec(TealPalette)
+private val orangeSpec = PaletteThemeSpec(OrangePalette)
+private val brownSpec = PaletteThemeSpec(BrownPalette)
+private val purpleSpec = PaletteThemeSpec(PurplePalette)
+private val graySpec = PaletteThemeSpec(GrayPalette)
+private val yellowSpec = PaletteThemeSpec(YellowPalette)
+private val greenSpec = PaletteThemeSpec(GreenPalette)
 
 val LocalThemeSpec = staticCompositionLocalOf<WeirdStreamerThemeSpec> { DefaultThemeSpec }
 
@@ -103,6 +117,13 @@ fun AppTheme.palette(): ThemePalette = when (resolved()) {
     AppTheme.DARK -> DarkPalette
     AppTheme.CINEMA_BLUE -> CinemaBluePalette
     AppTheme.CINEMA_RED -> CinemaRedPalette
+    AppTheme.TEAL -> TealPalette
+    AppTheme.ORANGE -> OrangePalette
+    AppTheme.BROWN -> BrownPalette
+    AppTheme.PURPLE -> PurplePalette
+    AppTheme.GRAY -> GrayPalette
+    AppTheme.YELLOW -> YellowPalette
+    AppTheme.GREEN -> GreenPalette
 }
 
 /** The spec (icon tints, boxes, buttons, background image) that goes with a theme, on TV and phone. */
@@ -113,6 +134,13 @@ fun AppTheme.spec(): WeirdStreamerThemeSpec = when (resolved()) {
     AppTheme.DARK -> darkSpec
     AppTheme.CINEMA_BLUE -> cinemaBlueSpec
     AppTheme.CINEMA_RED -> cinemaRedSpec
+    AppTheme.TEAL -> tealSpec
+    AppTheme.ORANGE -> orangeSpec
+    AppTheme.BROWN -> brownSpec
+    AppTheme.PURPLE -> purpleSpec
+    AppTheme.GRAY -> graySpec
+    AppTheme.YELLOW -> yellowSpec
+    AppTheme.GREEN -> greenSpec
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)

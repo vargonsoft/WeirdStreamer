@@ -164,34 +164,37 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
             // Theme Menu Buttons (when expanded)
             if (themeMenuExpanded) {
                 item {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        val themes = AppTheme.entries.map { Triple(it.name, it.label, themeButtonFocus[it.ordinal]) }
-                        
-                        themes.forEachIndexed { index, (themeKey, themeName, focusReq) ->
-                            Button(shape = tvButtonShape(), 
-                                onClick = {
-                                    viewModel.credentialManager.setAppTheme(themeKey)
-                                    onThemeChanged?.invoke()
-                                    themeMenuExpanded = false
-                                },
-                                colors = if (currentTheme == themeKey) {
-                                    tvButtonColors()
-                                } else {
-                                    tvButtonColors(
-                                        containerColor = Color.Transparent,
-                                        contentColor = MaterialTheme.colorScheme.onSurface
-                                    )
-                                },
-                                modifier = Modifier
-                                    .focusRequester(focusReq)
-                                    .focusProperties {
-                                        up = themeFocus
-                                        down = hiddenFilesFocus
-                                        left = if (index > 0) themes[index - 1].third else FocusRequester.Default
-                                        right = if (index < themes.size - 1) themes[index + 1].third else FocusRequester.Default
-                                    }
-                            ) {
-                                Text(themeName)
+                    // Two rows: Up and Down go between them, Left and Right along each.
+                    val themes = AppTheme.entries.map { Triple(it.name, it.label, themeButtonFocus[it.ordinal]) }
+                    val rows = themes.chunked((themes.size + 1) / 2)
+                    rows.forEachIndexed { r, row ->
+                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            row.forEachIndexed { index, (themeKey, themeName, focusReq) ->
+                                Button(shape = tvButtonShape(),
+                                    onClick = {
+                                        viewModel.credentialManager.setAppTheme(themeKey)
+                                        onThemeChanged?.invoke()
+                                        themeMenuExpanded = false
+                                    },
+                                    colors = if (currentTheme == themeKey) {
+                                        tvButtonColors()
+                                    } else {
+                                        tvButtonColors(
+                                            containerColor = Color.Transparent,
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    modifier = Modifier
+                                        .focusRequester(focusReq)
+                                        .focusProperties {
+                                            up = if (r > 0) rows[r - 1][minOf(index, rows[r - 1].size - 1)].third else themeFocus
+                                            down = if (r < rows.size - 1) rows[r + 1][minOf(index, rows[r + 1].size - 1)].third else hiddenFilesFocus
+                                            left = if (index > 0) row[index - 1].third else FocusRequester.Default
+                                            right = if (index < row.size - 1) row[index + 1].third else FocusRequester.Default
+                                        }
+                                ) {
+                                    Text(themeName)
+                                }
                             }
                         }
                     }

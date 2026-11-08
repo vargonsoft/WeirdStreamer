@@ -104,3 +104,108 @@ val CinemaRedPalette = ThemePalette(
     onAccent = Color(0xFF2B0B10),
     secondary = Color(0xFFE0896F),
 )
+
+// Teal: deep sea teal with aqua
+val TealPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF0B1E1E),
+    panel = Color(0xFF123130),
+    raised = Color(0xFF1B4443),
+    button = Color(0xFF1F5F5B),
+    buttonLabel = Color(0xFFE4F5F3),
+    text = Color(0xFFE4F5F3),
+    mutedText = Color(0xFFA6CDC9),
+    accent = Color(0xFF5EEAD4),
+    onAccent = Color(0xFF0B2423),
+    secondary = Color(0xFFF2A65A),
+)
+
+// Orange: burnt orange with tangerine
+val OrangePalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF1D110A),
+    panel = Color(0xFF331E10),
+    raised = Color(0xFF4A2D18),
+    button = Color(0xFF8A4A1B),
+    buttonLabel = Color(0xFFFFF0E0),
+    text = Color(0xFFFFF0E0),
+    mutedText = Color(0xFFE2C2A2),
+    accent = Color(0xFFFFA24A),
+    onAccent = Color(0xFF2B1607),
+    secondary = Color(0xFFF6C445),
+)
+
+// Brown: coffee brown with caramel
+val BrownPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF18120D),
+    panel = Color(0xFF2D2219),
+    raised = Color(0xFF423226),
+    button = Color(0xFF6B4D36),
+    buttonLabel = Color(0xFFF5EADC),
+    text = Color(0xFFF5EADC),
+    mutedText = Color(0xFFCDB9A2),
+    accent = Color(0xFFE3B676),
+    onAccent = Color(0xFF2D2219),
+    secondary = Color(0xFFC77C4A),
+)
+
+// Purple: violet with lavender
+val PurplePalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF140E22),
+    panel = Color(0xFF23193B),
+    raised = Color(0xFF322556),
+    button = Color(0xFF4F3C8A),
+    buttonLabel = Color(0xFFEEE8FF),
+    text = Color(0xFFEEE8FF),
+    mutedText = Color(0xFFBCB1DD),
+    accent = Color(0xFFC3A6FF),
+    onAccent = Color(0xFF1E1436),
+    secondary = Color(0xFFF29FC5),
+)
+
+// Gray: charcoal with silver
+val GrayPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF151617),
+    panel = Color(0xFF232527),
+    raised = Color(0xFF313437),
+    button = Color(0xFF4A4E53),
+    buttonLabel = Color(0xFFEFF1F3),
+    text = Color(0xFFEFF1F3),
+    mutedText = Color(0xFFB3B8BD),
+    accent = Color(0xFFDDE2E7),
+    onAccent = Color(0xFF232527),
+    secondary = Color(0xFF8FB8E8),
+)
+
+// Yellow: dark olive with sunflower
+val YellowPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF181606),
+    panel = Color(0xFF2B2809),
+    raised = Color(0xFF3F3A10),
+    button = Color(0xFF6A6015),
+    buttonLabel = Color(0xFFFFF9DA),
+    text = Color(0xFFFFF9DA),
+    mutedText = Color(0xFFDAD19E),
+    accent = Color(0xFFFFE04D),
+    onAccent = Color(0xFF2B2809),
+    secondary = Color(0xFFF29B38),
+)
+
+// Green: forest green with lime
+val GreenPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF0D190F),
+    panel = Color(0xFF162B19),
+    raised = Color(0xFF213F26),
+    button = Color(0xFF2E6A37),
+    buttonLabel = Color(0xFFE8F6E9),
+    text = Color(0xFFE8F6E9),
+    mutedText = Color(0xFFB0D2B3),
+    accent = Color(0xFF93E27D),
+    onAccent = Color(0xFF12261A),
+    secondary = Color(0xFFE8C55A),
+)

@@ -138,7 +138,10 @@ for each TODO item are at the end of this file.
     next episode).
 - Emulators: `emulator-5554` is Android TV (AVD `Television_1080p_API_34`) and `emulator-5556`
   is a phone (AVD `Medium_Phone_API_35`). `Android/tools/start-emulators.sh` starts whichever
-  isn't running and waits for boot. The adb binary is `~/Android/Sdk/platform-tools/adb` (not
+  isn't running and waits for boot. They start from a saved snapshot (`default_boot`) and never save
+  one themselves (`-no-snapshot-save`), so a change to their state (sources, sign-ins) is gone at the next
+  start unless saved with `adb -s <emulator> emu avd snapshot save default_boot`. The real Babylon 5
+  server and share must not be on them: tests use the e2e server only. The adb binary is `~/Android/Sdk/platform-tools/adb` (not
   on PATH). Both emulators already have the app signed in to the test server as `e2e_admin`.
 - Helper scripts in `Android/tools/` (save screenshots in your scratchpad, then view them with
   Read):
@@ -330,8 +333,9 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   Cinema Blue's boxes see-through over its film reel). The TV and phone color schemes and the
   theme spec come from it; `Panel`, `tvButtonColors()` and `phoneButtonColors()` in
   `ThemedControls.kt` draw with it. On the phone `surface` is transparent, so lists and bars show
-  their box. Android also has Light, Dark and Auto Light/Dark (`AppTheme`); the web's old purple
-  default is now Purple.
+  their box. Both also have Teal, Orange, Brown, Purple, Gray, Yellow and Green, dark themes built like
+  Ember with the same colors on each (a `ThemePalette` and a `:root[data-theme=…]` block). Android also has
+  Light and Auto Light/Dark (`AppTheme`).
 - **Recently Added:** `showNewAdditions` (`config.yml` or Settings) is `on`, `libraryOnly` or `off`
   (the default): the last 10 videos show under Continue Watching on the library's own Library and
   top folder pages ("Recently Added", `GET /api/library/new?lib=`), and with `on` also on the home

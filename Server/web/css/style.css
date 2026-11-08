@@ -72,18 +72,6 @@
     --progress-label: #321B2F;
 }
 
-:root[data-theme="purple"] {
-    --primary-color: #667eea;
-    --primary-dark: #5568d3;
-    --secondary-color: #764ba2;
-    --background-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --text-color: #333;
-    --surface-color: white;
-    --surface-hover: #f5f5f5;
-    --progress-color: #667eea; /* progress lines on thumbnails, the watched check */
-    --progress-label: #ffffff;
-}
-
 :root[data-theme="cinema-blue"] {
     --primary-color: #FBB024;
     --primary-dark: #D97706;
@@ -106,6 +94,223 @@
     --surface-hover: #DC2626;
     --progress-color: #FBB024; /* progress lines on thumbnails, the watched check */
     --progress-label: #7F1D1D;
+}
+
+/* Teal: deep sea teal with aqua (the Android theme's colors) */
+:root[data-theme="teal"] {
+    color-scheme: dark;
+    --primary-color: #5EEAD4;
+    --primary-dark: #50C7B4;
+    --secondary-color: #F2A65A;
+    --background-gradient: linear-gradient(180deg, #0B1E1E 0%, #0E2827 100%);
+    --text-color: #E4F5F3;
+    --surface-color: #123130;
+    --surface-hover: #1B4443;
+    --card-bg: #123130;
+    --panel-bg: #163A3A;
+    --placeholder-bg: #1B4443;
+    --hover-bg: #183E3D;
+    --border-color: #1D524F;
+    --muted-text: #A6CDC9;
+    --strong-text: #E4F5F3;
+    --success-bg: #2f7a4b;
+    --danger-bg: #8f3a33;
+    --danger-hover: #7a302a;
+    --button-bg: #1F5F5B;
+    --button-hover: #37716D;
+    --button-text: #E4F5F3;
+    --button-focus: #5EEAD4;
+    --button-focus-text: #0B2423;
+    --heading-color: #5EEAD4;
+    --placeholder-gradient: linear-gradient(135deg, #1B4443 0%, #123130 100%);
+    --progress-color: #5EEAD4;
+    --progress-label: #0B2423;
+}
+
+/* Orange: burnt orange with tangerine (the Android theme's colors) */
+:root[data-theme="orange"] {
+    color-scheme: dark;
+    --primary-color: #FFA24A;
+    --primary-dark: #D98A3F;
+    --secondary-color: #F6C445;
+    --background-gradient: linear-gradient(180deg, #1D110A 0%, #28180D 100%);
+    --text-color: #FFF0E0;
+    --surface-color: #331E10;
+    --surface-hover: #4A2D18;
+    --card-bg: #331E10;
+    --panel-bg: #3E2614;
+    --placeholder-bg: #4A2D18;
+    --hover-bg: #432816;
+    --border-color: #6A3C1A;
+    --muted-text: #E2C2A2;
+    --strong-text: #FFF0E0;
+    --success-bg: #2f7a4b;
+    --danger-bg: #8f3a33;
+    --danger-hover: #7a302a;
+    --button-bg: #8A4A1B;
+    --button-hover: #985E33;
+    --button-text: #FFF0E0;
+    --button-focus: #FFA24A;
+    --button-focus-text: #2B1607;
+    --heading-color: #FFA24A;
+    --placeholder-gradient: linear-gradient(135deg, #4A2D18 0%, #331E10 100%);
+    --progress-color: #FFA24A;
+    --progress-label: #2B1607;
+}
+
+/* Brown: coffee brown with caramel (the Android theme's colors) */
+:root[data-theme="brown"] {
+    color-scheme: dark;
+    --primary-color: #E3B676;
+    --primary-dark: #C19B64;
+    --secondary-color: #C77C4A;
+    --background-gradient: linear-gradient(180deg, #18120D 0%, #221A13 100%);
+    --text-color: #F5EADC;
+    --surface-color: #2D2219;
+    --surface-hover: #423226;
+    --card-bg: #2D2219;
+    --panel-bg: #382A20;
+    --placeholder-bg: #423226;
+    --hover-bg: #3C2D22;
+    --border-color: #56402E;
+    --muted-text: #CDB9A2;
+    --strong-text: #F5EADC;
+    --success-bg: #2f7a4b;
+    --danger-bg: #8f3a33;
+    --danger-hover: #7a302a;
+    --button-bg: #6B4D36;
+    --button-hover: #7C604A;
+    --button-text: #F5EADC;
+    --button-focus: #E3B676;
+    --button-focus-text: #2D2219;
+    --heading-color: #E3B676;
+    --placeholder-gradient: linear-gradient(135deg, #423226 0%, #2D2219 100%);
+    --progress-color: #E3B676;
+    --progress-label: #2D2219;
+}
+
+/* Purple: violet with lavender (the Android theme's colors) */
+:root[data-theme="purple"] {
+    color-scheme: dark;
+    --primary-color: #C3A6FF;
+    --primary-dark: #A68DD9;
+    --secondary-color: #F29FC5;
+    --background-gradient: linear-gradient(180deg, #140E22 0%, #1C142E 100%);
+    --text-color: #EEE8FF;
+    --surface-color: #23193B;
+    --surface-hover: #322556;
+    --card-bg: #23193B;
+    --panel-bg: #2A1F48;
+    --placeholder-bg: #322556;
+    --hover-bg: #2E214E;
+    --border-color: #403070;
+    --muted-text: #BCB1DD;
+    --strong-text: #EEE8FF;
+    --success-bg: #2f7a4b;
+    --danger-bg: #8f3a33;
+    --danger-hover: #7a302a;
+    --button-bg: #4F3C8A;
+    --button-hover: #625198;
+    --button-text: #EEE8FF;
+    --button-focus: #C3A6FF;
+    --button-focus-text: #1E1436;
+    --heading-color: #C3A6FF;
+    --placeholder-gradient: linear-gradient(135deg, #322556 0%, #23193B 100%);
+    --progress-color: #C3A6FF;
+    --progress-label: #1E1436;
+}
+
+/* Gray: charcoal with silver (the Android theme's colors) */
+:root[data-theme="gray"] {
+    color-scheme: dark;
+    --primary-color: #DDE2E7;
+    --primary-dark: #BCC0C4;
+    --secondary-color: #8FB8E8;
+    --background-gradient: linear-gradient(180deg, #151617 0%, #1C1E1F 100%);
+    --text-color: #EFF1F3;
+    --surface-color: #232527;
+    --surface-hover: #313437;
+    --card-bg: #232527;
+    --panel-bg: #2A2C2F;
+    --placeholder-bg: #313437;
+    --hover-bg: #2D3032;
+    --border-color: #3E4145;
+    --muted-text: #B3B8BD;
+    --strong-text: #EFF1F3;
+    --success-bg: #2f7a4b;
+    --danger-bg: #8f3a33;
+    --danger-hover: #7a302a;
+    --button-bg: #4A4E53;
+    --button-hover: #5E6266;
+    --button-text: #EFF1F3;
+    --button-focus: #DDE2E7;
+    --button-focus-text: #232527;
+    --heading-color: #DDE2E7;
+    --placeholder-gradient: linear-gradient(135deg, #313437 0%, #232527 100%);
+    --progress-color: #DDE2E7;
+    --progress-label: #232527;
+}
+
+/* Yellow: dark olive with sunflower (the Android theme's colors) */
+:root[data-theme="yellow"] {
+    color-scheme: dark;
+    --primary-color: #FFE04D;
+    --primary-dark: #D9BE41;
+    --secondary-color: #F29B38;
+    --background-gradient: linear-gradient(180deg, #181606 0%, #221F08 100%);
+    --text-color: #FFF9DA;
+    --surface-color: #2B2809;
+    --surface-hover: #3F3A10;
+    --card-bg: #2B2809;
+    --panel-bg: #35310C;
+    --placeholder-bg: #3F3A10;
+    --hover-bg: #39350E;
+    --border-color: #544D12;
+    --muted-text: #DAD19E;
+    --strong-text: #FFF9DA;
+    --success-bg: #2f7a4b;
+    --danger-bg: #8f3a33;
+    --danger-hover: #7a302a;
+    --button-bg: #6A6015;
+    --button-hover: #7C722D;
+    --button-text: #FFF9DA;
+    --button-focus: #FFE04D;
+    --button-focus-text: #2B2809;
+    --heading-color: #FFE04D;
+    --placeholder-gradient: linear-gradient(135deg, #3F3A10 0%, #2B2809 100%);
+    --progress-color: #FFE04D;
+    --progress-label: #2B2809;
+}
+
+/* Green: forest green with lime (the Android theme's colors) */
+:root[data-theme="green"] {
+    color-scheme: dark;
+    --primary-color: #93E27D;
+    --primary-dark: #7DC06A;
+    --secondary-color: #E8C55A;
+    --background-gradient: linear-gradient(180deg, #0D190F 0%, #122214 100%);
+    --text-color: #E8F6E9;
+    --surface-color: #162B19;
+    --surface-hover: #213F26;
+    --card-bg: #162B19;
+    --panel-bg: #1C3520;
+    --placeholder-bg: #213F26;
+    --hover-bg: #1E3922;
+    --border-color: #28542E;
+    --muted-text: #B0D2B3;
+    --strong-text: #E8F6E9;
+    --success-bg: #2f7a4b;
+    --danger-bg: #8f3a33;
+    --danger-hover: #7a302a;
+    --button-bg: #2E6A37;
+    --button-hover: #447B4C;
+    --button-text: #E8F6E9;
+    --button-focus: #93E27D;
+    --button-focus-text: #12261A;
+    --heading-color: #93E27D;
+    --placeholder-gradient: linear-gradient(135deg, #213F26 0%, #162B19 100%);
+    --progress-color: #93E27D;
+    --progress-label: #12261A;
 }
 
 body {
@@ -144,14 +349,9 @@ body {
     height: auto;
 }
 
-/* The header's wordmark: cream letters, or aubergine ones on Purple's light header */
-.brand-logo.brand-on-light,
-:root[data-theme="purple"] .brand-logo.brand-on-dark {
+/* The header's wordmark: cream letters (the aubergine ones are for a light header) */
+.brand-logo.brand-on-light {
     display: none;
-}
-
-:root[data-theme="purple"] .brand-logo.brand-on-light {
-    display: block;
 }
 
 .login-container .brand-logo {
@@ -1990,23 +2190,23 @@ header h1 {
     font-size: 13px;
 }
 
-/* Dark and Ember themes: pieces whose light colors aren't theme variables */
-:root:is([data-theme="dark"], [data-theme="default"]) .stream-badge.state-playing { background: #1d3a26; color: #7ee2a0; }
-:root:is([data-theme="dark"], [data-theme="default"]) .stream-badge.state-paused { background: #3d3216; color: #f2cf6b; }
-:root:is([data-theme="dark"], [data-theme="default"]) .stream-badge.state-streaming { background: #232c52; color: #a9b6ff; }
-:root:is([data-theme="dark"], [data-theme="default"]) .stream-badge.mode-transcode { background: #4a2220; color: #ff9c92; }
-:root:is([data-theme="dark"], [data-theme="default"]) .stream-bar-sent { background: #3b416b; }
-:root:is([data-theme="dark"], [data-theme="default"]) .modal-content,
-:root:is([data-theme="dark"], [data-theme="default"]) .settings-container,
-:root:is([data-theme="dark"], [data-theme="default"]) .user-item,
-:root:is([data-theme="dark"], [data-theme="default"]) .match-hit,
-:root:is([data-theme="dark"], [data-theme="default"]) .match-poster,
-:root:is([data-theme="dark"], [data-theme="default"]) .stream-card {
+/* Dark, Ember and the colored themes: pieces whose light colors aren't theme variables */
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .stream-badge.state-playing { background: #1d3a26; color: #7ee2a0; }
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .stream-badge.state-paused { background: #3d3216; color: #f2cf6b; }
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .stream-badge.state-streaming { background: #232c52; color: #a9b6ff; }
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .stream-badge.mode-transcode { background: #4a2220; color: #ff9c92; }
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .stream-bar-sent { background: #3b416b; }
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .modal-content,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .settings-container,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .user-item,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .match-hit,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .match-poster,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .stream-card {
     color: var(--text-color);
 }
-:root:is([data-theme="dark"], [data-theme="default"]) .settings-input,
-:root:is([data-theme="dark"], [data-theme="default"]) #login-form input,
-:root:is([data-theme="dark"], [data-theme="default"]) .player-controls select {
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .settings-input,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) #login-form input,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"]) .player-controls select {
     background: var(--panel-bg);
     color: var(--text-color);
 }

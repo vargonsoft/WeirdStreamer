@@ -3,6 +3,8 @@ package com.vargon.weirdstreamer.ui.components
 import com.vargon.weirdstreamer.accountLabel
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -119,7 +121,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                         onDismissRequest = { showThemeDialog = false },
                         title = { Text("Select Theme") },
                         text = {
-                            Column {
+                            Column(Modifier.verticalScroll(rememberScrollState())) {
                                 AppTheme.entries.map { it.name to it.label }.forEach { (key, name) ->
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
