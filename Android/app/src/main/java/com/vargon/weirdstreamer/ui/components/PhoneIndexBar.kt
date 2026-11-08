@@ -36,8 +36,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
+import kotlin.math.abs
 
 private val BAR_PADDING = 8.dp
+private const val HOLD_MS = 150L // a finger held this long without moving is on the strip, not swiping back
 
 /**
  * The phone's A–Z strip down the right edge, like the contacts app's: tap a letter, or drag
@@ -82,9 +84,25 @@ fun PhoneIndexBar(entries: List<IndexEntry>, current: Int, onSelect: (Int) -> Un
                 .background(if (touched >= 0) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f) else Color.Transparent,
                     RoundedCornerShape(12.dp))
                 .pointerInput(entries) {
-                    // A touch jumps at once, and follows the finger until it lifts.
+                    // The strip is on the edge Android's back swipe starts from, so a touch waits to
+                    // show what it is: a sideways swipe is the back gesture and does nothing here; a
+                    // tap jumps when it lifts; a drag along the strip, or a finger held still, jumps
+                    // and then follows the finger until it lifts.
                     awaitEachGesture {
                         val down = awaitFirstDown()
+                        val slop = viewConfiguration.touchSlop
+                        while (true) {
+                            val event = withTimeoutOrNull(HOLD_MS) { awaitPointerEvent() } ?: break // held still
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                            val dx = abs(change.position.x - down.position.x)
+                            val dy = abs(change.position.y - down.position.y)
+                            if (!change.pressed) { // lifted: a tap, unless it went sideways
+                                if (dx < slop) select(entryAt(down.position.y))
+                                return@awaitEachGesture
+                            }
+                            if (dx > slop && dx > dy) return@awaitEachGesture // the back swipe
+                            if (dy > slop) break // a drag along the strip
+                        }
                         down.consume()
                         touch(down.position.y)
                         while (true) {
