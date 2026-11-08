@@ -34,3 +34,26 @@ val Typography = Typography(
     )
     */
 )
+// The terminal themes: every style in a monospace font
+private val mono = TextStyle(fontFamily = FontFamily.Monospace)
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+val MonospaceTypography = Typography.run {
+    Typography(
+        displayLarge = displayLarge.merge(mono), displayMedium = displayMedium.merge(mono), displaySmall = displaySmall.merge(mono),
+        headlineLarge = headlineLarge.merge(mono), headlineMedium = headlineMedium.merge(mono), headlineSmall = headlineSmall.merge(mono),
+        titleLarge = titleLarge.merge(mono), titleMedium = titleMedium.merge(mono), titleSmall = titleSmall.merge(mono),
+        bodyLarge = bodyLarge.merge(mono), bodyMedium = bodyMedium.merge(mono), bodySmall = bodySmall.merge(mono),
+        labelLarge = labelLarge.merge(mono), labelMedium = labelMedium.merge(mono), labelSmall = labelSmall.merge(mono),
+    )
+}
+
+val PhoneMonospaceTypography = androidx.compose.material3.Typography().run {
+    androidx.compose.material3.Typography(
+        displayLarge = displayLarge.merge(mono), displayMedium = displayMedium.merge(mono), displaySmall = displaySmall.merge(mono),
+        headlineLarge = headlineLarge.merge(mono), headlineMedium = headlineMedium.merge(mono), headlineSmall = headlineSmall.merge(mono),
+        titleLarge = titleLarge.merge(mono), titleMedium = titleMedium.merge(mono), titleSmall = titleSmall.merge(mono),
+        bodyLarge = bodyLarge.merge(mono), bodyMedium = bodyMedium.merge(mono), bodySmall = bodySmall.merge(mono),
+        labelLarge = labelLarge.merge(mono), labelMedium = labelMedium.merge(mono), labelSmall = labelSmall.merge(mono),
+    )
+}

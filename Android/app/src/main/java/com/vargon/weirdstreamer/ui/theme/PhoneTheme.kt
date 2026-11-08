@@ -55,6 +55,7 @@ fun WeirdStreamerPhoneTheme(
     CompositionLocalProvider(LocalThemeSpec provides appTheme.spec()) {
         MaterialTheme(
             colorScheme = colorScheme,
+            typography = if (p.monospace) PhoneMonospaceTypography else MaterialTheme.typography,
             content = content
         )
     }

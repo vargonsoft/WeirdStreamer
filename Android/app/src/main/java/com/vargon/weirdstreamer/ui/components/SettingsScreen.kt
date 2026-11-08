@@ -164,9 +164,15 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
             // Theme Menu Buttons (when expanded)
             if (themeMenuExpanded) {
                 item {
-                    // Rows of up to 7: Up and Down go between them, Left and Right along each.
+                    // Rows filled by the labels' length (a button is about its label plus 8 characters
+                    // wide, and a row fits about 110): Up and Down go between them, Left and Right along each.
                     val themes = AppTheme.entries.map { Triple(it.name, it.label, themeButtonFocus[it.ordinal]) }
-                    val rows = themes.chunked(7)
+                    val rows = themes.fold(mutableListOf<MutableList<Triple<String, String, FocusRequester>>>()) { rows, theme ->
+                        val last = rows.lastOrNull()
+                        if (last != null && last.sumOf { it.second.length + 8 } + theme.second.length + 8 <= 110) last.add(theme)
+                        else rows.add(mutableListOf(theme))
+                        rows
+                    }
                     rows.forEachIndexed { r, row ->
                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                             row.forEachIndexed { index, (themeKey, themeName, focusReq) ->
@@ -193,7 +199,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                                             right = if (index < row.size - 1) row[index + 1].third else FocusRequester.Default
                                         }
                                 ) {
-                                    Text(themeName)
+                                    Text(themeName, maxLines = 1, softWrap = false)
                                 }
                             }
                         }

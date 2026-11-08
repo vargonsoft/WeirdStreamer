@@ -29,7 +29,9 @@ enum class AppTheme(val label: String) {
     DESERT_BLOOM("Desert Bloom"),
     ARCTIC_BERRY("Arctic Berry"),
     COPPER_SEA("Copper Sea"),
-    NEON_ARCADE("Neon Arcade");
+    NEON_ARCADE("Neon Arcade"),
+    TERMINAL_GREEN("Terminal Green"),
+    TERMINAL_AMBER("Terminal Amber");
 
     /** The theme to draw: Auto as Light or Dark, from the device's setting. */
     @Composable
@@ -111,6 +113,8 @@ private val desertBloomSpec = PaletteThemeSpec(DesertBloomPalette)
 private val arcticBerrySpec = PaletteThemeSpec(ArcticBerryPalette)
 private val copperSeaSpec = PaletteThemeSpec(CopperSeaPalette)
 private val neonArcadeSpec = PaletteThemeSpec(NeonArcadePalette)
+private val terminalGreenSpec = PaletteThemeSpec(TerminalGreenPalette)
+private val terminalAmberSpec = PaletteThemeSpec(TerminalAmberPalette)
 
 val LocalThemeSpec = staticCompositionLocalOf<WeirdStreamerThemeSpec> { DefaultThemeSpec }
 
@@ -142,6 +146,8 @@ fun AppTheme.palette(): ThemePalette = when (resolved()) {
     AppTheme.ARCTIC_BERRY -> ArcticBerryPalette
     AppTheme.COPPER_SEA -> CopperSeaPalette
     AppTheme.NEON_ARCADE -> NeonArcadePalette
+    AppTheme.TERMINAL_GREEN -> TerminalGreenPalette
+    AppTheme.TERMINAL_AMBER -> TerminalAmberPalette
 }
 
 /** The spec (icon tints, boxes, buttons, background image) that goes with a theme, on TV and phone. */
@@ -165,6 +171,8 @@ fun AppTheme.spec(): WeirdStreamerThemeSpec = when (resolved()) {
     AppTheme.ARCTIC_BERRY -> arcticBerrySpec
     AppTheme.COPPER_SEA -> copperSeaSpec
     AppTheme.NEON_ARCADE -> neonArcadeSpec
+    AppTheme.TERMINAL_GREEN -> terminalGreenSpec
+    AppTheme.TERMINAL_AMBER -> terminalAmberSpec
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -203,7 +211,7 @@ fun WeirdStreamerTheme(
     CompositionLocalProvider(LocalThemeSpec provides appTheme.spec()) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = Typography,
+            typography = if (p.monospace) MonospaceTypography else Typography,
             content = content
         )
     }

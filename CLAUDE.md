@@ -334,7 +334,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   theme spec come from it; `Panel`, `tvButtonColors()` and `phoneButtonColors()` in
   `ThemedControls.kt` draw with it. On the phone `surface` is transparent, so lists and bars show
   their box. Both also have Teal, Orange, Brown, Purple, Gray, Yellow and Green, and six of three colors
-  (Harbor Lights, Moss and Rose, Desert Bloom, Arctic Berry, Copper Sea, Neon Arcade), dark themes built like
+  (Harbor Lights, Moss and Rose, Desert Bloom, Arctic Berry, Copper Sea, Neon Arcade), and
+  Terminal Green and Terminal Amber (phosphor on black, all text monospace: `ThemePalette.monospace`), dark themes built like
   Ember with the same colors on each (a `ThemePalette` and a `:root[data-theme=…]` block). Android also has
   Light and Auto Light/Dark (`AppTheme`).
 - **Recently Added:** `showNewAdditions` (`config.yml` or Settings) is `on`, `libraryOnly` or `off`

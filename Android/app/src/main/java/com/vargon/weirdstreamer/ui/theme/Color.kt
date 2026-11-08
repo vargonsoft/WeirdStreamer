@@ -23,6 +23,7 @@ data class ThemePalette(
     val focusOutline: Color = Color.White, // the outline around a focused tile or row (TV)
     val focus: Color = accent, // a focused button (TV), when the accent wouldn't stand out
     val onFocus: Color = onAccent,
+    val monospace: Boolean = false, // all text in a monospace font (the terminal themes)
 )
 
 // Ember (the default): the Weird Streamer logo's aubergine, gold and cream
@@ -298,4 +299,36 @@ val NeonArcadePalette = ThemePalette(
     accent = Color(0xFFB8F04A),
     onAccent = Color(0xFF16161E),
     secondary = Color(0xFF9076D7),
+)
+
+// Terminal Green: an old monitor's green phosphor on black
+val TerminalGreenPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF020802),
+    panel = Color(0xFF061206),
+    raised = Color(0xFF0B200C),
+    button = Color(0xFF0F3A14),
+    buttonLabel = Color(0xFF8CFF9E),
+    text = Color(0xFF8CFF9E),
+    mutedText = Color(0xFF4FC963),
+    accent = Color(0xFF33FF66),
+    onAccent = Color(0xFF021202),
+    secondary = Color(0xFFC8FFD2),
+    monospace = true,
+)
+
+// Terminal Amber: an old monitor's amber phosphor on black
+val TerminalAmberPalette = ThemePalette(
+    isLight = false,
+    background = Color(0xFF080500),
+    panel = Color(0xFF140C00),
+    raised = Color(0xFF221500),
+    button = Color(0xFF3D2600),
+    buttonLabel = Color(0xFFFFC870),
+    text = Color(0xFFFFC870),
+    mutedText = Color(0xFFC98A2E),
+    accent = Color(0xFFFFB000),
+    onAccent = Color(0xFF140C00),
+    secondary = Color(0xFFFFE3A8),
+    monospace = true,
 )
