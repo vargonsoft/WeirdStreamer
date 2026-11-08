@@ -561,10 +561,21 @@
     --progress-label: #140C00;
 }
 
-/* The terminal themes: every piece of text in a monospace font, as on the Android app */
+/* The terminal themes: every piece of text in a monospace font, the same one as the Android app
+   (bundled: some phones' "monospace" isn't one) */
+@font-face {
+    font-family: 'Terminal Mono';
+    src: url('../fonts/DejaVuSansMono.ttf') format('truetype');
+    font-weight: 400;
+}
+@font-face {
+    font-family: 'Terminal Mono';
+    src: url('../fonts/DejaVuSansMono-Bold.ttf') format('truetype');
+    font-weight: 700;
+}
 :root:is([data-theme="terminal-green"], [data-theme="terminal-amber"]) body,
 :root:is([data-theme="terminal-green"], [data-theme="terminal-amber"]) :is(button, input, select, textarea) {
-    font-family: ui-monospace, 'Cascadia Mono', 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+    font-family: 'Terminal Mono', ui-monospace, Menlo, Consolas, monospace;
 }
 
 body {

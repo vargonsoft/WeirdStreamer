@@ -11,3 +11,8 @@ Affero General Public License for more details.
 
 You should have received a copy of the GNU Affero General Public License along with this program,
 in the file LICENSE. If not, see <https://www.gnu.org/licenses/>.
+
+The Terminal themes bundle DejaVu Sans Mono (Android/app/src/main/res/font/dejavu_sans_mono*.ttf
+and Server/web/fonts/DejaVuSansMono*.ttf): Copyright (c) 2003 by Bitstream, Inc. All Rights
+Reserved. Bitstream Vera is a trademark of Bitstream, Inc. DejaVu changes are in public domain.
+Its license is in Server/web/fonts/LICENSE-DejaVu.txt.

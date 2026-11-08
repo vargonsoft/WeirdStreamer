@@ -1,11 +1,13 @@
 package com.vargon.weirdstreamer.ui.theme
 
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Typography
+import com.vargon.weirdstreamer.R
 
 // Set of Material typography styles to start with
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -34,8 +36,12 @@ val Typography = Typography(
     )
     */
 )
-// The terminal themes: every style in a monospace font
-private val mono = TextStyle(fontFamily = FontFamily.Monospace)
+// The terminal themes: every style in a monospace font, our own (DejaVu Sans Mono): some phones'
+// "monospace" isn't one (a Moto G with a font style chosen draws it as a serif).
+private val mono = TextStyle(fontFamily = FontFamily(
+    Font(R.font.dejavu_sans_mono, FontWeight.Normal),
+    Font(R.font.dejavu_sans_mono_bold, FontWeight.Bold),
+))
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 val MonospaceTypography = Typography.run {
