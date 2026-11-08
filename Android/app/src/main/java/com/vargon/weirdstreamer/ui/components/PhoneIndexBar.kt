@@ -4,8 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -21,7 +19,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -32,12 +29,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.findRootCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -65,18 +58,7 @@ fun PhoneIndexBar(entries: List<IndexEntry>, current: Int, onSelect: (Int) -> Un
     val divider = entries.dividerBefore()
     val slots = entries.size + if (divider >= 0) 1 else 0
 
-    // Kept out of the edge Android's back swipe starts from (its width is the system gesture inset,
-    // the back sensitivity setting): touches there go to the back gesture, and the strip moves in
-    // by however much of that edge it would cover.
-    val density = LocalDensity.current
-    val layoutDirection = LocalLayoutDirection.current
-    val backEdge = WindowInsets.systemGestures.getRight(density, layoutDirection)
-    var edgeGap by remember { mutableIntStateOf(0) } // from the strip's right to the window's
-    val inset = with(density) { (backEdge - edgeGap).coerceAtLeast(0).toDp() }
-    Box(modifier.fillMaxHeight().onGloballyPositioned { c ->
-        edgeGap = c.findRootCoordinates().size.width - c.boundsInRoot().right.toInt()
-    }) {
-    BoxWithConstraints(Modifier.padding(end = inset).width(24.dp).fillMaxHeight()) {
+    BoxWithConstraints(modifier.width(24.dp).fillMaxHeight()) {
         val slot: Dp = min(20.dp, (maxHeight - BAR_PADDING * 2) / slots.coerceAtLeast(1))
         val slotPx = with(LocalDensity.current) { slot.toPx() }
         val padPx = with(LocalDensity.current) { BAR_PADDING.toPx() }
@@ -171,6 +153,5 @@ fun PhoneIndexBar(entries: List<IndexEntry>, current: Int, onSelect: (Int) -> Un
                 Text(entries[touched].label, style = MaterialTheme.typography.headlineMedium, color = onAccent)
             }
         }
-    }
     }
 }
