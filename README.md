@@ -50,6 +50,8 @@ and to one Android app that runs on both Android TV and phones.
   show all their pages as thumbnails; the TV also shows two pages side by side. HEIC photos show too
   (see [HEIC photos](#heic-photos)). The web UI shows photos, plays a Live Photo's clip once when it
   opens (LIVE plays it again, with sound), and opens PDFs in the browser.
+- **Themes:** Ember (the default) and 20 others, the same on the web and in the Android app,
+  picked from a grid of previews in Settings › Themes.
 - **The Android app** also browses SMB shares directly, without a server.
 - **Runs at home:** HTTPS with HTTP/2, works behind a reverse proxy such as nginx, and keeps sign-in
   and access logs.
@@ -66,10 +68,11 @@ cd weirdstreamer-*/
 ./setup.sh
 ```
 
-`setup.sh` asks for the server's name, its port and whether to use HTTPS, writes `config.yml`,
-and creates the admin user. It can also install a systemd service that starts the server at boot.
-Then it opens the web UI. Sign in as the admin: Settings opens where you add your libraries and,
-for movie and TV libraries, a TMDB API token.
+`setup.sh` asks for the server's name, its port (9000 unless you pick another) and whether to use
+HTTPS, writes `config.yml`, and creates the admin user. It can also install a systemd service that
+starts the server at boot. Then it opens the web UI. Sign in as the admin: Settings opens where you
+add your libraries (Browse… picks each one's folder on the server) and, for movie and TV
+libraries, a TMDB API token.
 
 Without the service, run `./bin/server` from that folder. The server needs `ffmpeg` and
 `ffprobe` (see [ffmpeg](#ffmpeg) below), and HEIC photos need `heif-convert` (see
@@ -154,7 +157,8 @@ sudo apt install libheif-examples
 The server offers the app for download: use the link on the web UI's sign-in page, or in
 Settings under My Account. The same APK is attached to each release. It needs Android 10 or
 later, and the same app works on Android TV and on phones. Install it from the file
-(sideloading), then add your server by its address.
+(sideloading), then add your server by its name or address. Without a port, the app looks for it on
+9000, 443, 80 and 8080, over HTTPS or HTTP, and saves the address it found.
 
 ## Build from source
 

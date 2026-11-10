@@ -127,9 +127,13 @@ Everything under `/api` except login needs `Authorization: Bearer <token>` from
   `auto-transcode=0`; discs also take `title`, `angle`, `audio` and `subtitle`.
 - `GET /api/library`, `/api/library/title`: the Library view and title pages.
 - `/api/playback/...`: progress sync, watched flags and Continue Watching.
+- `GET /api/media/segments`, `/api/media/upcoming`, `/api/media/trickplay`: a video's intro and
+  credits (and the next episode), the episodes after it (for the phone's Download ahead), and its
+  seek-bar previews.
 - `/api/downloads...`: offline-download encodes.
 - `/api/media/match...`: the Fix dialog (TMDB search, posters, episode mapping).
-- `/api/config`, `/api/users`, `/api/admin/streams`: admin only.
+- `/api/config` (and `/api/config/folders`, the folder picker), `/api/users`, `/api/admin/streams`:
+  admin only.
 - `/thumbnails/`, `/trickplay/`, `/artwork/`: images.
 - `GET /health`, and `GET /local/streams` (active streams, from localhost only).
 
