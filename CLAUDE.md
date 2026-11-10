@@ -67,6 +67,9 @@ for each TODO item are at the end of this file.
     ones have none, and every account sees them). Each download also saves its subtitle tracks (text as WebVTT, PGS as .sup; the
     phone's languages, forced ones and files beside the video) in `subtitles/<id>/`, which
     `ServerSubtitles.forDownload` reads offline (a file's by its `key`, the video's own by index), its intro and credits (`segments/<id>.json`, which `segmentsFor` reads for a `file://` path; offline, Skip Credits goes on to the next downloaded episode) and its trickplay frames (`trickplay/<id>/`, from `GET /api/media/trickplay?path=`). The worker saves them again every 12 hours and when a subtitle is downloaded for the video (`DownloadStore.needsExtras`, `extrasChanged`); older downloads get them on its next run.
+    The server's front page shows the account's finished downloads from it as a Downloads row after Continue
+    Watching and Recently Added, just above the libraries (`PhoneDownloadsRow`); when the server can't be reached (`errorOffline`: an
+    IOException), the phone shows a banner with Retry and that row instead of the error (`PhoneOfflineScreen`).
     Download ahead (Settings › Downloads, off by default; `DownloadAhead.kt`): two minutes into an episode (or at the
     end of a shorter one) the phone asks `GET /api/media/upcoming?path=&count=` for the next episodes and queues
     those not downloaded (`DownloadItem.ahead`), as many as download in about an hour at `DownloadStore.speed`

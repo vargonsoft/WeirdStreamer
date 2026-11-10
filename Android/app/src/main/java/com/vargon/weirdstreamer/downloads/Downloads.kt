@@ -87,6 +87,14 @@ val DownloadItem.episode: DownloadEpisode?
         return DownloadEpisode(show, m.groupValues[2].toInt(), m.groupValues[3].toInt())
     }
 
+/** "Example Show" and "S01E02 · Example Episode", or "Example Movie (2008)" and the file name, as Continue Watching's cards. */
+val DownloadItem.titleLines: Pair<String, String?>
+    get() {
+        val t = title ?: return name to null
+        val m = TITLE_EPISODE.find(t) ?: return t to name
+        return m.groupValues[1] to t.substring(m.groups[2]!!.range.first - 1)
+    }
+
 private fun showKey(name: String) = name.replace(Regex("""[\s._-]+"""), " ").trim().lowercase()
 
 /**

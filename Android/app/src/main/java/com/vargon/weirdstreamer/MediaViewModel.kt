@@ -133,6 +133,14 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
+    /** The error is that the server couldn't be reached (no connection, or it's down): the phone shows its downloads. */
+    var errorOffline by mutableStateOf(false)
+        private set
+
+    /** Whether a server's front page is showing (every library's rows; not a library or folder). */
+    val atFrontPage: Boolean
+        get() = serverRepository?.let { !isLibraryView && it.getParentPath(currentPath) == null } == true
+
     var authRequiredSource by mutableStateOf<MediaSource?>(null)
         private set
 
@@ -681,6 +689,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             isLoading = true
             errorMessage = null
+            errorOffline = false
             authRequiredSource = null
             authTitle = null
             
@@ -754,7 +763,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                if (currentSource == source) errorMessage = e.localizedMessage ?: "Failed to load content"
+                if (currentSource == source) {
+                    errorMessage = e.localizedMessage ?: "Failed to load content"
+                    errorOffline = e is java.io.IOException
+                }
             } finally {
                 isLoading = false
             }

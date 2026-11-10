@@ -4,6 +4,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -202,6 +207,10 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         CircularProgressIndicator()
                     }
                 }
+                // A server that can't be reached: a banner, and what's downloaded from it.
+                viewModel.errorMessage != null && viewModel.errorOffline && currentSource?.typeId == "SERVER" -> {
+                    PhoneOfflineScreen(viewModel) { currentSource?.let { viewModel.loadPath(it, viewModel.currentPath) } }
+                }
                 viewModel.errorMessage != null -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -312,7 +321,10 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
     val letters = remember(items) {
         buildIndex(items, { indexLabel(it.name) }, { if (it.isDirectory) 0 else 1 })
     }
-    val continueCount = if (viewModel.hasTopRows) 1 else 0
+    // The server's front page also has what's downloaded from it.
+    val downloads = rememberReadyDownloads(viewModel).takeIf { viewModel.atFrontPage }.orEmpty()
+    val topRows = viewModel.hasTopRows || downloads.isNotEmpty()
+    val continueCount = if (topRows) 1 else 0
     val folder = viewModel.currentPath
     val gridState = remember(folder) { LazyGridState() }
     val listState = remember(folder) { LazyListState() }
@@ -353,9 +365,9 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (viewModel.hasTopRows) {
+            if (topRows) {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "continue") {
-                    PhoneContinueRow(viewModel, sidePadding = 0.dp)
+                    PhoneContinueRow(viewModel, sidePadding = 0.dp, downloads = downloads)
                 }
             }
             items(items) { item ->
@@ -369,9 +381,10 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
         LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxHeight(),
             contentPadding = PaddingValues(vertical = 8.dp)) {
             // The server's front page leads with what's in progress, in every library.
-            if (viewModel.hasTopRows) {
+            if (topRows) {
                 item(key = "continue") {
-                    PhoneContinueRow(viewModel, Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp), sidePadding = 0.dp)
+                    PhoneContinueRow(viewModel, Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp), sidePadding = 0.dp,
+                        downloads = downloads)
                 }
             }
             items(items) { item ->
@@ -389,6 +402,33 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
             }
         }, Modifier.padding(vertical = 8.dp))
     }
+    }
+}
+
+/**
+ * A server that can't be reached: a banner saying so (with Retry) at the top, then the downloads
+ * from it, ready to play offline.
+ */
+@Composable
+private fun PhoneOfflineScreen(viewModel: MediaViewModel, onRetry: () -> Unit) {
+    val downloads = rememberReadyDownloads(viewModel)
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.secondaryContainer).padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)
+        ) {
+            Icon(Icons.Default.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("The server is offline", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer)
+                Text(if (downloads.isEmpty()) "Nothing from it is downloaded to this phone." else "Your downloads still play.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+            PhoneButton(onClick = onRetry) { Text("Retry") }
+        }
+        PhoneDownloadsRow(viewModel, downloads, sidePadding = 0.dp)
     }
 }
 

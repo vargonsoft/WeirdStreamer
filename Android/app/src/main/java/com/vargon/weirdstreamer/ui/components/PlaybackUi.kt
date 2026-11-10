@@ -30,6 +30,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +44,11 @@ import androidx.compose.ui.unit.dp
 import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.api.models.ContinueItem
 import com.vargon.weirdstreamer.api.models.Playback
+import com.vargon.weirdstreamer.downloads.DownloadItem
+import com.vargon.weirdstreamer.downloads.DownloadStore
+import com.vargon.weirdstreamer.downloads.LocalProgress
+import com.vargon.weirdstreamer.downloads.downloadsInOrder
+import com.vargon.weirdstreamer.downloads.titleLines
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import java.util.Locale
 
@@ -125,12 +133,73 @@ fun timeLeftText(playback: Playback?, duration: Double?): String? {
     return "${((total - p.position) / 60).toInt().coerceAtLeast(1)} min left"
 }
 
-/** Phone: Continue Watching and Recently Added, rows of videos (nothing when there are none). */
+/**
+ * Phone: Continue Watching and Recently Added, rows of videos (nothing when there are none), with
+ * [downloads] (the server's front page) a Downloads row after them.
+ */
 @Composable
-fun PhoneContinueRow(viewModel: MediaViewModel, modifier: Modifier = Modifier, sidePadding: Dp = 16.dp) {
+fun PhoneContinueRow(viewModel: MediaViewModel, modifier: Modifier = Modifier, sidePadding: Dp = 16.dp,
+                     downloads: List<DownloadItem> = emptyList()) {
     Column(modifier = modifier) {
         PhoneVideoRow(viewModel, "Continue Watching", viewModel.continueItems, sidePadding)
         viewModel.newRows.forEach { (heading, items) -> PhoneVideoRow(viewModel, heading, items, sidePadding) }
+        PhoneDownloadsRow(viewModel, downloads, sidePadding)
+    }
+}
+
+/** The account's finished downloads from the server being browsed, in the Downloads list's order, kept current. */
+@Composable
+fun rememberReadyDownloads(viewModel: MediaViewModel): List<DownloadItem> {
+    val all by DownloadStore.items.collectAsState()
+    val server = viewModel.currentSource?.serverAddress
+    return remember(all, server) {
+        downloadsInOrder(DownloadStore.mine(all).filter { d ->
+            d.serverAddress == server && d.state == DownloadItem.State.DONE && d.localFile?.let { java.io.File(it).exists() } == true
+        })
+    }
+}
+
+/** Phone: a row of downloads ready to watch (nothing when there are none); a card plays its file. */
+@Composable
+fun PhoneDownloadsRow(viewModel: MediaViewModel, items: List<DownloadItem>, sidePadding: Dp) {
+    if (items.isEmpty()) return
+    Text("Downloads", style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(start = sidePadding, end = sidePadding, top = 12.dp, bottom = 8.dp))
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = sidePadding)
+    ) {
+        items(items, key = { it.id }) { d -> PhoneDownloadCard(viewModel, d) }
+    }
+}
+
+@Composable
+private fun PhoneDownloadCard(viewModel: MediaViewModel, d: DownloadItem) {
+    val (title, subtitle) = d.titleLines
+    Column(modifier = Modifier.width(200.dp).clickable { viewModel.playDownload(d) }) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(32.dp))
+            val thumb = d.thumbFile?.let { java.io.File(it) }?.takeIf { it.exists() } ?: d.thumbnailUrl
+            if (thumb != null) {
+                coil.compose.AsyncImage(model = thumb, contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+            // Progress played on this phone, offline or not.
+            LocalProgress.get(d.serverAddress, d.sourcePath)?.let { p ->
+                val total = d.durationSeconds
+                WatchProgressOverlay(if (!p.ended && p.position >= 10 && total > 0) (p.position / total).toFloat() else 0f, p.ended)
+            }
+        }
+        Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 6.dp))
+        subtitle?.let {
+            Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
