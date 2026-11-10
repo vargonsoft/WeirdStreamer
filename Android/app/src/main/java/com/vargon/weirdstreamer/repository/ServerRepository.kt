@@ -19,6 +19,9 @@ import com.vargon.weirdstreamer.api.models.LoginRequest
 import com.vargon.weirdstreamer.api.models.TitleDetail
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 
@@ -433,25 +436,44 @@ class ServerSourceProvider(
     override val displayName: String = "WeirdStreamer Server"
     override val addressLabel: String = "Server URL"
     override val addressPlaceholder: String = "myserver or https://myserver:9000"
-    override val addressHint: String = "The default port is $DEFAULT_PORT. Without http:// or https://, the server is asked which it uses."
+    override val addressHint: String = "Without http:// or https://, the server is asked which it uses; without a port too, ports $DEFAULT_PORT, 443, 80 and 8080 are tried."
 
     /**
-     * "myserver" becomes "https://myserver:9000": a missing port is the default, and a missing
-     * scheme is whichever the server answers on, https first (an https server also answers plain
-     * http, with an error, so http alone can't tell).
+     * "myserver" becomes the first address a WeirdStreamer server answers on, in [PROBE_PORTS]
+     * order, https before http on each (an https server also answers plain http, with an error, so
+     * an answer alone can't tell). All are tried at once, so it takes a few seconds at most.
+     * "myserver:9100" tries https and http on that port. An address with a scheme is used as typed (saved
+     * servers come back through here when opened).
      */
     override suspend fun checkAddress(address: String): AddressCheck = withContext(Dispatchers.IO) {
         val typed = address.trim().trimEnd('/')
         if (typed.contains("://")) return@withContext AddressCheck(typed, null)
-        val hostPort = if (hasPort(typed)) typed else "$typed:$DEFAULT_PORT"
-        val client = ApiClient.probeClient()
-        val scheme = listOf("https", "http").firstOrNull { scheme ->
-            runCatching {
-                client.newCall(Request.Builder().url("$scheme://$hostPort/").head().build()).execute().close()
-            }.isSuccess
+        val candidates = if (hasPort(typed)) listOf("https://$typed", "http://$typed")
+        else PROBE_PORTS.flatMap { port ->
+            when (port) {
+                443 -> listOf("https://$typed")
+                80 -> listOf("http://$typed")
+                else -> listOf("https://$typed:$port", "http://$typed:$port")
+            }
         }
-        AddressCheck("${scheme ?: "https"}://$hostPort", scheme != null)
+        val client = ApiClient.probeClient()
+        val answers = coroutineScope { candidates.map { async { probe(client, it) } }.awaitAll() }
+        // A WeirdStreamer server first; else anything that answered (a proxy hiding /api/info).
+        val found = candidates.indices.firstOrNull { answers[it] == Probe.WEIRDSTREAMER }
+            ?: candidates.indices.firstOrNull { answers[it] == Probe.OTHER }
+        if (found != null) AddressCheck(candidates[found], true)
+        else AddressCheck(if (hasPort(typed)) "https://$typed" else "https://$typed:$DEFAULT_PORT", false)
     }
+
+    private enum class Probe { WEIRDSTREAMER, OTHER, NONE }
+
+    /** Whether [base] answers, and as a WeirdStreamer server (its /api/info names it). */
+    private fun probe(client: okhttp3.OkHttpClient, base: String): Probe = runCatching {
+        client.newCall(Request.Builder().url("$base/api/info").build()).execute().use { r ->
+            val named = r.isSuccessful && runCatching { org.json.JSONObject(r.body?.string().orEmpty()).has("name") }.getOrDefault(false)
+            if (named) Probe.WEIRDSTREAMER else Probe.OTHER
+        }
+    }.getOrDefault(Probe.NONE)
 
     private fun hasPort(hostPort: String): Boolean {
         val afterBracket = hostPort.substringAfterLast(']') // [ipv6]:port
@@ -463,6 +485,8 @@ class ServerSourceProvider(
 
     companion object {
         const val DEFAULT_PORT = 9000
+        /** The ports tried for an address without one, in order of preference. */
+        val PROBE_PORTS = listOf(DEFAULT_PORT, 443, 80, 8080)
     }
     override fun getServers(): List<String> = credentialManager.getApiServers().toList()
     override fun addServer(address: String) { credentialManager.addApiServer(address) }
