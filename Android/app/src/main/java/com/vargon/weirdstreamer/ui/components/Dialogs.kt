@@ -121,7 +121,7 @@ fun ManualAddressDialog(initialAddress: String, onDismiss: () -> Unit, onConnect
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onDismiss) { Text("Cancel") }
+                    TvSecondaryButton(onClick = onDismiss) { Text("Cancel") }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { onConnect(address) }) { Text("Connect") }
                 }

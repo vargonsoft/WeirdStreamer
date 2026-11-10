@@ -181,7 +181,7 @@ fun PhoneSubtitleStyleDialog(onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { androidx.compose.material3.TextButton(shape = AppButtonShape, onClick = onDismiss) { androidx.compose.material3.Text("Done") } }
+        confirmButton = { PhoneButton(onClick = onDismiss) { androidx.compose.material3.Text("Done") } }
     )
 }
 

@@ -460,10 +460,10 @@ fun ServerSettingsTab(server: ServerRepository) {
             title = { Text("Rename $old") },
             text = { OutlinedTextField(name, { name = it }, label = { Text("New name") }, singleLine = true) },
             confirmButton = {
-                TextButton(shape = AppButtonShape, onClick = {
+                PhoneButton(onClick = {
                     val new = name.trim()
                     renaming = null
-                    if (new.isEmpty() || new == old) return@TextButton
+                    if (new.isEmpty() || new == old) return@PhoneButton
                     scope.launch {
                         val (list, err) = attempt { server.api.renameGroup(old, JsonObject().apply { addProperty("name", new) }) }
                         if (list != null && err == null) {
@@ -475,7 +475,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                     }
                 }) { Text("Rename") }
             },
-            dismissButton = { TextButton(shape = AppButtonShape, onClick = { renaming = null }) { Text("Cancel") } }
+            dismissButton = { PhoneSecondaryButton(onClick = { renaming = null }) { Text("Cancel") } }
         )
     }
 
@@ -484,8 +484,8 @@ fun ServerSettingsTab(server: ServerRepository) {
             onDismissRequest = { removing = null },
             title = { Text("Remove ${p.name.ifEmpty { "this path" }}?") },
             text = { Text("It's removed from the server's libraries when you save. The files aren't touched.") },
-            confirmButton = { TextButton(shape = AppButtonShape, onClick = { paths.remove(p); removing = null; message = "Removed. Save to apply." to false }) { Text("Remove") } },
-            dismissButton = { TextButton(shape = AppButtonShape, onClick = { removing = null }) { Text("Cancel") } }
+            confirmButton = { PhoneButton(destructive = true, onClick = { paths.remove(p); removing = null; message = "Removed. Save to apply." to false }) { Text("Remove") } },
+            dismissButton = { PhoneSecondaryButton(onClick = { removing = null }) { Text("Cancel") } }
         )
     }
 }
@@ -621,17 +621,17 @@ fun UsersTab(server: ServerRepository) {
             title = { Text("New group") },
             text = { OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true) },
             confirmButton = {
-                TextButton(shape = AppButtonShape, onClick = {
+                PhoneButton(onClick = {
                     val new = name.trim()
                     creatingGroup = false
-                    if (new.isEmpty()) return@TextButton
+                    if (new.isEmpty()) return@PhoneButton
                     scope.launch {
                         val (list, err) = attempt { server.api.createGroup(JsonObject().apply { addProperty("name", new) }) }
                         if (list != null && err == null) { groups = list; newGroup = new } else message = (err ?: "Couldn't add $new") to true
                     }
                 }) { Text("Add") }
             },
-            dismissButton = { TextButton(shape = AppButtonShape, onClick = { creatingGroup = false }) { Text("Cancel") } }
+            dismissButton = { PhoneSecondaryButton(onClick = { creatingGroup = false }) { Text("Cancel") } }
         )
     }
 
@@ -641,16 +641,16 @@ fun UsersTab(server: ServerRepository) {
             title = { Text("Delete ${user.username}?") },
             text = { Text("They won't be able to sign in any more.") },
             confirmButton = {
-                TextButton(shape = AppButtonShape, onClick = {
+                PhoneButton(destructive = true, onClick = {
                     deleting = null
                     scope.launch {
                         val (_, err) = attempt { server.api.deleteUser(user.username) }
                         message = (err ?: "Deleted ${user.username}.") to (err != null)
                         reload()
                     }
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }) { Text("Delete") }
             },
-            dismissButton = { TextButton(shape = AppButtonShape, onClick = { deleting = null }) { Text("Cancel") } }
+            dismissButton = { PhoneSecondaryButton(onClick = { deleting = null }) { Text("Cancel") } }
         )
     }
 }

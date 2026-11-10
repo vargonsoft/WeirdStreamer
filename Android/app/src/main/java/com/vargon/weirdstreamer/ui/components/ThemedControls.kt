@@ -131,6 +131,82 @@ fun phoneButtonColors(): androidx.compose.material3.ButtonColors {
     } else androidx.compose.material3.ButtonDefaults.buttonColors()
 }
 
+/** TV colors for a quieter button (Cancel, Back, Close): the theme's secondary pair; focused, the focus colors like any button. */
+@Composable
+fun tvSecondaryButtonColors(): androidx.tv.material3.ButtonColors {
+    val spec = WeirdStreamerTheme.spec
+    if (!spec.secondaryButtonColor.isSpecified) return tvButtonColors()
+    return androidx.tv.material3.ButtonDefaults.colors(
+        containerColor = spec.secondaryButtonColor,
+        contentColor = spec.secondaryButtonLabel,
+        focusedContainerColor = spec.focusColor,
+        focusedContentColor = spec.focusLabel,
+    )
+}
+
+/** A quieter TV button's outline: the theme's button color, gone while focused (the focus color fills it). */
+@Composable
+fun tvSecondaryButtonBorder(): androidx.tv.material3.ButtonBorder {
+    val spec = WeirdStreamerTheme.spec
+    val outline = if (spec.buttonColor.isSpecified)
+        androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(1.dp, spec.buttonColor), shape = AppButtonShape)
+    else androidx.tv.material3.Border.None
+    return androidx.tv.material3.ButtonDefaults.border(border = outline, focusedBorder = androidx.tv.material3.Border.None)
+}
+
+/** A TV dialog's quieter button (Cancel, Back, Close), beside its main one in [tvButtonColors]. */
+@Composable
+fun TvSecondaryButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) = androidx.tv.material3.Button(onClick = onClick, modifier = modifier, shape = tvButtonShape(),
+    colors = tvSecondaryButtonColors(), border = tvSecondaryButtonBorder(), content = content)
+
+/** Phone colors for a quieter button: the theme's secondary pair, or Material's tonal one. */
+@Composable
+fun phoneSecondaryButtonColors(): androidx.compose.material3.ButtonColors {
+    val spec = WeirdStreamerTheme.spec
+    return if (spec.secondaryButtonColor.isSpecified) {
+        androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = spec.secondaryButtonColor, contentColor = spec.secondaryButtonLabel)
+    } else androidx.compose.material3.ButtonDefaults.filledTonalButtonColors()
+}
+
+/**
+ * A phone dialog's main button (OK, Save, Login): filled in the theme's button color, or in
+ * Material's error colors when it deletes or removes something ([destructive], like the web's
+ * red Remove buttons).
+ */
+@Composable
+fun PhoneButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    destructive: Boolean = false,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) {
+    val scheme = androidx.compose.material3.MaterialTheme.colorScheme
+    androidx.compose.material3.Button(onClick = onClick, modifier = modifier, enabled = enabled, shape = AppButtonShape,
+        colors = if (destructive) androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = scheme.errorContainer, contentColor = scheme.onErrorContainer)
+            else phoneButtonColors(),
+        content = content)
+}
+
+/** A phone dialog's quieter button (Cancel, Keep, Close): the theme's secondary pair, outlined in its button color. */
+@Composable
+fun PhoneSecondaryButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) {
+    val spec = WeirdStreamerTheme.spec
+    androidx.compose.material3.Button(onClick = onClick, modifier = modifier, enabled = enabled, shape = AppButtonShape,
+        colors = phoneSecondaryButtonColors(),
+        border = if (spec.buttonColor.isSpecified) androidx.compose.foundation.BorderStroke(1.dp, spec.buttonColor) else null,
+        content = content)
+}
+
 /**
  * TV text field colors from the theme. The fields are the phone's Material 3 ones, which would
  * otherwise draw with Material's light defaults (a pale box under the theme's cream text).

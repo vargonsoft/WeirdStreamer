@@ -158,14 +158,14 @@ private fun RemoveDownloadDialog(download: DownloadItem, onDismiss: () -> Unit) 
             title = { Text("Download failed") },
             text = { Text("$name\n\n${download.error ?: "Unknown error"}") },
             confirmButton = {
-                TextButton(shape = AppButtonShape, onClick = {
+                PhoneButton(onClick = {
                     DownloadStore.update(download.id) { it.copy(state = DownloadItem.State.QUEUED, error = null, progress = 0f) }
                     DownloadWorker.schedule(context)
                     onDismiss()
                 }) { Text("Retry") }
             },
             dismissButton = {
-                TextButton(shape = AppButtonShape, onClick = { DownloadStore.remove(download.id); onDismiss() }) { Text("Remove") }
+                PhoneSecondaryButton(onClick = { DownloadStore.remove(download.id); onDismiss() }) { Text("Remove") }
             }
         )
         else -> {
@@ -178,11 +178,11 @@ private fun RemoveDownloadDialog(download: DownloadItem, onDismiss: () -> Unit) 
                     else "$name will stop downloading.")
                 },
                 confirmButton = {
-                    TextButton(shape = AppButtonShape, onClick = { DownloadStore.remove(download.id); onDismiss() }) {
-                        Text(if (done) "Delete" else "Cancel download", color = MaterialTheme.colorScheme.error)
+                    PhoneButton(destructive = true, onClick = { DownloadStore.remove(download.id); onDismiss() }) {
+                        Text(if (done) "Delete" else "Cancel download")
                     }
                 },
-                dismissButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text(if (done) "Keep" else "Keep downloading") } }
+                dismissButton = { PhoneSecondaryButton(onClick = onDismiss) { Text(if (done) "Keep" else "Keep downloading") } }
             )
         }
     }
@@ -307,7 +307,7 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
         },
         confirmButton = {
             if (pending.isNotEmpty()) {
-                TextButton(shape = AppButtonShape, onClick = {
+                PhoneButton(onClick = {
                     DownloadStore.add(pending.map { r ->
                         DownloadItem(
                             serverAddress = server.address,
@@ -333,7 +333,7 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
                 }) { Text("Download") }
             }
         },
-        dismissButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text(if (pending.isEmpty()) "OK" else "Cancel") } }
+        dismissButton = { PhoneSecondaryButton(onClick = onDismiss) { Text(if (pending.isEmpty()) "OK" else "Cancel") } }
     )
 }
 
@@ -578,13 +578,13 @@ fun DownloadFolderDialog(viewModel: MediaViewModel, onDismiss: () -> Unit) {
             title = { Text("Finding videos…") },
             text = { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } },
             confirmButton = {},
-            dismissButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text("Cancel") } }
+            dismissButton = { PhoneSecondaryButton(onClick = onDismiss) { Text("Cancel") } }
         )
         requests.isEmpty() -> AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text("No videos here") },
             text = { Text("This folder has no videos to download.") },
-            confirmButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text("OK") } }
+            confirmButton = { PhoneButton(onClick = onDismiss) { Text("OK") } }
         )
         else -> DownloadQualityDialog(viewModel, requests, onDismiss)
     }

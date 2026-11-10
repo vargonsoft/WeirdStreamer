@@ -281,7 +281,7 @@ fun SubtitleDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    Button(shape = tvButtonShape(), colors = tvButtonColors(),
+                    TvSecondaryButton(
                         onClick = onDismiss
                     ) {
                         Text("Close")
@@ -352,7 +352,7 @@ fun OnlineSubtitlesDialog(
                     }
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onDismiss) { Text("Close") }
+                    TvSecondaryButton(onClick = onDismiss) { Text("Close") }
                 }
             }
         }

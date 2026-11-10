@@ -203,13 +203,13 @@ fun PhoneResumeDialog(viewModel: MediaViewModel) {
                     Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp))
                 }
-                androidx.compose.material3.FilledTonalButton(shape = AppButtonShape, onClick = { viewModel.chooseResume(false) },
+                PhoneButton(onClick = { viewModel.chooseResume(false) },
                     modifier = Modifier.fillMaxWidth()) {
                     Icon(androidx.compose.material.icons.Icons.Default.PlayArrow, contentDescription = null)
                     androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
                     Text("Resume from ${clockText(resumeAt)}")
                 }
-                androidx.compose.material3.OutlinedButton(shape = AppButtonShape, onClick = { viewModel.chooseResume(true) },
+                PhoneSecondaryButton(onClick = { viewModel.chooseResume(true) },
                     modifier = Modifier.fillMaxWidth()) {
                     Icon(androidx.compose.material.icons.Icons.Default.Replay, contentDescription = null)
                     androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
@@ -218,7 +218,7 @@ fun PhoneResumeDialog(viewModel: MediaViewModel) {
             }
         },
         confirmButton = {},
-        dismissButton = { androidx.compose.material3.TextButton(shape = AppButtonShape, onClick = { viewModel.chooseResume(null) }) { Text("Cancel") } }
+        dismissButton = { PhoneSecondaryButton(onClick = { viewModel.chooseResume(null) }) { Text("Cancel") } }
     )
 }
 

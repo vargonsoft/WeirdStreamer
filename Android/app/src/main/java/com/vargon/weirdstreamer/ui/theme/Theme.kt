@@ -56,6 +56,9 @@ interface WeirdStreamerThemeSpec {
     /** Buttons and their labels (`tvButtonColors`, `phoneButtonColors`). */
     val buttonColor: Color get() = Color.Unspecified
     val buttonLabel: Color get() = Color.Unspecified
+    /** Quieter buttons (Cancel, Keep, Back), outlined in [buttonColor] (`tvSecondaryButtonColors`, `phoneSecondaryButtonColors`). */
+    val secondaryButtonColor: Color get() = Color.Unspecified
+    val secondaryButtonLabel: Color get() = Color.Unspecified
     /** Settings headings (the web's --heading-color). */
     val headingColor: Color get() = Color.Unspecified
     /** A focused TV button (a hovered one on the web). */
@@ -87,6 +90,8 @@ class PaletteThemeSpec(p: ThemePalette, override val backgroundImage: Int? = nul
     override val panelAlpha = p.panelAlpha
     override val buttonColor = p.button
     override val buttonLabel = p.buttonLabel
+    override val secondaryButtonColor = p.buttonSecondary
+    override val secondaryButtonLabel = p.buttonSecondaryLabel
     override val headingColor = p.accent
     override val focusColor = p.focus
     override val focusLabel = p.onFocus

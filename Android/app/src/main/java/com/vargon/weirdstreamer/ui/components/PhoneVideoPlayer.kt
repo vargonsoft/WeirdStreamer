@@ -1104,7 +1104,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                                 .padding(top = 16.dp),
                             horizontalArrangement = Arrangement.End
                         ) {
-                            TextButton(shape = AppButtonShape, onClick = { showSpeedDialog = false }) {
+                            PhoneSecondaryButton(onClick = { showSpeedDialog = false }) {
                                 Text("Cancel")
                             }
                         }
@@ -1281,7 +1281,7 @@ private fun PhoneSubtitleSearchDialog(subs: ServerSubtitles, onDismiss: () -> Un
                 }
             }
         },
-        confirmButton = { TextButton(shape = AppButtonShape, onClick = onDismiss) { Text("Close") } }
+        confirmButton = { PhoneSecondaryButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 

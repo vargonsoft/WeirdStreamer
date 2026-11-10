@@ -142,7 +142,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                             }
                         },
                         confirmButton = {
-                            TextButton(shape = AppButtonShape, onClick = { showThemeDialog = false }) { Text("Close") }
+                            PhoneSecondaryButton(onClick = { showThemeDialog = false }) { Text("Close") }
                         }
                     )
                 }
@@ -238,14 +238,14 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                                 title = { Text("Remove server?") },
                                 text = { Text(removeServerWarning(address, users)) },
                                 confirmButton = {
-                                    TextButton(shape = AppButtonShape, onClick = {
+                                    PhoneButton(destructive = true, onClick = {
                                         confirmRemove = false
                                         val isCurrent = address == viewModel.currentSource?.serverAddress
                                         viewModel.removeServer(provider, address)
                                         if (isCurrent) onBack()
                                     }) { Text("Remove") }
                                 },
-                                dismissButton = { TextButton(shape = AppButtonShape, onClick = { confirmRemove = false }) { Text("Cancel") } }
+                                dismissButton = { PhoneSecondaryButton(onClick = { confirmRemove = false }) { Text("Cancel") } }
                             )
                         }
                     }

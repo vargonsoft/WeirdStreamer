@@ -39,6 +39,8 @@
     --button-hover: #3b4285;
     --progress-color: #6c7ae0; /* progress lines on thumbnails, the watched check */
     --progress-label: #ffffff;
+    --button-secondary-bg: #333659; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #e4e4ea;
 }
 
 /* Ember, the default: the Weird Streamer logo's aubergine, gold and cream */
@@ -70,6 +72,8 @@
     --placeholder-gradient: linear-gradient(135deg, #4A2A45 0%, #321B2F 100%); /* missing thumbnails and posters */
     --progress-color: #F6C445; /* progress lines on thumbnails, the watched check */
     --progress-label: #321B2F;
+    --button-secondary-bg: #4F2C49; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #FFF2D8;
 }
 
 :root[data-theme="cinema-blue"] {
@@ -82,6 +86,8 @@
     --surface-hover: #3B82F6;
     --progress-color: #FBB024; /* progress lines on thumbnails, the watched check */
     --progress-label: #0F172A;
+    --button-secondary-bg: #DCE4F7; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #1E3A8A;
 }
 
 :root[data-theme="cinema-red"] {
@@ -94,6 +100,8 @@
     --surface-hover: #DC2626;
     --progress-color: #FBB024; /* progress lines on thumbnails, the watched check */
     --progress-label: #7F1D1D;
+    --button-secondary-bg: #F7DCDC; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #7F1D1D;
 }
 
 /* Teal: deep sea teal with aqua (the Android theme's colors) */
@@ -125,6 +133,8 @@
     --placeholder-gradient: linear-gradient(135deg, #1B4443 0%, #123130 100%);
     --progress-color: #5EEAD4;
     --progress-label: #0B2423;
+    --button-secondary-bg: #1A4947; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #E4F5F3;
 }
 
 /* Orange: burnt orange with tangerine (the Android theme's colors) */
@@ -156,6 +166,8 @@
     --placeholder-gradient: linear-gradient(135deg, #4A2D18 0%, #331E10 100%);
     --progress-color: #FFA24A;
     --progress-label: #2B1607;
+    --button-secondary-bg: #5C3417; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #FFF0E0;
 }
 
 /* Brown: coffee brown with caramel (the Android theme's colors) */
@@ -187,6 +199,8 @@
     --placeholder-gradient: linear-gradient(135deg, #423226 0%, #2D2219 100%);
     --progress-color: #E3B676;
     --progress-label: #2D2219;
+    --button-secondary-bg: #4C3829; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #F5EADC;
 }
 
 /* Purple: violet with lavender (the Android theme's colors) */
@@ -218,6 +232,8 @@
     --placeholder-gradient: linear-gradient(135deg, #322556 0%, #23193B 100%);
     --progress-color: #C3A6FF;
     --progress-label: #1E1436;
+    --button-secondary-bg: #392B62; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #EEE8FF;
 }
 
 /* Gray: charcoal with silver (the Android theme's colors) */
@@ -249,6 +265,8 @@
     --placeholder-gradient: linear-gradient(135deg, #313437 0%, #232527 100%);
     --progress-color: #DDE2E7;
     --progress-label: #232527;
+    --button-secondary-bg: #373A3D; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #EFF1F3;
 }
 
 /* Yellow: dark olive with sunflower (the Android theme's colors) */
@@ -280,6 +298,8 @@
     --placeholder-gradient: linear-gradient(135deg, #3F3A10 0%, #2B2809 100%);
     --progress-color: #FFE04D;
     --progress-label: #2B2809;
+    --button-secondary-bg: #4A4410; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #FFF9DA;
 }
 
 /* Green: forest green with lime (the Android theme's colors) */
@@ -311,6 +331,8 @@
     --placeholder-gradient: linear-gradient(135deg, #213F26 0%, #162B19 100%);
     --progress-color: #93E27D;
     --progress-label: #12261A;
+    --button-secondary-bg: #234A29; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #E8F6E9;
 }
 
 /* Harbor Lights: navy boxes, brick buttons and lamp gold (the Android theme's colors) */
@@ -342,6 +364,8 @@
     --placeholder-gradient: linear-gradient(135deg, #322A39 0%, #14243D 100%);
     --progress-color: #F2B544;
     --progress-label: #14243D;
+    --button-secondary-bg: #4D2F36; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #F3EAD8;
 }
 
 /* Moss and Rose: forest boxes, dusty rose buttons and cream gold (the Android theme's colors) */
@@ -373,6 +397,8 @@
     --placeholder-gradient: linear-gradient(135deg, #393A36 0%, #1D372B 100%);
     --progress-color: #F1D49B;
     --progress-label: #1D372B;
+    --button-secondary-bg: #533D40; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #F4EEDF;
 }
 
 /* Desert Bloom: plum-brown boxes, terracotta buttons and turquoise (the Android theme's colors) */
@@ -404,6 +430,8 @@
     --placeholder-gradient: linear-gradient(135deg, #542C2B 0%, #38202B 100%);
     --progress-color: #4FD1C5;
     --progress-label: #1E0F17;
+    --button-secondary-bg: #6D362B; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #FBEDE3;
 }
 
 /* Arctic Berry: slate blue boxes, raspberry buttons and ice mint (the Android theme's colors) */
@@ -435,6 +463,8 @@
     --placeholder-gradient: linear-gradient(135deg, #402B4A 0%, #1F2A44 100%);
     --progress-color: #9BE7D8;
     --progress-label: #10172A;
+    --button-secondary-bg: #5E2C4F; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #EEF2FA;
 }
 
 /* Copper Sea: deep teal boxes, copper buttons and sand (the Android theme's colors) */
@@ -466,6 +496,8 @@
     --placeholder-gradient: linear-gradient(135deg, #324238 0%, #0F3B3A 100%);
     --progress-color: #EAD7A1;
     --progress-label: #0F3B3A;
+    --button-secondary-bg: #524735; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #F1EBDD;
 }
 
 /* Neon Arcade: charcoal boxes, electric violet buttons and lime (the Android theme's colors) */
@@ -497,6 +529,8 @@
     --placeholder-gradient: linear-gradient(135deg, #2C234D 0%, #1D1D26 100%);
     --progress-color: #B8F04A;
     --progress-label: #16161E;
+    --button-secondary-bg: #3A2970; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #F1EEFF;
 }
 
 /* Terminal Green: an old monitor's green phosphor on black (the Android theme's colors) */
@@ -528,6 +562,8 @@
     --placeholder-gradient: linear-gradient(135deg, #0B200C 0%, #061206 100%);
     --progress-color: #33FF66;
     --progress-label: #021202;
+    --button-secondary-bg: #0B260D; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #8CFF9E;
 }
 
 /* Terminal Amber: an old monitor's amber phosphor on black (the Android theme's colors) */
@@ -559,6 +595,8 @@
     --placeholder-gradient: linear-gradient(135deg, #221500 0%, #140C00 100%);
     --progress-color: #FFB000;
     --progress-label: #140C00;
+    --button-secondary-bg: #291900; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #FFC870;
 }
 
 /* The terminal themes: every piece of text in a monospace font, the same one as the Android app
@@ -1475,8 +1513,30 @@ header h1 {
     color: #e74c3c;
 }
 
+/* A quieter button: each theme's --button-secondary-bg and -text, outlined in its button color;
+   hovered, it takes the focus colors like any button (.btn:hover). */
 .btn-secondary {
-    background: #888;
+    background: var(--button-secondary-bg, #888);
+    color: var(--button-secondary-text, white);
+    box-shadow: inset 0 0 0 1px var(--button-bg, var(--primary-color));
+}
+
+/* Settings, Media Paths: a new library's folder, Browse…, its type and Add Path, all one height */
+.new-path-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.new-path-row #new-path-input {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+.new-path-row > * {
+    margin: 0;
 }
 
 /* Folder picker (Settings, Media Paths) */

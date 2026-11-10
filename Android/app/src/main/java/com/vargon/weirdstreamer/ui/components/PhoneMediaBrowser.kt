@@ -239,9 +239,9 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             title = { Text("Regenerate thumbnails?") },
             text = { Text("Thumbnails for this folder are made again on the server.") },
             confirmButton = {
-                TextButton(shape = AppButtonShape, onClick = { showRegenerateDialog = false; viewModel.regenerateThumbnails() }) { Text("Regenerate") }
+                PhoneButton(onClick = { showRegenerateDialog = false; viewModel.regenerateThumbnails() }) { Text("Regenerate") }
             },
-            dismissButton = { TextButton(shape = AppButtonShape, onClick = { showRegenerateDialog = false }) { Text("Cancel") } }
+            dismissButton = { PhoneSecondaryButton(onClick = { showRegenerateDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -452,13 +452,13 @@ private fun PhoneAddSourceDialog(
         },
         confirmButton = {
             if (selectedProvider != null) {
-                TextButton(shape = AppButtonShape, onClick = { if (address.isNotBlank()) onAdd(selectedProvider!!, address) }) {
+                PhoneButton(onClick = { if (address.isNotBlank()) onAdd(selectedProvider!!, address) }) {
                     Text("Add")
                 }
             }
         },
         dismissButton = {
-            TextButton(shape = AppButtonShape, onClick = {
+            PhoneSecondaryButton(onClick = {
                 if (selectedProvider == null) onDismiss()
                 else selectedProvider = null
             }) {
@@ -507,12 +507,12 @@ private fun PhoneAuthDialog(host: String, onDismiss: () -> Unit, initialUsername
             }
         },
         confirmButton = {
-            TextButton(shape = AppButtonShape, onClick = { onLogin(username, password, savePassword) }) {
+            PhoneButton(onClick = { onLogin(username, password, savePassword) }) {
                 Text("Login")
             }
         },
         dismissButton = {
-            TextButton(shape = AppButtonShape, onClick = onDismiss) {
+            PhoneSecondaryButton(onClick = onDismiss) {
                 Text("Cancel")
             }
         }

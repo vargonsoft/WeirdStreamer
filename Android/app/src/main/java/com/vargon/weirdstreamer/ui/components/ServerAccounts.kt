@@ -237,7 +237,7 @@ private fun TvSignOutDialog(user: String, server: String, onDismiss: () -> Unit,
                 androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
                     androidx.tv.material3.Text("Sign out")
                 }
-                androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onDismiss,
+                TvSecondaryButton(onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth().focusRequester(cancelRequester)) {
                     androidx.tv.material3.Text("Cancel")
                 }
@@ -262,7 +262,7 @@ fun TvRemoveServerDialog(address: String, users: List<String>, onDismiss: () -> 
                 androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onRemove, modifier = Modifier.fillMaxWidth()) {
                     androidx.tv.material3.Text("Remove")
                 }
-                androidx.tv.material3.Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onDismiss,
+                TvSecondaryButton(onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth().focusRequester(cancelRequester)) {
                     androidx.tv.material3.Text("Cancel")
                 }

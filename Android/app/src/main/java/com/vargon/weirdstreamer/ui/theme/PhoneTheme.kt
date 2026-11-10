@@ -21,7 +21,7 @@ fun WeirdStreamerPhoneTheme(
             primary = p.accent, onPrimary = p.onAccent,
             primaryContainer = p.raised, onPrimaryContainer = p.text,
             secondary = p.secondary, onSecondary = p.background,
-            secondaryContainer = p.button, onSecondaryContainer = p.buttonLabel,
+            secondaryContainer = p.buttonSecondary, onSecondaryContainer = p.buttonSecondaryLabel, // tonal buttons: the quieter ones
             tertiary = p.accent, onTertiary = p.onAccent,
             background = p.background, onBackground = p.text,
             surface = Color.Transparent, onSurface = p.text,
@@ -38,7 +38,7 @@ fun WeirdStreamerPhoneTheme(
             primary = p.accent, onPrimary = p.onAccent,
             primaryContainer = p.raised, onPrimaryContainer = p.text,
             secondary = p.secondary, onSecondary = p.background,
-            secondaryContainer = p.button, onSecondaryContainer = p.buttonLabel,
+            secondaryContainer = p.buttonSecondary, onSecondaryContainer = p.buttonSecondaryLabel, // tonal buttons: the quieter ones
             tertiary = p.accent, onTertiary = p.onAccent,
             background = p.background, onBackground = p.text,
             surface = Color.Transparent, onSurface = p.text,

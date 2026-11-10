@@ -346,7 +346,7 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   background (boxes, buttons, text and one accent for focus, headings and icons; `panelAlpha` makes
   Cinema Blue's boxes see-through over its film reel). The TV and phone color schemes and the
   theme spec come from it; `Panel`, `tvButtonColors()` and `phoneButtonColors()` in
-  `ThemedControls.kt` draw with it. On the phone `surface` is transparent, so lists and bars show
+  `ThemedControls.kt` draw with it. Quieter buttons (Cancel, Keep, Close, Back) are secondary: each theme's `--button-secondary-bg` / `-text` on the web (`.btn-secondary`), and `ThemePalette.buttonSecondary` / `buttonSecondaryLabel` on Android (worked out from the box and button colors), outlined in the button color: `TvSecondaryButton` on the TV, `PhoneSecondaryButton` beside `PhoneButton` (the filled main action; `destructive` for deleting or removing) in phone dialogs, and the phone's tonal buttons. On the phone `surface` is transparent, so lists and bars show
   their box. Both also have Teal, Orange, Brown, Purple, Gray, Yellow and Green, and six of three colors
   (Harbor Lights, Moss and Rose, Desert Bloom, Arctic Berry, Copper Sea, Neon Arcade), and
   Terminal Green and Terminal Amber (phosphor on black, all text monospace: `ThemePalette.monospace`), dark themes built like

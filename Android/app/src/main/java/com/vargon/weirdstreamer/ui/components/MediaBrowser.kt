@@ -359,7 +359,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                     Text("Are you sure you want to regenerate all thumbnails in this folder? This may take some time.")
                     Spacer(modifier = Modifier.height(24.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { showRegenerateThumbnailsDialog = false }) {
+                        TvSecondaryButton(onClick = { showRegenerateThumbnailsDialog = false }) {
                             Text("Cancel")
                         }
                         Spacer(modifier = Modifier.width(16.dp))
@@ -465,7 +465,7 @@ private fun MainAddSourceDialog(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                     }
-                    Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                    TvSecondaryButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                         Text("Cancel")
                     }
                 } else {
@@ -518,9 +518,9 @@ private fun MainAddSourceDialog(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { selectedProvider = null; address = "" }) { Text("Back") }
+                        TvSecondaryButton(onClick = { selectedProvider = null; address = "" }) { Text("Back") }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onDismiss) { Text("Cancel") }
+                        TvSecondaryButton(onClick = onDismiss) { Text("Cancel") }
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = {
                                 if (address.isNotBlank()) onAdd(provider, check?.url ?: address)

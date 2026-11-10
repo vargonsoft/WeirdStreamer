@@ -102,9 +102,9 @@
                         <h3>Media Paths</h3>
                         <p id="no-libraries-hint" class="settings-hint" hidden>No libraries yet. Add a folder of media below (each one is a library), choose which groups can see it, then Save Settings.</p>
                         <div id="media-paths-list"></div>
-                        <div style="margin-top: 10px;">
+                        <div class="new-path-row">
                             <input type="text" id="new-path-input" placeholder="/path/to/media" class="settings-input">
-                            <button type="button" id="browse-path-btn" class="btn btn-secondary" data-icon="folder"><span class="btn-label">Browse…</span></button>
+                            <button type="button" id="browse-path-btn" class="btn" data-icon="folder"><span class="btn-label">Browse…</span></button>
                             <select id="new-path-type" class="settings-input" title="Library type">
                                 <option value="">No type</option>
                                 <option value="movie">Movies</option>
@@ -432,7 +432,7 @@
             <span id="folder-close" class="match-close">&times;</span>
             <h2>Choose a folder</h2>
             <form id="folder-go" class="folder-go">
-                <button type="button" id="folder-up" class="btn btn-secondary" data-icon="arrowUpward" title="Up a folder" aria-label="Up a folder"></button>
+                <button type="button" id="folder-up" class="btn" data-icon="arrowUpward" title="Up a folder" aria-label="Up a folder"></button>
                 <input type="text" id="folder-path" class="settings-input" autocomplete="off" spellcheck="false" aria-label="Folder">
                 <button type="submit" class="btn">Go</button>
             </form>

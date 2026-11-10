@@ -1,6 +1,7 @@
 package com.vargon.weirdstreamer.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 /**
  * A theme's colors, all built from its background: boxes a step lighter (darker, in a light
@@ -24,7 +25,33 @@ data class ThemePalette(
     val focus: Color = accent, // a focused button (TV), when the accent wouldn't stand out
     val onFocus: Color = onAccent,
     val monospace: Boolean = false, // all text in a monospace font (the terminal themes)
-)
+) {
+    private val secondaryButton by lazy { secondaryButton(panel, button, buttonLabel, text) }
+
+    /**
+     * Quieter buttons (Cancel, Keep, Back) and their labels, outlined in [button]: the web's
+     * --button-secondary-bg and -text, worked out the same way, from this palette's box.
+     */
+    val buttonSecondary: Color get() = secondaryButton.first
+    val buttonSecondaryLabel: Color get() = secondaryButton.second
+}
+
+/**
+ * A secondary button's fill and label: 40% of the way from the box to a button, with the button's
+ * label (or the text, whichever reads better), moved back toward the box until the label has at
+ * least 4.5:1 contrast (WCAG AA).
+ */
+private fun secondaryButton(panel: Color, button: Color, label: Color, text: Color): Pair<Color, Color> {
+    fun mix(a: Color, b: Color, t: Float) = Color(a.red + (b.red - a.red) * t, a.green + (b.green - a.green) * t, a.blue + (b.blue - a.blue) * t)
+    fun contrast(a: Color, b: Color): Float {
+        val (hi, lo) = listOf(a.luminance(), b.luminance()).sortedDescending()
+        return (hi + 0.05f) / (lo + 0.05f)
+    }
+    var fill = mix(panel, button, 0.40f)
+    val onFill = listOf(label, text).maxBy { contrast(it, fill) }
+    repeat(8) { if (contrast(onFill, fill) < 4.5f) fill = mix(fill, panel, 0.25f) }
+    return fill to onFill
+}
 
 // Ember (the default): the Weird Streamer logo's aubergine, gold and cream
 val EmberPalette = ThemePalette(
