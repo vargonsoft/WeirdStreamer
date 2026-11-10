@@ -1306,7 +1306,7 @@ private fun PhoneSubtitleTiming(offsetMs: Int, onShift: (Int) -> Unit, onClose: 
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 SUBTITLE_STEPS.forEach { ms ->
-                    FilterChip(selected = ms == step, onClick = { step = ms }, shape = AppButtonShape,
+                    FilterChip(colors = phoneChipColors(), selected = ms == step, border = phoneChipBorder(ms == step), onClick = { step = ms }, shape = AppButtonShape,
                         label = { Text(subtitleStepText(ms)) })
                 }
             }

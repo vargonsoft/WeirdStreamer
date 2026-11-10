@@ -2515,6 +2515,7 @@ async function showSettings(pushHistory = true) {
 
             // Render the groups and media paths
             renderGroups();
+            editingPaths.clear(); // opening Settings: every library as it is
             renderMediaPaths(config.media.paths);
             document.getElementById('add-group-btn').onclick = handleAddGroup;
             document.getElementById('new-group-input').onkeydown = (e) => { if (e.key === 'Enter') handleAddGroup(); };
@@ -2750,14 +2751,51 @@ function setMediaPathType(mediaPath, type) {
     }
 }
 
+// The libraries being edited (by index): the others show what they are, with an Edit button, so
+// a stray click can't change one. A library just added opens for editing.
+const editingPaths = new Set();
+
+// A library as it is, read-only: its name and folder, then its type, groups and rows.
+function mediaPathSummary(mediaPath, index) {
+    const div = el('div', 'media-path');
+    const head = el('div', 'media-path-head');
+    const names = el('div', 'media-path-names');
+    names.append(el('div', 'media-path-name', mediaPath.name || '(no name)'), el('div', 'media-path-folder', mediaPath.path));
+    const edit = el('button', 'btn btn-small');
+    edit.type = 'button';
+    edit.dataset.icon = 'edit';
+    edit.innerHTML = iconSvg('edit') + '<span class="btn-label">Edit</span>';
+    edit.onclick = () => { editingPaths.add(index); renderMediaPaths(state.currentConfig.media.paths); };
+    head.append(names, edit);
+    // A label and its value per row: the type, the groups (as chips) and where its rows show.
+    const details = el('dl', 'media-path-details');
+    const row = (term, value) => {
+        const dd = el('dd');
+        if (typeof value === 'string') dd.textContent = value; else dd.appendChild(value);
+        details.append(el('dt', '', term), dd);
+    };
+    const where = { on: 'Home screen and library', libraryOnly: 'Library only', off: 'Off' };
+    row('Type', (LIBRARY_TYPES.find(o => o.value === (mediaPath.type || '')) || LIBRARY_TYPES[0]).label);
+    const chips = el('span', 'media-path-chips');
+    (mediaPath.groups || []).forEach(g => chips.appendChild(el('span', 'media-path-chip', g)));
+    row('Groups', (mediaPath.groups || []).length ? chips : 'None (no one sees it)');
+    row('Continue Watching', where[mediaPath.continueWatchingMode || 'on'] || mediaPath.continueWatchingMode);
+    row('Recently Added', where[mediaPath.showNewAdditions || 'off'] || mediaPath.showNewAdditions);
+    div.append(head, details);
+    return div;
+}
+
 function renderMediaPaths(paths) {
     const pathsList = document.getElementById('media-paths-list');
     pathsList.innerHTML = '';
     document.getElementById('no-libraries-hint').hidden = paths.length > 0;
     
     paths.forEach((mediaPath, index) => {
-        const div = document.createElement('div');
-        div.style.cssText = 'margin-bottom: 12px; padding: 10px; background: var(--card-bg); border-radius: 5px;';
+        if (!editingPaths.has(index)) {
+            pathsList.appendChild(mediaPathSummary(mediaPath, index));
+            return;
+        }
+        const div = el('div', 'media-path editing');
         
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
@@ -2854,8 +2892,16 @@ function renderMediaPaths(paths) {
         removeBtn.innerHTML = iconSvg('delete') + '<span class="btn-label">Remove</span>';
         removeBtn.onclick = () => handleRemovePath(index);
         
+        const doneBtn = document.createElement('button');
+        doneBtn.type = 'button';
+        doneBtn.className = 'btn btn-small';
+        doneBtn.innerHTML = iconSvg('check') + '<span class="btn-label">Done</span>';
+        doneBtn.title = 'Back to the summary (Save Settings saves the change)';
+        doneBtn.onclick = () => { editingPaths.delete(index); renderMediaPaths(state.currentConfig.media.paths); };
+
         pathDiv.appendChild(pathText);
         pathDiv.appendChild(removeBtn);
+        pathDiv.appendChild(doneBtn);
         
         div.appendChild(nameInput);
         div.appendChild(groupsInput);
@@ -2885,6 +2931,7 @@ function handleAddPath() {
         const mediaPath = { name: name, path: newPath, groups: [] };
         setMediaPathType(mediaPath, typeSelect.value);
         state.currentConfig.media.paths.push(mediaPath);
+        editingPaths.add(state.currentConfig.media.paths.length - 1);
         renderMediaPaths(state.currentConfig.media.paths);
         input.value = '';
         typeSelect.value = '';
@@ -2969,6 +3016,10 @@ function setupFolderPicker() {
 function handleRemovePath(index) {
     if (confirm('Remove this path?')) {
         state.currentConfig.media.paths.splice(index, 1);
+        // The ones after it move up a place.
+        const editing = [...editingPaths].filter(i => i !== index).map(i => i > index ? i - 1 : i);
+        editingPaths.clear();
+        editing.forEach(i => editingPaths.add(i));
         renderMediaPaths(state.currentConfig.media.paths);
         updateAvailableGroups();
     }

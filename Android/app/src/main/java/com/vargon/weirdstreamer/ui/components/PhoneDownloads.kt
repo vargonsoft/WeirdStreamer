@@ -284,13 +284,13 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
                     Text("Size", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(90, 75, 50, 25).forEach { pct ->
-                            FilterChip(shape = AppButtonShape, selected = sizePct == pct, onClick = { sizePct = pct }, label = { Text("$pct%") })
+                            FilterChip(colors = phoneChipColors(), shape = AppButtonShape, selected = sizePct == pct, border = phoneChipBorder(sizePct == pct), onClick = { sizePct = pct }, label = { Text("$pct%") })
                         }
                     }
                     Text("Resolution", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(100 to "Original", 75 to "75%", 50 to "50%").forEach { (s, label) ->
-                            FilterChip(shape = AppButtonShape, selected = scale == s, onClick = { scale = s }, label = { Text(label) })
+                            FilterChip(colors = phoneChipColors(), shape = AppButtonShape, selected = scale == s, border = phoneChipBorder(scale == s), onClick = { scale = s }, label = { Text(label) })
                         }
                     }
                 }

@@ -163,7 +163,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Show hidden files", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        Switch(checked = viewModel.showHiddenFiles, onCheckedChange = null)
+                        Switch(checked = viewModel.showHiddenFiles, onCheckedChange = null, colors = tvSwitchColors())
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))

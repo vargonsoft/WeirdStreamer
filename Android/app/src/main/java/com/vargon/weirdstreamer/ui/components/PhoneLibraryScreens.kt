@@ -460,7 +460,7 @@ private fun PhoneSeasons(viewModel: MediaViewModel, title: TitleDetail) {
             seasons.forEachIndexed { index, s ->
                 // Episodes watched (any of an episode's files), as a ring after the name.
                 val watched = s.episodes.count { e -> e.files.any { it.playback?.watched == true } }
-                FilterChip(shape = AppButtonShape, selected = index == selected, onClick = { selected = index },
+                FilterChip(colors = phoneChipColors(), shape = AppButtonShape, selected = index == selected, border = phoneChipBorder(index == selected), onClick = { selected = index },
                     modifier = Modifier.fillMaxHeight(),
                     // Padded so a two-line label ("Season 1" over the name) clears the chip's edges.
                     label = { Box(Modifier.padding(vertical = 6.dp)) { PhoneSeasonLabel(s, s.name) } },

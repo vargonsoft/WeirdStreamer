@@ -722,6 +722,73 @@ body {
     display: none;
 }
 
+/* Settings, Media Paths: a library, read-only (with Edit) or being edited */
+.media-path {
+    margin-bottom: 12px;
+    padding: 10px;
+    background: var(--card-bg);
+    border-radius: 5px;
+}
+
+.media-path.editing {
+    box-shadow: inset 3px 0 0 var(--heading-color, var(--primary-color));
+}
+
+.media-path-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.media-path-names {
+    flex: 1;
+    min-width: 0;
+}
+
+.media-path-name {
+    font-weight: 600;
+}
+
+.media-path-folder {
+    color: var(--muted-text);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+/* Its settings, a label and a value per row, under a line */
+.media-path-details {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    align-items: center;
+    gap: 6px 18px;
+    margin: 10px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+    font-size: 13px;
+}
+
+.media-path-details dt {
+    color: var(--muted-text);
+}
+
+.media-path-details dd {
+    margin: 0;
+}
+
+.media-path-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.media-path-chip {
+    padding: 1px 10px;
+    border-radius: 999px;
+    background: var(--button-bg, var(--primary-color));
+    color: var(--button-text, white);
+    font-size: 12px;
+}
+
 .path-groups {
     display: flex;
     flex-wrap: wrap;

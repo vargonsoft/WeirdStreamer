@@ -173,6 +173,41 @@ fun phoneSecondaryButtonColors(): androidx.compose.material3.ButtonColors {
 }
 
 /**
+ * TV switches (Settings' Show hidden files) in the theme's colors: on, the accent with a thumb in
+ * the color drawn on it; off, an outlined track in the muted text color. The TV app has no phone
+ * color scheme, so Material's switch would otherwise draw in its default grays.
+ */
+@Composable
+fun tvSwitchColors(): androidx.compose.material3.SwitchColors {
+    val spec = WeirdStreamerTheme.spec
+    val scheme = androidx.tv.material3.MaterialTheme.colorScheme
+    val on = spec.focusColor.takeOrElse(scheme.primary)
+    val onThumb = spec.focusLabel.takeOrElse(scheme.onPrimary)
+    val muted = scheme.onSurfaceVariant
+    return androidx.compose.material3.SwitchDefaults.colors(
+        checkedThumbColor = onThumb, checkedTrackColor = on, checkedBorderColor = on, checkedIconColor = on,
+        uncheckedThumbColor = muted, uncheckedTrackColor = Color.Transparent, uncheckedBorderColor = muted, uncheckedIconColor = muted,
+    )
+}
+
+/**
+ * Phone filter chips: a picked one filled in the theme's button color, the others outlined, so the
+ * two are easy to tell apart (Material's tonal fill is the quiet secondary color).
+ */
+@Composable
+fun phoneChipColors(): androidx.compose.material3.SelectableChipColors {
+    val spec = WeirdStreamerTheme.spec
+    return if (spec.buttonColor.isSpecified) androidx.compose.material3.FilterChipDefaults.filterChipColors(
+        selectedContainerColor = spec.buttonColor, selectedLabelColor = spec.buttonLabel, selectedLeadingIconColor = spec.buttonLabel,
+    ) else androidx.compose.material3.FilterChipDefaults.filterChipColors()
+}
+
+/** An unpicked phone filter chip's outline: the theme's muted text color, which shows on its box (Material's blends in). */
+@Composable
+fun phoneChipBorder(selected: Boolean) = androidx.compose.material3.FilterChipDefaults.filterChipBorder(
+    enabled = true, selected = selected, borderColor = androidx.compose.material3.MaterialTheme.colorScheme.outline)
+
+/**
  * A phone dialog's main button (OK, Save, Login): filled in the theme's button color, or in
  * Material's error colors when it deletes or removes something ([destructive], like the web's
  * red Remove buttons).

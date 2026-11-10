@@ -9,6 +9,13 @@ import com.vargon.weirdstreamer.api.models.BackgroundJob
 import com.vargon.weirdstreamer.api.models.JobsResponse
 import com.vargon.weirdstreamer.api.models.StorageUse
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.takeOrElse
+import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.foundation.lazy.items
@@ -139,6 +146,11 @@ private class PathEdit(val source: JsonObject, name: String, path: String, group
     var path by mutableStateOf(path)
     val groups = mutableStateListOf<String>().apply { addAll(groups) } // the groups that can see it
     var type by mutableStateOf(type)
+    // Where its videos in progress and its newest videos show (the web's defaults when unset)
+    var continueWatching by mutableStateOf(source.get("continueWatchingMode")?.asString ?: "on")
+    var newAdditions by mutableStateOf(source.get("showNewAdditions")?.asString ?: "off")
+    // Shown as it is, with Edit, so a stray tap can't change it; one just added opens for editing.
+    var editing by mutableStateOf(source.size() == 0)
 }
 
 private fun jsonNames(names: List<String>) = JsonArray().apply { names.forEach { add(it) } }
@@ -154,7 +166,9 @@ private fun LibraryGroups(all: List<String>, selected: MutableList<String>) {
             modifier = Modifier.align(Alignment.CenterVertically))
         all.forEach { g ->
             val on = g in selected
-            FilterChip(shape = AppButtonShape, selected = on, label = { Text(g) }, onClick = {
+            FilterChip(colors = phoneChipColors(), shape = AppButtonShape, selected = on, border = phoneChipBorder(on), label = { Text(g) },
+                leadingIcon = if (on) { { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) } } else null,
+                onClick = {
                 if (on) selected.remove(g) else selected.add(g)
                 val order = all.filter { it in selected } // keep the groups' order
                 selected.clear(); selected.addAll(order)
@@ -163,12 +177,24 @@ private fun LibraryGroups(all: List<String>, selected: MutableList<String>) {
     }
 }
 
+/** A line of a library's summary: its label in a column of their own, then its value. */
+@Composable
+private fun LibrarySummaryRow(label: String, value: @Composable () -> Unit) {
+    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(96.dp).padding(end = 8.dp))
+        value()
+    }
+}
+
 private val libraryTypes = listOf("" to "No type", "movie" to "Movies", "tv" to "TV Shows")
+
+// Where a library's Continue Watching and Recently Added rows show (continueWatchingMode, showNewAdditions)
+private val libraryRowModes = listOf("on" to "Home screen and library", "libraryOnly" to "Library only", "off" to "Off")
 
 // ---------------------------------------------------------------------------------------------
 // Server tab: media paths, server, streaming and metadata settings, and a library scan.
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ServerSettingsTab(server: ServerRepository) {
     val scope = rememberCoroutineScope()
@@ -243,6 +269,9 @@ fun ServerSettingsTab(server: ServerRepository) {
             o.addProperty("path", p.path.trim())
             o.add("groups", jsonNames(p.groups))
             if (p.type.isEmpty()) o.remove("type") else o.addProperty("type", p.type)
+            // Only where set before or changed from the default, so config.yml changes only where it was changed.
+            if (o.has("continueWatchingMode") || p.continueWatching != "on") o.addProperty("continueWatchingMode", p.continueWatching)
+            if (o.has("showNewAdditions") || p.newAdditions != "off") o.addProperty("showNewAdditions", p.newAdditions)
             array.add(o)
         }
         c.getAsJsonObject("media").add("paths", array)
@@ -320,16 +349,45 @@ fun ServerSettingsTab(server: ServerRepository) {
             item { SectionTitle("Media paths") }
             itemsIndexed(paths, key = { i, p -> "$i:${p.source.get("id")?.asString}" }) { _, p ->
                 Card(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!p.editing) Column(Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(p.name.ifBlank { "(no name)" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { p.editing = true }, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Text(p.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+                        LibrarySummaryRow("Type") { Text(libraryTypes.firstOrNull { it.first == p.type }?.second ?: "No type", style = MaterialTheme.typography.bodyMedium) }
+                        LibrarySummaryRow("Groups") {
+                            if (p.groups.isEmpty()) Text("None (no one sees it)", style = MaterialTheme.typography.bodyMedium)
+                            else FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                p.groups.forEach { g ->
+                                    Text(g, style = MaterialTheme.typography.labelMedium, color = WeirdStreamerTheme.spec.buttonLabel.takeOrElse { MaterialTheme.colorScheme.onSecondaryContainer },
+                                        modifier = Modifier.clip(RoundedCornerShape(50)).background(WeirdStreamerTheme.spec.buttonColor.takeOrElse { MaterialTheme.colorScheme.secondaryContainer })
+                                            .padding(horizontal = 10.dp, vertical = 2.dp))
+                                }
+                            }
+                        }
+                        LibrarySummaryRow("Continue Watching") { Text(libraryRowModes.firstOrNull { it.first == p.continueWatching }?.second ?: p.continueWatching, style = MaterialTheme.typography.bodyMedium) }
+                        LibrarySummaryRow("Recently Added") { Text(libraryRowModes.firstOrNull { it.first == p.newAdditions }?.second ?: p.newAdditions, style = MaterialTheme.typography.bodyMedium) }
+                    } else Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(p.name, { p.name = it }, label = { Text("Name") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth())
                         LibraryGroups(groupNames, p.groups)
-                        LibraryTypeMenu(p.type) { p.type = it }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(p.path, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        LibraryOptionMenu("Library type", libraryTypes, p.type) { p.type = it }
+                        LibraryOptionMenu("Continue Watching", libraryRowModes, p.continueWatching) { p.continueWatching = it }
+                        LibraryOptionMenu("Recently Added", libraryRowModes, p.newAdditions) { p.newAdditions = it }
+                        Text(p.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Spacer(Modifier.weight(1f))
                             IconButton(onClick = { removing = p }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                            }
+                            // Back to the summary: Save applies the change, as before.
+                            PhoneSecondaryButton(onClick = { p.editing = false }) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp)); Text("Done")
                             }
                         }
                     }
@@ -339,7 +397,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(newPath, { newPath = it }, label = { Text("New path on the server") },
                         placeholder = { Text("/path/to/media") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    LibraryTypeMenu(newType) { newType = it }
+                    LibraryOptionMenu("Library type", libraryTypes, newType) { newType = it }
                     OutlinedButton(shape = AppButtonShape, onClick = {
                         val path = newPath.trim()
                         when {
@@ -492,18 +550,18 @@ fun ServerSettingsTab(server: ServerRepository) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryTypeMenu(type: String, onChange: (String) -> Unit) {
+private fun LibraryOptionMenu(label: String, options: List<Pair<String, String>>, value: String, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
         OutlinedTextField(
-            value = libraryTypes.firstOrNull { it.first == type }?.second ?: "No type",
-            onValueChange = {}, readOnly = true, label = { Text("Library type") },
+            value = options.firstOrNull { it.first == value }?.second ?: options.first().second,
+            onValueChange = {}, readOnly = true, label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
         )
         ExposedDropdownMenu(border = phoneMenuBorder(), expanded = open, onDismissRequest = { open = false }) {
-            libraryTypes.forEach { (value, label) ->
-                DropdownMenuItem(text = { Text(label) }, onClick = { onChange(value); open = false })
+            options.forEach { (key, text) ->
+                DropdownMenuItem(text = { Text(text) }, onClick = { onChange(key); open = false })
             }
         }
     }
