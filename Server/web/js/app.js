@@ -108,16 +108,12 @@ function setupEventListeners() {
 
     // Settings
     if (settingsBtn) {
-        settingsBtn.addEventListener('click', showSettings);
+        settingsBtn.addEventListener('click', () => showSettings());
     }
-    document.getElementById('streams-btn').addEventListener('click', showStreams);
-    document.getElementById('close-streams-btn').addEventListener('click', hideStreams);
+    document.getElementById('streams-btn').addEventListener('click', () => showStreams());
+    document.getElementById('close-streams-btn').addEventListener('click', () => closeScreen('streams'));
     if (closeSettingsBtn) {
-        closeSettingsBtn.addEventListener('click', () => {
-            stopJobsView();
-            settingsScreen.classList.remove('active');
-            mainScreen.classList.add('active');
-        });
+        closeSettingsBtn.addEventListener('click', () => closeScreen('settings'));
     }
     
     // Settings tabs
@@ -155,6 +151,21 @@ function setupEventListeners() {
     }, { passive: true });
 
     window.addEventListener('popstate', (e) => {
+        // Settings and Streams: Back closes them, onto the view they were opened from (unchanged
+        // underneath, so it isn't loaded again); Forward opens them again.
+        const screen = e.state && e.state.screen;
+        const open = openScreen();
+        if (open && open !== screen) {
+            SCREENS[open].hide();
+            if (!screen) {
+                if (typeof e.state?.scrollY === 'number') requestAnimationFrame(() => window.scrollTo(0, e.state.scrollY));
+                return;
+            }
+        }
+        if (screen && SCREENS[screen]) {
+            if (open !== screen && api.isAuthenticated()) SCREENS[screen].show();
+            return;
+        }
         if (e.state && api.isAuthenticated()) {
             pendingScroll = typeof e.state.scrollY === 'number' ? e.state.scrollY : null;
             if (e.state.view === 'library') {
@@ -346,6 +357,11 @@ function showMainScreen() {
     const urlView = url.searchParams.get('view');
     if (history.state && typeof history.state.scrollY === 'number') {
         pendingScroll = history.state.scrollY; // a reload: back where it was
+    }
+    if (history.state && history.state.screen) {
+        // A reload opens on the view, not Settings or Streams.
+        const { screen, ...view } = history.state;
+        history.replaceState(view, '');
     }
     if (!history.state) {
         // So Back to this first page has a state to restore it from.
@@ -2452,7 +2468,7 @@ async function openLibrarySettings() {
     document.getElementById('new-path-input').focus({ preventScroll: true });
 }
 
-async function showSettings() {
+async function showSettings(pushHistory = true) {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     // The account signed in (watch status is kept per account)
     document.getElementById('account-signed-in').textContent =
@@ -2520,8 +2536,39 @@ async function showSettings() {
     });
 
     // Show settings screen
+    if (pushHistory) pushScreenHistory('settings'); // first, keeping the view's scroll position
     mainScreen.classList.remove('active');
     settingsScreen.classList.add('active');
+}
+
+function hideSettings() {
+    stopJobsView();
+    settingsScreen.classList.remove('active');
+    mainScreen.classList.add('active');
+}
+
+// Settings and Streams are screens over the media view, each a history entry of its own (the
+// view's state plus `screen`), so the browser's Back leaves them for the view (see popstate).
+const SCREENS = {
+    settings: { element: () => settingsScreen, show: () => showSettings(false), hide: hideSettings },
+    streams: { element: () => document.getElementById('streams-screen'), show: () => showStreams(false), hide: hideStreams },
+};
+
+function openScreen() {
+    return Object.keys(SCREENS).find(name => SCREENS[name].element().classList.contains('active')) || null;
+}
+
+function pushScreenHistory(name) {
+    if (history.state && history.state.screen === name) return;
+    rememberScroll();
+    const { screen, scrollY, ...view } = history.state || {};
+    history.pushState({ ...view, screen: name }, '');
+}
+
+// A screen's close button: back through its history entry (popstate hides it), or just hidden.
+function closeScreen(name) {
+    if (history.state && history.state.screen === name) history.back();
+    else SCREENS[name].hide();
 }
 
 // Text made safe to put in HTML.
@@ -4594,7 +4641,8 @@ function createContinueCard(item) {
 
 let streamsTimer = null;
 
-function showStreams() {
+function showStreams(pushHistory = true) {
+    if (pushHistory) pushScreenHistory('streams');
     mainScreen.classList.remove('active');
     document.getElementById('streams-screen').classList.add('active');
     refreshStreams();
