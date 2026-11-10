@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -151,7 +150,7 @@ func annotateListing(l *models.LibraryListing, pb map[string]*models.Playback) {
 }
 
 type watchedRequest struct {
-	Paths   []string `json:"paths"` // base64 absolute paths
+	Paths   []string `json:"paths"` // base64 client paths
 	Watched bool     `json:"watched"`
 	// Or a whole title: every file of a movie or show in a library
 	Library string `json:"library,omitempty"`
@@ -174,14 +173,8 @@ func (h *MediaHandler) SetWatched(w http.ResponseWriter, r *http.Request) {
 	}
 	var paths []string
 	for _, encoded := range req.Paths {
-		decoded, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil || len(decoded) == 0 {
-			respondError(w, http.StatusBadRequest, "Invalid path encoding")
-			return
-		}
-		path := string(decoded)
-		if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
-			respondError(w, http.StatusForbidden, "Access denied")
+		path, ok := h.decodeMediaPath(w, r, encoded)
+		if !ok {
 			return
 		}
 		paths = append(paths, path)
@@ -232,7 +225,7 @@ func libraryByID(id string) (config.MediaPath, bool) {
 }
 
 type syncedPlayback struct {
-	Path      string  `json:"path"` // base64 absolute path
+	Path      string  `json:"path"` // base64 client path
 	Position  float64 `json:"position"`
 	Ended     bool    `json:"ended"`
 	UpdatedAt int64   `json:"updated_at"` // Unix milliseconds, when it was played
@@ -250,12 +243,8 @@ func (h *MediaHandler) SyncPlayback(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	for _, it := range req.Items {
-		decoded, err := base64.StdEncoding.DecodeString(it.Path)
-		if err != nil || len(decoded) == 0 {
-			continue
-		}
-		path := string(decoded)
-		if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
+		path, status := h.filePath(r, it.Path)
+		if status != http.StatusOK {
 			continue
 		}
 		item, err := h.db.GetMediaItem(path)
@@ -373,7 +362,15 @@ func (h *MediaHandler) ContinueWatching(w http.ResponseWriter, r *http.Request) 
 		listed[path] = true
 		items = append(items, continueItem{MediaItem: *item, LibraryID: lib.ID, LibraryType: lib.Type})
 	}
+	clientContinue(items)
 	respondJSON(w, http.StatusOK, items)
+}
+
+// clientContinue is clientItems for a Continue Watching or Recently Added list.
+func clientContinue(items []continueItem) {
+	for i := range items {
+		items[i].MediaItem = *clientItem(&items[i].MediaItem)
+	}
 }
 
 // continueEntry is a video for Continue Watching, with its TMDB summary, or nil when it isn't one.
@@ -465,12 +462,11 @@ func (h *MediaHandler) RemoveFromContinue(w http.ResponseWriter, r *http.Request
 		respondError(w, http.StatusUnauthorized, "Not signed in")
 		return
 	}
-	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
-	if err != nil || len(decoded) == 0 {
-		respondError(w, http.StatusBadRequest, "Invalid path encoding")
+	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
+	if !ok {
 		return
 	}
-	if err := h.db.ClearPosition(uid, string(decoded)); err != nil {
+	if err := h.db.ClearPosition(uid, path); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to save")
 		return
 	}

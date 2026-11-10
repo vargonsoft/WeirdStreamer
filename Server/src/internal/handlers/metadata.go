@@ -7,14 +7,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/weirdstreamer/server/internal/config"
 )
 
-// mediaTarget is a file or folder addressed by a metadata request: files like streams
-// (path=<base64 absolute path>), folders by their browse path (dir=<library id>/<relative path>).
+// mediaTarget is a file or folder addressed by a metadata request, by its client path
+// (<library id>/<relative path>): files like streams (path=, in base64), folders as browsed (dir=).
 type mediaTarget struct {
 	lib   config.MediaPath
 	path  string
@@ -24,38 +23,21 @@ type mediaTarget struct {
 // resolveTarget finds the library item a request addresses and checks the user may access it,
 // writing the error response if not.
 func (h *MediaHandler) resolveTarget(w http.ResponseWriter, r *http.Request, encodedPath, dir string) (*mediaTarget, bool) {
-	var path string
-	isDir := false
-	if dir != "" {
-		parts := strings.SplitN(strings.Trim(dir, "/"), "/", 2)
-		for _, lib := range config.GlobalConfig.Media.Paths {
-			if lib.ID == parts[0] {
-				path = lib.Path
-				if len(parts) == 2 {
-					path = filepath.Join(lib.Path, parts[1])
-				}
-			}
-		}
-		isDir = true
-	} else {
+	client, isDir := dir, true
+	if dir == "" {
 		decoded, err := base64.StdEncoding.DecodeString(encodedPath)
 		if err != nil || len(decoded) == 0 {
 			respondError(w, http.StatusBadRequest, "Missing or invalid path")
 			return nil, false
 		}
-		path = string(decoded)
+		client, isDir = string(decoded), false
 	}
-	absPath, err := filepath.Abs(path)
-	if path == "" || err != nil {
-		respondError(w, http.StatusNotFound, "Not found")
-		return nil, false
-	}
-	lib, ok := libraryForPath(absPath)
+	path, lib, ok := diskPath(client)
 	if !ok || !h.canAccessLibrary(r, lib) {
 		respondError(w, http.StatusNotFound, "Not found")
 		return nil, false
 	}
-	return &mediaTarget{lib: lib, path: absPath, isDir: isDir}, true
+	return &mediaTarget{lib: lib, path: path, isDir: isDir}, true
 }
 
 // GetMediaDetails returns full TMDB metadata (credits included) for a file or folder.

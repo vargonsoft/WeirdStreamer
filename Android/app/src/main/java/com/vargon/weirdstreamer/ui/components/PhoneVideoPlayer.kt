@@ -65,8 +65,10 @@ import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.vargon.weirdstreamer.api.models.forDiscTitle
 import com.vargon.weirdstreamer.R
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.Locale
@@ -275,6 +277,11 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
     // Fetch metadata for duration and trickplay
     LaunchedEffect(path) {
+        if (isLocal) { // a download: the frames saved with it
+            loadedTrickplay = withContext(Dispatchers.IO) {
+                com.vargon.weirdstreamer.downloads.DownloadStore.ofLocalPath(path)?.let { com.vargon.weirdstreamer.downloads.DownloadStore.savedTrickplay(it) }
+            }
+        }
         if (!isSmbSource && !isLocal) {
             try {
                 val encodedPath = path.substringAfter("path=").substringBefore("&")

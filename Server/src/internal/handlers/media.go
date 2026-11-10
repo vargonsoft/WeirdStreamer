@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,7 +108,7 @@ func (h *MediaHandler) SetMetadata(meta *metadata.Service) {
 // NotifyMetadataReady tells SSE clients that may access path that its metadata changed. Sent as
 // a named "metadata" event so clients that only handle thumbnail messages ignore it.
 func (h *MediaHandler) NotifyMetadataReady(path string) {
-	data, err := json.Marshal(map[string]string{"path": path})
+	data, err := json.Marshal(map[string]string{"path": clientPath(path)})
 	if err == nil {
 		h.thumbnailHub.broadcast(path, sseEvent{name: "metadata", data: string(data)})
 	}
@@ -163,6 +162,7 @@ func (h *MediaHandler) ListMedia(w http.ResponseWriter, r *http.Request) {
 			filteredItems = append(filteredItems, item)
 		}
 	}
+	clientItems(filteredItems)
 
 	respondJSON(w, http.StatusOK, filteredItems)
 }
@@ -178,8 +178,10 @@ func (h *MediaHandler) ListMedia(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /api/media/{id} [get]
 func (h *MediaHandler) GetMediaInfo(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	path := vars["path"]
+	path, ok := h.decodeMediaPath(w, r, mux.Vars(r)["path"])
+	if !ok {
+		return
+	}
 
 	item, err := h.db.GetMediaItem(path)
 	if err != nil {
@@ -187,13 +189,7 @@ func (h *MediaHandler) GetMediaInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check access
-	if !h.canAccessPath(r, item.Path) {
-		respondError(w, http.StatusForbidden, "Access denied")
-		return
-	}
-
-	respondJSON(w, http.StatusOK, item)
+	respondJSON(w, http.StatusOK, clientItem(item))
 }
 
 // GetTrickplayInfo godoc
@@ -232,6 +228,21 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 	}
 
 	log.Printf("[TRICKPLAY] Request for media ID %d: %s", id, item.Name)
+	h.respondTrickplay(w, item.Path, item.Name)
+}
+
+// GetTrickplayInfoByPath is GetTrickplayInfo for a file by its path, for a download (which keeps
+// the path, not the ID): GET /api/media/trickplay?path=<base64>
+func (h *MediaHandler) GetTrickplayInfoByPath(w http.ResponseWriter, r *http.Request) {
+	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
+	if !ok {
+		return
+	}
+	h.respondTrickplay(w, path, filepath.Base(path))
+}
+
+// respondTrickplay answers with a video's trickplay frames, by time.
+func (h *MediaHandler) respondTrickplay(w http.ResponseWriter, path, name string) {
 
 	trickplayDir := config.GlobalConfig.Media.TrickplayPath
 	if trickplayDir == "" {
@@ -240,12 +251,12 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	hash := media.GenerateThumbnailHash(item.Path)
+	hash := media.GenerateThumbnailHash(path)
 	trickplayVideoDir := filepath.Join(trickplayDir, hash)
 
 	files, err := os.ReadDir(trickplayVideoDir)
 	if err != nil {
-		log.Printf("[TRICKPLAY] No frames found for %s (hash: %s) in directory: %s", item.Name, hash, trickplayVideoDir)
+		log.Printf("[TRICKPLAY] No frames found for %s (hash: %s) in directory: %s", name, hash, trickplayVideoDir)
 		respondError(w, http.StatusNotFound, "Trickplay frames not found")
 		return
 	}
@@ -273,11 +284,11 @@ func (h *MediaHandler) GetTrickplayInfo(w http.ResponseWriter, r *http.Request) 
 		return frames[i].Time < frames[j].Time
 	})
 
-	log.Printf("[TRICKPLAY] Returning %d frames for %s", len(frames), item.Name)
+	log.Printf("[TRICKPLAY] Returning %d frames for %s", len(frames), name)
 
 	info := models.TrickplayInfo{
 		Frames: frames,
-		Title:  media.TrickplayTitle(item.Path), // a disc image's: the title they're for
+		Title:  media.TrickplayTitle(path), // a disc image's: the title they're for
 	}
 
 	respondJSON(w, http.StatusOK, info)
@@ -301,13 +312,10 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Base64 decode the path
-	pathBytes, err := base64.StdEncoding.DecodeString(encodedPath)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid path encoding")
+	path, ok := h.decodeMediaPath(w, r, encodedPath)
+	if !ok {
 		return
 	}
-	path := string(pathBytes)
 
 	// Log the request for debugging
 	log.Printf("Stream request - Path: %s, User-Agent: %s", path, r.Header.Get("User-Agent"))
@@ -333,18 +341,6 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusBadRequest, "resolution must be a height in pixels")
 			return
 		}
-	}
-
-	// Validate path is within allowed media paths
-	if !h.isValidMediaPath(path) {
-		respondError(w, http.StatusForbidden, "Access denied")
-		return
-	}
-
-	// Check access
-	if !h.canAccessPath(r, path) {
-		respondError(w, http.StatusForbidden, "Access denied")
-		return
 	}
 
 	item, err := h.db.GetMediaItem(path)
@@ -405,29 +401,12 @@ func (h *MediaHandler) GetMediaMetadata(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Base64 decode the path
-	pathBytes, err := base64.StdEncoding.DecodeString(encodedPath)
-	if err != nil {
-		log.Printf("[METADATA] Invalid path encoding: %s", encodedPath)
-		respondError(w, http.StatusBadRequest, "Invalid path encoding")
+	path, ok := h.decodeMediaPath(w, r, encodedPath)
+	if !ok {
 		return
 	}
-	path := string(pathBytes)
 
 	log.Printf("[METADATA] Request for path: %s", path)
-
-	// Validate path is within allowed media paths
-	if !h.isValidMediaPath(path) {
-		log.Printf("[METADATA] Access denied for path: %s", path)
-		respondError(w, http.StatusForbidden, "Access denied")
-		return
-	}
-
-	// Check access
-	if !h.canAccessPath(r, path) {
-		respondError(w, http.StatusForbidden, "Access denied")
-		return
-	}
 
 	// Try to get from database first
 	item, err := h.db.GetMediaItem(path)
@@ -444,12 +423,12 @@ func (h *MediaHandler) GetMediaMetadata(w http.ResponseWriter, r *http.Request) 
 		if err == nil && item != nil {
 			metadata.ID = item.ID
 		}
-		respondJSON(w, http.StatusOK, metadata)
+		respondJSON(w, http.StatusOK, clientItem(metadata))
 		return
 	}
 
 	log.Printf("[METADATA] Returning cached metadata for: %s (Duration: %.2fs)", item.Name, item.Duration)
-	respondJSON(w, http.StatusOK, item)
+	respondJSON(w, http.StatusOK, clientItem(item))
 }
 
 // BrowseDirectory godoc
@@ -641,6 +620,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	annotateItems(items, h.requestPlayback(r))
+	clientItems(items)
 
 	result := models.Directory{
 		Path:        relativePath,
@@ -993,7 +973,7 @@ func (h *MediaHandler) notifyThumbnailReady(filePath, thumbnailURL string) {
 		return
 	}
 	jsonData, err := json.Marshal(map[string]string{
-		"path":         filePath,
+		"path":         clientPath(filePath),
 		"thumbnailURL": thumbnailURL,
 	})
 	if err != nil {

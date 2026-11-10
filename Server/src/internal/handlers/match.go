@@ -15,7 +15,7 @@ import (
 // in the library that resolves to it.
 
 type matchRequest struct {
-	Path   string `json:"path"` // base64 absolute file path
+	Path   string `json:"path"` // base64 client path of a file
 	Dir    string `json:"dir"`  // browse path of a folder
 	TMDBID int    `json:"tmdb_id"`
 	Kind   string `json:"kind"`   // what tmdb_id is: "movie" or "tv" ("" for the library's kind)
@@ -270,7 +270,7 @@ func (h *MediaHandler) MatchEpisodes(w http.ResponseWriter, r *http.Request) {
 }
 
 type episodeMappingRequest struct {
-	Path        string `json:"path"` // base64 absolute file path
+	Path        string `json:"path"` // base64 client path of a file
 	Season      int    `json:"season"`
 	Episode     int    `json:"episode"`
 	WholeSeason bool   `json:"whole_season"`

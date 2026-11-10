@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -19,21 +18,6 @@ import (
 // SetDownloads enables compressed downloads, keeping their encodes in dir.
 func (h *MediaHandler) SetDownloads(m *media.DownloadManager) { h.downloads = m }
 
-// downloadPath decodes and checks a base64 path the caller may download.
-func (h *MediaHandler) downloadPath(w http.ResponseWriter, r *http.Request, encoded string) (string, bool) {
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil || len(decoded) == 0 {
-		respondError(w, http.StatusBadRequest, "Invalid path encoding")
-		return "", false
-	}
-	path := string(decoded)
-	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
-		respondError(w, http.StatusForbidden, "Access denied")
-		return "", false
-	}
-	return path, true
-}
-
 type downloadOptions struct {
 	media.DownloadSource
 	Sizes  []int `json:"sizes"`  // target shares of the original size, percent
@@ -42,7 +26,7 @@ type downloadOptions struct {
 
 // DownloadOptions describes a file's download choices: ?path=<base64 path>
 func (h *MediaHandler) DownloadOptions(w http.ResponseWriter, r *http.Request) {
-	path, ok := h.downloadPath(w, r, r.URL.Query().Get("path"))
+	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
 	if !ok {
 		return
 	}
@@ -79,16 +63,16 @@ func (h *MediaHandler) CreateDownload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	path, ok := h.downloadPath(w, r, req.Path)
+	path, ok := h.decodeMediaPath(w, r, req.Path)
 	if !ok {
 		return
 	}
 	job, err := h.downloads.Create(downloadOwner(r), path, req.SizePct, req.Scale, req.KeepVideo, req.KeepAudio)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, http.StatusBadRequest, withoutDiskPath(err.Error(), path))
 		return
 	}
-	respondJSON(w, http.StatusCreated, job)
+	respondJSON(w, http.StatusCreated, clientJob(job))
 }
 
 // GetDownload reports a job's progress.
@@ -102,7 +86,15 @@ func (h *MediaHandler) GetDownload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "Download not found")
 		return
 	}
-	respondJSON(w, http.StatusOK, job)
+	respondJSON(w, http.StatusOK, clientJob(job))
+}
+
+// clientJob is a job for a response: the file by the path clients know it by, in ffmpeg's error too.
+func clientJob(job *media.DownloadJob) *media.DownloadJob {
+	shown := *job
+	shown.Error = withoutDiskPath(job.Error, job.Path)
+	shown.Path = clientPath(job.Path)
+	return &shown
 }
 
 // DownloadFile serves a finished job's file, with range support for resuming.

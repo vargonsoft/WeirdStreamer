@@ -51,6 +51,7 @@ func (h *MediaHandler) GetLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	annotateListing(listing, h.requestPlayback(r))
+	clientFiles(listing.Unmatched)
 	respondJSON(w, http.StatusOK, listing)
 }
 
@@ -78,6 +79,9 @@ func (h *MediaHandler) GetLibraryTitle(w http.ResponseWriter, r *http.Request) {
 	annotateTitle(detail, h.requestPlayback(r))
 	if uid, ok := userID(r); ok && kind == "show" {
 		detail.AutoSkip = h.db.AutoSkip(uid, id)
+	}
+	for _, files := range titleFiles(detail) {
+		clientFiles(files)
 	}
 	respondJSON(w, http.StatusOK, detail)
 }
@@ -120,6 +124,7 @@ func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if len(items) > 0 {
+				clientContinue(items)
 				out = append(out, libraryAdditions{lib.ID, lib.Name, items})
 			}
 		}
@@ -139,6 +144,7 @@ func (h *MediaHandler) NewAdditions(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to list new additions")
 		return
 	}
+	clientContinue(items)
 	respondJSON(w, http.StatusOK, items)
 }
 

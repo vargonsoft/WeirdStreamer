@@ -51,9 +51,9 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
         val accounts = CredentialManager(this)
         com.vargon.weirdstreamer.downloads.LocalProgress.accountOf = { accounts.accountInUse(it) }
         com.vargon.weirdstreamer.downloads.DownloadStore.accountOf = { accounts.accountInUse(it) }
-        // Downloads to finish, or finished ones still without their subtitles.
+        // Downloads to finish, or finished ones due to save their subtitles, skip times and trickplay frames.
         if (com.vargon.weirdstreamer.downloads.DownloadStore.items.value.any {
-                it.isActive || (it.state == com.vargon.weirdstreamer.downloads.DownloadItem.State.DONE && !it.subtitles)
+                it.isActive || com.vargon.weirdstreamer.downloads.DownloadStore.needsExtras(it)
             }) {
             com.vargon.weirdstreamer.downloads.DownloadWorker.schedule(this)
         }

@@ -37,7 +37,9 @@ data class DownloadItem(
     // Compatibility: full quality, the video and audio kept as they are where this phone plays
     // them, the rest encoded on the server. One with nothing to encode becomes an original.
     val compat: Boolean = false,
-    val subtitles: Boolean = false   // its subtitle tracks are saved (subtitleDir), or there are none
+    val subtitles: Boolean = false,  // its subtitle tracks are saved (subtitleDir), or there are none
+    // When its subtitles, skip times and trickplay frames were last saved from the server (0: never)
+    val extrasAt: Long = 0
 ) {
     enum class State { QUEUED, PREPARING, DOWNLOADING, DONE, FAILED }
 
@@ -77,7 +79,7 @@ val DownloadItem.episode: DownloadEpisode?
         }
         val m = NAME_EPISODE.find(name) ?: return null
         val show = showKey(m.groupValues[1]).ifEmpty {
-            val folders = sourcePath.split('/').dropLast(1).filter { it.isNotEmpty() }
+            val folders = sourcePath.split('/').dropLast(1).drop(1).filter { it.isNotEmpty() } // without its library's ID
             showKey(folders.lastOrNull { !SEASON_FOLDER.matches(it) } ?: "")
         }
         return DownloadEpisode(show, m.groupValues[2].toInt(), m.groupValues[3].toInt())
@@ -96,8 +98,16 @@ fun downloadsInOrder(items: List<DownloadItem>): List<DownloadItem> =
             .flatMap { group -> group.sortedWith(compareBy({ it.episode?.season }, { it.episode?.episode })) }
     }
 
-/** The file a saved subtitle track is in, in its download's subtitleDir. */
-fun savedSubtitleName(t: com.vargon.weirdstreamer.api.models.SubtitleTrack) = "${t.index}." + if (t.text) "vtt" else "sup"
+/**
+ * The file a saved subtitle track is in, in its download's subtitleDir: a file's by its key (its
+ * place in the list moves when another is added before it), the video's own by their index.
+ */
+fun savedSubtitleName(t: com.vargon.weirdstreamer.api.models.SubtitleTrack) =
+    (if (t.external != null && t.key != null) t.key.replace(Regex("[^A-Za-z0-9]"), "-") else "${t.index}") +
+        if (t.text) ".vtt" else ".sup"
+
+/** How long a download's subtitles, skip times and trickplay frames go before they're saved again. */
+const val EXTRAS_REFRESH_MS = 12 * 60 * 60 * 1000L
 
 /**
  * The downloads on this device: kept in app storage (only this app can see them), listed in a
@@ -108,6 +118,7 @@ object DownloadStore {
     private lateinit var dir: File
     private lateinit var index: File
     private lateinit var prefs: android.content.SharedPreferences
+    private lateinit var appContext: Context
     private val lock = Any()
     private val _items = MutableStateFlow<List<DownloadItem>>(emptyList())
     val items: StateFlow<List<DownloadItem>> = _items.asStateFlow()
@@ -115,6 +126,7 @@ object DownloadStore {
     fun init(context: Context) {
         synchronized(lock) {
             if (::dir.isInitialized) return
+            appContext = context.applicationContext
             dir = File(context.filesDir, "downloads").apply { mkdirs() }
             File(dir, "thumbs").mkdirs()
             index = File(dir, "index.json")
@@ -176,6 +188,8 @@ object DownloadStore {
         item.thumbFile?.let { File(it).delete() }
         partFile(item).delete()
         subtitleDir(item).deleteRecursively()
+        trickplayDir(item).deleteRecursively()
+        segmentsFile(item).delete()
         save(_items.value.filter { it.id != id })
     }
 
@@ -190,6 +204,39 @@ object DownloadStore {
 
     /** A download's subtitle tracks: tracks.json (the server's list of them) and one file each. */
     fun subtitleDir(item: DownloadItem) = File(File(dir, "subtitles"), item.id)
+
+    /** A download's trickplay frames, named as on the server (frame-<seconds>.jpg). */
+    fun trickplayDir(item: DownloadItem) = File(File(dir, "trickplay"), item.id)
+
+    /** A download's intro and credits, as the server sent them (MediaSegments). */
+    fun segmentsFile(item: DownloadItem) = File(File(dir, "segments"), item.id + ".json")
+
+    /** The intro and credits saved with a download, if any. */
+    fun savedSegments(item: DownloadItem): com.vargon.weirdstreamer.api.models.MediaSegments? = runCatching {
+        gson.fromJson(segmentsFile(item).readText(), com.vargon.weirdstreamer.api.models.MediaSegments::class.java)
+    }.getOrNull()
+
+    /** The trickplay frames saved with a download (file:// URLs), if any. */
+    fun savedTrickplay(item: DownloadItem): com.vargon.weirdstreamer.api.models.TrickplayInfo? {
+        val frames = trickplayDir(item).listFiles().orEmpty().mapNotNull { f ->
+            f.name.removePrefix("frame-").removeSuffix(".jpg").toIntOrNull()?.takeIf { f.name.startsWith("frame-") && f.name.endsWith(".jpg") }
+                ?.let { com.vargon.weirdstreamer.api.models.TrickplayFrame(it, "file://${f.absolutePath}") }
+        }.sortedBy { it.time }
+        return if (frames.isEmpty()) null else com.vargon.weirdstreamer.api.models.TrickplayInfo(frames)
+    }
+
+    /** Whether a finished download's subtitles, skip times and trickplay frames are due to be saved (again). */
+    fun needsExtras(item: DownloadItem, now: Long = System.currentTimeMillis()) =
+        item.state == DownloadItem.State.DONE && (!item.subtitles || now - item.extrasAt > EXTRAS_REFRESH_MS)
+
+    /** Has the downloads of a server file save their extras again, now (a subtitle was added to it). */
+    fun extrasChanged(sourcePath: String) {
+        synchronized(lock) {
+            if (_items.value.none { it.sourcePath == sourcePath && it.state == DownloadItem.State.DONE }) return
+            save(_items.value.map { if (it.sourcePath == sourcePath) it.copy(extrasAt = 0) else it })
+        }
+        DownloadWorker.schedule(appContext)
+    }
 
     /** The finished download playing from [path] (a file:// URL), if it's one. */
     fun ofLocalPath(path: String): DownloadItem? =

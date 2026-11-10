@@ -126,6 +126,7 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
         val track = selectedTrack ?: return
         val gen = generation
         val file = java.io.File(dir, com.vargon.weirdstreamer.downloads.savedSubtitleName(track))
+            .takeIf { it.exists() } ?: java.io.File(dir, "${track.index}." + if (track.text) "vtt" else "sup") // saved before files went by key
         val (text, pics) = withContext(Dispatchers.IO) {
             runCatching {
                 if (track.text) parseWebVtt(file.readText()) to emptyList<PgsSet>()
@@ -236,6 +237,8 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
         }
         tracks = got.subtitles
         select(got.index)
+        // A download of this video saves it too.
+        runCatching { com.vargon.weirdstreamer.downloads.DownloadStore.extrasChanged(String(android.util.Base64.decode(encodedPath, android.util.Base64.DEFAULT))) }
         return got.index
     }
 

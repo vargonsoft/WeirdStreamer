@@ -216,6 +216,7 @@ func main() {
 	api.HandleFunc("/media/regenerate-thumbnails", mediaHandler.RegenerateThumbnails).Methods("POST")
 	api.HandleFunc("/media/thumbnail-updates", mediaHandler.ThumbnailUpdates).Methods("GET")
 	api.HandleFunc("/media/trickplay/{id}", mediaHandler.GetTrickplayInfo).Methods("GET")
+	api.HandleFunc("/media/trickplay", mediaHandler.GetTrickplayInfoByPath).Methods("GET")
 	api.HandleFunc("/media/{path}", mediaHandler.GetMediaInfo).Methods("GET")
 
 	// Config endpoints (admin only)

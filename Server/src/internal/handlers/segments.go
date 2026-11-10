@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 
@@ -37,21 +36,6 @@ func toSegmentJSON(s *database.Span) *segmentJSON {
 	return &segmentJSON{Start: s.Start, End: s.End, Source: s.Source}
 }
 
-// decodeMediaPath reads a base64 path parameter, checking it's a media file the user may see.
-func (h *MediaHandler) decodeMediaPath(w http.ResponseWriter, r *http.Request, encoded string) (string, bool) {
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil || len(decoded) == 0 {
-		respondError(w, http.StatusBadRequest, "Invalid path encoding")
-		return "", false
-	}
-	path := string(decoded)
-	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
-		respondError(w, http.StatusForbidden, "Access denied")
-		return "", false
-	}
-	return path, true
-}
-
 // GetSegments returns a video's intro and credits, and whether the user skips them by
 // themselves: GET /api/media/segments?path=<base64>
 func (h *MediaHandler) GetSegments(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +56,7 @@ func (h *MediaHandler) GetSegments(w http.ResponseWriter, r *http.Request) {
 		}
 		if resp.ShowID != 0 {
 			if after := h.episodesAfter(r.Context(), lib, resp.ShowID, path); len(after) > 0 {
-				resp.Next = h.continueEntry(lib, after[0])
+				resp.Next = clientItem(h.continueEntry(lib, after[0]))
 			}
 		}
 	}

@@ -23,6 +23,10 @@ for each TODO item are at the end of this file.
 - **Commits:** only when asked. End messages with
   `Co-Authored-By: <the model that made the change> <noreply@anthropic.com>` (the model running the session that edited the code). `origin` is a local bare repo
   (`../repos/WeirdStreamer`); push only when asked. There's also a `github` remote.
+- **Disk paths stay on the server:** clients must never learn where a library is on disk. A file or
+  folder is, to every client, its library's ID and its path below the library
+  (`01c6653f/EAC3 Test/EAC3 Test.mkv`); a disk path in a request is refused. Only an admin's Settings
+  (`/api/config`) shows library folders. See "Client paths" below.
 - Never `pkill -f` (it can match the live server or other processes). Stop processes by PID or
   through the tool that started them.
 
@@ -62,7 +66,7 @@ for each TODO item are at the end of this file.
     that account sees and plays it, and the worker downloads it with that account's token (older
     ones have none, and every account sees them). Each download also saves its subtitle tracks (text as WebVTT, PGS as .sup; the
     phone's languages, forced ones and files beside the video) in `subtitles/<id>/`, which
-    `ServerSubtitles.forDownload` reads offline. Older downloads get theirs on the worker's next run.
+    `ServerSubtitles.forDownload` reads offline (a file's by its `key`, the video's own by index), its intro and credits (`segments/<id>.json`, which `segmentsFor` reads for a `file://` path; offline, Skip Credits goes on to the next downloaded episode) and its trickplay frames (`trickplay/<id>/`, from `GET /api/media/trickplay?path=`). The worker saves them again every 12 hours and when a subtitle is downloaded for the video (`DownloadStore.needsExtras`, `extrasChanged`); older downloads get them on its next run.
   - Photos: `PhoneImageViewer.kt` and `ImageViewer.kt` (TV) loop a motion photo's clip
     (`LivePhotoUtil`): one inside the photo (Samsung, Google), or an Apple Live Photo's .MOV. The
     server pairs those in folder listings (`media.PairLivePhotos`: a .MOV of the photo's name whose
@@ -218,7 +222,17 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 
 ## How things work (where it matters for the TODOs)
 
-- **Streaming:** `GET /api/media/stream?path=<base64 path>`. Query options:
+- **Client paths** (`handlers/access.go`): every response gives a file's `path` as
+  `<library ID>/<path below the library>`, as folders are browsed (`clientPath`, applied last, by
+  `clientItems`, `clientFiles`, `clientContinue`, `clientItem`, `clientJob`: handlers work with disk
+  paths until then). Every request's `path` is that in base64, turned back by `diskPath`
+  (`decodeMediaPath` / `filePath`, which also check the user's group), which refuses anything else:
+  a disk path, or one that climbs out of its library. Text made for people (ffmpeg's arguments on
+  the Streams page, a download's error) goes through `withoutDiskPath`. A new endpoint must do the
+  same. Thumbnail and trickplay names and subtitle keys stay hashes of the disk path, so a server
+  moved with its folders keeps them. Clients treat `path` as a name to hand back, and store it
+  (downloads' `sourcePath`, offline progress, remembered track choices).
+- **Streaming:** `GET /api/media/stream?path=<base64 client path>`. Query options:
   - `transcode=1` forces an ffmpeg transcode: libx264 ultrafast, AAC 192k, fragmented MP4,
     8-bit 4:2:0.
   - `audiocodec=` picks the audio of a transcode or a copy: `copy` keeps it (AAC, AC-3, E-AC-3,

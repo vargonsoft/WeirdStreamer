@@ -487,8 +487,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Marks videos (server paths) watched or unwatched, then shows it. */
-    /** A playing video's intro and credits (by its player path), or null (SMB, downloads, offline). */
+    /**
+     * A playing video's intro and credits (by its player path), or null (SMB, offline). A
+     * download's are the ones saved with it (DownloadWorker keeps them up to date).
+     */
     suspend fun segmentsFor(path: String): com.vargon.weirdstreamer.api.models.MediaSegments? {
+        if (path.startsWith("file://")) return DownloadStore.ofLocalPath(path)?.let { DownloadStore.savedSegments(it) }
         val repo = serverRepository ?: return null
         val original = getFileItemForPath(path)?.originalPath ?: return null
         return repo.segments(original)
@@ -496,12 +500,19 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Skip Credits: this video counts as finished, then the next plays (the queue's, else the
-     * show's next episode). False when there's none, for the player to close.
+     * show's next episode). False when there's none, for the player to close. One played from the
+     * Downloads list goes on to the show's next downloaded episode (it may be offline).
      */
     fun playAfterCredits(path: String, positionMs: Long, next: ContinueItem?): Boolean {
         reportPlayback(path, positionMs, paused = true, ended = true)
+        if (path.startsWith("file://") && localPlaybackOf == null) {
+            val after = DownloadStore.ofLocalPath(path)?.let { DownloadStore.nextEpisode(it) } ?: return false
+            playDownload(after)
+            return true
+        }
+        val current = if (path.startsWith("file://")) localPlaybackOf ?: path else path
         val videos = getVideosInCurrentFolder()
-        val i = videos.indexOf(path)
+        val i = videos.indexOf(current)
         if (i != -1 && i < videos.size - 1) {
             playVideo(videos[i + 1])
             return true

@@ -67,6 +67,10 @@ interface ApiService {
     @GET("/api/media/trickplay/{id}")
     suspend fun getTrickplayInfo(@Path("id") id: Long): Response<TrickplayInfo>
 
+    /** A file's trickplay frames by its path, for downloads (which keep the path, not the ID). */
+    @GET("/api/media/trickplay")
+    suspend fun getTrickplayByPath(@Query("path") path: String): Response<TrickplayInfo>
+
     @GET("/api/media/disc")
     suspend fun getDisc(@Query("path") path: String): Response<DiscInfo>
 

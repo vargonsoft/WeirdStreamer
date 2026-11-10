@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -104,7 +104,7 @@ func (h *MediaHandler) streamTitle(path string) string {
 }
 
 type streamProgress struct {
-	Path     string  `json:"path"` // base64 absolute path
+	Path     string  `json:"path"` // base64 client path
 	Position float64 `json:"position"`
 	Paused   bool    `json:"paused"`
 	Ended    bool    `json:"ended"` // played to the end
@@ -122,14 +122,8 @@ func (h *MediaHandler) ReportStreamProgress(w http.ResponseWriter, r *http.Reque
 		respondError(w, http.StatusBadRequest, "Invalid position")
 		return
 	}
-	decoded, err := base64.StdEncoding.DecodeString(req.Path)
-	if err != nil || len(decoded) == 0 {
-		respondError(w, http.StatusBadRequest, "Invalid path encoding")
-		return
-	}
-	path := string(decoded)
-	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
-		respondError(w, http.StatusForbidden, "Access denied")
+	path, ok := h.decodeMediaPath(w, r, req.Path)
+	if !ok {
 		return
 	}
 	item, err := h.db.GetMediaItem(path)
@@ -152,7 +146,21 @@ func (h *MediaHandler) ListStreams(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusForbidden, "Admin access required")
 		return
 	}
-	respondJSON(w, http.StatusOK, h.streams.List())
+	// What's playing, by the path clients know it by: not where it is on disk, nor in ffmpeg's arguments.
+	list := h.streams.List()
+	for i := range list {
+		s := &list[i]
+		if t := s.Transcode; t != nil {
+			shown := *t
+			shown.Args = make([]string, len(t.Args))
+			for j, arg := range t.Args {
+				shown.Args[j] = withoutDiskPath(arg, s.Path)
+			}
+			s.Transcode = &shown
+		}
+		s.Path = clientPath(s.Path)
+	}
+	respondJSON(w, http.StatusOK, list)
 }
 
 // LocalStreamSummary says how many streams are active, without what is playing, to tools on the
@@ -187,14 +195,8 @@ func (h *MediaHandler) LocalStreamSummary(w http.ResponseWriter, r *http.Request
 // GetDisc describes a DVD disc image's titles (chapters, angles, audio and subtitle tracks), for
 // the players' disc controls: ?path=<base64 path>
 func (h *MediaHandler) GetDisc(w http.ResponseWriter, r *http.Request) {
-	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
-	if err != nil || len(decoded) == 0 {
-		respondError(w, http.StatusBadRequest, "Invalid path encoding")
-		return
-	}
-	path := string(decoded)
-	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
-		respondError(w, http.StatusForbidden, "Access denied")
+	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
+	if !ok {
 		return
 	}
 	if !media.IsDiscImage(path) {
@@ -203,7 +205,8 @@ func (h *MediaHandler) GetDisc(w http.ResponseWriter, r *http.Request) {
 	}
 	info, err := media.LoadDisc(path)
 	if err != nil {
-		respondError(w, http.StatusUnprocessableEntity, "Could not read the disc: "+err.Error())
+		log.Printf("[DISC] Could not read %s: %v", path, err)
+		respondError(w, http.StatusUnprocessableEntity, "Could not read the disc: "+withoutDiskPath(err.Error(), path))
 		return
 	}
 	respondJSON(w, http.StatusOK, info)
@@ -213,14 +216,8 @@ func (h *MediaHandler) GetDisc(w http.ResponseWriter, r *http.Request) {
 // path=<base64 path>&track=<index among its subtitles>&start=<s>&duration=<s>). Cue times count
 // from start; without a duration the cues go to the end of the file.
 func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
-	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
-	if err != nil || len(decoded) == 0 {
-		respondError(w, http.StatusBadRequest, "Invalid path encoding")
-		return
-	}
-	path := string(decoded)
-	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
-		respondError(w, http.StatusForbidden, "Access denied")
+	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
+	if !ok {
 		return
 	}
 	track, err := strconv.Atoi(r.URL.Query().Get("track"))
@@ -258,14 +255,8 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 // start as in the stream request). With next=1, the first keyframe at or after start instead, and
 // "ask": the start to request for it.
 func (h *MediaHandler) GetSeekPoint(w http.ResponseWriter, r *http.Request) {
-	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
-	if err != nil || len(decoded) == 0 {
-		respondError(w, http.StatusBadRequest, "Invalid path encoding")
-		return
-	}
-	path := string(decoded)
-	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
-		respondError(w, http.StatusForbidden, "Access denied")
+	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
+	if !ok {
 		return
 	}
 	start := r.URL.Query().Get("start")
@@ -298,14 +289,8 @@ func (h *MediaHandler) GetSeekPoint(w http.ResponseWriter, r *http.Request) {
 // GetCodecs reports a file's container and its video and audio codecs, for players that check
 // what they can play (GET /api/media/codecs?path=<base64 path>).
 func (h *MediaHandler) GetCodecs(w http.ResponseWriter, r *http.Request) {
-	decoded, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("path"))
-	if err != nil || len(decoded) == 0 {
-		respondError(w, http.StatusBadRequest, "Invalid path encoding")
-		return
-	}
-	path := string(decoded)
-	if !h.isValidMediaPath(path) || !h.canAccessPath(r, path) {
-		respondError(w, http.StatusForbidden, "Access denied")
+	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
+	if !ok {
 		return
 	}
 	if respondUnreadable(w, path) {

@@ -70,7 +70,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     override suspend fun doWork(): Result {
         DownloadStore.init(applicationContext)
         while (true) {
-            val item = DownloadStore.nextQueued() ?: return saveMissingSubtitles()
+            val item = DownloadStore.nextQueued() ?: return refreshExtras()
             setForeground(foregroundInfo(item, 0f))
             try {
                 download(item)
@@ -201,30 +201,86 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
         // The server's copy isn't needed any more.
         item.jobId?.let { runCatching { api.deleteDownload(it) } }
-        // Best effort: a download without them gets them on a later run (saveMissingSubtitles).
+        // Best effort: what isn't saved now is on a later run (refreshExtras).
         DownloadStore.get(item.id)?.let { done ->
-            try { saveSubtitles(done, codecs) } catch (e: CancellationException) { throw e } catch (e: Exception) { }
+            try { saveExtras(done, codecs) } catch (e: CancellationException) { throw e } catch (e: Exception) { }
         }
     }
 
     /**
-     * Saves the subtitle tracks of finished downloads that don't have them yet (downloaded before
-     * this app saved them, or while the server couldn't send them). A file the server can't read
-     * is tried again next time; a network error stops the rest until then.
+     * Saves the subtitles, skip times and trickplay frames of finished downloads that don't have
+     * them yet (downloaded before this app saved them, or while the server couldn't send them),
+     * and again every [EXTRAS_REFRESH_MS] and when a subtitle was added to the video, for what
+     * changed on the server since. A server that can't be reached is left until next time.
      */
-    private suspend fun saveMissingSubtitles(): Result {
-        for (item in DownloadStore.items.value.filter { it.state == DownloadItem.State.DONE && !it.subtitles }) {
+    private suspend fun refreshExtras(): Result {
+        val away = mutableSetOf<String>()
+        for (item in DownloadStore.items.value.filter { DownloadStore.needsExtras(it) }) {
+            if (item.serverAddress in away) continue
             try {
-                saveSubtitles(item, null)
+                saveExtras(item, null)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: IOException) {
-                break // offline, or the server is away
+                away += item.serverAddress // offline, or the server is away
             } catch (e: Exception) {
                 continue // this file only
             }
         }
         return Result.success()
+    }
+
+    /**
+     * Saves [item]'s subtitles, intro and credits, and trickplay frames. Each goes on without the
+     * others; any but a network error (thrown) leaves it to try again next run.
+     */
+    private suspend fun saveExtras(item: DownloadItem, known: CodecsInfo?) {
+        var failed = false
+        for (step in listOf<suspend () -> Unit>({ saveSubtitles(item, known) }, { saveSegments(item) }, { saveTrickplay(item) })) {
+            try { step() } catch (e: CancellationException) { throw e } catch (e: IOException) { throw e } catch (e: Exception) { failed = true }
+        }
+        if (!failed) DownloadStore.update(item.id) { it.copy(subtitles = true, extrasAt = System.currentTimeMillis()) }
+    }
+
+    /** Saves [item]'s intro and credits (none: an empty answer), for Skip Intro and Skip Credits offline. */
+    private suspend fun saveSegments(item: DownloadItem) = withContext(Dispatchers.IO) {
+        val encodedPath = Base64.encodeToString(item.sourcePath.toByteArray(), Base64.NO_WRAP)
+        val r = ApiClient.create(item.serverAddress, credentials, item.account).getSegments(encodedPath)
+        if (r.code() >= 500) throw IOException("Server error ${r.code()}")
+        val segments = r.body()
+        if (segments == null) { DownloadStore.segmentsFile(item).delete(); return@withContext }
+        val file = DownloadStore.segmentsFile(item).apply { parentFile?.mkdirs() }
+        File(file.path + ".part").apply { writeText(Gson().toJson(segments)) }.renameTo(file)
+    }
+
+    /**
+     * Saves [item]'s trickplay frames (small JPEGs, one every 10 seconds), fetching only those it
+     * doesn't have and dropping those the server no longer has. None yet on the server, or a
+     * server from before it sent them by path: nothing, until they're made.
+     */
+    private suspend fun saveTrickplay(item: DownloadItem) = withContext(Dispatchers.IO) {
+        val encodedPath = Base64.encodeToString(item.sourcePath.toByteArray(), Base64.NO_WRAP)
+        val r = ApiClient.create(item.serverAddress, credentials, item.account).getTrickplayByPath(encodedPath)
+        if (r.code() > 500) throw IOException("Server error ${r.code()}") // 500: it has no trickplay folder
+        val frames = r.body()?.frames.orEmpty()
+        val dir = DownloadStore.trickplayDir(item).apply { mkdirs() }
+        val names = frames.map { it.url.substringAfterLast('/') }.toSet()
+        dir.listFiles().orEmpty().filter { it.name !in names }.forEach { it.delete() }
+        val http = ApiClient.downloadClient(item.serverAddress, credentials, item.account)
+        val base = normalizedServerUrl(item.serverAddress)
+        frames.forEachIndexed { i, frame ->
+            if (i % 50 == 0 && !stillWanted(item.id)) return@withContext
+            val file = File(dir, frame.url.substringAfterLast('/'))
+            if (file.length() > 0) return@forEachIndexed
+            val url = if (frame.url.startsWith("http")) frame.url else base + (if (frame.url.startsWith("/")) "" else "/") + frame.url
+            http.newCall(Request.Builder().url(url).build()).execute().use { f ->
+                if (!f.isSuccessful) return@forEachIndexed // this frame only
+                val tmp = File(dir, file.name + ".part")
+                tmp.outputStream().use { f.body!!.byteStream().copyTo(it) }
+                tmp.renameTo(file)
+            }
+        }
+        if (!stillWanted(item.id)) dir.deleteRecursively()
     }
 
     /**
@@ -255,8 +311,10 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 tmp.renameTo(file)
             }
         }
+        // Files of tracks gone from the server (or saved under their index before): not needed.
+        val keep = saved.map(::savedSubtitleName).toSet() + "tracks.json"
         File(dir, "tracks.json").writeText(Gson().toJson(saved))
-        DownloadStore.update(item.id) { it.copy(subtitles = true) }
+        dir.listFiles().orEmpty().filter { it.name !in keep }.forEach { it.delete() }
     }
 
     private fun fetchThumbnail(http: okhttp3.OkHttpClient, url: String, dest: File): File? = runCatching {
