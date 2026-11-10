@@ -871,40 +871,37 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         }
                     }
                     
-                    // Frame-by-frame controls when paused
-                    AnimatedVisibility(
-                        visible = !isPlaying,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
+                    // Frame by frame: always there (shown only while paused, they flashed in during
+                    // a seek's buffering and moved the buttons above); a step pauses the video.
+                    Row(
+                        modifier = Modifier.padding(top = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(64.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(top = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(64.dp)
-                        ) {
-                            IconButton(onClick = { 
-                                lastInteractionTime = System.currentTimeMillis()
-                                // Approx 1 frame back at 24fps
-                                exoPlayer.seekTo((exoPlayer.currentPosition - 40L).coerceAtLeast(0L))
-                            }) {
-                                Icon(
-                                    Icons.Default.SkipPrevious,
-                                    contentDescription = "Frame Back",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            }
-                            IconButton(onClick = { 
-                                lastInteractionTime = System.currentTimeMillis()
-                                // Approx 1 frame forward at 24fps
-                                exoPlayer.seekTo(exoPlayer.currentPosition + 40L)
-                            }) {
-                                Icon(
-                                    Icons.Default.SkipNext,
-                                    contentDescription = "Frame Forward",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            }
+                        IconButton(onClick = { 
+                            lastInteractionTime = System.currentTimeMillis()
+                            exoPlayer.pause()
+                            // Approx 1 frame back at 24fps
+                            exoPlayer.seekTo((exoPlayer.currentPosition - 40L).coerceAtLeast(0L))
+                        }) {
+                            Icon(
+                                Icons.Default.SkipPrevious,
+                                contentDescription = "Frame Back",
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        IconButton(onClick = { 
+                            lastInteractionTime = System.currentTimeMillis()
+                            exoPlayer.pause()
+                            // Approx 1 frame forward at 24fps
+                            exoPlayer.seekTo(exoPlayer.currentPosition + 40L)
+                        }) {
+                            Icon(
+                                Icons.Default.SkipNext,
+                                contentDescription = "Frame Forward",
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
                         }
                     }
                 }
