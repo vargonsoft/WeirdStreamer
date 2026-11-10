@@ -139,7 +139,7 @@ function setupEventListeners() {
     document.getElementById('change-password-btn')?.addEventListener('click', handleChangePassword);
     
     // Theme management
-    document.getElementById('save-theme-btn')?.addEventListener('click', handleSaveTheme);
+    renderThemePicker();
     
     // Browser back/forward buttons
     // Each history entry remembers how far down its page was, for Back and Forward. The page
@@ -2528,15 +2528,7 @@ async function showSettings(pushHistory = true) {
         }
     }
 
-    // Apply theme selection (accessible to all)
-    applyTheme();
-
-    // Setup theme radio button listeners for immediate preview
-    document.querySelectorAll('input[name="theme"]').forEach(radio => {
-        radio.addEventListener('change', (e) => {
-            document.documentElement.setAttribute('data-theme', e.target.value);
-        });
-    });
+    applyTheme(); // marks the theme in use in the picker
 
     // Show settings screen
     if (pushHistory) pushScreenHistory('settings'); // first, keeping the view's scroll position
@@ -3188,32 +3180,76 @@ async function handleChangePassword() {
     }
 }
 
-// Theme Management
+// Theme Management: the theme is this browser's (localStorage), picked in Settings, My Account.
+const THEMES = [
+    ['default', 'Default (Ember)'], ['dark', 'Dark'], ['cinema-blue', 'Cinema Blue'], ['cinema-red', 'Cinema Red'],
+    ['teal', 'Teal'], ['orange', 'Orange'], ['brown', 'Brown'], ['purple', 'Purple'], ['gray', 'Gray'],
+    ['yellow', 'Yellow'], ['green', 'Green'], ['harbor-lights', 'Harbor Lights'], ['moss-and-rose', 'Moss and Rose'],
+    ['desert-bloom', 'Desert Bloom'], ['arctic-berry', 'Arctic Berry'], ['copper-sea', 'Copper Sea'],
+    ['neon-arcade', 'Neon Arcade'], ['terminal-green', 'Terminal Green'], ['terminal-amber', 'Terminal Amber'],
+];
+
 function applyTheme() {
     const savedTheme = localStorage.getItem('app-theme') || 'default';
     document.documentElement.setAttribute('data-theme', savedTheme);
-    
-    // Update radio buttons if on settings page
-    const themeRadio = document.getElementById(`theme-${savedTheme}`);
-    if (themeRadio) {
-        themeRadio.checked = true;
-    }
+    document.querySelectorAll('.theme-tile').forEach(tile => {
+        tile.setAttribute('aria-checked', String(tile.dataset.theme === savedTheme));
+    });
 }
 
-function handleSaveTheme() {
-    const selectedTheme = document.querySelector('input[name="theme"]:checked')?.value;
-    if (!selectedTheme) return;
-    
-    localStorage.setItem('app-theme', selectedTheme);
-    document.documentElement.setAttribute('data-theme', selectedTheme);
-    
-    const messageEl = document.getElementById('theme-message');
-    messageEl.textContent = 'Theme saved successfully!';
-    messageEl.style.color = '#27ae60';
-    
-    setTimeout(() => {
-        messageEl.textContent = '';
-    }, 2000);
+// A theme's own colors, read from its :root[data-theme=…] blocks, for drawing its tile
+// whatever theme is in use.
+function themeColors(name) {
+    const vars = {};
+    for (const sheet of document.styleSheets) {
+        let rules;
+        try { rules = sheet.cssRules; } catch (e) { continue; }
+        for (const rule of rules) {
+            if (rule.selectorText !== `:root[data-theme="${name}"]`) continue;
+            for (const prop of rule.style) {
+                if (prop.startsWith('--')) vars[prop] = rule.style.getPropertyValue(prop).trim();
+            }
+        }
+    }
+    return {
+        background: vars['--background-gradient'] || '#f4f4f8',
+        box: vars['--surface-color'] || '#ffffff',
+        button: vars['--button-bg'] || vars['--primary-color'] || '#667eea',
+        buttonText: vars['--button-text'] || '#ffffff',
+        accent: vars['--heading-color'] || vars['--primary-color'] || '#667eea',
+        text: vars['--text-color'] || '#333333',
+    };
+}
+
+// The theme picker: a tile per theme, drawn in its colors (background, box, button, accent).
+// Picking one applies and keeps it at once.
+function renderThemePicker() {
+    const picker = document.getElementById('theme-picker');
+    if (!picker) return;
+    picker.innerHTML = '';
+    THEMES.forEach(([name, label]) => {
+        const c = themeColors(name);
+        const tile = document.createElement('button');
+        tile.type = 'button';
+        tile.className = 'theme-tile';
+        tile.dataset.theme = name;
+        tile.setAttribute('role', 'radio');
+        tile.innerHTML = `
+            <span class="theme-preview" style="background: ${c.background}">
+                <span class="theme-preview-box" style="background: ${c.box}">
+                    <span class="theme-preview-heading" style="background: ${c.accent}"></span>
+                    <span class="theme-preview-line" style="background: ${c.text}"></span>
+                    <span class="theme-preview-button" style="background: ${c.button}; color: ${c.buttonText}">Aa</span>
+                </span>
+            </span>
+            <span class="theme-name">${escapeHtml(label)}</span>`;
+        tile.addEventListener('click', () => {
+            localStorage.setItem('app-theme', name);
+            applyTheme();
+        });
+        picker.appendChild(tile);
+    });
+    applyTheme();
 }
 
 
