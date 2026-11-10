@@ -83,6 +83,7 @@
                     <button class="settings-tab" data-tab="jobs">Jobs</button>
                     <button class="settings-tab" data-tab="account">My Account</button>
                     <button class="settings-tab" data-tab="subtitles">Subtitles</button>
+                    <button class="settings-tab" data-tab="themes">Themes</button>
                 </div>
 
                 <!-- Server & Media Tab -->
@@ -230,13 +231,17 @@
                     </div>
                 </div>
 
-                <div id="account-tab" class="settings-tab-content">
-                    <p id="account-signed-in" class="account-signed-in"></p>
+                <!-- This browser's theme (not the account's: it's kept in the browser) -->
+                <div id="themes-tab" class="settings-tab-content">
                     <div class="settings-group">
                         <h3 class="icon-heading" data-icon="palette">Theme</h3>
+                        <p class="settings-hint">Kept in this browser.</p>
                         <div id="theme-picker" class="theme-picker" role="radiogroup" aria-label="Theme"></div>
                     </div>
-                    
+                </div>
+
+                <div id="account-tab" class="settings-tab-content">
+                    <p id="account-signed-in" class="account-signed-in"></p>
                     <div class="settings-group app-download-group" hidden>
                         <h3>Android App</h3>
                         <p class="app-download-text">For Android phones and TVs. Download it on the device, then open it to install (allow installs from your browser if asked).</p>

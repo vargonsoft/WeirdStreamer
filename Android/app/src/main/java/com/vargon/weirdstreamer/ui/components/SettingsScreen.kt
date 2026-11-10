@@ -44,7 +44,11 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val backFocus = remember { FocusRequester() }
-    val themeFocus = remember { FocusRequester() }
+    // Two tabs, as on the phone: General (this list) and Themes (the theme picker).
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+    val generalTabFocus = remember { FocusRequester() }
+    val themesTabFocus = remember { FocusRequester() }
+    val currentThemeFocus = remember { FocusRequester() }
     val hiddenFilesFocus = remember { FocusRequester() }
     val clearCacheFocus = remember { FocusRequester() }
     val updateFocus = remember { FocusRequester() }
@@ -70,16 +74,8 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
         backFocus.requestFocus()
     }
 
-    val currentTheme = viewModel.credentialManager.getAppTheme()
-    var themeMenuExpanded by remember { mutableStateOf(false) }
-    val themeButtonFocus = remember { AppTheme.entries.map { FocusRequester() } }
-
-    LaunchedEffect(themeMenuExpanded) {
-        if (themeMenuExpanded) {
-            delay(50)
-            themeButtonFocus[AppTheme.fromKey(currentTheme).ordinal].requestFocus()
-        }
-    }
+    var currentTheme by remember { mutableStateOf(viewModel.credentialManager.getAppTheme()) }
+    val firstBelowTabs = if (tab == 0) hiddenFilesFocus else currentThemeFocus
 
     Box(
         modifier = Modifier
@@ -105,109 +101,38 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         modifier = Modifier
                             .focusRequester(backFocus)
                             .focusProperties { 
-                                down = themeFocus
+                                down = firstBelowTabs
                             }
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Text("Settings", style = MaterialTheme.typography.headlineMedium, color = WeirdStreamerTheme.spec.headingColor)
+                    Spacer(modifier = Modifier.weight(1f))
+                    listOf("General" to generalTabFocus, "Themes" to themesTabFocus).forEachIndexed { i, (name, focus) ->
+                        if (i > 0) Spacer(modifier = Modifier.width(12.dp))
+                        Button(shape = tvButtonShape(),
+                            onClick = { tab = i },
+                            colors = if (tab == i) tvButtonColors()
+                                else tvButtonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface),
+                            modifier = Modifier.focusRequester(focus).focusProperties { down = firstBelowTabs }
+                        ) {
+                            Text(name)
+                        }
+                    }
                 }
                 Spacer(modifier = Modifier.height(32.dp))
             }
 
-            // Theme Selector
-            item {
-                Surface(
-                    onClick = { themeMenuExpanded = !themeMenuExpanded },
-                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
-                    colors = ClickableSurfaceDefaults.colors(
-                        containerColor = Color.Transparent,
-                        focusedContainerColor = Color.Transparent,
-                        pressedContainerColor = Color.Transparent
-                    ),
-                    border = ClickableSurfaceDefaults.border(
-                        focusedBorder = Border(
-                            border = BorderStroke(2.dp, tvFocusBorderColor()),
-                            inset = 0.dp,
-                            shape = MaterialTheme.shapes.small
-                        )
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(themeFocus)
-                        .focusProperties {
-                            up = backFocus
-                            down = hiddenFilesFocus
-                        }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Theme", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                AppTheme.fromKey(currentTheme).label,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
+            if (tab == 1) item {
+                TvThemePicker(AppTheme.fromKey(currentTheme), onPick = {
+                    viewModel.credentialManager.setAppTheme(it.name)
+                    currentTheme = it.name
+                    onThemeChanged?.invoke()
+                }, up = themesTabFocus, currentFocus = currentThemeFocus)
             }
 
-            // Theme Menu Buttons (when expanded)
-            if (themeMenuExpanded) {
-                item {
-                    // Rows filled by the labels' length (a button is about its label plus 8 characters
-                    // wide, and a row fits about 110): Up and Down go between them, Left and Right along each.
-                    val themes = AppTheme.entries.map { Triple(it.name, it.label, themeButtonFocus[it.ordinal]) }
-                    val rows = themes.fold(mutableListOf<MutableList<Triple<String, String, FocusRequester>>>()) { rows, theme ->
-                        val last = rows.lastOrNull()
-                        if (last != null && last.sumOf { it.second.length + 8 } + theme.second.length + 8 <= 110) last.add(theme)
-                        else rows.add(mutableListOf(theme))
-                        rows
-                    }
-                    rows.forEachIndexed { r, row ->
-                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                            row.forEachIndexed { index, (themeKey, themeName, focusReq) ->
-                                Button(shape = tvButtonShape(),
-                                    onClick = {
-                                        viewModel.credentialManager.setAppTheme(themeKey)
-                                        onThemeChanged?.invoke()
-                                        themeMenuExpanded = false
-                                    },
-                                    colors = if (currentTheme == themeKey) {
-                                        tvButtonColors()
-                                    } else {
-                                        tvButtonColors(
-                                            containerColor = Color.Transparent,
-                                            contentColor = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    },
-                                    modifier = Modifier
-                                        .focusRequester(focusReq)
-                                        .focusProperties {
-                                            up = if (r > 0) rows[r - 1][minOf(index, rows[r - 1].size - 1)].third else themeFocus
-                                            down = if (r < rows.size - 1) rows[r + 1][minOf(index, rows[r + 1].size - 1)].third else hiddenFilesFocus
-                                            left = if (index > 0) row[index - 1].third else FocusRequester.Default
-                                            right = if (index < row.size - 1) row[index + 1].third else FocusRequester.Default
-                                        }
-                                ) {
-                                    Text(themeName, maxLines = 1, softWrap = false)
-                                }
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-
+            if (tab == 0) {
             // Hidden Files Toggle
             item {
                 Surface(
@@ -229,7 +154,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         .fillMaxWidth()
                         .focusRequester(hiddenFilesFocus)
                         .focusProperties {
-                            up = themeFocus
+                            up = generalTabFocus
                             down = clearCacheFocus
                         }
                 ) {
@@ -404,6 +329,8 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     HorizontalDivider()
                     Spacer(modifier = Modifier.height(24.dp))
                 }
+            }
+
             }
 
             // Required by TMDB's terms for apps that show its data.

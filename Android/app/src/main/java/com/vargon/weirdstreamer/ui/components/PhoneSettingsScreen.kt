@@ -32,7 +32,7 @@ import com.vargon.weirdstreamer.MediaViewModel
 fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged: (() -> Unit)? = null) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
-    val currentTheme = viewModel.credentialManager.getAppTheme()
+    var currentTheme by remember { mutableStateOf(viewModel.credentialManager.getAppTheme()) }
 
     // Observe auth state changes
     val authStateRefresh = viewModel.authStateRefreshTrigger
@@ -57,6 +57,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
         val isAdmin = remember(server?.address, authStateRefresh) { server?.signedInAs()?.second ?: false }
         val tabs = buildList {
             add("App")
+            add("Themes")
             // Downloads are the account's: there's none until a server's account is open.
             if (server != null) {
                 add("Downloads")
@@ -77,7 +78,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                 }
             }
         }
-        if (server == null) {
+        if (server == null && tab == "App") {
             Text(
                 "Open a WeirdStreamer server to manage it here.",
                 style = MaterialTheme.typography.bodySmall,
@@ -92,62 +93,12 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
         "Jobs" -> JobsTab(server!!)
         "Account" -> AccountTab(server!!)
         "Downloads" -> DownloadsTab(viewModel)
+        "Themes" -> PhoneThemePicker(AppTheme.fromKey(currentTheme), onPick = {
+            viewModel.credentialManager.setAppTheme(it.name)
+            currentTheme = it.name
+            onThemeChanged?.invoke()
+        })
         else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-            // Theme Section
-            item {
-                Text(
-                    "Appearance",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
-
-            item {
-                var showThemeDialog by remember { mutableStateOf(false) }
-                ListItem(
-                    headlineContent = { Text("Theme") },
-                    supportingContent = {
-                        Text(
-                            AppTheme.fromKey(currentTheme).label
-                        )
-                    },
-                    leadingContent = { Icon(Icons.Default.Palette, contentDescription = null) },
-                    modifier = Modifier.clickable { showThemeDialog = true }
-                )
-
-                if (showThemeDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showThemeDialog = false },
-                        title = { Text("Select Theme") },
-                        text = {
-                            Column(Modifier.verticalScroll(rememberScrollState())) {
-                                AppTheme.entries.map { it.name to it.label }.forEach { (key, name) ->
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                viewModel.credentialManager.setAppTheme(key)
-                                                onThemeChanged?.invoke()
-                                                showThemeDialog = false
-                                            }
-                                            .padding(vertical = 12.dp)
-                                    ) {
-                                        RadioButton(selected = currentTheme == key, onClick = null)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(name)
-                                    }
-                                }
-                            }
-                        },
-                        confirmButton = {
-                            PhoneSecondaryButton(onClick = { showThemeDialog = false }) { Text("Close") }
-                        }
-                    )
-                }
-            }
-
             item {
                 ListItem(
                     headlineContent = { Text("Show hidden files") },

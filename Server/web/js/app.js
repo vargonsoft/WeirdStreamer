@@ -2128,6 +2128,8 @@ const MATERIAL_ICONS = {
     tv: 'M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z',
     theaters: 'M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3h-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2z',
     check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+    chevronLeft: 'M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z',
+    chevronRight: 'M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z',
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     android: 'M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85-.29-.15-.65-.06-.83.22l-1.88 3.24c-2.86-1.21-6.08-1.21-8.94 0L5.65 5.67c-.19-.29-.58-.38-.87-.2-.28.18-.37.54-.22.83L6.4 9.48C3.3 11.25 1.28 14.44 1 18h22c-.28-3.56-2.3-6.75-5.4-8.52zM7 15.25c-.69 0-1.25-.56-1.25-1.25s.56-1.25 1.25-1.25 1.25.56 1.25 1.25-.56 1.25-1.25 1.25zm10 0c-.69 0-1.25-.56-1.25-1.25s.56-1.25 1.25-1.25 1.25.56 1.25 1.25-.56 1.25-1.25 1.25z',
     search: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
@@ -4280,7 +4282,7 @@ function createTitleHero(t) {
             person.append(face, name, role);
             cast.appendChild(person);
         });
-        info.appendChild(cast);
+        info.appendChild(withScrollButtons(cast));
     }
     hero.appendChild(info);
     return hero;
@@ -4651,7 +4653,7 @@ async function createContinueRow(lib = '') {
     section.appendChild(el('h2', 'library-section', 'Continue Watching'));
     const row = el('div', 'continue-items');
     items.forEach(item => row.appendChild(createContinueCard(item)));
-    section.appendChild(row);
+    section.appendChild(withScrollButtons(row));
     return section;
 }
 
@@ -4683,8 +4685,37 @@ function newAdditionsSection(heading, items) {
     section.appendChild(el('h2', 'library-section', heading));
     const row = el('div', 'continue-items');
     items.forEach(item => row.appendChild(createContinueCard(item)));
-    section.appendChild(row);
+    section.appendChild(withScrollButtons(row));
     return section;
+}
+
+// A sideways row with ‹ and › buttons over its ends, for a mouse (a touch screen swipes): each
+// shows while the pointer is over the row and it can scroll that way, and moves it about a
+// row's width.
+function withScrollButtons(row) {
+    const wrap = el('div', 'scroll-row');
+    wrap.appendChild(row);
+    // A few pixels' slack: snapping to the first card leaves the row its padding's width in.
+    const update = () => {
+        wrap.classList.toggle('can-prev', row.scrollLeft > 4);
+        wrap.classList.toggle('can-next', row.scrollLeft + row.clientWidth < row.scrollWidth - 4);
+    };
+    [['prev', 'chevronLeft', 'Scroll left', -1], ['next', 'chevronRight', 'Scroll right', 1]].forEach(([side, icon, label, dir]) => {
+        const btn = el('button', `scroll-row-btn ${side}`);
+        btn.type = 'button';
+        btn.tabIndex = -1; // the cards themselves take keyboard focus, and bring themselves into view
+        btn.setAttribute('aria-label', label);
+        btn.innerHTML = iconSvg(icon);
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            row.scrollBy({ left: dir * Math.max(row.clientWidth * 0.9, 200), behavior: 'smooth' });
+        });
+        wrap.appendChild(btn);
+    });
+    row.addEventListener('scroll', update, { passive: true });
+    new ResizeObserver(update).observe(row); // its width, and images arriving
+    requestAnimationFrame(update);
+    return wrap;
 }
 
 // When a video arrived, in days on this device's calendar: "Added 2 days ago".
