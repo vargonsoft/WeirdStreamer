@@ -20,6 +20,7 @@ import com.vargon.weirdstreamer.api.models.ContinueItem
 import com.vargon.weirdstreamer.api.models.LibraryFile
 import com.vargon.weirdstreamer.api.models.Playback
 import com.vargon.weirdstreamer.api.models.SyncedPlayback
+import com.vargon.weirdstreamer.downloads.DownloadAhead
 import com.vargon.weirdstreamer.downloads.DownloadStore
 import com.vargon.weirdstreamer.downloads.LocalProgress
 import com.vargon.weirdstreamer.api.models.LibraryListing
@@ -370,11 +371,27 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             LocalProgress.record(download.serverAddress, download.sourcePath, positionMs / 1000.0, ended)
             val repo = serverRepository?.takeIf { it.address == download.serverAddress } ?: return
             viewModelScope.launch { syncLocalProgress(repo) }
+            downloadAhead(repo, download.sourcePath, positionMs, ended)
             return
         }
         val repo = serverRepository ?: return
         val originalPath = getFileItemForPath(path)?.originalPath ?: return
         viewModelScope.launch { repo.reportPlayback(originalPath, positionMs / 1000.0, paused, ended, discTitle) }
+        downloadAhead(repo, originalPath, positionMs, ended)
+    }
+
+    // The episodes Download ahead ran for (server and path), once each while the app runs
+    private val aheadDone = mutableSetOf<String>()
+
+    /** Download ahead (phone): a couple of minutes into an episode (or at the end of a shorter one), its next ones download. */
+    private fun downloadAhead(repo: ServerRepository, originalPath: String, positionMs: Long, ended: Boolean) {
+        if (!DownloadStore.downloadAhead || (positionMs < DownloadAhead.AFTER_MS && !ended)) return
+        val key = repo.address + "\n" + originalPath
+        if (!aheadDone.add(key)) return
+        viewModelScope.launch {
+            runCatching { DownloadAhead.run(getApplication(), repo, originalPath) { repo.absoluteUrl(it) } }
+                .onFailure { aheadDone.remove(key) } // offline, say: next report tries again
+        }
     }
 
     // ---- Playback progress: resume points, watched marks and Continue Watching ----

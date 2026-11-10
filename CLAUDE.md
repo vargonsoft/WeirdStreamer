@@ -67,6 +67,12 @@ for each TODO item are at the end of this file.
     ones have none, and every account sees them). Each download also saves its subtitle tracks (text as WebVTT, PGS as .sup; the
     phone's languages, forced ones and files beside the video) in `subtitles/<id>/`, which
     `ServerSubtitles.forDownload` reads offline (a file's by its `key`, the video's own by index), its intro and credits (`segments/<id>.json`, which `segmentsFor` reads for a `file://` path; offline, Skip Credits goes on to the next downloaded episode) and its trickplay frames (`trickplay/<id>/`, from `GET /api/media/trickplay?path=`). The worker saves them again every 12 hours and when a subtitle is downloaded for the video (`DownloadStore.needsExtras`, `extrasChanged`); older downloads get them on its next run.
+    Download ahead (Settings › Downloads, off by default; `DownloadAhead.kt`): two minutes into an episode (or at the
+    end of a shorter one) the phone asks `GET /api/media/upcoming?path=&count=` for the next episodes and queues
+    those not downloaded (`DownloadItem.ahead`), as many as download in about an hour at `DownloadStore.speed`
+    (measured by the worker), 3 to 5, in the quality of the show's episodes downloaded by hand (else
+    Compatibility), leaving 500 MB or 5% of the phone free. Ahead downloads before the episode playing are removed;
+    ones made by hand never are.
   - Photos: `PhoneImageViewer.kt` and `ImageViewer.kt` (TV) loop a motion photo's clip
     (`LivePhotoUtil`): one inside the photo (Samsung, Google), or an Apple Live Photo's .MOV. The
     server pairs those in folder listings (`media.PairLivePhotos`: a .MOV of the photo's name whose

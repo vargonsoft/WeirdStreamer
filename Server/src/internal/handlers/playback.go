@@ -454,6 +454,37 @@ func (h *MediaHandler) episodesAfter(ctx context.Context, lib config.MediaPath, 
 	return nil
 }
 
+// Upcoming lists the episodes after a video, for the phone's Download ahead:
+// GET /api/media/upcoming?path=<base64>&count=N (1 to 10, default 5). A video that isn't an
+// episode, or the last one, has none.
+func (h *MediaHandler) Upcoming(w http.ResponseWriter, r *http.Request) {
+	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
+	if !ok {
+		return
+	}
+	count := 5
+	if n, err := strconv.Atoi(r.URL.Query().Get("count")); err == nil && n > 0 {
+		count = min(n, 10)
+	}
+	items := []continueItem{}
+	if lib, found := libraryForPath(path); found {
+		if item := h.continueEntry(lib, path); item != nil {
+			if show := episodeShow(item); show != 0 {
+				for _, next := range h.episodesAfter(r.Context(), lib, show, path) {
+					if len(items) == count {
+						break
+					}
+					if e := h.continueEntry(lib, next); e != nil {
+						items = append(items, continueItem{MediaItem: *e, LibraryID: lib.ID, LibraryType: lib.Type})
+					}
+				}
+			}
+		}
+	}
+	clientContinue(items)
+	respondJSON(w, http.StatusOK, map[string]any{"episodes": items})
+}
+
 // RemoveFromContinue forgets where the user stopped in a video, taking it off Continue
 // Watching: DELETE /api/playback/continue?path=<base64>
 func (h *MediaHandler) RemoveFromContinue(w http.ResponseWriter, r *http.Request) {

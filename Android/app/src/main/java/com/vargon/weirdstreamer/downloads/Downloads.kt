@@ -39,7 +39,9 @@ data class DownloadItem(
     val compat: Boolean = false,
     val subtitles: Boolean = false,  // its subtitle tracks are saved (subtitleDir), or there are none
     // When its subtitles, skip times and trickplay frames were last saved from the server (0: never)
-    val extrasAt: Long = 0
+    val extrasAt: Long = 0,
+    // Downloaded ahead of the episode being watched (DownloadAhead), removed once watched past
+    val ahead: Boolean = false
 ) {
     enum class State { QUEUED, PREPARING, DOWNLOADING, DONE, FAILED }
 
@@ -157,6 +159,22 @@ object DownloadStore {
     var wifiOnly: Boolean
         get() = prefs.getBoolean("wifi_only", true)
         set(value) { prefs.edit().putBoolean("wifi_only", value).apply() }
+
+    /** Download ahead (phone): watching an episode downloads the next ones (DownloadAhead). */
+    var downloadAhead: Boolean
+        get() = prefs.getBoolean("download_ahead", false)
+        set(value) { prefs.edit().putBoolean("download_ahead", value).apply() }
+
+    /** How fast downloads arrive here, in bytes a second (0: not known yet), averaged over the last ones. */
+    val speed: Double get() = prefs.getFloat("speed", 0f).toDouble()
+
+    /** Takes in a download's speed: [bytes] in [millis]; short ones say little and are left out. */
+    fun recordSpeed(bytes: Long, millis: Long) {
+        if (bytes < 8L * 1024 * 1024 || millis < 2000) return
+        val now = bytes * 1000.0 / millis
+        val old = speed
+        prefs.edit().putFloat("speed", (if (old > 0) old * 0.6 + now * 0.4 else now).toFloat()).apply()
+    }
 
     /** The account in use's download of a server file. */
     fun find(serverAddress: String, sourcePath: String): DownloadItem? =

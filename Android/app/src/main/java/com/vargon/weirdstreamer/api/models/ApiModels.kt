@@ -83,6 +83,9 @@ data class ContinueItem(
         }
 }
 
+/** The episodes after a video (GET /api/media/upcoming), for Download ahead. */
+data class UpcomingEpisodes(@SerializedName("episodes") val episodes: List<ContinueItem>? = null)
+
 data class ContinueMetadata(
     @SerializedName("kind") val kind: String? = null,
     @SerializedName("title") val title: String? = null,

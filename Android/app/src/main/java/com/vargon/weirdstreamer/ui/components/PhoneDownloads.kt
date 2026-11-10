@@ -69,6 +69,7 @@ import com.vargon.weirdstreamer.MediaViewModel
 import com.vargon.weirdstreamer.api.models.DownloadOptions
 import com.vargon.weirdstreamer.api.models.LibraryFile
 import com.vargon.weirdstreamer.downloads.DownloadItem
+import com.vargon.weirdstreamer.downloads.DownloadAhead
 import com.vargon.weirdstreamer.downloads.DownloadStore
 import com.vargon.weirdstreamer.downloads.DownloadWorker
 import com.vargon.weirdstreamer.repository.FileItem
@@ -395,6 +396,7 @@ fun DownloadsTab(viewModel: MediaViewModel) {
     val server = viewModel.connectedServer?.address
     val items = remember(all, server) { DownloadStore.mine(all).filter { it.serverAddress == server } }
     var wifiOnly by remember { mutableStateOf(DownloadStore.wifiOnly) }
+    var ahead by remember { mutableStateOf(DownloadStore.downloadAhead) }
     var confirm by remember { mutableStateOf<DownloadItem?>(null) }
     val sorted = remember(items) { com.vargon.weirdstreamer.downloads.downloadsInOrder(items) }
 
@@ -417,6 +419,27 @@ fun DownloadsTab(viewModel: MediaViewModel) {
                     wifiOnly = it
                     DownloadStore.wifiOnly = it
                     DownloadWorker.schedule(context, restart = true)
+                })
+            }
+        }
+        item(key = "ahead") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().clickable {
+                    ahead = !ahead
+                    DownloadStore.downloadAhead = ahead
+                }.padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Download ahead", style = MaterialTheme.typography.bodyLarge)
+                    Text(if (ahead) "Watching an episode downloads the next ${DownloadAhead.MIN_EPISODES} to ${DownloadAhead.MAX_EPISODES} " +
+                            "(more on a faster connection), removed once you've watched past them"
+                        else "Off: only what you download yourself",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = ahead, onCheckedChange = {
+                    ahead = it
+                    DownloadStore.downloadAhead = it
                 })
             }
         }
@@ -528,6 +551,7 @@ private fun DownloadRow(d: DownloadItem, onPlay: () -> Unit, onRemove: () -> Uni
             d.title?.let { Text(it, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             Text(d.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val facts = listOfNotNull(
+                if (d.ahead) "Downloaded ahead" else null,
                 d.qualityLabel,
                 if (d.width > 0 && d.height > 0) "${d.width}×${d.height}" else null,
                 if (done) formatBytes(d.bytesTotal) else null

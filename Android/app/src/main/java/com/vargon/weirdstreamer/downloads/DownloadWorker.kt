@@ -157,6 +157,8 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             } else {
                 if (response.code != 206) done = 0 // no resume: start over
                 val total = done + (response.body?.contentLength()?.takeIf { it > 0 } ?: 0L)
+                val started = System.currentTimeMillis()
+                val from = done
                 FileOutputStream(part, done > 0).use { out ->
                     val input = response.body!!.byteStream()
                     val buffer = ByteArray(256 * 1024)
@@ -183,6 +185,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                         }
                     }
                 }
+                DownloadStore.recordSpeed(done - from, System.currentTimeMillis() - started)
             }
         }
         if (!stillWanted(item.id)) {

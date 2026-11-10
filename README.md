@@ -36,7 +36,11 @@ and to one Android app that runs on both Android TV and phones.
   - **Web:** a choice of audio track (on Android, only a disc's), and fullscreen with controls
     that hide.
 - **Offline downloads** on the phone: the original, a copy converted for the phone where it can't
-  play the original, or a smaller version, with their subtitles.
+  play the original, or a smaller version, with their subtitles, intro and credits skips, and
+  seek-bar previews. With **Download ahead** on (Settings › Downloads), watching an episode
+  downloads the next 3 to 5 in the background (more on a faster connection, Wi-Fi only unless you
+  allow mobile data), so a show is there on a flight or when the connection drops; they're removed
+  once you've watched past them.
 - **Users and groups:** each user is in a group, and each library lists the groups that may see
   it. Admins manage libraries, users and groups from Settings on the web or the phone, and see who
   is watching what on the Streams page.

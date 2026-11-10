@@ -141,6 +141,11 @@ class ServerRepository(
         runCatching { apiService.getSegments(encode(originalPath)).body() }.getOrNull()
     }
 
+    /** The [count] episodes after a video (by its library path), in order; none for a movie or the last episode. */
+    suspend fun upcoming(originalPath: String, count: Int): List<ContinueItem> = withContext(Dispatchers.IO) {
+        apiService.upcoming(encode(originalPath), count).body()?.episodes.orEmpty()
+    }
+
     /** Has the players skip a show's intros and credits by themselves (or not). */
     suspend fun setAutoSkip(tmdbId: Int, on: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {

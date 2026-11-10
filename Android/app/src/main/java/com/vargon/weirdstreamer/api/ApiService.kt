@@ -176,6 +176,9 @@ interface ApiService {
     @GET("/api/media/segments")
     suspend fun getSegments(@Query("path") path: String): Response<MediaSegments>
 
+    @GET("/api/media/upcoming")
+    suspend fun upcoming(@Query("path") path: String, @Query("count") count: Int): Response<com.vargon.weirdstreamer.api.models.UpcomingEpisodes>
+
     @PUT("/api/library/autoskip")
     suspend fun setAutoSkip(@Body request: AutoSkipRequest): Response<Unit>
 
