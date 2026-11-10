@@ -1479,6 +1479,72 @@ header h1 {
     background: #888;
 }
 
+/* Folder picker (Settings, Media Paths) */
+.folder-dialog {
+    width: min(640px, 92vw);
+    gap: 12px;
+}
+
+.folder-go {
+    display: flex;
+    gap: 8px;
+}
+
+.folder-go #folder-path {
+    flex: 1;
+    min-width: 0;
+}
+
+.folder-go #folder-up svg {
+    margin: 0;
+}
+
+.folder-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    height: min(50vh, 420px);
+    overflow-y: auto;
+    background: var(--panel-bg);
+    border-radius: 8px;
+    padding: 6px;
+}
+
+.folder-entry {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-align: left;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 7px 10px;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+}
+
+.folder-entry svg {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    fill: var(--heading-color, var(--primary-color));
+}
+
+.folder-entry span {
+    overflow-wrap: anywhere;
+}
+
+.folder-entry:hover,
+.folder-entry:focus-visible {
+    border-color: var(--primary-color);
+    background: var(--hover-bg);
+}
+
+.folder-info {
+    color: var(--muted-text);
+}
+
 /* Movies | TV shows switch of the fix match dialog */
 .match-kind {
     display: flex;

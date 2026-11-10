@@ -406,6 +406,11 @@ class MediaAPI {
         return this.request('/api/config');
     }
 
+    // A folder of the server's disk, for choosing a library's (admins): {path, parent, folders, videos}
+    async listFolders(path) {
+        return this.request(`/api/config/folders?path=${encodeURIComponent(path || '')}`);
+    }
+
     async updateConfig(config) {
         return this.request('/api/config', {
             method: 'PUT',

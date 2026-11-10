@@ -202,6 +202,7 @@ function setupEventListeners() {
     });
     
     setupMatchDialog();
+    setupFolderPicker();
     setupPlayerControls();
     setupAppDownloads();
     decorateIconButtons();
@@ -2119,6 +2120,7 @@ const MATERIAL_ICONS = {
     visibility: 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z',
     visibilityOff: 'M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z',
     personAdd: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+    arrowUpward: 'M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z',
     folder: 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z',
     movie: 'M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z',
     image: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
@@ -2518,6 +2520,7 @@ async function showSettings(pushHistory = true) {
 
             // Setup event listeners for settings
             document.getElementById('add-path-btn').onclick = handleAddPath;
+            document.getElementById('browse-path-btn').onclick = openFolderPicker;
             document.getElementById('save-settings-btn').onclick = handleSaveSettings;
         } catch (error) {
             console.error('Failed to load admin settings:', error);
@@ -2894,6 +2897,79 @@ function handleAddPath() {
     } else {
         alert('Path already exists');
     }
+}
+
+// The folder picker: walks the server's folders (hidden ones only by typing their path) and puts
+// the one chosen in the new path's field. It opens where that field points, else beside the
+// last library.
+const folderPicker = { path: null };
+
+function openFolderPicker() {
+    const typed = document.getElementById('new-path-input').value.trim();
+    const paths = state.currentConfig?.media?.paths || [];
+    const last = paths.length ? paths[paths.length - 1].path.replace(/\/+$/, '') : '';
+    const start = typed.startsWith('/') ? typed : (last ? last.slice(0, last.lastIndexOf('/')) || '/' : '/');
+    document.getElementById('folder-modal').classList.add('active');
+    showFolder(start, true);
+}
+
+function closeFolderPicker() {
+    document.getElementById('folder-modal').classList.remove('active');
+}
+
+// Lists [path]; one that can't be listed keeps the folder shown (or, opening, the top).
+async function showFolder(path, opening = false) {
+    const info = document.getElementById('folder-info');
+    const list = document.getElementById('folder-list');
+    try {
+        const f = await api.listFolders(path);
+        folderPicker.path = f.path;
+        document.getElementById('folder-path').value = f.path;
+        document.getElementById('folder-up').disabled = !f.parent;
+        document.getElementById('folder-up').onclick = () => showFolder(f.parent);
+        list.innerHTML = '';
+        f.folders.forEach(name => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'folder-entry';
+            btn.innerHTML = iconSvg('folder') + `<span>${escapeHtml(name)}</span>`;
+            btn.addEventListener('click', () => showFolder((f.path === '/' ? '' : f.path) + '/' + name));
+            list.appendChild(btn);
+        });
+        if (!f.folders.length) list.innerHTML = '<div class="match-empty">No folders in here.</div>';
+        const library = (state.currentConfig?.media?.paths || []).find(mp => mp.path.replace(/\/+$/, '') === f.path);
+        info.classList.remove('error');
+        info.textContent = library ? `Already the library “${library.name}”`
+            : f.videos ? `${f.videos} video${f.videos === 1 ? '' : 's'} in this folder` : '';
+        list.scrollTop = 0;
+    } catch (e) {
+        if (opening && path !== '/') return showFolder('/');
+        if (folderPicker.path) document.getElementById('folder-path').value = folderPicker.path;
+        info.classList.add('error');
+        info.textContent = e.message || "Couldn't open that folder";
+    }
+}
+
+function setupFolderPicker() {
+    const modal = document.getElementById('folder-modal');
+    document.getElementById('folder-close').addEventListener('click', closeFolderPicker);
+    document.getElementById('folder-cancel').addEventListener('click', closeFolderPicker);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeFolderPicker(); });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('active')) closeFolderPicker();
+    });
+    document.getElementById('folder-go').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const typed = document.getElementById('folder-path').value.trim();
+        if (typed) showFolder(typed);
+    });
+    document.getElementById('folder-choose').addEventListener('click', () => {
+        if (!folderPicker.path) return;
+        const input = document.getElementById('new-path-input');
+        input.value = folderPicker.path;
+        closeFolderPicker();
+        input.focus();
+    });
 }
 
 function handleRemovePath(index) {

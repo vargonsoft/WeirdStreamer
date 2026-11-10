@@ -104,6 +104,7 @@
                         <div id="media-paths-list"></div>
                         <div style="margin-top: 10px;">
                             <input type="text" id="new-path-input" placeholder="/path/to/media" class="settings-input">
+                            <button type="button" id="browse-path-btn" class="btn btn-secondary" data-icon="folder"><span class="btn-label">Browse…</span></button>
                             <select id="new-path-type" class="settings-input" title="Library type">
                                 <option value="">No type</option>
                                 <option value="movie">Movies</option>
@@ -421,6 +422,25 @@
                 <span id="match-message" class="match-message"></span>
                 <button type="button" id="match-none" class="btn btn-secondary">No match</button>
                 <button type="button" id="match-reset" class="btn btn-secondary">Reset to automatic</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Folder picker: a library's folder on the server (Settings, Media Paths) -->
+    <div id="folder-modal" class="modal">
+        <div class="modal-content folder-dialog">
+            <span id="folder-close" class="match-close">&times;</span>
+            <h2>Choose a folder</h2>
+            <form id="folder-go" class="folder-go">
+                <button type="button" id="folder-up" class="btn btn-secondary" data-icon="arrowUpward" title="Up a folder" aria-label="Up a folder"></button>
+                <input type="text" id="folder-path" class="settings-input" autocomplete="off" spellcheck="false" aria-label="Folder">
+                <button type="submit" class="btn">Go</button>
+            </form>
+            <div id="folder-list" class="folder-list"></div>
+            <div class="match-actions">
+                <span id="folder-info" class="match-message folder-info"></span>
+                <button type="button" id="folder-cancel" class="btn btn-secondary">Cancel</button>
+                <button type="button" id="folder-choose" class="btn">Choose this folder</button>
             </div>
         </div>
     </div>

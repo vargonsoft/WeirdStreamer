@@ -200,7 +200,7 @@ writes config.yml through `cli config init`, can create the admin user and insta
 (`setup.sh service`, `setup.sh remove-service`: `bin/server` as the user who ran setup, from the
 package's folder, after network mounts), then prints the web UI's address and offers to start the
 server and open it. Libraries and the TMDB token are set in Settings: while there are no libraries,
-an admin's sign-in opens Settings at Media Paths (`openLibrarySettings` in `app.js`).
+an admin's sign-in opens Settings at Media Paths (`openLibrarySettings` in `app.js`). Its Browse… button picks a library's folder on the server (`openFolderPicker`, from `GET /api/config/folders?path=`, admins only: folders without hidden ones, and how many videos are in it).
 
 ## Deploying the Android app
 

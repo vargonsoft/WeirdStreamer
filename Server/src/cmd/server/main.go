@@ -222,6 +222,7 @@ func main() {
 	// Config endpoints (admin only)
 	api.HandleFunc("/config", configHandler.GetConfig).Methods("GET")
 	api.HandleFunc("/config", configHandler.UpdateConfig).Methods("PUT")
+	api.HandleFunc("/config/folders", configHandler.ListFolders).Methods("GET")
 	api.HandleFunc("/groups", configHandler.GetAvailableGroups).Methods("GET")
 	api.HandleFunc("/groups", configHandler.CreateGroup).Methods("POST")
 	api.HandleFunc("/groups/{name}", configHandler.RenameGroup).Methods("PUT")
