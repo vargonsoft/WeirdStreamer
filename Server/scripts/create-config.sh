@@ -74,7 +74,7 @@ fi
 
 echo
 echo "== Settings"
-port=$(ask "Port to listen on" 8080)
+port=$(ask "Port to listen on" 9000)
 if ask_yes "Use HTTPS (with HTTP/2)?" n; then
     use_tls=1
     cert_dir=$(ask "Folder for the certificate and key" "var/config")

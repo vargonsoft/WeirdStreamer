@@ -9,7 +9,7 @@ services:
       dockerfile: docker/Dockerfile
     image: weirdstreamer:latest
     ports:
-      - "8080:8080"
+      - "9000:9000"
     volumes:
       - ./config.container.yml:/app/config.yml:ro
       - ../var:/app/var

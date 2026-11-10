@@ -22,7 +22,7 @@ except ImportError:
 
 DOCKER_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_DIR = os.path.dirname(DOCKER_DIR)
-CONTAINER_PORT = 8080
+CONTAINER_PORT = 9000
 
 # Storage folders the container keeps under /app/var, keyed by their config name
 MEDIA_DIRS = {

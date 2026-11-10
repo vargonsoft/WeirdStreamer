@@ -8,7 +8,7 @@ echo "=== Testing On-Demand File Browsing ==="
 echo ""
 
 # Configuration
-SERVER_URL="${SERVER_URL:-http://localhost:8080}"
+SERVER_URL="${SERVER_URL:-http://localhost:9000}"
 USERNAME="${USERNAME:-admin}"
 PASSWORD="${PASSWORD:-}"
 

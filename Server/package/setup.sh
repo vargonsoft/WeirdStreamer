@@ -34,7 +34,7 @@ write_config() {
     echo "== Settings (written to config.yml; config.example.yml explains them all)"
     local name port options=()
     name=$(ask "Server name, which the apps show" "$(hostname)")
-    port=$(ask "Port to listen on" 8080)
+    port=$(ask "Port to listen on" 9000)
     options+=(-name "$name" -port "$port")
     if ask_yes "Use HTTPS (with HTTP/2)?" n; then
         local cert_dir

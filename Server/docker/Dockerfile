@@ -67,5 +67,5 @@ COPY web ./web
 
 RUN FFMPEG=ffmpeg sh /opt/ffmpeg/check-ffmpeg.sh
 
-EXPOSE 8080
+EXPOSE 9000
 CMD ["/app/server"]

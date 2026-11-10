@@ -16,7 +16,7 @@ groups: ["parents", "admins", "kids"]
 server:
   # The name the apps show for this server (empty: they show its address)
   name: "Weird Streamer"
-  port: 8080
+  port: 9000
   # The address to listen on: 0.0.0.0 for every network, 127.0.0.1 for this machine only
   host: 0.0.0.0
   # HTTPS certificate and private key (with streaming.enableHTTP2). Without them the server

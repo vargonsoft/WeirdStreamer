@@ -51,7 +51,7 @@ Otherwise run `./bin/server` from that folder. It needs ffmpeg, nothing else.
 Files are in `docker/`. Copy `config.example.yml` to `config.yml` and edit it, then run
 `make docker-compose-up`. That writes `docker/docker-compose.override.yml` (one read-only mount per
 library, at the same path inside the container) and `docker/config.container.yml` (the config the
-container runs with, its data under `var/`), then builds and starts the server on port 8080.
+container runs with, its data under `var/`), then builds and starts the server on port 9000.
 
 `make docker-config` asks which user the container runs as: you (the default, so it can read the
 libraries and write `var/`), root, or another uid:gid. Pass `DOCKER_USER=current|root|uid:gid` to
