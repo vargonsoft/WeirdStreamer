@@ -84,6 +84,14 @@ for each TODO item are at the end of this file.
     viewer (`startLivePhoto`, as Compatibility (Auto) for iPhones' HEVC).
   - `ui/components/UiUtils.kt`: transcode modes, `VideoDecoders` (hardware decoder limits),
     `subtitlesOffByDefault`, `subtitleLabels`, `SubtitleMemory`.
+- `iOS/`: the iPhone app (SwiftUI, iOS 17, SwiftData), a port of the Android phone app for
+  sideloading with AltStore (no paid entitlements: no push, iCloud or App Groups). `iOS/README.md`
+  says what's ported and what isn't. Under `iOS/WeirdStreamer/WeirdStreamer/`: `Session/AppModel.swift`
+  (MediaViewModel's port), `Networking/ServerClient.swift` (the API), `Networking/HLSRelay.swift`
+  (AVPlayer can't play a transcode's fragmented MP4 of unknown length: a server on 127.0.0.1 relays
+  it as HLS), `Views/PlayerView.swift`, `Storage/Downloads.swift` and `DownloadExtras.swift`.
+  Build for the simulator signed ad hoc (`CODE_SIGN_IDENTITY=-`): unsigned builds can't use the
+  Keychain, where sign-ins are kept. The e2e server's `e2e_ios` account is for the simulator.
 
 ## Live server
 

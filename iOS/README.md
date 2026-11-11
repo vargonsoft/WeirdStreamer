@@ -24,7 +24,10 @@ or LocalDevVPN.
   stream does, Rotate; −10 s / play / +30 s and frame steps; trickplay frames, aspect ratio, speed,
   seek bar), pinch to zoom, Skip Intro / Skip Credits, the next episode at the end, progress every
   5 seconds, picture in picture when you go home. It picks Compatibility (Auto) itself for files
-  iOS can't play (MKV, AVI, other codecs) and steps down on errors as Android does.
+  iOS can't play (MKV, AVI, other codecs) and steps down on errors as Android does. DVD images
+  (.iso) are always transcoded, a title at a time; the Disc button (Android's disc sheet) picks
+  chapters, angles, audio and subtitle tracks and other titles (picture subtitles burned in by the
+  server), as a panel in the player; a title the server can't convert says so.
 - **Subtitles:** the CC menu lists the file's tracks (Off unless it has forced ones, the choice
   remembered per video). Text tracks come from the server as WebVTT in 2-minute windows, fetched
   ahead, and PGS as .sup decoded on the phone and drawn over the video at the disc's scale; other
@@ -46,8 +49,9 @@ or LocalDevVPN.
   subtitles (text as WebVTT, PGS as .sup; this phone's languages, forced ones and files beside
   the video), intro and credits (Skip Credits goes on to the next downloaded episode), trickplay
   frames, codecs report and thumbnail; again every 12 hours and when a subtitle is added. With the
-  server unreachable, its error has a Downloads button. Download ahead removes the episodes it
-  downloaded once one after them plays.
+  server unreachable, its error has a Downloads button. Download ahead (as Android's): two minutes
+  into an episode, the next 3 to 5 (as many as download in about an hour at the speed downloads
+  have come at), leaving 500 MB or 5% of the phone free; those before the episode playing go.
 - **Settings:** App (show hidden files, clear the image cache, backup, the saved servers with their
   users and Remove), Themes (all 21 of Android's, as a grid of tiles), Downloads, Account (change
   password), and for admins Server (groups, media paths, server settings, Scan media), Users,
@@ -59,7 +63,9 @@ The server sends a transcode as fragmented MP4 of unknown length. ExoPlayer play
 AVPlayer can't (a progressive stream needs a known length). `Networking/HLSRelay.swift` relays it
 as HLS from a small HTTP server on 127.0.0.1: it reads the stream, cuts it at its fragments (each
 starts on a keyframe), rewrites each fragment's offsets to its own start (AVPlayer refuses ffmpeg's
-file offsets in HLS), and serves a growing EVENT playlist. Segments go to a temporary folder in
+file offsets in HLS), keeps only the video and audio tracks (AVPlayer refuses the whole stream
+when it carries the chapters track ffmpeg writes for a DVD or an MKV with chapters), and serves a
+growing EVENT playlist. Segments go to a temporary folder in
 Caches, deleted when the player closes and at the next launch. Originals still stream directly.
 
 ## Constraints (free Apple ID, no developer program)
@@ -102,10 +108,11 @@ than 825 days.
 
 ## Not yet ported from Android
 
-- SMB shares and DVD-image title/chapter/angle controls.
-- Download ahead takes 3 episodes; Android picks 3 to 5 by download speed and free space.
+- SMB shares: iOS has no SMB client, so this needs a library (AMSMB2, libsmb2) or one written
+  for the app.
 - Phone gestures beyond pinch (Android doesn't have them yet either) and the update banner
   (AltStore handles updates).
-- Not yet tried in the simulator: Library view and title pages (the e2e sample here has no TMDB
-  matches), Compressed downloads, Download ahead, PGS and burned-in subtitles, backup and
+- Tried against a Linux e2e server (whose ffmpeg reads DVDs): the Library view and title pages,
+  and a real DVD image (titles, chapters, audio tracks, burned-in subtitles, resume). Not yet tried:
+  Compressed downloads, Download ahead, PGS subtitles, backup and
   restore, the Light theme, and anything on a real iPhone.

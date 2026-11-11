@@ -216,7 +216,7 @@ struct DownloadsTab: View {
                     Toggle("", isOn: Binding(get: { manager.wifiOnly }, set: { manager.wifiOnly = $0 })).labelsHidden()
                 }
                 SettingsRow(title: "Download ahead", detail: manager.downloadAhead
-                            ? "Watching an episode downloads the next 3, removed once you've watched past them"
+                            ? "Watching an episode downloads the next \(DownloadManager.aheadMin) to \(DownloadManager.aheadMax) (more on a faster connection), removed once you've watched past them"
                             : "Off: only what you download yourself") {
                     Toggle("", isOn: Binding(get: { manager.downloadAhead }, set: { manager.downloadAhead = $0 })).labelsHidden()
                 }

@@ -23,6 +23,9 @@ final class HLSRelay: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private var pendingMoof: Data?
     private var timescale: UInt32 = 0
     private var videoTrack: UInt32 = 0
+    /// The video and audio tracks, the only ones passed on: AVPlayer refuses a stream with
+    /// others, such as the chapters text track ffmpeg writes for a DVD or an MKV with chapters.
+    private var keptTracks: Set<UInt32> = []
     private var fragments: [(file: URL, start: UInt64)] = []   // written, waiting for the next one's start
     private var segments: [(file: URL, duration: Double)] = []
     private var finished = false
@@ -122,6 +125,11 @@ final class HLSRelay: NSObject, URLSessionDataDelegate, @unchecked Sendable {
                 segments.append((last.file, max(0.5, expectedDuration - done)))
                 fragments.removeAll()
             }
+            // The stream ended without any video (ffmpeg failed at once on the server): an error,
+            // not an empty playlist AVPlayer would wait on for ever.
+            if segments.isEmpty && failure == nil && error == nil {
+                failure = RelayError(message: "The server sent no video: it couldn't convert this.")
+            }
             finished = true
         }
     }
@@ -146,8 +154,8 @@ final class HLSRelay: NSObject, URLSessionDataDelegate, @unchecked Sendable {
                 // iso5: the fragments' data is placed from their own start (default-base-is-moof).
                 initSegment = HLSRelay.isoFtyp
             case "moov":
-                initSegment = (initSegment ?? Data()) + box
                 readTracks(moov: box)
+                initSegment = (initSegment ?? Data()) + HLSRelay.keepingTracks(keptTracks, of: box)
             case "moof":
                 pendingMoof = box
             case "mdat":
@@ -166,6 +174,7 @@ final class HLSRelay: NSObject, URLSessionDataDelegate, @unchecked Sendable {
             var trackID: UInt32 = 0
             var scale: UInt32 = 0
             var isVideo = false
+            var handler = ""
             for child in Box.children(of: moov, range: trak.content) {
                 if child.type == "tkhd" {
                     let version = moov[child.content.lowerBound]
@@ -176,17 +185,57 @@ final class HLSRelay: NSObject, URLSessionDataDelegate, @unchecked Sendable {
                             let version = moov[item.content.lowerBound]
                             scale = moov.readUInt32(at: item.content.lowerBound + (version == 1 ? 20 : 12))
                         } else if item.type == "hdlr" {
-                            isVideo = String(decoding: moov[(item.content.lowerBound + 8)..<(item.content.lowerBound + 12)], as: UTF8.self) == "vide"
+                            handler = String(decoding: moov[(item.content.lowerBound + 8)..<(item.content.lowerBound + 12)], as: UTF8.self)
+                            isVideo = handler == "vide"
                         }
                     }
                 }
             }
+            if handler == "vide" || handler == "soun" { keptTracks.insert(trackID) }
             if isVideo || videoTrack == 0 {
                 videoTrack = trackID
                 timescale = scale
-                if isVideo { break }
             }
         }
+    }
+
+    /// The moov without the tracks not kept: their trak and trex go, and the kept tracks'
+    /// references (tref, such as a video's link to its chapters) with them.
+    private static func keepingTracks(_ kept: Set<UInt32>, of moov: Data) -> Data {
+        func trackID(ofTrak trak: Box) -> UInt32? {
+            for child in Box.children(of: moov, range: trak.content) where child.type == "tkhd" {
+                let version = moov[child.content.lowerBound]
+                return moov.readUInt32(at: child.content.lowerBound + (version == 1 ? 20 : 12))
+            }
+            return nil
+        }
+        func whole(_ box: Box) -> Data { Data(moov[(box.content.lowerBound - 8)..<box.content.upperBound]) }
+        func wrap(_ type: String, _ body: Data) -> Data {
+            var box = Data()
+            box.appendUInt32(UInt32(8 + body.count))
+            box.append(Data(type.utf8))
+            return box + body
+        }
+        var body = Data()
+        for child in Box.children(of: moov, from: 8) {
+            switch child.type {
+            case "trak":
+                guard let id = trackID(ofTrak: child), kept.contains(id) else { continue }
+                var trak = Data()
+                for item in Box.children(of: moov, range: child.content) where item.type != "tref" { trak.append(whole(item)) }
+                body.append(wrap("trak", trak))
+            case "mvex":
+                var mvex = Data()
+                for item in Box.children(of: moov, range: child.content) {
+                    if item.type == "trex", !kept.contains(moov.readUInt32(at: item.content.lowerBound + 4)) { continue }
+                    mvex.append(whole(item))
+                }
+                body.append(wrap("mvex", mvex))
+            default:
+                body.append(whole(child))
+            }
+        }
+        return wrap("moov", body)
     }
 
     static let isoFtyp: Data = {
@@ -202,12 +251,20 @@ final class HLSRelay: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     /// ffmpeg points each fragment's data at its place in the whole file (tfhd's base data
     /// offset); AVPlayer's HLS wants it placed from the fragment's own start instead
     /// (default-base-is-moof). The offset is taken out, and the data offsets move up by as much.
-    private static func rebase(_ moof: Data) -> Data {
+    /// Tracks not kept lose their traf, and the data offsets move up by its size too (their
+    /// samples stay in the mdat, unreferenced).
+    private static func rebase(_ moof: Data, keeping kept: Set<UInt32>) -> Data {
         var children: [(type: String, data: Data)] = []
         var shrink = 0
         for child in Box.children(of: moof, from: 8) {
             let whole = Data(moof[(child.content.lowerBound - 8)..<child.content.upperBound])
             guard child.type == "traf" else { children.append((child.type, whole)); continue }
+            let track = Box.children(of: moof, range: child.content).first { $0.type == "tfhd" }
+                .map { moof.readUInt32(at: $0.content.lowerBound + 4) }
+            if let track, !kept.isEmpty, !kept.contains(track) {
+                shrink += whole.count
+                continue
+            }
             var traf = Data()
             for item in Box.children(of: moof, range: child.content) {
                 var box = Data(moof[(item.content.lowerBound - 8)..<item.content.upperBound])
@@ -252,6 +309,7 @@ final class HLSRelay: NSObject, URLSessionDataDelegate, @unchecked Sendable {
 
     private func addFragment(moof: Data, mdat: Data) {
         var decodeTime: UInt64 = 0
+        var hasKept = keptTracks.isEmpty
         for traf in Box.children(of: moof, from: 8) where traf.type == "traf" {
             var track: UInt32 = 0
             var time: UInt64?
@@ -264,9 +322,11 @@ final class HLSRelay: NSObject, URLSessionDataDelegate, @unchecked Sendable {
                 }
             }
             if track == videoTrack, let time { decodeTime = time }
+            if keptTracks.contains(track) { hasKept = true }
         }
+        guard hasKept else { return } // only the chapters' samples: nothing to play
         let file = folder.appendingPathComponent("frag-\(fragments.count + segments.count).m4s")
-        do { try (HLSRelay.rebase(moof) + mdat).write(to: file) } catch { failure = error; return }
+        do { try (HLSRelay.rebase(moof, keeping: keptTracks) + mdat).write(to: file) } catch { failure = error; return }
         // The fragment before this one now has a length: up to where this one starts.
         if let previous = fragments.popLast() {
             let seconds = timescale > 0 ? Double(decodeTime &- previous.start) / Double(timescale) : 2
@@ -274,6 +334,12 @@ final class HLSRelay: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         }
         fragments.append((file, decodeTime))
     }
+}
+
+/// Why a relayed stream has nothing to play, in words for the player.
+struct RelayError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }
 
 /// A box (atom) in an MP4: its type and where its content is.

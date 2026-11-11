@@ -73,6 +73,13 @@ final class Download {
     }
 
     var localURL: URL? { fileName.map { DownloadManager.folder.appendingPathComponent($0) } }
+
+    /// The show, season and episode, from a library episode's title ("Example Show · S01E02 · …").
+    var episodeKey: (show: String, season: Int, episode: Int)? {
+        guard let title, let match = title.firstMatch(of: /^(.+?) · S(\d+)E(\d+)/),
+              let season = Int(match.2), let episode = Int(match.3) else { return nil }
+        return (String(match.1), season, episode)
+    }
 }
 
 /// What this phone plays of a file, for Compatibility: its video, its default audio track, and the file as a whole.
@@ -111,6 +118,8 @@ final class DownloadManager: NSObject {
     @ObservationIgnored private var running = false
     @ObservationIgnored private var session: URLSession!
     @ObservationIgnored var backgroundCompletion: (() -> Void)?
+    /// When each running download's transfer began, for measuring the speed.
+    @ObservationIgnored private var started: [String: Date] = [:]
 
     var wifiOnly: Bool {
         get { _ = version; return model?.setting("downloads_wifi_only") != "false" }
@@ -269,6 +278,7 @@ final class DownloadManager: NSObject {
         request.setValue("Bearer \(client.token ?? "")", forHTTPHeaderField: "Authorization")
         let task = session.downloadTask(with: request)
         task.taskDescription = d.id
+        started[d.id] = Date()
         d.state = "downloading"
         d.stage = nil
         d.progress = 0
@@ -276,19 +286,65 @@ final class DownloadManager: NSObject {
         task.resume()
     }
 
-    /// Download ahead: the episodes after one being watched, in the quality of the show's episodes
-    /// downloaded by hand (else Compatibility), three of them, those not downloaded yet.
+    // MARK: Download ahead (Settings › Downloads), as Android's DownloadAhead
+
+    static let aheadMin = 3
+    static let aheadMax = 5
+
+    /// The speed downloads have arrived at here (bytes a second), measured as they finish; 0 until known.
+    var speed: Double {
+        get { model?.setting("download_speed").flatMap(Double.init) ?? 0 }
+        set { model?.setSetting("download_speed", String(newValue)) }
+    }
+
+    /// How many episodes to have ahead: as many as download in about an hour at `speed`, 3 to 5.
+    func aheadCount(episodeBytes: Int64) -> Int {
+        guard speed > 0, episodeBytes > 0 else { return Self.aheadMin }
+        return min(Self.aheadMax, max(Self.aheadMin, Int(speed * 3600 / Double(episodeBytes))))
+    }
+
+    /// Room to leave on the phone: 500 MB, or 5% of it if that's more.
+    private func freeRoom() -> Int64 {
+        let values = try? DownloadManager.folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey])
+        let free = values?.volumeAvailableCapacityForImportantUsage ?? 0
+        let total = Int64(values?.volumeTotalCapacity ?? 0)
+        return free - max(500 * 1024 * 1024, total / 20)
+    }
+
+    /// For an episode being watched: removes the show's episodes downloaded ahead that come before
+    /// it, then queues the next ones not downloaded yet, in the quality of the show's episodes
+    /// downloaded by hand (else Compatibility), while the phone has room.
     func downloadAhead(after path: String) async {
-        guard downloadAhead else { return }
-        removeAheadBefore(path)
-        guard let client = model?.client else { return }
+        guard downloadAhead, let client = model?.client else { return }
+        let encoded = ServerClient.encodePath(path)
+        guard let segments: MediaSegments = try? await client.get("/api/media/segments", query: [("path", encoded)]),
+              let current = segments.metadata, current.kind == "episode",
+              let show = current.showTitle, let season = current.season, let episode = current.episode else { return }
+        removeAhead(show: show, before: (season, episode), playing: path)
         struct Upcoming: Decodable { let episodes: [ContinueItem]? }
-        guard let found: Upcoming = try? await client.get("/api/media/upcoming", query: [("path", ServerClient.encodePath(path)), ("count", "3")]),
-              let episodes = found.episodes, !episodes.isEmpty else { return }
-        let showFolder = (path as NSString).deletingLastPathComponent
-        let byHand = mine().last { !$0.ahead && ($0.sourcePath as NSString).deletingLastPathComponent == showFolder }
-        add(episodes.map { (path: $0.path, name: $0.name, title: $0.metadata?.playerTitle, thumb: $0.thumbnailUrl, size: $0.size ?? 0) },
-            sizePct: byHand?.sizePct ?? 100, scale: byHand?.scale ?? 100, compat: byHand?.compat ?? true, ahead: true)
+        guard let found: Upcoming = try? await client.get("/api/media/upcoming", query: [("path", encoded), ("count", String(Self.aheadMax))]) else { return }
+        let upcoming = (found.episodes ?? []).filter { ($0.size ?? 0) > 0 } // an empty file won't download
+        guard let first = upcoming.first else { return }
+        let like = mine().last { !$0.ahead && $0.episodeKey?.show == show }
+        let sizePct = like?.sizePct ?? 100
+        var room = freeRoom()
+        var wanted: [(path: String, name: String, title: String?, thumb: String?, size: Int64)] = []
+        for e in upcoming.prefix(aheadCount(episodeBytes: first.size ?? 0)) where find(e.path) == nil {
+            room -= (e.size ?? 0) * Int64(sizePct) / 100
+            if room < 0 { break }
+            wanted.append((path: e.path, name: e.name, title: e.metadata?.playerTitle,
+                           thumb: e.thumbnailUrl ?? e.metadata?.still, size: e.size ?? 0))
+        }
+        add(wanted, sizePct: sizePct, scale: like?.scale ?? 100, compat: like?.compat ?? true, ahead: true)
+    }
+
+    /// The show's episodes downloaded ahead that come before the one being watched have been
+    /// watched past: they go. Ones downloaded by hand never do.
+    private func removeAhead(show: String, before: (season: Int, episode: Int), playing: String) {
+        for d in mine() where d.ahead && d.sourcePath != playing {
+            guard let key = d.episodeKey, key.show == show else { continue }
+            if key.season < before.season || (key.season == before.season && key.episode < before.episode) { remove(d) }
+        }
     }
 
     // MARK: Extras (subtitles, skip times, trickplay) for playing offline
@@ -344,17 +400,6 @@ final class DownloadManager: NSObject {
             .min { $0.sourcePath.localizedStandardCompare($1.sourcePath) == .orderedAscending }
     }
 
-    /// Episodes downloaded ahead that come before the one now playing (same show folder, by name)
-    /// have been watched past: they go. Ones downloaded by hand never do.
-    func removeAheadBefore(_ path: String) {
-        let folder = (path as NSString).deletingLastPathComponent
-        for d in mine() where d.ahead && d.sourcePath != path
-            && (d.sourcePath as NSString).deletingLastPathComponent == folder
-            && d.sourcePath.localizedStandardCompare(path) == .orderedAscending {
-            remove(d)
-        }
-    }
-
     private func save() {
         try? model?.context.save()
         bump()
@@ -404,6 +449,14 @@ extension DownloadManager: URLSessionDownloadDelegate {
             d.state = "done"
             d.progress = 1
             d.bytesTotal = (try? FileManager.default.attributesOfItem(atPath: final.path)[.size] as? Int64) ?? d.bytesTotal
+            if let began = started.removeValue(forKey: d.id) {
+                // Only transfers long enough to say something (a few seconds and a few MB).
+                let seconds = Date().timeIntervalSince(began)
+                if seconds > 3 && d.bytesTotal > 4_000_000 {
+                    let measured = Double(d.bytesTotal) / seconds
+                    speed = speed > 0 ? speed * 0.7 + measured * 0.3 : measured
+                }
+            }
             save()
         }
     }

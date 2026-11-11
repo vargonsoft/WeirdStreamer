@@ -220,7 +220,7 @@ struct StreamProgress: Encodable {
     let position: Double
     let paused: Bool
     let ended: Bool
-    let title: Int = 0
+    var title: Int = 0         // discs: the title playing (0: the main title)
 }
 
 /// Offline progress pushed in one go (`POST /api/playback/sync`).
@@ -354,6 +354,44 @@ struct TrickplayFrame: Decodable, Hashable {
 
 struct TrickplayInfo: Decodable {
     let frames: [TrickplayFrame]?
+    /// A disc image's frames: the title they were made from (its main feature); 0 for files.
+    var title: Int?
+}
+
+/// A DVD disc image's titles, for the player's disc controls (`/api/media/disc`).
+struct DiscInfo: Decodable {
+    let titles: [DiscTitle]?
+    let mainTitle: Int?
+
+    /// A title by number; 0 (or one not on the disc) is the main title.
+    func title(_ number: Int) -> DiscTitle? {
+        let list = titles ?? []
+        let wanted = number <= 0 ? (mainTitle ?? 1) : number
+        return list.first { $0.number == wanted } ?? list.first
+    }
+}
+
+struct DiscTitle: Decodable {
+    let number: Int
+    let duration: Double            // seconds
+    var angles: Int?
+    var chapters: [Double]?         // start times, seconds
+    var audio: [DiscTrack]?
+    var subtitles: [DiscTrack]?
+}
+
+struct DiscTrack: Decodable {
+    let index: Int
+    var language: String?
+    var codec: String?
+    var channels: Int?
+
+    /// "eng · ac3 · 5.1", as Android labels it.
+    var label: String {
+        let lang = (language ?? "").isEmpty ? "Unknown" : language!
+        let ch: String? = switch channels ?? 0 { case 0: nil; case 2: "Stereo"; case 6: "5.1"; default: "\(channels!) ch" }
+        return [lang, (codec ?? "").isEmpty ? nil : codec, ch].compactMap { $0 }.joined(separator: " · ")
+    }
 }
 
 struct SegmentSpan: Decodable {

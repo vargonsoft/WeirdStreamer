@@ -54,6 +54,15 @@ final class PlaybackModel {
     private(set) var segments: MediaSegments?
     private(set) var copiesVideo = false
     private(set) var subtitles: ServerSubtitles?
+    /// A DVD image (.iso): always transcoded by the server, one title at a time, with the chosen
+    /// angle and tracks; the Disc sheet changes them.
+    let isDisc: Bool
+    private(set) var disc: DiscInfo?
+    private(set) var discTitle = 0          // 0: the main title
+    private(set) var discAngle = 1
+    private(set) var discAudio = 0
+    private(set) var discSubtitle = -1
+    @ObservationIgnored private var allTrickplay: TrickplayInfo?
     var speedIndex = 3
     var title: String
 
@@ -79,6 +88,7 @@ final class PlaybackModel {
     init(request: PlayRequest) {
         self.request = request
         self.title = request.title
+        self.isDisc = request.localFile == nil && (request.path as NSString).pathExtension.lowercased() == "iso"
     }
 
     // MARK: Starting
@@ -116,6 +126,18 @@ final class PlaybackModel {
         }
         guard let client = model.client else { failure = "Not signed in."; return }
         let encoded = ServerClient.encodePath(request.path)
+        if isDisc {
+            // A disc: its titles, then the main one transcoded (a disc can't play as it is).
+            disc = try? await client.get("/api/media/disc", query: [("path", encoded)])
+            if let t = disc?.title(0) { duration = t.duration }
+            modeIndex = 1
+            await open(at: request.startAt)
+            if let info: TrickplayInfo = try? await client.get("/api/media/trickplay", query: [("path", encoded)]) {
+                allTrickplay = info
+                applyDiscTrickplay()
+            }
+            return
+        }
         codecs = try? await client.get("/api/media/codecs", query: [("path", encoded)])
         if let d = codecs?.duration, d > 0 { duration = d }
         // Subtitles: the one chosen for this video before, else a forced text track, else off.
@@ -164,6 +186,16 @@ final class PlaybackModel {
     /// The stream's URL parameters for the mode, from `start` seconds.
     private func query(start: Double) -> String {
         let mode = self.mode
+        if isDisc {
+            var parts = ["transcode=1"]
+            if let b = mode.bitrate { parts.append("bitrate=\(b)") }
+            if let r = mode.resolution { parts.append("resolution=\(r)") }
+            parts.append(mode.safe ? "audiocodec=aac&channels=2" : "audiocodec=aac")
+            parts.append("title=\(discTitle)&angle=\(discAngle)&audio=\(discAudio)&subtitle=\(discSubtitle)")
+            if start > 0 { parts.append("start=" + String(format: "%.2f", start)) }
+            copiesVideo = false
+            return parts.joined(separator: "&")
+        }
         if mode.isOriginal { return "" }
         let video = codecs?.video
         let burn = subtitles?.burnIn ?? -1
@@ -283,7 +315,8 @@ final class PlaybackModel {
             videoFailed = true
             await open(at: at)
         } else {
-            failure = error?.localizedDescription ?? "This video can't be played."
+            // The relay knows why better than AVPlayer (which only saw a failed playlist).
+            failure = relay?.failed?.localizedDescription ?? error?.localizedDescription ?? "This video can't be played."
             isBuffering = false
         }
     }
@@ -336,7 +369,7 @@ final class PlaybackModel {
     }
 
     func chooseMode(_ index: Int) {
-        guard index != modeIndex else { return }
+        guard index != modeIndex, !(isDisc && TranscodeMode.all[index].isOriginal) else { return }
         if TranscodeMode.all[index].isOriginal { originalByHand = true }
         modeIndex = index
         videoFailed = false
@@ -418,13 +451,47 @@ final class PlaybackModel {
         return false
     }
 
+    // MARK: Discs
+
+    /// Another title: it starts at its beginning, with the first angle and tracks.
+    func chooseDiscTitle(_ number: Int) {
+        guard let t = disc?.title(number), t.number != disc?.title(discTitle)?.number else { return }
+        report(paused: true, ended: false)
+        discTitle = number
+        discAngle = 1
+        discAudio = 0
+        discSubtitle = -1
+        duration = t.duration
+        applyDiscTrickplay()
+        Task { await open(at: 0) }
+    }
+
+    func chooseDiscAngle(_ angle: Int) { discAngle = angle; restartDisc() }
+    func chooseDiscAudio(_ index: Int) { discAudio = index; restartDisc() }
+    func chooseDiscSubtitle(_ index: Int) { discSubtitle = index; restartDisc() }
+
+    private func restartDisc() {
+        let at = position
+        Task { await open(at: at) }
+    }
+
+    /// A disc's frames are of its main feature: none while another title plays.
+    private func applyDiscTrickplay() {
+        guard let info = allTrickplay else { return }
+        let made = info.title ?? 0
+        let main = disc?.mainTitle
+        let fits = made == 0 || discTitle == made || (discTitle == 0 && (main == nil || main == made))
+        trickplay = fits ? (info.frames ?? []) : []
+    }
+
     // MARK: Progress
 
     func report(paused: Bool, ended: Bool) {
         guard let model, position.isFinite else { return }
         lastReport = Date()
         let path = request.path, at = position, total = duration
-        Task { await model.recordProgress(path: path, position: at, duration: total, paused: paused, ended: ended) }
+        let title = discTitle
+        Task { await model.recordProgress(path: path, position: at, duration: total, paused: paused, ended: ended, discTitle: title) }
     }
 
     func stop() {
@@ -461,6 +528,7 @@ struct PlayerView: View {
     @State private var panBase: CGSize = .zero
     @State private var scrubbing: Double?
     @State private var showSpeed = false
+    @State private var showDisc = false
     @State private var showTiming = false
     @State private var showSubtitleSearch = false
 
@@ -509,6 +577,7 @@ struct PlayerView: View {
                     Text(failure).font(.footnote).multilineTextAlignment(.center).opacity(0.8)
                 }
                 .foregroundStyle(.white).padding(24)
+                .offset(y: 140) // below play/pause and the frame steps
             } else if playback.isBuffering {
                 ProgressView().tint(.white).scaleEffect(1.4)
             }
@@ -527,6 +596,15 @@ struct PlayerView: View {
                     showSubtitleSearch = false
                     playback.chooseSubtitle(index)
                 }
+            }
+
+            // Speed and the disc's choices: panels from the bottom in the player itself (as Android's
+            // bottom sheets), not UIKit sheets, which left touches blocked after closing here.
+            if showSpeed {
+                PlayerPanel(onClose: { showSpeed = false }) { speedSheet }
+            }
+            if showDisc {
+                PlayerPanel(onClose: { showDisc = false }) { discSheet }
             }
 
             if let skip = playback.skipPrompt {
@@ -558,11 +636,11 @@ struct PlayerView: View {
             await playback.start(model: model)
         }
         .task(id: lastInteraction) {
-            try? await Task.sleep(for: .seconds(max(1, lastInteraction.timeIntervalSinceNow + 5)))
-            if playback.isPlaying && scrubbing == nil { showControls = false }
+            // A newer interaction cancels this wait: then the controls stay (the new task decides).
+            do { try await Task.sleep(for: .seconds(max(1, lastInteraction.timeIntervalSinceNow + 5))) } catch { return }
+            if playback.isPlaying && scrubbing == nil && !showDisc && !showSpeed { showControls = false }
         }
         .onDisappear { playback.stop() }
-        .sheet(isPresented: $showSpeed) { speedSheet }
     }
 
     private func touch() { lastInteraction = Date() }
@@ -591,6 +669,7 @@ struct PlayerView: View {
                             Button { playback.chooseMode(i); touch() } label: {
                                 if i == playback.modeIndex { Label(mode.name, systemImage: "checkmark") } else { Text(mode.name) }
                             }
+                            .disabled(playback.isDisc && mode.isOriginal) // discs can't play as they are
                         }
                     } label: {
                         Image(systemName: "slider.horizontal.below.rectangle").font(.system(size: 22))
@@ -599,6 +678,10 @@ struct PlayerView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded { holdControls() })
                     .accessibilityLabel("Transcode")
+                    if playback.disc != nil {
+                        // Disc: chapters, angles, tracks, titles
+                        PlayerIcon(system: "opticaldisc", label: "Disc") { showDisc = true; holdControls() }
+                    }
                     if let subtitles = playback.subtitles { subtitleMenu(subtitles) }
                     PlayerIcon(system: "rotate.right", label: "Rotate") {
                         rotation = (rotation + 90).truncatingRemainder(dividingBy: 360)
@@ -720,6 +803,80 @@ struct PlayerView: View {
         }
     }
 
+    /// A DVD's chapters, angles, audio and subtitle tracks, and other titles; picking one
+    /// restarts the stream there (Android's PhoneDiscSheet).
+    @ViewBuilder
+    private var discSheet: some View {
+        if let disc = playback.disc, let title = disc.title(playback.discTitle) {
+            let chapters = title.chapters ?? []
+            let current = max(0, chapters.lastIndex { playback.position + 0.5 >= $0 } ?? 0)
+            List {
+                if chapters.count > 1 {
+                    Section("Chapters") {
+                        ForEach(Array(chapters.enumerated()), id: \.offset) { i, start in
+                            discChoice("\(i + 1)   \(discClock(start))", selected: i == current) { playback.seek(to: start) }
+                        }
+                    }
+                }
+                if let angles = title.angles, angles > 1 {
+                    Section("Angle") {
+                        ForEach(1...angles, id: \.self) { a in
+                            discChoice("Angle \(a) of \(angles)", selected: a == playback.discAngle) { playback.chooseDiscAngle(a) }
+                        }
+                    }
+                }
+                if let audio = title.audio, audio.count > 1 {
+                    Section("Audio") {
+                        ForEach(audio, id: \.index) { t in
+                            discChoice("\(t.index + 1)   \(t.label)", selected: t.index == playback.discAudio) { playback.chooseDiscAudio(t.index) }
+                        }
+                    }
+                }
+                Section("Subtitles") {
+                    discChoice("Off", selected: playback.discSubtitle < 0) { playback.chooseDiscSubtitle(-1) }
+                    ForEach(title.subtitles ?? [], id: \.index) { t in
+                        discChoice("\(t.index + 1)   \(t.label)", selected: t.index == playback.discSubtitle) { playback.chooseDiscSubtitle(t.index) }
+                    }
+                }
+                if let titles = disc.titles, titles.count > 1 {
+                    Section("Titles") {
+                        ForEach(titles.sorted { $0.number < $1.number }, id: \.number) { t in
+                            let main = t.number == disc.mainTitle ? "  (main)" : ""
+                            discChoice("Title \(t.number)   \(discClock(t.duration))\(main)", selected: t.number == title.number) {
+                                playback.chooseDiscTitle(t.number)
+                            }
+                        }
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Palette.panel)
+            .foregroundStyle(Palette.text)
+
+        }
+    }
+
+    private func discChoice(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            showDisc = false
+            action()
+            touch()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(selected ? Palette.accent : Palette.muted)
+                Text(label).monospacedDigit()
+                Spacer()
+            }
+        }
+        .listRowBackground(Palette.panel)
+    }
+
+    private func discClock(_ seconds: Double) -> String {
+        let s = Int(seconds)
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
+    }
+
     private var speedSheet: some View {
         List {
             ForEach(Array(speeds.enumerated()), id: \.offset) { i, speed in
@@ -739,7 +896,7 @@ struct PlayerView: View {
         .scrollContentBackground(.hidden)
         .background(Palette.panel)
         .foregroundStyle(Palette.text)
-        .presentationDetents([.medium])
+
     }
 
     private var fileName: String { (request.path as NSString).lastPathComponent }
@@ -827,5 +984,38 @@ final class PlayerLayerView: UIView {
             playerLayer.frame = bounds
         }
         CATransaction.commit()
+    }
+}
+
+/// A panel over the bottom of the player (up to two thirds of it) on a dimmed backdrop; a tap on
+/// the backdrop or a swipe down on the panel closes it.
+struct PlayerPanel<Content: View>: View {
+    let onClose: () -> Void
+    @ViewBuilder let content: Content
+    @State private var drag: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .bottom) {
+                Color.black.opacity(0.4).ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onClose)
+                VStack(spacing: 0) {
+                    Capsule().fill(Palette.muted.opacity(0.6)).frame(width: 40, height: 5).padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .gesture(DragGesture()
+                            .onChanged { drag = max(0, $0.translation.height) }
+                            .onEnded { if $0.translation.height > 80 { onClose() }; drag = 0 })
+                    content
+                }
+                .frame(maxHeight: geo.size.height * 0.66)
+                .background(Palette.panel, in: UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
+                .background(Palette.background, in: UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
+                .offset(y: drag)
+            }
+            .ignoresSafeArea(edges: .bottom)
+        }
+        .transition(.move(edge: .bottom))
     }
 }

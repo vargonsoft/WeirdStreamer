@@ -555,7 +555,7 @@ final class AppModel {
 
     /// Records where a file was, on the phone first, then tells the server. If that fails the
     /// position stays queued until the server can be reached.
-    func recordProgress(path: String, position: Double, duration: Double, paused: Bool, ended: Bool) async {
+    func recordProgress(path: String, position: Double, duration: Double, paused: Bool, ended: Bool, discTitle: Int = 0) async {
         guard let client, let address = currentAddress, let username = currentAccount else { return }
         let entry = localProgress(path) ?? {
             let new = LocalProgress(address: address, username: username, path: path)
@@ -575,7 +575,7 @@ final class AppModel {
         do {
             try await client.send("POST", "/api/streams/progress",
                                   body: StreamProgress(path: ServerClient.encodePath(path), position: position,
-                                                       paused: paused, ended: ended))
+                                                       paused: paused, ended: ended, title: discTitle))
             entry.pendingPush = false
             save()
         } catch { handle(error) }
