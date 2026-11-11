@@ -6,6 +6,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -d e2e ] || { echo "Server/e2e is missing (see CLAUDE.md: Test environment)" >&2; exit 1; }
 mkdir -p ../bin
+# The server's own ffmpeg (scripts/build-ffmpeg.sh), when built, comes before the system's.
+[ -x ffmpeg/bin/ffmpeg ] && export PATH="$(pwd)/ffmpeg/bin:$PATH"
 go -C src build -o ../bin/e2e-server ./cmd/server
 cd e2e
 exec env CONFIG_PATH=./config.yml ../bin/e2e-server

@@ -5,6 +5,8 @@
 # access.log there (internal/logs).
 # When restart-live.sh stops it, it starts again with the new binary (bin/server); Ctrl-C (or a crash) ends it.
 cd "$(dirname "$0")/.."
+# The server's own ffmpeg (scripts/build-ffmpeg.sh), when built, comes before the system's.
+[ -x ffmpeg/bin/ffmpeg ] && export PATH="$(pwd)/ffmpeg/bin:$PATH"
 marker=.restart
 rm -f "$marker"
 logs=$(python3 -c 'import yaml; print((yaml.safe_load(open("config.yml"))["server"] or {}).get("logsPath") or "")') ||

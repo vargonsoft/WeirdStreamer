@@ -133,6 +133,9 @@ for each TODO item are at the end of this file.
   on **http://localhost:9100**. Android emulators reach it at `http://10.0.2.2:9100`. It has its
   own config, databases and accounts (`e2e_admin`, `e2e_adult`, `e2e_normal`; password in
   `Server/e2e/pw`), and serves `Server/web` through a symlink.
+- On macOS, Homebrew's ffmpeg lacks the DVD reader, the chromaprint muxer and libass:
+  `Server/scripts/build-ffmpeg.sh` builds the server's own into `Server/ffmpeg/bin` (git-ignored),
+  which `run-e2e.sh` and `live.sh` put first on the PATH. `scripts/check-ffmpeg.sh` lists what's needed.
 - Sample library in `Server/e2e/sample/`: Movies and TV Shows (typed libraries with TMDB
   matches). Most files are short ffmpeg test patterns named after real titles. Notable ones:
   - `Movies/Example Film/…ts`: 5 minutes of H.264 and AAC in MPEG-TS (despite its name), which

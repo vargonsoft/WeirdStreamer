@@ -61,3 +61,6 @@ config.json
 Thumbs.db
 # Xcode per-user state
 xcuserdata/
+# The server's own ffmpeg (scripts/build-ffmpeg.sh) and its build folder
+/Server/ffmpeg/
+/Server/ffmpeg-build/
