@@ -89,6 +89,12 @@ func TestTitleTables(t *testing.T) {
 			t.Errorf("padded title at %v = %v, trim %v; want %s, trim %v", c.seek, args, trim, c.args, c.trim)
 		}
 	}
+
+	// A title of nothing but padding plays as it is, untrimmed.
+	blank := DiscTitle{Number: 15, Angles: 1, Duration: 0.5, Padding: true, Segments: []DiscSegment{{Duration: 0.5}}}
+	if args, _ = blank.InputArgs("/d.iso", 0, 1, 0); strings.Join(args, " ") != "-f dvdvideo -title 15 -trim 0 -i /d.iso" {
+		t.Errorf("padding title input = %v", args)
+	}
 }
 
 func TestEmptyOutput(t *testing.T) {

@@ -25,7 +25,7 @@ func IsDiscImage(path string) bool {
 }
 
 // discInfoVersion changes when probing changes, so discs stored by older builds are probed again.
-const discInfoVersion = 4
+const discInfoVersion = 5
 
 // DiscInfo describes what a DVD disc image holds.
 type DiscInfo struct {
@@ -49,6 +49,9 @@ type DiscTitle struct {
 	// FirstChapter (from 1) is where ffmpeg reads a title from when it can't read past the title's
 	// opening (a short padding cell that ends the title for it); 0 for the start.
 	FirstChapter int `json:"first_chapter,omitempty"`
+	// Padding marks a title that's nothing but padding cells (a moment of black between menus):
+	// ffmpeg reads it only with its trimming off (-trim 0), and it plays as it is.
+	Padding bool `json:"padding,omitempty"`
 }
 
 // DiscTrack is an audio or subtitle track; Index counts tracks of its kind from 0.
@@ -104,6 +107,9 @@ func (t *DiscTitle) SegmentAt(at float64) (int, float64) {
 // PGC it doesn't, so the returned trim is how much the caller must cut after decoding.
 func (t *DiscTitle) InputArgs(path string, i, angle int, seek float64) (args []string, trim float64) {
 	args = []string{"-f", "dvdvideo", "-title", strconv.Itoa(t.Number)}
+	if t.Padding {
+		args = append(args, "-trim", "0")
+	}
 	seg := t.Segments[i]
 	if seg.PGC > 0 {
 		args = append(args, "-pgc", strconv.Itoa(seg.PGC), "-pg", strconv.Itoa(max(seg.PG, 1)))
@@ -193,7 +199,13 @@ func probeDisc(path string) (*DiscInfo, error) {
 	}
 	info := &DiscInfo{}
 	for n := 1; n <= count; n++ {
-		t, err := probeTitle(path, n)
+		t, err := probeTitle(path, n, false)
+		padding := false
+		if err != nil {
+			// ffmpeg refuses a title of nothing but padding cells unless told not to trim them.
+			t, err = probeTitle(path, n, true)
+			padding = err == nil
+		}
 		if err != nil {
 			if tablesErr != nil {
 				break // without the tables, titles are probed until one is missing
@@ -202,11 +214,12 @@ func probeDisc(path string) (*DiscInfo, error) {
 		}
 		t.Angles = 1
 		t.Segments = []DiscSegment{{Start: 0, Duration: t.Duration}}
-		unreadable := false
-		if !readsPacket(path, n, 1) {
+		if !padding && !readsPacket(path, n, 1) {
 			t.FirstChapter = firstReadableChapter(path, n, len(t.Chapters))
-			unreadable = t.FirstChapter == 0
+			// Nothing read from any chapter: what ffmpeg trims is all there is.
+			padding = t.FirstChapter == 0
 		}
+		t.Padding = padding
 		if tablesErr == nil {
 			tt := tables[n-1]
 			t.Angles = max(tt.angles, 1)
@@ -223,11 +236,6 @@ func probeDisc(path string) (*DiscInfo, error) {
 					t.Duration = segs[len(segs)-1].Start + segs[len(segs)-1].Duration
 				}
 			}
-		}
-		if unreadable && len(t.Segments) == 1 {
-			// Nothing but padding as ffmpeg plays it (a few seconds between menus): it can't play.
-			// Chained titles are read a PGC at a time, which the probe doesn't cover, so they stay.
-			continue
 		}
 		info.Titles = append(info.Titles, *t)
 	}
@@ -340,9 +348,14 @@ func withoutDVDLibLines(out []byte) []byte {
 	return bytes.Join(kept, nil)
 }
 
-func probeTitle(path string, n int) (*DiscTitle, error) {
-	out, err := exec.Command("ffprobe", "-v", "error", "-f", "dvdvideo", "-title", strconv.Itoa(n), "-i", path,
-		"-show_format", "-show_chapters", "-show_streams", "-of", "json").Output()
+// probeTitle reads title n's length, chapters and tracks; untrimmed reads its padding cells too.
+func probeTitle(path string, n int, untrimmed bool) (*DiscTitle, error) {
+	args := []string{"-v", "error", "-f", "dvdvideo", "-title", strconv.Itoa(n)}
+	if untrimmed {
+		args = append(args, "-trim", "0")
+	}
+	args = append(args, "-i", path, "-show_format", "-show_chapters", "-show_streams", "-of", "json")
+	out, err := exec.Command("ffprobe", args...).Output()
 	if err != nil {
 		return nil, err
 	}
