@@ -46,7 +46,8 @@ func downloadOwner(r *http.Request) int64 {
 }
 
 // CreateDownload starts an encode: {"path": base64, "size_pct": 90|75|50|25|100, "scale": 100|75|50,
-// "keep_video": bool, "keep_audio": bool} (keeping needs size_pct 100 and scale 100: Compatibility)
+// "keep_video": bool, "keep_audio": bool} (keeping needs size_pct 100 and scale 100: Compatibility;
+// keeping both copies a file that isn't MP4 into MP4, as for an iPhone)
 func (h *MediaHandler) CreateDownload(w http.ResponseWriter, r *http.Request) {
 	if h.downloads == nil {
 		respondError(w, http.StatusNotFound, "Downloads not enabled")

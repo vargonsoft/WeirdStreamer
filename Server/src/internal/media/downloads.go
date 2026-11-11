@@ -132,7 +132,9 @@ func (m *DownloadManager) Create(owner int64, path string, sizePct, scale int, k
 	if (keepVideo || keepAudio) && (!full || disc) {
 		return nil, errors.New("only a full-quality copy of a file keeps its video or audio")
 	}
-	if full && !disc && keepVideo && keepAudio {
+	// Keeping both is a copy into MP4, for players that can't open the file's container (MKV on
+	// an iPhone); a file already in MP4 is downloaded as it is.
+	if full && !disc && keepVideo && keepAudio && isMP4File(path) {
 		return nil, errors.New("original files are downloaded directly")
 	}
 	src, err := Source(path)
@@ -414,6 +416,15 @@ func contains(list []int, v int) bool {
 		if x == v {
 			return true
 		}
+	}
+	return false
+}
+
+// isMP4File reports whether a file is in an MP4 (or QuickTime) container, by its extension.
+func isMP4File(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".mp4", ".m4v", ".mov":
+		return true
 	}
 	return false
 }

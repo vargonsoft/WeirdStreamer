@@ -89,6 +89,12 @@ func TestDownloadKeepsVideo(t *testing.T) {
 	if _, err := m.Create(1, src, 50, 100, true, false); err == nil {
 		t.Error("a compressed copy that keeps the video was accepted")
 	}
+	remux, err := m.Create(1, src, 100, 100, true, true)
+	if err != nil {
+		t.Errorf("keeping the video and audio of an MKV (a copy into MP4) was refused: %v", err)
+	} else {
+		m.Delete(1, remux.ID)
+	}
 	job, err := m.Create(1, src, 100, 100, true, false)
 	if err != nil {
 		t.Fatal(err)
