@@ -29,7 +29,9 @@ or LocalDevVPN.
   remembered per video). Text tracks come from the server as WebVTT in 2-minute windows, fetched
   ahead, and PGS as .sup decoded on the phone and drawn over the video at the disc's scale; other
   picture subtitles are burned in by a transcode. Timing ("Already said" / "Not said yet", saved to
-  the server) and Search online (OpenSubtitles through the server) are there too.
+  the server) and Search online (OpenSubtitles through the server) are there too. Settings › App ›
+  Subtitle style: the iPhone's own caption style (Accessibility › Subtitles & Captioning) or a
+  custom one (box or outline, colors and opacities, font, size), with a preview.
 - **Photos and PDFs:** the image viewer pages through a folder's photos, with pinch zoom; motion
   photos (Samsung, Google) and Apple Live Photos loop their clip. PDFs open in PDFKit with
   Previous / page / Next and a page grid.
@@ -38,6 +40,14 @@ or LocalDevVPN.
   for), "Download this folder" in ⋮, and Settings › Downloads (Wi-Fi only, Download ahead, storage,
   play or remove). Downloads use a background `URLSession`, so they continue while the app is
   suspended. Progress played from a download is kept locally and sent when the server is reachable.
+  Compatibility keeps what the iPhone plays: an MKV of H.264 and AAC is copied into MP4 (the server
+  takes `keep_video` and `keep_audio` together for a file that isn't MP4 already).
+  Each download's extras are saved in `Documents/DownloadExtras/<id>/` for playing offline: its
+  subtitles (text as WebVTT, PGS as .sup; this phone's languages, forced ones and files beside
+  the video), intro and credits (Skip Credits goes on to the next downloaded episode), trickplay
+  frames, codecs report and thumbnail; again every 12 hours and when a subtitle is added. With the
+  server unreachable, its error has a Downloads button. Download ahead removes the episodes it
+  downloaded once one after them plays.
 - **Settings:** App (show hidden files, clear the image cache, backup, the saved servers with their
   users and Remove), Themes (all 21 of Android's, as a grid of tiles), Downloads, Account (change
   password), and for admins Server (groups, media paths, server settings, Scan media), Users,
@@ -92,14 +102,10 @@ than 825 days.
 
 ## Not yet ported from Android
 
-- A download's extras (its subtitles, intro and credits, trickplay frames) aren't saved for offline
-  use yet, and the Downloads list is reached through a server's Settings, not from the source list
-  with no server reachable.
-- Download ahead queues the next episodes but doesn't yet remove those before the one playing.
-- SMB shares, the subtitle style dialog (size, color, background; the overlay already reads the
-  settings), DVD-image title/chapter/angle controls.
+- SMB shares and DVD-image title/chapter/angle controls.
+- Download ahead takes 3 episodes; Android picks 3 to 5 by download speed and free space.
 - Phone gestures beyond pinch (Android doesn't have them yet either) and the update banner
   (AltStore handles updates).
 - Not yet tried in the simulator: Library view and title pages (the e2e sample here has no TMDB
-  matches), Compatibility and Compressed downloads, PGS and burned-in subtitles, backup and
+  matches), Compressed downloads, Download ahead, PGS and burned-in subtitles, backup and
   restore, the Light theme, and anything on a real iPhone.

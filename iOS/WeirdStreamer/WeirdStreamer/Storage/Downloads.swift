@@ -35,6 +35,7 @@ final class Download {
     var createdAt: Date
     var duration: Double
     var ahead: Bool             // downloaded ahead of the episode being watched
+    var extrasAt: Date? = nil   // when its subtitles, skip times and trickplay were last saved in full
 
     init(address: String, account: String, sourcePath: String, name: String, title: String?, thumbnailUrl: String?,
          sizePct: Int, scale: Int, compat: Bool, size: Int64, ahead: Bool = false) {
@@ -96,7 +97,7 @@ struct OfflinePlayback {
 @Observable
 final class DownloadManager: NSObject {
     static let shared = DownloadManager()
-    static let folder: URL = {
+    nonisolated static let folder: URL = {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let url = docs.appendingPathComponent("Downloads", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -182,6 +183,7 @@ final class DownloadManager: NSObject {
             Task { try? await client.execute("DELETE", "/api/downloads/\(job)") }
         }
         if let url = d.localURL { try? FileManager.default.removeItem(at: url) }
+        DownloadExtras.remove(id)
         model?.context.delete(d)
         save()
     }
@@ -199,7 +201,10 @@ final class DownloadManager: NSObject {
     func run() {
         guard !running, let model, let client = model.client else { return }
         guard let next = all().first(where: { $0.state == "queued" || $0.state == "preparing" }),
-              next.address == model.currentAddress else { return }
+              next.address == model.currentAddress else {
+            refreshExtras()
+            return
+        }
         // Downloads from another server or account wait until it's open again.
         running = true
         Task {
@@ -274,7 +279,9 @@ final class DownloadManager: NSObject {
     /// Download ahead: the episodes after one being watched, in the quality of the show's episodes
     /// downloaded by hand (else Compatibility), three of them, those not downloaded yet.
     func downloadAhead(after path: String) async {
-        guard downloadAhead, let client = model?.client else { return }
+        guard downloadAhead else { return }
+        removeAheadBefore(path)
+        guard let client = model?.client else { return }
         struct Upcoming: Decodable { let episodes: [ContinueItem]? }
         guard let found: Upcoming = try? await client.get("/api/media/upcoming", query: [("path", ServerClient.encodePath(path)), ("count", "3")]),
               let episodes = found.episodes, !episodes.isEmpty else { return }
@@ -282,6 +289,70 @@ final class DownloadManager: NSObject {
         let byHand = mine().last { !$0.ahead && ($0.sourcePath as NSString).deletingLastPathComponent == showFolder }
         add(episodes.map { (path: $0.path, name: $0.name, title: $0.metadata?.playerTitle, thumb: $0.thumbnailUrl, size: $0.size ?? 0) },
             sizePct: byHand?.sizePct ?? 100, scale: byHand?.scale ?? 100, compat: byHand?.compat ?? true, ahead: true)
+    }
+
+    // MARK: Extras (subtitles, skip times, trickplay) for playing offline
+
+    @ObservationIgnored private var savingExtras = false
+
+    /// Saves the extras of the open account's finished downloads that have none yet, or whose
+    /// last save is over 12 hours old, one at a time. A server that can't be reached ends the round.
+    func refreshExtras() {
+        guard !savingExtras, let model, let client = model.client else { return }
+        let due = mine().filter { $0.isDone && ($0.extrasAt.map { Date().timeIntervalSince($0) > DownloadExtras.refreshInterval } ?? true) }
+        guard !due.isEmpty else { return }
+        savingExtras = true
+        Task {
+            defer { savingExtras = false }
+            for d in due {
+                let id = d.id
+                do {
+                    let complete = try await DownloadExtras.save(id: id, sourcePath: d.sourcePath, thumbnail: d.thumbnailUrl, client: client) {
+                        await MainActor.run { self.all().contains { $0.id == id } }
+                    }
+                    guard all().contains(where: { $0.id == id }) else { continue }
+                    if complete { d.extrasAt = Date() }
+                    save()
+                } catch {
+                    return // the server is away: next time
+                }
+            }
+        }
+    }
+
+    /// A subtitle was added to a video: its downloads save their tracks again now.
+    func extrasChanged(_ sourcePath: String) {
+        let matching = all().filter { $0.sourcePath == sourcePath && $0.isDone }
+        guard !matching.isEmpty else { return }
+        matching.forEach { $0.extrasAt = nil }
+        save()
+        refreshExtras()
+    }
+
+    /// The finished download playing from a file on this phone.
+    func download(atFile url: URL) -> Download? {
+        all().first { $0.localURL?.standardizedFileURL == url.standardizedFileURL }
+    }
+
+    /// The downloaded episode after `d` in the same folder (by name, as episodes sort), for going
+    /// on offline.
+    func nextDownloaded(after d: Download) -> Download? {
+        let folder = (d.sourcePath as NSString).deletingLastPathComponent
+        return all()
+            .filter { $0.address == d.address && $0.account == d.account && $0.isDone && $0.localURL != nil }
+            .filter { ($0.sourcePath as NSString).deletingLastPathComponent == folder && $0.sourcePath.localizedStandardCompare(d.sourcePath) == .orderedDescending }
+            .min { $0.sourcePath.localizedStandardCompare($1.sourcePath) == .orderedAscending }
+    }
+
+    /// Episodes downloaded ahead that come before the one now playing (same show folder, by name)
+    /// have been watched past: they go. Ones downloaded by hand never do.
+    func removeAheadBefore(_ path: String) {
+        let folder = (path as NSString).deletingLastPathComponent
+        for d in mine() where d.ahead && d.sourcePath != path
+            && (d.sourcePath as NSString).deletingLastPathComponent == folder
+            && d.sourcePath.localizedStandardCompare(path) == .orderedAscending {
+            remove(d)
+        }
     }
 
     private func save() {

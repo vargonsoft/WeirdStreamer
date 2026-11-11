@@ -21,7 +21,9 @@ struct PhoneDialog<Content: View, Buttons: View>: View {
             }
             .padding(24)
             .frame(maxWidth: 560)
+            // Opaque even in themes whose boxes are see-through (Cinema Blue): the page color under the box's.
             .background(Palette.panel, in: RoundedRectangle(cornerRadius: 28))
+            .background(Palette.background, in: RoundedRectangle(cornerRadius: 28))
             .padding(.horizontal, 24)
         }
         .foregroundStyle(Palette.text)

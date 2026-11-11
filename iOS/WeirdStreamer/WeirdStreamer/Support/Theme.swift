@@ -291,6 +291,11 @@ struct RemoteImage: View {
         }
         .task(id: relative) {
             image = nil
+            if let relative, relative.hasPrefix("file:"), let file = URL(string: relative) {
+                // Saved with a download.
+                image = await Task.detached { (try? Data(contentsOf: file)).flatMap(UIImage.init(data:)) }.value
+                return
+            }
             guard let client = model.client, let url = client.url(for: relative) else { return }
             if let cached = ImageCache.shared.object(forKey: url as NSURL) { image = cached; return }
             if let data = try? await client.image(at: url), let decoded = UIImage(data: data) {

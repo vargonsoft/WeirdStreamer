@@ -7,6 +7,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var showAddSource = false
     @State private var showSettings = false
+    @State private var settingsTab = "App"
     @State private var recoveryShown = LocalStore.recoveryNote != nil
 
     var body: some View {
@@ -29,7 +30,7 @@ struct RootView: View {
             }
         }
         .fullScreenCover(isPresented: $showSettings) {
-            SettingsView { showSettings = false }
+            SettingsView(startTab: settingsTab) { showSettings = false; settingsTab = "App" }
                 .environment(model)
         }
         .onChange(of: showSettings) { _, open in model.settingsOpen = open }
@@ -67,8 +68,18 @@ struct RootView: View {
                 } else if let error = model.errorMessage {
                     VStack(spacing: 16) {
                         Text("Error: \(error)").foregroundStyle(Palette.error).multilineTextAlignment(.center)
-                        Button("Retry") { model.loadPath(model.path, displayName: model.pathDisplayName) }
-                            .buttonStyle(PhoneButtonStyle())
+                        HStack(spacing: 12) {
+                            Button("Retry") { model.loadPath(model.path, displayName: model.pathDisplayName) }
+                                .buttonStyle(PhoneButtonStyle())
+                            // Offline: what's downloaded still plays.
+                            if !DownloadManager.shared.mine().filter(\.isDone).isEmpty {
+                                Button {
+                                    settingsTab = "Downloads"
+                                    showSettings = true
+                                } label: { Label("Downloads", systemImage: "arrow.down.circle") }
+                                    .buttonStyle(PhoneSecondaryButtonStyle())
+                            }
+                        }
                     }
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

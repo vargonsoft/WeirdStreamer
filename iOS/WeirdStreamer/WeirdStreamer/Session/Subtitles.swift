@@ -23,7 +23,10 @@ final class ServerSubtitles {
     private(set) var selected = -1
     private(set) var loaded = false
 
-    @ObservationIgnored private let client: ServerClient
+    @ObservationIgnored private let client: ServerClient?
+    /// A download's saved tracks (its id), read from the phone instead of the server.
+    @ObservationIgnored private let downloadId: String?
+    @ObservationIgnored private let sourcePath: String
     @ObservationIgnored private let encodedPath: String
     @ObservationIgnored private var cues: [SubtitleCue] = []
     @ObservationIgnored private var pictures: [PgsSet] = []
@@ -35,10 +38,15 @@ final class ServerSubtitles {
     private static let windowMs: Int64 = 120_000
     private static let aheadMs: Int64 = 40_000
 
-    init(client: ServerClient, path: String) {
+    init(client: ServerClient?, path: String, downloadId: String? = nil) {
         self.client = client
+        self.downloadId = downloadId
+        self.sourcePath = path
         self.encodedPath = ServerClient.encodePath(path)
     }
+
+    /// Whether search and download online can work (a server is reachable for this video).
+    var online: Bool { client != nil }
 
     var labels: [String] { serverSubtitleLabels(tracks) }
     var selectedTrack: SubtitleTrack? { tracks.indices.contains(selected) ? tracks[selected] : nil }
@@ -70,9 +78,10 @@ final class ServerSubtitles {
         guard var track = selectedTrack, track.isText else { return }
         track.offsetMs = (track.offsetMs ?? 0) + deltaMs
         tracks[selected] = track
-        guard let key = track.key else { return }
+        if let downloadId { DownloadExtras.saveSubtitleTracks(downloadId, tracks) }
+        guard let key = track.key, let client = self.client else { return }
         let offset = track.offsetMs ?? 0
-        let client = self.client, path = encodedPath
+        let path = encodedPath
         saving?.cancel()
         saving = Task {
             try? await Task.sleep(for: .milliseconds(600))
@@ -90,6 +99,23 @@ final class ServerSubtitles {
         if !outside && positionMs < untilMs - Self.aheadMs { return }
         let start = outside ? max(0, positionMs - 10_000) : untilMs
         let gen = generation
+        if let downloadId {
+            // Saved whole: read once.
+            guard outside || fromMs != 0 || untilMs != Int64.max else { return }
+            let file = DownloadExtras.subtitleFolder(downloadId).appendingPathComponent(DownloadExtras.subtitleName(track))
+            guard let body = try? Data(contentsOf: file) else { return }
+            if track.isPGS {
+                let all = await Task.detached { decodePgs(body) }.value
+                guard gen == generation else { return }
+                pictures = all
+            } else {
+                cues = parseWebVtt(String(decoding: body, as: UTF8.self))
+            }
+            fromMs = 0
+            untilMs = Int64.max
+            return
+        }
+        guard let client else { return }
         var query = [("path", encodedPath), ("track", String(track.index)),
                      ("start", String(format: "%.3f", Double(start) / 1000)),
                      ("duration", String(format: "%.3f", Double(Self.windowMs) / 1000))]
@@ -142,6 +168,7 @@ final class ServerSubtitles {
 
     /// OpenSubtitles results for the video (in this phone's languages); throws with the server's message.
     func search() async throws -> [SubtitleHit] {
+        guard let client else { throw ServerError.transport("Not connected to the server") }
         let found: SubtitleSearch = try await client.get("/api/media/subtitles/search",
                                                          query: [("path", encodedPath), ("languages", deviceSubtitleLanguages().joined(separator: ","))])
         return found.results ?? []
@@ -150,10 +177,12 @@ final class ServerSubtitles {
     /// Downloads (or reuses) a result and selects it.
     func download(_ hit: SubtitleHit) async throws -> Int {
         struct Body: Encodable { let path: String; let result: SubtitleHit }
+        guard let client else { throw ServerError.transport("Not connected to the server") }
         let got: SubtitleDownload = try await client.callSnake("POST", "/api/media/subtitles/download",
                                                                body: Body(path: encodedPath, result: hit))
         tracks = got.subtitles ?? tracks
         select(got.index ?? -1)
+        DownloadManager.shared.extrasChanged(sourcePath) // its downloads save the new track
         return got.index ?? -1
     }
 }
@@ -289,14 +318,14 @@ func subtitleOffsetText(_ ms: Int) -> String {
 /// PGS: Blu-ray's picture subtitles, as ffmpeg's raw .sup stream: palettes, run-length objects and
 /// compositions (which objects go where), each display set closed by an end segment. A set with
 /// no objects clears the screen. Pictures are decoded only when shown.
-final class PgsObject: @unchecked Sendable {
+nonisolated final class PgsObject: @unchecked Sendable {
     let width: Int
     let height: Int
     var chunks: [Data]
     init(width: Int, height: Int, chunks: [Data]) { self.width = width; self.height = height; self.chunks = chunks }
 }
 
-struct PgsPart: @unchecked Sendable {
+nonisolated struct PgsPart: @unchecked Sendable {
     let x: Int, y: Int
     let crop: [Int]?
     let object: PgsObject
@@ -304,14 +333,14 @@ struct PgsPart: @unchecked Sendable {
 }
 
 /// What's on screen from `startMs` until the next set: `parts` on a width×height frame.
-struct PgsSet: @unchecked Sendable {
+nonisolated struct PgsSet: @unchecked Sendable {
     let startMs: Int64
     let width: Int
     let height: Int
     let parts: [PgsPart]
 
     /// The whole set as one picture (only the part of the frame in use), or nil when it clears.
-    func render() -> PgsPicture? {
+    nonisolated func render() -> PgsPicture? {
         guard !parts.isEmpty else { return nil }
         let left = parts.map(\.x).min()!, top = parts.map(\.y).min()!
         let right = parts.map { $0.x + ($0.crop?[2] ?? $0.object.width) }.max()!
@@ -388,14 +417,14 @@ struct PgsSet: @unchecked Sendable {
 }
 
 /// A display set's picture at (x, y) on a frameWidth×frameHeight frame.
-struct PgsPicture {
+nonisolated struct PgsPicture: @unchecked Sendable {
     let image: CGImage
     let x: Int, y: Int
     let frameWidth: Int, frameHeight: Int
 }
 
 /// An ARGB color from a palette entry, in the BT.709 limited range Blu-rays use.
-private func pgsColor(_ y: Int, _ cr: Int, _ cb: Int, _ alpha: Int) -> UInt32 {
+nonisolated private func pgsColor(_ y: Int, _ cr: Int, _ cb: Int, _ alpha: Int) -> UInt32 {
     let luma = 1.164 * Double(y - 16)
     let red = Double(cr - 128), blue = Double(cb - 128)
     func clamp(_ v: Double) -> UInt32 { UInt32(min(max(Int(v), 0), 255)) }
@@ -403,7 +432,7 @@ private func pgsColor(_ y: Int, _ cr: Int, _ cb: Int, _ alpha: Int) -> UInt32 {
 }
 
 /// Decodes a .sup stream into its display sets.
-func decodePgs(_ data: Data) -> [PgsSet] {
+nonisolated func decodePgs(_ data: Data) -> [PgsSet] {
     let bytes = [UInt8](data)
     func u8(_ i: Int) -> Int { Int(bytes[i]) }
     func u16(_ i: Int) -> Int { Int(bytes[i]) << 8 | Int(bytes[i + 1]) }

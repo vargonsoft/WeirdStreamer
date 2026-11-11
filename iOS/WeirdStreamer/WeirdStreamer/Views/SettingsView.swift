@@ -10,7 +10,12 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     let onBack: () -> Void
 
-    @State private var tab = "App"
+    @State private var tab: String
+
+    init(startTab: String = "App", onBack: @escaping () -> Void) {
+        self.onBack = onBack
+        _tab = State(initialValue: startTab)
+    }
 
     /// As Android: Downloads and Account with a server open; Server, Users, Streams and Jobs for administrators.
     private var tabs: [String] {
@@ -120,6 +125,7 @@ struct AppTab: View {
     @State private var importing = false
     @State private var backup = BackupDocument(data: Data())
     @State private var notice: String?
+    @State private var showSubtitleStyle = false
 
     var body: some View {
         ScrollView {
@@ -139,6 +145,12 @@ struct AppTab: View {
                     notice = "Thumbnail cache cleared."
                 } label: {
                     SettingsRow(title: "Clear Thumbnail Cache") { Image(systemName: "trash.slash") }
+                }
+                .buttonStyle(.plain)
+                Button { showSubtitleStyle = true } label: {
+                    SettingsRow(title: "Subtitle style", detail: SubtitleStyle.current(model).summary) {
+                        Image(systemName: "captions.bubble")
+                    }
                 }
                 .buttonStyle(.plain)
 
@@ -184,6 +196,11 @@ struct AppTab: View {
                 Divider().overlay(Palette.raised).padding(.vertical, 8)
                 Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
                     .font(.footnote).foregroundStyle(Palette.muted).padding(16)
+            }
+        }
+        .overlay {
+            if showSubtitleStyle {
+                SubtitleStyleDialog { showSubtitleStyle = false }
             }
         }
         .overlay {

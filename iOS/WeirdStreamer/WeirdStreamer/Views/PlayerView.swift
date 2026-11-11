@@ -60,6 +60,8 @@ final class PlaybackModel {
     /// Where the current stream starts in the video: transcodes are restarted at an offset.
     @ObservationIgnored private var offset: Double = 0
     @ObservationIgnored private var codecs: CodecsInfo?
+    /// The download playing, when it's a file on this phone.
+    @ObservationIgnored private(set) var download: Download?
     @ObservationIgnored private var originalByHand = false
     @ObservationIgnored private var videoFailed = false
     @ObservationIgnored private var timeToken: Any?
@@ -86,9 +88,25 @@ final class PlaybackModel {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
         if let file = request.localFile {
-            // A download: the file on this phone, as it is (it was made to play here).
+            // A download: the file on this phone, as it is (it was made to play here), with the
+            // subtitles, skip times and trickplay frames saved beside it.
             originalByHand = true
             modeIndex = 0
+            if let d = DownloadManager.shared.download(atFile: file) {
+                download = d
+                codecs = DownloadExtras.codecs(d.id)
+                if let length = codecs?.duration, length > 0 { duration = length }
+                if let saved = DownloadExtras.subtitleTracks(d.id) {
+                    let subs = ServerSubtitles(client: model.client, path: request.path, downloadId: d.id)
+                    subs.setTracks(saved)
+                    let remembered = model.setting(subtitleMemoryKey(model)).flatMap { label in subs.labels.firstIndex(of: label) }
+                    subs.select(remembered ?? subs.tracks.firstIndex { $0.forced == true && $0.isText } ?? -1)
+                    subtitles = subs
+                }
+                trickplay = DownloadExtras.trickplay(d.id)
+                segments = DownloadExtras.segments(d.id)
+                if let t = segments?.metadata?.playerTitle { title = t }
+            }
             let item = AVPlayerItem(url: file)
             player.replaceCurrentItem(with: item)
             pendingSeek = request.startAt > 0 ? request.startAt : nil
@@ -218,22 +236,24 @@ final class PlaybackModel {
     private func observe(_ item: AVPlayerItem) {
         observations = [
             item.observe(\.status, options: [.new]) { [weak self] item, _ in
-                Task { @MainActor in self?.statusChanged(item) }
+                guard let self else { return }
+                Task { @MainActor in self.statusChanged(item) }
             },
             player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+                guard let self else { return }
                 Task { @MainActor in
-                    self?.isPlaying = player.timeControlStatus != .paused
-                    self?.isBuffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                    self.isPlaying = player.timeControlStatus != .paused
+                    self.isBuffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
                 }
             },
         ]
         timeToken = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
                                                    queue: .main) { [weak self] time in
-            Task { @MainActor in self?.tick(time) }
+            MainActor.assumeIsolated { self?.tick(time) }
         }
         endToken = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item,
                                                           queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.ended() }
+            MainActor.assumeIsolated { self?.ended() }
         }
     }
 
@@ -365,14 +385,37 @@ final class PlaybackModel {
     }
 
     /// Skip Intro or Skip Credits, while the position is in one.
-    var skipPrompt: (label: String, to: Double, next: ContinueItem?)? {
+    var skipPrompt: (label: String, to: Double, goesOn: Bool)? {
         if let intro = segments?.intro, position >= intro.start, position < intro.end - 1 {
-            return ("Skip Intro", intro.end, nil)
+            return ("Skip Intro", intro.end, false)
         }
         if let credits = segments?.credits, position >= credits.start, position < credits.end - 1 {
-            return ("Skip Credits", credits.end, segments?.next)
+            return ("Skip Credits", credits.end, nextDownload != nil || (download == nil && segments?.next != nil))
         }
         return nil
+    }
+
+    /// Offline, the next episode is the next one downloaded: the server's next if it's on the
+    /// phone, else the next downloaded in the same folder.
+    private var nextDownload: Download? {
+        guard let download else { return nil }
+        let manager = DownloadManager.shared
+        if let next = segments?.next, let d = manager.find(next.path), d.isDone, d.localURL != nil { return d }
+        return manager.nextDownloaded(after: download)
+    }
+
+    /// Goes on to the next episode; false if there's none.
+    @discardableResult
+    func playNext(_ model: AppModel) -> Bool {
+        if let d = nextDownload, let file = d.localURL {
+            model.playDownload(d, file: file)
+            return true
+        }
+        if download == nil, let next = segments?.next {
+            model.playContinue(next)
+            return true
+        }
+        return false
     }
 
     // MARK: Progress
@@ -488,9 +531,9 @@ struct PlayerView: View {
 
             if let skip = playback.skipPrompt {
                 Button {
-                    if let next = skip.next {
+                    if skip.goesOn {
                         playback.report(paused: true, ended: true)
-                        model.playContinue(next)
+                        playback.playNext(model)
                     } else {
                         playback.seek(to: skip.to)
                     }
@@ -510,7 +553,7 @@ struct PlayerView: View {
             let model = self.model
             let playback = self.playback
             playback.onFinished = {
-                if let next = playback.segments?.next { model.playContinue(next) } else { model.playing = nil }
+                if !playback.playNext(model) { model.playing = nil }
             }
             await playback.start(model: model)
         }

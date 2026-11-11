@@ -287,7 +287,7 @@ struct DownloadsTab: View {
                 ZStack {
                     Palette.raised
                     Image(systemName: "film").font(.system(size: 24))
-                    RemoteImage(relative: d.thumbnailUrl)
+                    RemoteImage(relative: DownloadExtras.thumbnail(d.id)?.absoluteString ?? d.thumbnailUrl)
                     if d.isDone { Image(systemName: "play.fill").font(.system(size: 26)).foregroundStyle(.white) }
                 }
                 .frame(width: 112, height: 63)

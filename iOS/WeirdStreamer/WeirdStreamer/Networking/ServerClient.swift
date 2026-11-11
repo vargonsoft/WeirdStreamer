@@ -286,6 +286,11 @@ final class ServerClient: Sendable {
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        try Self.decode(type, from: data)
+    }
+
+    /// Reads a reply as the server sends it (snake_case keys), such as one saved with a download.
+    static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         do {

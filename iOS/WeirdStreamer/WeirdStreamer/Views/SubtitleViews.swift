@@ -1,4 +1,5 @@
 import SwiftUI
+import MediaAccessibility
 
 /// Draws the selected subtitle track over the video at the player's position (milliseconds, in
 /// the file's time), loading cues ahead as playback goes on. Text in the subtitle style (Settings);
@@ -52,32 +53,53 @@ struct SubtitleOverlay: View {
     }
 }
 
-/// The subtitle style: the box behind the text, the text's color, size and font (Settings › App ›
-/// Subtitle style), as Android's custom style.
-struct SubtitleStyle {
+/// The look of text subtitles on this phone (Settings › App › Subtitle style), as Android's: the
+/// iPhone's own caption style (Settings › Accessibility › Subtitles & Captioning, read through
+/// MediaAccessibility), or our own box or outline, colors, font and size.
+struct SubtitleStyle: Equatable {
+    var system = true
     var background = "Black"      // Black, White, Themed, None
-    var opacity = 0.5
-    var foreground = "White"      // White, Black, Themed
+    var opacity = 0.5             // the box's (or outline's)
+    var foreground = "White"      // White, Black, Themed, None (see-through letters)
+    var textOpacity = 1.0
+    var outline = false           // the background color outlines the text instead of a box
+    var font = "Default"          // Default, Serif, Monospace, Casual, Condensed
     var size = "Normal"           // Tiny, Small, Normal, Large, Huge
-    var font = "Default"          // Default, Serif, Monospace, Rounded
 
     static let backgrounds = ["Black", "White", "Themed", "None"]
-    static let foregrounds = ["White", "Black", "Themed"]
+    static let foregrounds = ["White", "Black", "Themed", "None"]
+    static let fonts = ["Default", "Serif", "Monospace", "Casual", "Condensed"]
     static let sizes = ["Tiny", "Small", "Normal", "Large", "Huge"]
-    static let fonts = ["Default", "Serif", "Monospace", "Rounded"]
     static let opacities = [0.25, 0.5, 0.75, 1.0]
 
-    var scale: CGFloat { ["Tiny": 0.6, "Small": 0.8, "Large": 1.3, "Huge": 1.6][size] ?? 1 }
+    static func opacityLabel(_ o: Double) -> String { o >= 1 ? "Solid" : "\(Int(o * 100))%" }
 
-    var textColor: Color {
+    var scale: CGFloat {
+        if system { return CGFloat(MACaptionAppearanceGetRelativeCharacterSize(.user, nil)) }
+        return ["Tiny": 0.6, "Small": 0.8, "Large": 1.3, "Huge": 1.6][size] ?? 1
+    }
+
+    /// The letters' color; nil when they're see-through.
+    var textColor: Color? {
+        if system {
+            let color = Color(MACaptionAppearanceCopyForegroundColor(.user, nil).takeRetainedValue())
+            return color.opacity(Double(MACaptionAppearanceGetForegroundOpacity(.user, nil)))
+        }
         switch foreground {
-        case "Black": return .black
-        case "Themed": return Palette.accent
-        default: return .white
+        case "Black": return .black.opacity(textOpacity)
+        case "Themed": return Palette.accent.opacity(textOpacity)
+        case "None": return nil
+        default: return .white.opacity(textOpacity)
         }
     }
 
+    /// The box's (or outline's) color; nil for none.
     var boxColor: Color? {
+        if system {
+            let alpha = Double(MACaptionAppearanceGetBackgroundOpacity(.user, nil))
+            guard alpha > 0 else { return nil }
+            return Color(MACaptionAppearanceCopyBackgroundColor(.user, nil).takeRetainedValue()).opacity(alpha)
+        }
         switch background {
         case "White": return .white.opacity(opacity)
         case "Themed": return Palette.panel.opacity(opacity)
@@ -86,49 +108,162 @@ struct SubtitleStyle {
         }
     }
 
-    var design: Font.Design {
-        switch font {
-        case "Serif": return .serif
-        case "Monospace": return .monospaced
-        case "Rounded": return .rounded
-        default: return .default
+    var outlined: Bool { !system && outline && boxColor != nil }
+
+    /// The outline: the background color, solid (Translucency is the box's; the outline goes
+    /// with the text's opacity, applied to it as a whole).
+    var outlineColor: Color {
+        switch background {
+        case "White": return .white
+        case "Themed": return Color(hex: ThemeStore.shared.palette.panel)
+        default: return .black
         }
     }
 
+    func font(_ points: CGFloat) -> Font {
+        let size = points * scale
+        if system { return .system(size: size, weight: .medium) }
+        switch font {
+        case "Serif": return .system(size: size, weight: .medium, design: .serif)
+        case "Monospace": return .system(size: size, weight: .medium, design: .monospaced)
+        case "Casual": return .system(size: size, weight: .medium, design: .rounded)
+        case "Condensed": return .system(size: size, weight: .medium).width(.condensed)
+        default: return .system(size: size, weight: .medium)
+        }
+    }
+
+    /// One line for Settings: "iPhone system", or "Custom · Large · Serif".
+    var summary: String { system ? "iPhone system (Accessibility › Subtitles & Captioning)" : "Custom · \(size) · \(font)" }
+
     @MainActor static func current(_ model: AppModel) -> SubtitleStyle {
         var s = SubtitleStyle()
+        if let v = model.setting("subtitle_system") { s.system = v != "false" }
         if let v = model.setting("subtitle_background") { s.background = v }
         if let v = model.setting("subtitle_opacity").flatMap(Double.init) { s.opacity = v }
         if let v = model.setting("subtitle_foreground") { s.foreground = v }
-        if let v = model.setting("subtitle_size") { s.size = v }
+        if let v = model.setting("subtitle_text_opacity").flatMap(Double.init) { s.textOpacity = v }
+        if let v = model.setting("subtitle_outline") { s.outline = v == "true" }
         if let v = model.setting("subtitle_font") { s.font = v }
+        if let v = model.setting("subtitle_size") { s.size = v }
         return s
     }
 
     @MainActor func save(_ model: AppModel) {
+        model.setSetting("subtitle_system", system ? "true" : "false")
         model.setSetting("subtitle_background", background)
         model.setSetting("subtitle_opacity", String(opacity))
         model.setSetting("subtitle_foreground", foreground)
-        model.setSetting("subtitle_size", size)
+        model.setSetting("subtitle_text_opacity", String(textOpacity))
+        model.setSetting("subtitle_outline", outline ? "true" : "false")
         model.setSetting("subtitle_font", font)
+        model.setSetting("subtitle_size", size)
     }
-
-    var summary: String { "\(size) · \(foreground) on \(background == "None" ? "no box" : background.lowercased())" }
 }
 
-/// A subtitle line in the style: 18 points at Normal, centered, with a shadow when there's no box.
+/// A subtitle line in the style: 18 points at Normal, centered. In a box, or outlined in the
+/// box's color; see-through letters are cut out of the box or outline; with neither box nor
+/// outline, a shadow keeps it readable.
 struct StyledSubtitleText: View {
     let text: AttributedString
     let style: SubtitleStyle
+    var points: CGFloat = 18
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 18 * style.scale, weight: .medium, design: style.design))
-            .foregroundStyle(style.textColor)
-            .multilineTextAlignment(.center)
-            .shadow(color: style.boxColor == nil ? .black : .clear, radius: 3)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(style.boxColor ?? .clear, in: RoundedRectangle(cornerRadius: 6))
+        let box = style.boxColor
+        let letters = Text(text).font(style.font(points)).multilineTextAlignment(.center)
+        ZStack {
+            if style.outlined {
+                // The outline: the text drawn around itself in the background color.
+                let w = max(1.5, points * style.scale / 10)
+                ZStack {
+                    ForEach(0..<8, id: \.self) { i in
+                        let angle = Double(i) * .pi / 4
+                        letters.foregroundStyle(style.outlineColor).offset(x: cos(angle) * w, y: sin(angle) * w)
+                    }
+                }
+                .opacity(style.textOpacity) // once for the whole outline, so overlaps don't darken it
+            }
+            if let color = style.textColor {
+                letters.foregroundStyle(color)
+                    .shadow(color: box == nil ? .black : .clear, radius: 3)
+            } else {
+                letters.foregroundStyle(.black).blendMode(.destinationOut) // see-through
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 4)
+        .background(style.outlined ? .clear : (box ?? .clear), in: RoundedRectangle(cornerRadius: 6))
+        .compositingGroup()
+    }
+}
+
+/// Settings › App › Subtitle style: a preview above the options, each a menu of its values;
+/// changing any of the Custom options makes the style Custom.
+struct SubtitleStyleDialog: View {
+    @Environment(AppModel.self) private var model
+    let onDismiss: () -> Void
+    @State private var style = SubtitleStyle()
+
+    var body: some View {
+        PhoneDialog(title: "Subtitle style", onDismiss: onDismiss) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ZStack {
+                        LinearGradient(colors: [.blue, .orange, .green], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        StyledSubtitleText(text: AttributedString("The quick brown fox\njumps over the lazy dog"), style: style, points: 16)
+                    }
+                    .frame(height: 110)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    Text("Text subtitles only: picture ones (Blu-ray, DVD) keep their own look." +
+                         (style.system ? " The iPhone's style is set in Settings › Accessibility › Subtitles & Captioning." : ""))
+                        .font(.caption).foregroundStyle(Palette.muted)
+                        .padding(.vertical, 6)
+                    row("Style", style.system ? "iPhone system" : "Custom", applies: true,
+                        [("iPhone system", { $0.system = true }), ("Custom", { $0.system = false })])
+                    row("Background", style.background, applies: true,
+                        SubtitleStyle.backgrounds.map { v in (v, { $0.background = v }) })
+                    row("Translucency", SubtitleStyle.opacityLabel(style.opacity), applies: style.background != "None" && !style.outline,
+                        SubtitleStyle.opacities.map { v in (SubtitleStyle.opacityLabel(v), { $0.opacity = v }) })
+                    row("Text", style.foreground, applies: true,
+                        SubtitleStyle.foregrounds.map { v in (v, { $0.foreground = v }) })
+                    row("Text opacity", SubtitleStyle.opacityLabel(style.textOpacity), applies: true,
+                        SubtitleStyle.opacities.map { v in (SubtitleStyle.opacityLabel(v), { $0.textOpacity = v }) })
+                    row("Outline", style.outline ? "On" : "Off", applies: style.background != "None",
+                        [("Off", { $0.outline = false }), ("On", { $0.outline = true })])
+                    row("Font", style.font, applies: true, SubtitleStyle.fonts.map { v in (v, { $0.font = v }) })
+                    row("Size", style.size, applies: true, SubtitleStyle.sizes.map { v in (v, { $0.size = v }) })
+                }
+            }
+            .frame(maxHeight: 460)
+        } buttons: {
+            Button("Done", action: onDismiss).buttonStyle(PhoneButtonStyle())
+        }
+        .onAppear { style = SubtitleStyle.current(model) }
+    }
+
+    /// A row: its label, its value as a menu of the choices. Dimmed where it doesn't apply.
+    private func row(_ label: String, _ value: String, applies: Bool,
+                     _ choices: [(String, (inout SubtitleStyle) -> Void)]) -> some View {
+        let isStyleRow = label == "Style"
+        return Menu {
+            ForEach(choices.indices, id: \.self) { i in
+                Button(choices[i].0) {
+                    var s = style
+                    if !isStyleRow { s.system = false }
+                    choices[i].1(&s)
+                    style = s
+                    s.save(model)
+                }
+            }
+        } label: {
+            HStack {
+                Text(label).foregroundStyle(Palette.text)
+                Spacer()
+                Text(value).foregroundStyle(Palette.muted)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .opacity(!applies || (style.system && !isStyleRow) ? 0.5 : 1)
     }
 }
 
