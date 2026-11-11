@@ -2,6 +2,7 @@ package media
 
 import (
 	"encoding/binary"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -68,6 +69,34 @@ func TestTitleTables(t *testing.T) {
 	args, trim = whole.InputArgs("/d.iso", 0, 3, 90)
 	if strings.Join(args, " ") != "-f dvdvideo -title 4 -ss 90.000 -i /d.iso" || trim != 0 {
 		t.Errorf("whole-title input = %v, trim %v (angle beyond the title's must be dropped)", args, trim)
+	}
+
+	// A title ffmpeg reads only from chapter 2 (a padding cell first): from chapter 2 at the
+	// start, else from the chapter the seek lands in, with the rest cut after decoding.
+	padded := DiscTitle{Number: 14, Angles: 1, Duration: 193.2, FirstChapter: 2,
+		Chapters: []float64{0, 0.5, 41.3, 192.7}, Segments: []DiscSegment{{Duration: 193.2}}}
+	for _, c := range []struct {
+		seek, trim float64
+		args       string
+	}{
+		{0, 0, "-f dvdvideo -title 14 -chapter_start 2 -i /d.iso"},
+		{10.5, 10, "-f dvdvideo -title 14 -chapter_start 2 -i /d.iso"},
+		{51.3, 10, "-f dvdvideo -title 14 -chapter_start 3 -i /d.iso"},
+		{193, 0.3, "-f dvdvideo -title 14 -chapter_start 4 -i /d.iso"},
+	} {
+		args, trim = padded.InputArgs("/d.iso", 0, 1, c.seek)
+		if strings.Join(args, " ") != c.args || math.Abs(trim-c.trim) > 1e-9 {
+			t.Errorf("padded title at %v = %v, trim %v; want %s, trim %v", c.seek, args, trim, c.args, c.trim)
+		}
+	}
+}
+
+func TestEmptyOutput(t *testing.T) {
+	if !emptyOutput([]string{"[out#0/mp4 @ 0x1] video:0KiB audio:0KiB", "[out#0/mp4 @ 0x1] Output file is empty, nothing was encoded"}) {
+		t.Error("an output with nothing encoded should count as empty")
+	}
+	if emptyOutput([]string{"[out#0/mp4 @ 0x1] video:2048KiB audio:300KiB"}) {
+		t.Error("an output with frames should not count as empty")
 	}
 }
 

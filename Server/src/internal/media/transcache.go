@@ -223,6 +223,10 @@ func (s *transcodeSpool) start(args []string) error {
 		stdout.Close()
 		stderr.Close()
 		took := time.Since(started).Round(time.Second)
+		if err == nil && !closed && emptyOutput(lines) {
+			// ffmpeg exits 0 when its input gave it nothing to encode.
+			err = errors.New("ffmpeg read no video or audio")
+		}
 		switch {
 		case shuttingDown.Load():
 			log.Printf("[TRANSCODE] Stopped by the server's shutdown after %s (%s made): %s", took, sizeText(size), s.filePath)
@@ -287,6 +291,17 @@ const outputTail = 15
 
 // readOutput passes ffmpeg's messages to the stream's session (its progress, for the Streams page)
 // and returns its last lines, without the progress ones, for the log if it fails.
+// emptyOutput reports whether ffmpeg's last lines say it encoded nothing (its input ended before
+// a frame: a DVD title it can't read past the start of), which it doesn't count as an error.
+func emptyOutput(lines []string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, "Output file is empty, nothing was encoded") {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *transcodeSpool) readOutput(stderr io.Reader) []string {
 	var lines []string
 	var partial string

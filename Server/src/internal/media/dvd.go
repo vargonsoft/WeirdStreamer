@@ -25,7 +25,7 @@ func IsDiscImage(path string) bool {
 }
 
 // discInfoVersion changes when probing changes, so discs stored by older builds are probed again.
-const discInfoVersion = 3
+const discInfoVersion = 4
 
 // DiscInfo describes what a DVD disc image holds.
 type DiscInfo struct {
@@ -46,6 +46,9 @@ type DiscTitle struct {
 	Height    int           `json:"height,omitempty"`
 	Aspect    float64       `json:"aspect,omitempty"` // display aspect ratio (4:3, 16:9)
 	Segments  []DiscSegment `json:"segments"`         // the program chains played one after another
+	// FirstChapter (from 1) is where ffmpeg reads a title from when it can't read past the title's
+	// opening (a short padding cell that ends the title for it); 0 for the start.
+	FirstChapter int `json:"first_chapter,omitempty"`
 }
 
 // DiscTrack is an audio or subtitle track; Index counts tracks of its kind from 0.
@@ -105,6 +108,14 @@ func (t *DiscTitle) InputArgs(path string, i, angle int, seek float64) (args []s
 	if seg.PGC > 0 {
 		args = append(args, "-pgc", strconv.Itoa(seg.PGC), "-pg", strconv.Itoa(max(seg.PG, 1)))
 		trim = seek
+	} else if t.FirstChapter > 1 && t.FirstChapter <= len(t.Chapters) {
+		// Read from the chapter the seek lands in (never before FirstChapter), and cut the rest.
+		c := t.FirstChapter
+		for c < len(t.Chapters) && t.Chapters[c] <= seek {
+			c++
+		}
+		args = append(args, "-chapter_start", strconv.Itoa(c))
+		trim = max(seek-t.Chapters[c-1], 0)
 	} else if seek > 0 {
 		args = append(args, "-ss", strconv.FormatFloat(seek, 'f', 3, 64))
 	}
@@ -191,6 +202,11 @@ func probeDisc(path string) (*DiscInfo, error) {
 		}
 		t.Angles = 1
 		t.Segments = []DiscSegment{{Start: 0, Duration: t.Duration}}
+		unreadable := false
+		if !readsPacket(path, n, 1) {
+			t.FirstChapter = firstReadableChapter(path, n, len(t.Chapters))
+			unreadable = t.FirstChapter == 0
+		}
 		if tablesErr == nil {
 			tt := tables[n-1]
 			t.Angles = max(tt.angles, 1)
@@ -208,6 +224,11 @@ func probeDisc(path string) (*DiscInfo, error) {
 				}
 			}
 		}
+		if unreadable && len(t.Segments) == 1 {
+			// Nothing but padding as ffmpeg plays it (a few seconds between menus): it can't play.
+			// Chained titles are read a PGC at a time, which the probe doesn't cover, so they stay.
+			continue
+		}
 		info.Titles = append(info.Titles, *t)
 	}
 	if len(info.Titles) == 0 {
@@ -219,6 +240,30 @@ func probeDisc(path string) (*DiscInfo, error) {
 	info.MainTitle = mainTitle(info.Titles)
 	info.Version = discInfoVersion
 	return info, nil
+}
+
+// firstReadableChapter finds the first of a title's next few chapters (from 2) that ffmpeg reads a
+// packet of, or 0. Some discs open a title with a half-second padding cell: ffmpeg skips it, then
+// finds the title over and reads nothing, but it reads the title from the chapter after.
+func firstReadableChapter(path string, title, chapters int) int {
+	for c := 2; c <= min(chapters, 4); c++ {
+		if readsPacket(path, title, c) {
+			return c
+		}
+	}
+	return 0
+}
+
+// readsPacket reports whether ffmpeg reads a packet of a title, from a chapter (from 1).
+func readsPacket(path string, title, chapter int) bool {
+	args := []string{"-v", "error", "-f", "dvdvideo", "-title", strconv.Itoa(title)}
+	if chapter > 1 {
+		args = append(args, "-chapter_start", strconv.Itoa(chapter))
+	}
+	args = append(args, "-i", path, "-read_intervals", "%+#1",
+		"-show_entries", "packet=pts_time", "-of", "csv=p=0")
+	out, err := exec.Command("ffprobe", args...).Output()
+	return err == nil && len(bytes.TrimSpace(withoutDVDLibLines(out))) > 0
 }
 
 func ascending(times []float64) bool {

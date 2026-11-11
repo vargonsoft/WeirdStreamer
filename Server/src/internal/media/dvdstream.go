@@ -40,7 +40,7 @@ func (s *Streamer) serveDisc(w http.ResponseWriter, r *http.Request, filePath, s
 		return err
 	}
 	sess.StartTranscode(desc)
-	fmt.Printf("Starting DVD transcode (%s) at %ss: %s\n", desc.Reason, startTime, filePath)
+	fmt.Printf("Starting DVD transcode (%s) at %.1fs: %s\n", desc.Reason, desc.Start, filePath)
 	return s.runTranscode(w, r, filePath, args, sess)
 }
 
