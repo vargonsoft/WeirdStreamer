@@ -490,7 +490,8 @@ final class PlaybackModel {
         guard let model, position.isFinite else { return }
         lastReport = Date()
         let path = request.path, at = position, total = duration
-        let title = discTitle
+        // The main title is 0 to the server even when picked by its number (as the web sends it).
+        let title = discTitle == disc?.mainTitle ? 0 : discTitle
         Task { await model.recordProgress(path: path, position: at, duration: total, paused: paused, ended: ended, discTitle: title) }
     }
 

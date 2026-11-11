@@ -43,6 +43,7 @@ import com.vargon.weirdstreamer.WeirdStreamerApplication
 import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.vargon.weirdstreamer.api.models.forDiscTitle
+import com.vargon.weirdstreamer.api.models.progressTitle
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.delay
@@ -447,7 +448,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 } else if (state == Player.STATE_ENDED) {
                     if (!isSmbSource && !ended) {
                         ended = true
-                        viewModel.reportPlayback(path, playbackPosition, paused = true, ended = true, discTitle = discTitle)
+                        viewModel.reportPlayback(path, playbackPosition, paused = true, ended = true, discTitle = discInfo.progressTitle(discTitle))
                     }
                     viewModel.playNextAfterEnd(path, replay = { exoPlayer.seekTo(0); exoPlayer.play() }, close = { onBack(path) })
                 }
@@ -489,7 +490,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             // Where the user stopped, so it resumes from there (the end was already reported).
             // (playbackPosition, kept current twice a second, is already absolute for transcodes.)
             if (!isSmbSource && !ended && exoPlayer.playbackState != Player.STATE_IDLE) {
-                viewModel.reportPlayback(path, playbackPosition, paused = true, discTitle = discTitle)
+                viewModel.reportPlayback(path, playbackPosition, paused = true, discTitle = discInfo.progressTitle(discTitle))
             }
             exoPlayer.release()
         }
@@ -509,7 +510,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     LaunchedEffect(exoPlayer, path, isPlayingNow) {
         if (isSmbSource) return@LaunchedEffect
         while (!ended) { // a report after the end would undo "watched"
-            viewModel.reportPlayback(path, playbackPosition, !exoPlayer.isPlaying, discTitle = discTitle)
+            viewModel.reportPlayback(path, playbackPosition, !exoPlayer.isPlaying, discTitle = discInfo.progressTitle(discTitle))
             delay(5000)
         }
     }

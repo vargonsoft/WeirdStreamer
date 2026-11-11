@@ -23,6 +23,8 @@ for each TODO item are at the end of this file.
 - **Commits:** only when asked. End messages with
   `Co-Authored-By: <the model that made the change> <noreply@anthropic.com>` (the model running the session that edited the code). `origin` is a local bare repo
   (`../repos/WeirdStreamer`); push only when asked. There's also a `github` remote.
+- **No backward compatibility:** server and clients change together. Don't keep or add code for
+  older app versions or older requests; fix the client instead.
 - **Disk paths stay on the server:** clients must never learn where a library is on disk. A file or
   folder is, to every client, its library's ID and its path below the library
   (`01c6653f/EAC3 Test/EAC3 Test.mkv`); a disk path in a request is refused. Only an admin's Settings

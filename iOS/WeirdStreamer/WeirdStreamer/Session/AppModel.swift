@@ -557,6 +557,15 @@ final class AppModel {
     /// position stays queued until the server can be reached.
     func recordProgress(path: String, position: Double, duration: Double, paused: Bool, ended: Bool, discTitle: Int = 0) async {
         guard let client, let address = currentAddress, let username = currentAccount else { return }
+        // A disc's extras (titles other than the main one) have no progress of their own: the
+        // server ignores them, and kept here they'd become the film's resume point (synced later
+        // without their title).
+        if discTitle != 0 {
+            _ = try? await client.send("POST", "/api/streams/progress",
+                                       body: StreamProgress(path: ServerClient.encodePath(path), position: position,
+                                                            paused: paused, ended: ended, title: discTitle))
+            return
+        }
         let entry = localProgress(path) ?? {
             let new = LocalProgress(address: address, username: username, path: path)
             context.insert(new)

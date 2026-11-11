@@ -64,6 +64,7 @@ import com.vargon.weirdstreamer.api.ApiService
 import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.vargon.weirdstreamer.api.models.forDiscTitle
+import com.vargon.weirdstreamer.api.models.progressTitle
 import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -443,7 +444,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                 if (state == Player.STATE_ENDED) {
                     if (!isSmbSource) {
                         ended = true
-                        viewModel.reportPlayback(path, playbackPosition, paused = true, ended = true, discTitle = discTitle)
+                        viewModel.reportPlayback(path, playbackPosition, paused = true, ended = true, discTitle = discInfo.progressTitle(discTitle))
                     }
                     viewModel.playNextAfterEnd(path, replay = { exoPlayer.seekTo(0); exoPlayer.play() }, close = { onBack(path) })
                 }
@@ -475,7 +476,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             // Where the user stopped, so it resumes from there (the end was already reported).
             if (!isSmbSource && !ended && exoPlayer.mediaItemCount > 0) {
                 val position = if (enableTranscode) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
-                viewModel.reportPlayback(path, position, paused = true, discTitle = discTitle)
+                viewModel.reportPlayback(path, position, paused = true, discTitle = discInfo.progressTitle(discTitle))
             }
             exoPlayer.release()
         }
@@ -531,7 +532,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         if (isSmbSource) return@LaunchedEffect
         while (!ended) { // the end was reported, and a report after it would undo "watched"
             // Downloads played from the phone are recorded locally and synced later.
-            viewModel.reportPlayback(path, playbackPosition, !exoPlayer.isPlaying, discTitle = discTitle)
+            viewModel.reportPlayback(path, playbackPosition, !exoPlayer.isPlaying, discTitle = discInfo.progressTitle(discTitle))
             delay(5000)
         }
     }

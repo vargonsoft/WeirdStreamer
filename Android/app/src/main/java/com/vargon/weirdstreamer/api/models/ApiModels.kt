@@ -343,6 +343,10 @@ data class DiscInfo(
         titles.firstOrNull { it.number == (if (number <= 0) mainTitle else number) } ?: titles.firstOrNull()
 }
 
+/** The title a progress report names: the main title is 0 even when picked by its number (the
+ *  server keeps progress for the main title only, as the web and iPhone send it). */
+fun DiscInfo?.progressTitle(discTitle: Int): Int = if (this != null && discTitle == mainTitle) 0 else discTitle
+
 data class DiscTitle(
     @SerializedName("number") val number: Int,
     @SerializedName("duration") val duration: Double, // seconds
