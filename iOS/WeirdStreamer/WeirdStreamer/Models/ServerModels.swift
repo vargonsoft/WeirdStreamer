@@ -1,0 +1,460 @@
+import Foundation
+
+// The server's JSON, as the Android app's ApiModels.kt reads it. Decoded with snake_case keys
+// turned into camelCase (ServerClient). Anything the server might leave out is optional.
+
+struct ServerUser: Codable, Hashable {
+    let id: Int64?
+    let username: String
+    let isAdmin: Bool?
+}
+
+struct LoginResponse: Decodable {
+    let token: String
+    let expiresAt: Int64
+    let user: ServerUser
+}
+
+struct Playback: Decodable, Hashable {
+    let position: Double?
+    let duration: Double?
+    let watched: Bool?
+    let updatedAt: Int64?
+
+    /// Resume only past the first 10 seconds, as the Android app does.
+    var resumeAt: Double {
+        guard let position, position >= 10 else { return 0 }
+        return position
+    }
+
+    /// Fraction watched, 0 to 1, from the position and the known or fallback duration.
+    func fraction(fallbackDuration: Double?) -> Double {
+        let total = (duration ?? 0) > 0 ? duration! : (fallbackDuration ?? 0)
+        guard total > 0, let position else { return 0 }
+        return min(max(position / total, 0), 1)
+    }
+}
+
+/// A file in a folder listing (`/api/media/browse`).
+struct MediaItem: Decodable, Hashable {
+    let id: Int64?
+    let path: String
+    let name: String
+    let type: String?          // video, image, document
+    let size: Int64?
+    let mimeType: String?
+    let thumbnailUrl: String?
+    let duration: Double?
+    let playback: Playback?
+    let liveVideo: String?
+
+    var stableID: String { path }
+    var isVideo: Bool { type == "video" }
+}
+
+/// A folder listing: its subfolders (`dirs`, with a library's `libraryType` at the top) and files.
+final class Directory: Decodable {
+    let id: String
+    let name: String
+    let items: [MediaItem]?
+    let dirs: [Directory]?
+    let libraryType: String?
+
+    enum CodingKeys: String, CodingKey { case id = "path", name, items, dirs, libraryType }
+}
+
+struct ContinueMetadata: Decodable, Hashable {
+    let kind: String?
+    let title: String?
+    let year: Int?
+    let showTitle: String?
+    let season: Int?
+    let episode: Int?
+    let still: String?
+    let backdrop: String?
+    let poster: String?
+
+    /// The player's title: "Example Show · S01E02 · Example Episode", or "Example Movie (2008)".
+    var playerTitle: String? {
+        if kind == "episode", let season, let episode {
+            return [showTitle, String(format: "S%02dE%02d", season, episode), title].compactMap { $0 }.joined(separator: " · ")
+        }
+        if kind == "movie", let title { return title + (year.map { " (\($0))" } ?? "") }
+        return nil
+    }
+}
+
+/// An item in Continue Watching, or a newly added file, with its library.
+struct ContinueItem: Decodable, Hashable {
+    let id: Int64?
+    let path: String
+    let name: String
+    let size: Int64?
+    let thumbnailUrl: String?
+    let duration: Double?
+    let libraryId: String
+    let metadata: ContinueMetadata?
+    let playback: Playback?
+    let upNext: Bool?
+    let addedAt: Int64?
+
+    var stableID: String { path }
+
+    /// "Example Show" and "S01E02 · Example Episode", or "Example Movie (2008)" and the file name.
+    var titleLines: (String, String?) {
+        if let md = metadata, md.kind == "episode", let season = md.season, let episode = md.episode {
+            return (md.showTitle ?? md.title ?? name, String(format: "S%02dE%02d · %@", season, episode, md.title ?? ""))
+        }
+        if let title = metadata?.title { return (title + (metadata?.year.map { " (\($0))" } ?? ""), name) }
+        return (name, nil)
+    }
+}
+
+struct LibraryAdditions: Decodable {
+    let libraryId: String
+    let libraryName: String
+    let items: [ContinueItem]?
+}
+
+struct LibraryTitle: Decodable, Identifiable, Hashable {
+    let kind: String           // movie or show
+    let tmdbId: Int
+    let title: String
+    let year: Int?
+    let poster: String?
+    let fileCount: Int?
+    let watched: Int?
+    let progress: Double?
+
+    var id: String { "\(kind)-\(tmdbId)" }
+
+    /// As the Android app: a movie is watched once, a show once every file is.
+    var allWatched: Bool {
+        let count = fileCount ?? 0
+        return count > 0 && (watched ?? 0) >= (kind == "movie" ? 1 : count)
+    }
+}
+
+struct FileMatch: Decodable, Hashable {
+    let title: String
+    let year: Int?
+
+    var label: String { title + (year.map { " (\($0))" } ?? "") }
+}
+
+struct CreditInfo: Decodable, Hashable {
+    let tmdbId: Int?
+    let name: String
+    let character: String?
+    let profile: String?
+}
+
+struct LibraryFile: Decodable, Hashable {
+    let id: Int64?
+    let path: String
+    let name: String
+    let size: Int64?
+    let duration: Double?
+    let thumbnailUrl: String?
+    let count: Int?           // a folder of several files (unmatched): not playable as one
+    let match: FileMatch?
+    let playback: Playback?
+
+    var stableID: String { path }
+}
+
+struct LibraryListing: Decodable {
+    let libraryId: String
+    let libraryName: String
+    let libraryType: String
+    let titles: [LibraryTitle]?
+    let unmatched: [LibraryFile]?
+}
+
+struct LibraryEpisode: Decodable, Identifiable, Hashable {
+    let season: Int
+    let episode: Int
+    let title: String
+    let overview: String?
+    let airDate: String?
+    let runtime: Int?
+    let still: String?
+    let files: [LibraryFile]?
+
+    var id: String { "\(season)-\(episode)" }
+}
+
+struct LibrarySeason: Decodable, Identifiable, Hashable {
+    let season: Int
+    let name: String
+    let poster: String?
+    let episodes: [LibraryEpisode]?
+
+    var id: Int { season }
+}
+
+struct TitleDetail: Decodable {
+    let kind: String
+    let tmdbId: Int
+    let title: String
+    let year: Int?
+    let overview: String?
+    let runtime: Int?
+    let poster: String?
+    let backdrop: String?
+    let tagline: String?
+    let genres: [String]?
+    let directors: [CreditInfo]?
+    let writers: [CreditInfo]?
+    let creators: [CreditInfo]?
+    let cast: [CreditInfo]?
+    let files: [LibraryFile]?
+    let seasons: [LibrarySeason]?
+    let otherFiles: [LibraryFile]?
+    let autoSkip: Bool?
+}
+
+/// A progress report for the player (`POST /api/streams/progress`).
+struct StreamProgress: Encodable {
+    let path: String           // base64 client path
+    let position: Double
+    let paused: Bool
+    let ended: Bool
+    let title: Int = 0
+}
+
+/// Offline progress pushed in one go (`POST /api/playback/sync`).
+struct SyncedPlayback: Encodable {
+    let path: String           // base64 client path
+    let position: Double
+    let ended: Bool
+    let updatedAt: Int64       // Unix milliseconds
+
+    enum CodingKeys: String, CodingKey { case path, position, ended, updatedAt = "updated_at" }
+}
+
+struct PlaybackSync: Encodable {
+    let items: [SyncedPlayback]
+}
+
+/// Watched or unwatched for files (`POST /api/playback/watched`).
+struct WatchedRequest: Encodable {
+    let paths: [String]        // base64 client paths
+    let watched: Bool
+    let library: String?
+    let kind: String?
+    let tmdbId: Int?
+
+    enum CodingKeys: String, CodingKey { case paths, watched, library, kind, tmdbId = "tmdb_id" }
+}
+
+/// What the player plays: a file's client path, its name, and where to start.
+struct PlayRequest: Identifiable, Hashable {
+    let id = UUID()
+    let path: String
+    let title: String
+    let startAt: Double
+    let libraryId: String
+    /// A download playing from this phone: its file, played as it is.
+    var localFile: URL? = nil
+}
+
+// MARK: Player
+
+/// A file's codecs (`/api/media/codecs`): what the player checks before choosing a stream.
+struct CodecsInfo: Decodable {
+    let duration: Double?
+    let video: VideoCodec?
+    let audio: [AudioTrackInfo]?
+    let subtitles: [SubtitleTrack]?
+}
+
+/// A subtitle track: the video's own, a file beside it, or a download from OpenSubtitles.
+struct SubtitleTrack: Codable, Hashable {
+    let index: Int
+    var codec: String?
+    var language: String?           // ISO 639-2: eng, spa…
+    var title: String?
+    var `default`: Bool?
+    var forced: Bool?
+    var text: Bool?                 // text tracks come as WebVTT; picture ones as .sup (PGS) or burned in
+    var external: String?           // "file" (beside the video) or "opensubtitles"
+    var hearingImpaired: Bool?
+    var key: String?                // names the track for its timing correction
+    var offsetMs: Int?
+
+    var isText: Bool { text == true }
+    var isPGS: Bool { codec == "hdmv_pgs_subtitle" }
+}
+
+/// An OpenSubtitles result; sent back as it came to download it.
+struct SubtitleHit: Codable, Hashable {
+    let fileId: Int
+    var language: String?
+    var release: String?
+    var downloads: Int?
+    var rating: Double?
+    var hearingImpaired: Bool?
+    var foreignPartsOnly: Bool?
+    var hashMatch: Bool?
+    var trusted: Bool?
+    var machineTranslated: Bool?
+    var fps: Double?
+    var uploaded: String?
+    var languageCode: String?
+    var downloaded: Bool?
+
+}
+
+struct SubtitleSearchQuery: Decodable {
+    let title: String?
+    let year: Int?
+    let season: Int?
+    let episode: Int?
+}
+
+struct SubtitleSearch: Decodable {
+    let query: SubtitleSearchQuery?
+    let results: [SubtitleHit]?
+}
+
+struct SubtitleQuota: Decodable {
+    let remaining: Int?
+    let reset: String?
+}
+
+struct SubtitleDownload: Decodable {
+    let subtitles: [SubtitleTrack]?
+    let index: Int?
+    let quota: SubtitleQuota?
+}
+
+struct VideoCodec: Decodable {
+    let codec: String?
+    let profile: String?
+    let pixFmt: String?
+}
+
+struct AudioTrackInfo: Decodable {
+    let codec: String?
+    let channels: Int?
+    let `default`: Bool?
+}
+
+/// Where a stream that copies the video really starts (`/api/media/seekpoint`).
+struct SeekPoint: Decodable {
+    let start: Double?
+    let ask: String?
+}
+
+struct TrickplayFrame: Decodable, Hashable {
+    let time: Int
+    let url: String
+}
+
+struct TrickplayInfo: Decodable {
+    let frames: [TrickplayFrame]?
+}
+
+struct SegmentSpan: Decodable {
+    let start: Double
+    let end: Double
+}
+
+/// A video's intro and credits, and the episode after it (`/api/media/segments`).
+struct MediaSegments: Decodable {
+    let intro: SegmentSpan?
+    let credits: SegmentSpan?
+    let autoSkip: Bool?
+    let next: ContinueItem?
+    let metadata: ContinueMetadata?
+}
+
+// MARK: Administration
+
+struct AdminUser: Decodable, Hashable {
+    let id: Int64?
+    let username: String
+    let isAdmin: Bool?
+    let group: String?
+}
+
+struct AdminTranscode: Decodable {
+    let reason: String?
+    let video: String?
+    let audio: String?
+    let speed: Double?
+    let fps: Double?
+    let stalled: Bool?
+    let sourceVideo: String?
+}
+
+/// A viewing on the Streams page.
+struct AdminStream: Decodable, Identifiable {
+    let id: String
+    let user: String?
+    let client: String?
+    let clientIp: String?
+    let name: String?
+    let title: String?
+    let duration: Double?
+    let state: String?
+    let mode: String?
+    let servedTo: Double?
+    let position: Double?
+    let width: Int?
+    let height: Int?
+    let transcode: AdminTranscode?
+}
+
+struct BackgroundJob: Decodable, Identifiable {
+    let id: String
+    let name: String?
+    let about: String?
+    let state: String?
+    let note: String?
+    let detail: String?
+    let runners: [String]?
+    let done: Int?
+    let total: Int?
+    let started: String?
+    let lastStart: String?
+    let lastEnd: String?
+    let lastResult: String?
+    let next: String?
+    let schedule: String?
+    let paused: Bool?
+    let canRun: Bool?
+}
+
+struct ShareLoad: Decodable { let library: String?; let ms: Double? }
+
+struct JobLoad: Decodable {
+    let available: Bool?
+    let cpu: Double?
+    let disk: Double?
+    let maxDisk: Double?
+    let relaxedDisk: Double?
+    let shares: [ShareLoad]?
+    let maxShareMs: Double?
+    let relaxedShareMs: Double?
+    let streaming: Bool?
+    let pauseWhileStreaming: Bool?
+}
+
+struct StorageUse: Decodable { let name: String; let bytes: Int64 }
+
+struct TrickplaySettings: Decodable {
+    let runners: Int?
+    let framesPerRunner: Int?
+    let maxRunners: Int?
+    let maxFrames: Int?
+    let maxProduct: Int?
+}
+
+struct JobsResponse: Decodable {
+    let jobs: [BackgroundJob]?
+    let load: JobLoad?
+    let storage: [StorageUse]?
+    let trickplay: TrickplaySettings?
+}
