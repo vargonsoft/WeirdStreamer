@@ -17,6 +17,7 @@ import (
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	bgjobs "github.com/weirdstreamer/server/internal/jobs"
+	"github.com/weirdstreamer/server/internal/media"
 )
 
 const (
@@ -685,7 +686,7 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(root); err != nil {
+	if _, err := media.StatWaking(root); err != nil {
 		return err
 	}
 

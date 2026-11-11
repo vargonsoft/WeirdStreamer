@@ -450,7 +450,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	// If no path specified, show root media directories
 	if relativePath == "" {
 		for _, mediaPath := range config.GlobalConfig.Media.Paths {
-			if stat, err := os.Stat(mediaPath.Path); err == nil && stat.IsDir() {
+			if stat, err := media.StatWaking(mediaPath.Path); err == nil && stat.IsDir() {
 				// Check access
 				if !h.canAccessLibrary(r, mediaPath) {
 					continue
@@ -523,6 +523,9 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	entries, err := os.ReadDir(targetPath)
+	if err != nil && media.Wake(targetPath, err) {
+		entries, err = os.ReadDir(targetPath)
+	}
 	if err != nil {
 		respondError(w, http.StatusNotFound, "Directory not found")
 		return

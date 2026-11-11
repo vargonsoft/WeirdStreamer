@@ -356,6 +356,9 @@ func (e *UnreadableFile) Error() string { return e.Message + ": " + e.Err.Error(
 // the real reason before it starts, not with an empty response or a player error.
 func CheckReadable(filePath string) *UnreadableFile {
 	f, err := os.Open(filePath)
+	if err != nil && Wake(filePath, err) {
+		f, err = os.Open(filePath)
+	}
 	if err == nil {
 		defer f.Close()
 		_, err = f.Read(make([]byte, 1))
