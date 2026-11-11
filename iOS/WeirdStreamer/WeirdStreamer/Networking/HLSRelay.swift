@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import os
 
 // Transcodes from the server are fragmented MP4 of unknown length, sent as they're made. Android's
 // ExoPlayer plays that as it comes; AVPlayer can't (a progressive stream needs a known length).
@@ -382,7 +383,7 @@ private extension Data {
 
 /// The local HTTP server AVPlayer reads relayed transcodes from: /<relay id>/index.m3u8,
 /// init.mp4 and seg<N>.m4s, on 127.0.0.1 only.
-final class HLSServer: @unchecked Sendable {
+nonisolated final class HLSServer: @unchecked Sendable {
     static let shared = HLSServer()
 
     private var listener: NWListener?
@@ -400,16 +401,17 @@ final class HLSServer: @unchecked Sendable {
         self.listener = listener
         listener.newConnectionHandler = { [weak self] connection in self?.serve(connection) }
         return try await withCheckedThrowingContinuation { continuation in
-            var resumed = false
+            // The continuation is resumed once: at the first ready or failed state.
+            let resumed = OSAllocatedUnfairLock(initialState: false)
+            let first = { resumed.withLock { done in defer { done = true }; return !done } }
             listener.stateUpdateHandler = { [weak self] state in
-                guard !resumed else { return }
                 switch state {
                 case .ready:
-                    resumed = true
+                    guard first() else { return }
                     self?.port = listener.port?.rawValue ?? 0
                     continuation.resume(returning: self?.port ?? 0)
                 case .failed(let error):
-                    resumed = true
+                    guard first() else { return }
                     continuation.resume(throwing: error)
                 default:
                     break
