@@ -674,7 +674,7 @@ struct PlayerView: View {
                     } label: {
                         Image(systemName: "slider.horizontal.below.rectangle").font(.system(size: 22))
                             .foregroundStyle(playback.isTranscoding ? Color.green : .white)
-                            .frame(width: 48, height: 48)
+                            .frame(width: 48, height: 48).contentShape(Rectangle())
                     }
                     .simultaneousGesture(TapGesture().onEnded { holdControls() })
                     .accessibilityLabel("Transcode")
@@ -766,7 +766,7 @@ struct PlayerView: View {
         } label: {
             Image(systemName: "captions.bubble").font(.system(size: 22))
                 .foregroundStyle(subtitles.selected >= 0 ? Color.green : .white)
-                .frame(width: 48, height: 48)
+                .frame(width: 48, height: 48).contentShape(Rectangle())
         }
         .simultaneousGesture(TapGesture().onEnded { holdControls() })
         .accessibilityLabel("Subtitles")
@@ -923,6 +923,7 @@ struct PlayerIcon: View {
         Button(action: action) {
             Image(systemName: system).font(.system(size: size)).foregroundStyle(.white)
                 .frame(width: max(48, size + 8), height: max(48, size + 8))
+                .contentShape(Rectangle()) // the whole square, not only the symbol's strokes (pause's gap, the disc's hole)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
