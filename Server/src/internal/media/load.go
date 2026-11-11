@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sys/unix"
 )
 
 // LoadMonitor samples the machine's CPU and disk use (Linux /proc), so background jobs run only
@@ -201,7 +200,7 @@ func timeReads(path string) (float64, error) {
 			return 0, err
 		}
 		times = append(times, float64(time.Since(start).Microseconds())/1000)
-		unix.Fadvise(int(f.Fd()), at, probeSize, unix.FADV_DONTNEED)
+		dropCache(int(f.Fd()), at, probeSize)
 	}
 	slices.Sort(times)
 	return times[len(times)/2], nil
@@ -225,17 +224,7 @@ func (m *LoadMonitor) Shares() []ShareLoad {
 }
 
 // IsNetworkShare says whether a folder is on an SMB or NFS mount.
-func IsNetworkShare(dir string) bool {
-	var st unix.Statfs_t
-	if unix.Statfs(dir, &st) != nil {
-		return false
-	}
-	switch uint32(st.Type) {
-	case unix.SMB2_SUPER_MAGIC, unix.CIFS_SUPER_MAGIC, unix.NFS_SUPER_MAGIC, unix.SMB_SUPER_MAGIC:
-		return true
-	}
-	return false
-}
+func IsNetworkShare(dir string) bool { return isNetworkFS(dir) }
 
 func (m *LoadMonitor) run(ctx context.Context) {
 	busy0, total0, err1 := readCPU()
