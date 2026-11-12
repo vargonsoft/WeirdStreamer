@@ -41,7 +41,9 @@ struct SubtitleOverlay: View {
             shownSet = nil
             while !Task.isCancelled {
                 let now = position()
-                text = subtitles.cueAt(now)
+                // Only a change of line redraws: a redraw every 100 ms closed the player's open menus.
+                let cue = subtitles.cueAt(now)
+                if cue != text { text = cue }
                 let set = subtitles.pictureAt(now)
                 if set?.startMs != shownSet {
                     shownSet = set?.startMs
