@@ -569,6 +569,7 @@ struct PlayerView: View {
     @State private var playback: PlaybackModel
     @State private var showControls = true
     @State private var lastInteraction = Date()
+    @State private var menuOpenedAt: Date? // a Transcode, Audio or Subtitles menu opened then (and no pick since)
     @State private var aspectIndex = 0
     @State private var rotation: Double = 0
     @State private var zoom: CGFloat = 1
@@ -686,7 +687,15 @@ struct PlayerView: View {
         }
         .task(id: lastInteraction) {
             // A newer interaction cancels this wait: then the controls stay (the new task decides).
-            do { try await Task.sleep(for: .seconds(max(1, lastInteraction.timeIntervalSinceNow + 5))) } catch { return }
+            do {
+                try await Task.sleep(for: .seconds(max(1, lastInteraction.timeIntervalSinceNow + 5)))
+                // An open menu holds the controls up to 25 s from its opening (a Menu says when it
+                // opens, not when it closes without a pick).
+                if let opened = menuOpenedAt, opened.timeIntervalSinceNow > -25 {
+                    try await Task.sleep(for: .seconds(25 + opened.timeIntervalSinceNow))
+                }
+            } catch { return }
+            menuOpenedAt = nil
             if playback.isPlaying && scrubbing == nil && !showDisc && !showSpeed { showControls = false }
         }
         .onDisappear { playback.stop() }
@@ -696,6 +705,12 @@ struct PlayerView: View {
 
     /// A menu is open: the controls (and the menu with them) stay up a while longer.
     private func holdControls() { lastInteraction = Date().addingTimeInterval(25) }
+
+    /// A menu opened: the controls stay up to 25 s from now, or 5 s after a pick.
+    private func menuShown() { menuOpenedAt = Date(); touch() }
+
+    /// A menu's line was picked: the controls hide 5 s from now.
+    private func menuPicked() { menuOpenedAt = nil; touch() }
 
     private var controls: some View {
         ZStack {
@@ -718,7 +733,7 @@ struct PlayerView: View {
                                  MenuItem(title: mode.name, checked: i == playback.modeIndex,
                                           disabled: playback.isDisc && mode.isOriginal) // discs can't play as they are
                              },
-                             onPick: { i in playback.chooseMode(i); touch() }, onOpen: holdControls)
+                             onPick: { i in playback.chooseMode(i); menuPicked() }, onOpen: menuShown)
                         .equatable()
                     if playback.disc != nil {
                         // Disc: chapters, angles, tracks, titles
@@ -796,7 +811,7 @@ struct PlayerView: View {
                         items: labels.enumerated().map { i, label in
                             MenuItem(title: label, checked: indexes[i] == playback.shownAudioTrack)
                         },
-                        onPick: { i in playback.chooseAudio(indexes[i]); touch() }, onOpen: holdControls)
+                        onPick: { i in playback.chooseAudio(indexes[i]); menuPicked() }, onOpen: menuShown)
             .equatable()
     }
 
@@ -818,8 +833,8 @@ struct PlayerView: View {
                             if i == search { showSubtitleSearch = true }
                             else if i == timing { showTiming = true }
                             else { playback.chooseSubtitle(i - 1) }
-                            touch()
-                        }, onOpen: holdControls)
+                            menuPicked()
+                        }, onOpen: menuShown)
             .equatable()
     }
 
@@ -1006,8 +1021,8 @@ struct PickMenu: View, Equatable {
                 }
             }
             // A tap gesture on a Menu never fires (the menu takes the touch), but its list appears
-            // when it opens. Its onDisappear doesn't fire when it closes, so opening holds the
-            // controls a while (holdControls) and a pick starts the usual 5 s again.
+            // when it opens. Its onDisappear doesn't fire when it closes: the player holds the
+            // controls 25 s from the opening, or 5 s after a pick.
             .onAppear { onOpen() }
         } label: {
             Image(systemName: icon).font(.system(size: 22))
