@@ -45,14 +45,15 @@ fun subtitlesOffByDefault(params: androidx.media3.common.TrackSelectionParameter
         .build()
 
 /**
- * The subtitle chosen for each video on this device, so it plays the same way next time: off, or
- * a track, remembered by its label (and its position, for a file whose tracks were renamed).
+ * A track chosen for each video on this device, so it plays the same way next time, remembered
+ * by its label (and its position, for a file whose tracks were renamed). Index -1: off for
+ * subtitles, the file's default for audio.
  */
-object SubtitleMemory {
-    data class Choice(val index: Int, val label: String?) // index -1: off
+open class TrackMemory(private val prefsName: String) {
+    data class Choice(val index: Int, val label: String?)
 
     private fun prefs(context: android.content.Context) =
-        context.getSharedPreferences("subtitle_choices", android.content.Context.MODE_PRIVATE)
+        context.getSharedPreferences(prefsName, android.content.Context.MODE_PRIVATE)
 
     fun get(context: android.content.Context, video: String): Choice? {
         val stored = prefs(context).getString(video, null) ?: return null
@@ -72,6 +73,30 @@ object SubtitleMemory {
         choice.index < labels.size -> choice.index
         else -> -1
     }
+}
+
+/** The subtitle chosen for each video: off, or a track. */
+object SubtitleMemory : TrackMemory("subtitle_choices")
+
+/** The audio track chosen for each video (the server's index among its audio tracks); none: the default. */
+object AudioMemory : TrackMemory("audio_choices")
+
+/**
+ * Names a file's audio tracks as the server lists them, as the web does: "English · Commentary ·
+ * AAC · stereo", with the file's default marked.
+ */
+fun audioLabels(tracks: List<com.vargon.weirdstreamer.api.models.AudioTrackInfo>): List<String> = tracks.map { t ->
+    val language = languageName(t.language)
+    val title = t.title?.trim()?.takeIf { it.isNotEmpty() && !it.equals(language, ignoreCase = true) }?.take(40)
+    val channels = when (t.channels) {
+        0 -> null; 1 -> "mono"; 2 -> "stereo"; 6 -> "5.1"; 8 -> "7.1"; else -> "${t.channels} ch"
+    }
+    val codec = when (t.codec) {
+        "eac3" -> "E-AC-3"; "ac3" -> "AC-3"; "truehd" -> "TrueHD"; "opus" -> "Opus"; "vorbis" -> "Vorbis"
+        else -> t.codec.uppercase(Locale.US)
+    }
+    listOfNotNull(language ?: "Track ${t.index + 1}", title, codec, channels).joinToString(" · ") +
+        if (t.isDefault) " (default)" else ""
 }
 
 /**

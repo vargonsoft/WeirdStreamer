@@ -213,29 +213,28 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     // Stereo audio in transcodes, once a surround one has failed to decode (AudioFallback)
     var stereoAudio by remember(path) { mutableStateOf(AudioFallback.stereo) }
 
-    /** Switches to transcode mode [index]; [failed] is what the original failed on, if it did. */
-    fun chooseTranscode(index: Int, failed: FailedSide? = null) {
+    /** Switches to transcode mode [index]; [failed] is what the original failed on, if it did;
+     *  [track] is the audio track to play (else the one playing). */
+    fun chooseTranscode(index: Int, failed: FailedSide? = null, track: Int? = null) {
         scope.launch {
             val mayCopy = (serverSubs?.burnIn ?: -1) < 0 && !tooBigToDecode
-            choice?.plan(context, transcodeModes[index], mayCopy, failed)?.let { choice.apply(it) }
+            choice?.plan(context, transcodeModes[index], mayCopy, failed, track ?: choice.audioTrack)?.let { choice.apply(it) }
             chooseTranscodeMode(index)
             switching = false
         }
     }
-
-    // A video too big for the hardware starts transcoded, and its audio can still be kept.
-    LaunchedEffect(path) { if (tooBigToDecode && choice != null) chooseTranscode(1) }
 
     fun transcodedUrl(startMs: Long): String {
         val base = path.substringBefore("?") + "?path=" + path.substringAfter("path=").substringBefore("&") + "&auto-transcode=0"
         val mode = transcodeModes[transcodeModeIndex]
         val video = "&" + (choice?.videoQuery(mode) ?: ("transcode=1" + transcodeQuery(mode)))
         val audio = choice?.audio?.query ?: if (stereoAudio) "&channels=2" else ""
-        return base + video + "&start=${StreamChoice.streamStart(startMs)}$discQuery" +
+        return base + video + choice?.trackQuery().orEmpty() + "&start=${StreamChoice.streamStart(startMs)}$discQuery" +
             (if (burnIn >= 0) "&subtitle=$burnIn" else "") + audio
     }
 
     var showSubtitleMenu by remember { mutableStateOf(false) }
+    var showAudioMenu by remember { mutableStateOf(false) }
     var showTiming by remember { mutableStateOf(false) }
     var showSubtitleSearch by remember { mutableStateOf(false) }
     val subtitleVideo = remember(path) {
@@ -243,6 +242,33 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         sourceItem?.originalPath ?: (if (isLocal) com.vargon.weirdstreamer.downloads.DownloadStore.ofLocalPath(path)?.sourcePath else null)
             ?: path.substringBefore("&")
     }
+    // The audio track chosen for this video last time. A video too big for the hardware starts
+    // transcoded (and its audio can still be kept); the original plays a track the phone decodes
+    // itself, and the server converts one it doesn't (Compatibility (Auto)).
+    LaunchedEffect(path) {
+        val c = choice ?: return@LaunchedEffect
+        c.load()
+        val saved = AudioMemory.get(context, subtitleVideo)?.let { AudioMemory.resolve(it, audioLabels(c.audioTracks)) } ?: -1
+        when {
+            tooBigToDecode -> chooseTranscode(1, track = saved)
+            saved < 0 -> {}
+            c.originalPlays(context, saved) -> c.chooseForOriginal(saved)
+            else -> chooseTranscode(1, track = saved)
+        }
+    }
+
+    /** Chooses audio track [index] (the server's) from the Audio menu, and keeps it for next time. */
+    fun chooseAudio(index: Int) {
+        val c = choice ?: return
+        AudioMemory.set(context, subtitleVideo, index, audioLabels(c.audioTracks).getOrNull(index))
+        if (index == c.shownTrack && c.audioTrack >= 0) return
+        when {
+            enableTranscode -> chooseTranscode(transcodeModeIndex, track = index)
+            c.originalPlays(context, index) -> c.chooseForOriginal(index)
+            else -> { originalByHand = false; chooseTranscode(1, track = index) }
+        }
+    }
+
     fun chooseServerSubtitle(index: Int) {
         val subs = serverSubs ?: return
         subs.select(index)
@@ -353,8 +379,26 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             }
     }
 
+    // The original plays the chosen audio track itself, once the player has the file's tracks.
+    var audioAppliedFor by remember { mutableStateOf<Pair<Any?, Int>?>(null) }
+    fun applyOriginalAudio() {
+        val c = choice ?: return
+        if (enableTranscode || exoPlayer.currentTracks.groups.none { it.type == androidx.media3.common.C.TRACK_TYPE_AUDIO }) return
+        val key = exoPlayer.currentMediaItem to c.audioTrack
+        if (audioAppliedFor == key) return
+        audioAppliedFor = key
+        val plays = c.audioTrack < 0 || c.originalPlays(context, c.audioTrack)
+        if (plays && selectAudioTrack(exoPlayer, c.audioTrack, c.audioTracks.size)) return
+        // The phone can't decode it, or the player's tracks aren't the server's: the server plays it.
+        if (!originalByHand && !switching) { switching = true; chooseTranscode(1) }
+    }
+    LaunchedEffect(choice?.audioTrack) { applyOriginalAudio() }
+
+    // The audio track a stream from the server carries (the original plays the chosen one itself)
+    val streamAudioTrack = if (enableTranscode) choice?.audioTrack ?: -1 else -1
+
     // Handle MediaItem updates when path or transcode mode changes
-    LaunchedEffect(path, enableTranscode, transcodeModeIndex, discQuery, burnIn, stereoAudio, choice?.copiesVideo, choice?.audio) {
+    LaunchedEffect(path, enableTranscode, transcodeModeIndex, discQuery, burnIn, stereoAudio, choice?.copiesVideo, choice?.audio, streamAudioTrack) {
         // Capture current position if available
         val currentPos = discRestartAt?.also { discRestartAt = null } ?: if (exoPlayer.mediaItemCount > 0) {
             if (transcodeStartOffset > 0) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
@@ -431,6 +475,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             }
 
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                applyOriginalAudio()
                 // A track with no decoder gives no error, only silence or no picture.
                 val missing = unplayableSide(tracks)
                 if (missing == null || switching || isSmbSource || isLocal || originalByHand) return
@@ -771,6 +816,34 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         }
                     }
                     
+                    // Audio: the file's tracks, as the server lists them
+                    choice?.takeIf { it.audioTracks.size > 1 }?.let { c ->
+                        Box {
+                            IconButton(onClick = {
+                                lastInteractionTime = System.currentTimeMillis()
+                                showAudioMenu = true
+                            }) {
+                                Icon(Icons.Default.Audiotrack, contentDescription = "Audio", tint = Color.White)
+                            }
+                            DropdownMenu(border = phoneMenuBorder(), expanded = showAudioMenu, onDismissRequest = { showAudioMenu = false }) {
+                                audioLabels(c.audioTracks).forEachIndexed { i, label ->
+                                    val track = c.audioTracks[i]
+                                    DropdownMenuItem(
+                                        text = { Text(label) },
+                                        trailingIcon = if (track.index == c.shownTrack) {
+                                            { Icon(Icons.Default.Check, contentDescription = "Selected") }
+                                        } else null,
+                                        onClick = {
+                                            showAudioMenu = false
+                                            lastInteractionTime = System.currentTimeMillis()
+                                            chooseAudio(track.index)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // Subtitles: the server's tracks, and searching OpenSubtitles through it
                     serverSubs?.let { subs ->
                         Box {

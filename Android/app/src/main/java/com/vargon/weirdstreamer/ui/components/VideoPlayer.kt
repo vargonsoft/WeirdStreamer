@@ -121,6 +121,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         var url = path + (if (path.contains("?")) "&" else "?")
         url += choice?.videoQuery(currentTranscodeMode)
             ?: ("transcode=1" + transcodeQuery(currentTranscodeMode)) // no taller than the hardware decodes
+        url += choice?.trackQuery().orEmpty()
         url += discQuery
         if (burnIn >= 0) url += "&subtitle=$burnIn"
         val audio = choice?.audio
@@ -129,8 +130,11 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         return url
     }
 
+    // The audio track a stream from the server carries (the original plays the chosen one itself)
+    val streamAudioTrack = if (currentTranscodeMode.isOriginal) -1 else choice?.audioTrack ?: -1
+
     // Build the actual video URL with transcode parameters
-    val videoUrl = remember(path, selectedTranscodeModeIndex, discQuery, burnIn, stereoAudio, copiesVideo, audioStep) {
+    val videoUrl = remember(path, selectedTranscodeModeIndex, discQuery, burnIn, stereoAudio, copiesVideo, audioStep, streamAudioTrack) {
         if (!isSmbSource && !currentTranscodeMode.isOriginal) {
             transcodedUrl(if (copiesVideo) copyStartMs else transcodeStartOffset)
         } else {
@@ -205,6 +209,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var currentAspectRatioIndex by remember { mutableIntStateOf(0) }
     var currentAspectRatio by remember { mutableStateOf<Float?>(null) }
     var toolbarFocusedButton by remember { mutableIntStateOf(0) }
+    val hasAudioChoice = (choice?.audioTracks?.size ?: 0) > 1
+    val toolbarIds = toolbarButtons(isSmbSource, isDisc, hasAudioChoice)
     var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) }
     var videoPaddingPx by remember { mutableIntStateOf(0) }
     
@@ -213,6 +219,23 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var showTimingDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showTranscodeDialog by remember { mutableStateOf(false) }
+    var showAudioDialog by remember { mutableStateOf(false) }
+
+    // A toolbar button pressed, by OK or a click.
+    fun pressToolbarButton(id: Int) {
+        when (id) {
+            0 -> showTranscodeDialog = true
+            1 -> { isZoomMode = true; zoomLevel = 1f; panX = 0f; panY = 0f; showZoomToolbar = false }
+            2 -> showSpeedDialog = true
+            3 -> videoPaddingPx += 1
+            4 -> if (videoPaddingPx > 0) videoPaddingPx -= 1
+            5 -> { currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size; currentAspectRatio = aspectRatioValues[currentAspectRatioIndex] }
+            6 -> showSubtitleDialog = true
+            7 -> rotation = (rotation + 90f) % 360f
+            8 -> showDiscDialog = true
+            9 -> showAudioDialog = true
+        }
+    }
     var showDownloadDialog by remember { mutableStateOf(false) }
     
     var availableSubtitles by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -292,16 +315,57 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         switching = false
     }
 
-    /** Switches to transcode mode [index] at [atMs]; [failed] is what the original failed on, if it did. */
-    fun chooseTranscode(index: Int, atMs: Long, failed: FailedSide? = null) {
+    /** Switches to transcode mode [index] at [atMs]; [failed] is what the original failed on, if it
+     *  did; [track] is the audio track to play (else the one playing). */
+    fun chooseTranscode(index: Int, atMs: Long, failed: FailedSide? = null, track: Int? = null) {
         scope.launch {
             val mayCopy = (serverSubs?.burnIn ?: -1) < 0 && !tooBigToDecode
-            startPlan(choice?.plan(context, transcodeModes[index], mayCopy, failed), index, atMs)
+            val plan = choice?.let { it.plan(context, transcodeModes[index], mayCopy, failed, track ?: it.audioTrack) }
+            startPlan(plan, index, atMs)
         }
     }
 
-    // A video too big for the hardware starts transcoded, and its audio can still be kept.
-    LaunchedEffect(path) { if (tooBigToDecode && choice != null) chooseTranscode(1, startAtMs) }
+    // The audio track chosen for this video last time. A video too big for the hardware starts
+    // transcoded (and its audio can still be kept); the original plays a track the device decodes
+    // itself, and the server converts one it doesn't (Compatibility (Auto)).
+    LaunchedEffect(path) {
+        val c = choice ?: return@LaunchedEffect
+        c.load()
+        val saved = AudioMemory.get(context, subtitleVideo)?.let { AudioMemory.resolve(it, audioLabels(c.audioTracks)) } ?: -1
+        when {
+            tooBigToDecode -> chooseTranscode(1, startAtMs, track = saved)
+            saved < 0 -> {}
+            c.originalPlays(context, saved) -> c.chooseForOriginal(saved)
+            else -> chooseTranscode(1, playbackPosition, track = saved)
+        }
+    }
+
+    // The original plays the chosen audio track itself, once the player has the file's tracks.
+    var audioAppliedFor by remember { mutableStateOf<Pair<Any, Int>?>(null) }
+    fun applyOriginalAudio() {
+        val c = choice ?: return
+        if (!currentTranscodeMode.isOriginal || exoPlayer.currentTracks.groups.none { it.type == C.TRACK_TYPE_AUDIO }) return
+        val key = exoPlayer to c.audioTrack
+        if (audioAppliedFor == key) return
+        audioAppliedFor = key
+        val plays = c.audioTrack < 0 || c.originalPlays(context, c.audioTrack)
+        if (plays && selectAudioTrack(exoPlayer, c.audioTrack, c.audioTracks.size)) return
+        // The device can't decode it, or the player's tracks aren't the server's: the server plays it.
+        if (!originalByHand && !switching) { switching = true; chooseTranscode(1, playbackPosition) }
+    }
+    LaunchedEffect(exoPlayer, choice?.audioTrack) { applyOriginalAudio() }
+
+    /** Chooses audio track [index] (the server's) from the Audio dialog, and keeps it for next time. */
+    fun chooseAudio(index: Int) {
+        val c = choice ?: return
+        AudioMemory.set(context, subtitleVideo, index, audioLabels(c.audioTracks).getOrNull(index))
+        if (index == c.shownTrack && c.audioTrack >= 0) return
+        when {
+            !currentTranscodeMode.isOriginal -> chooseTranscode(selectedTranscodeModeIndex, playbackPosition, track = index)
+            c.originalPlays(context, index) -> c.chooseForOriginal(index)
+            else -> { originalByHand = false; chooseTranscode(1, playbackPosition, track = index) }
+        }
+    }
 
     /** Chooses a server subtitle track: a picture one is burned into a transcode, from here. */
     fun chooseServerSubtitle(index: Int, atMs: Long = playbackPosition) {
@@ -457,6 +521,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                 if (videoSize.width > 0 && videoSize.height > 0) videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
             }
             override fun onTracksChanged(tracks: Tracks) {
+                applyOriginalAudio()
                 // A track with no decoder gives no error, only silence or no picture.
                 val missing = unplayableSide(tracks)
                 if (missing != null && !switching && !isSmbSource && !originalByHand) {
@@ -717,20 +782,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 }
                                 true
                             } else if (showZoomToolbar && !isZoomMode) {
-                                when (toolbarFocusedButton) {
-                                    0 -> showTranscodeDialog = true
-                                    1 -> { isZoomMode = true; zoomLevel = 1f; panX = 0f; panY = 0f; showZoomToolbar = false }
-                                    2 -> showSpeedDialog = true
-                                    3 -> videoPaddingPx += 1
-                                    4 -> if (videoPaddingPx > 0) videoPaddingPx -= 1
-                                    5 -> {
-                                        currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size
-                                        currentAspectRatio = aspectRatioValues[currentAspectRatioIndex]
-                                    }
-                                    6 -> showSubtitleDialog = true
-                                    7 -> rotation = (rotation + 90f) % 360f
-                                    8 -> showDiscDialog = true
-                                }
+                                pressToolbarButton(toolbarFocusedButton)
                                 true
                             } else if (isZoomMode) {
                                 if (zoomLevel < 64f) {
@@ -752,7 +804,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             }
                         }
                         Key.DirectionLeft -> {
-                            if (showZoomToolbar && !isZoomMode) { toolbarFocusedButton = (toolbarFocusedButton - 1).coerceAtLeast(0); true }
+                            if (showZoomToolbar && !isZoomMode) { toolbarFocusedButton = toolbarStep(toolbarIds, toolbarFocusedButton, -1); true }
                             else if (isZoomMode && zoomLevel > 1f) {
                                 val (maxPX, _) = calculatePanLimits(1920f, 1080f)
                                 panX = (panX + 100f).coerceIn(-maxPX, maxPX); updateInteraction(); true
@@ -781,7 +833,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                             }
                         }
                         Key.DirectionRight -> {
-                            if (showZoomToolbar && !isZoomMode) { toolbarFocusedButton = (toolbarFocusedButton + 1).coerceAtMost(if (isDisc) 8 else 7); true }
+                            if (showZoomToolbar && !isZoomMode) { toolbarFocusedButton = toolbarStep(toolbarIds, toolbarFocusedButton, 1); true }
                             else if (isZoomMode && zoomLevel > 1f) {
                                 val (maxPX, _) = calculatePanLimits(1920f, 1080f)
                                 panX = (panX - 100f).coerceIn(-maxPX, maxPX); updateInteraction(); true
@@ -895,25 +947,21 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
             currentAspectRatioName = aspectRatios[currentAspectRatioIndex],
             isSmbSource = isSmbSource,
             isDisc = isDisc,
+            hasAudioChoice = hasAudioChoice,
             onButtonFocused = { toolbarFocusedButton = it },
-            onButtonClicked = { id ->
-                when (id) {
-                    0 -> showTranscodeDialog = true
-                    1 -> { isZoomMode = true; zoomLevel = 1f; panX = 0f; panY = 0f; showZoomToolbar = false }
-                    2 -> showSpeedDialog = true
-                    3 -> videoPaddingPx += 1
-                    4 -> if (videoPaddingPx > 0) videoPaddingPx -= 1
-                    5 -> { currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.size; currentAspectRatio = aspectRatioValues[currentAspectRatioIndex] }
-                    6 -> showSubtitleDialog = true
-                    7 -> rotation = (rotation + 90f) % 360f
-                    8 -> showDiscDialog = true
-                }
-            },
+            onButtonClicked = { pressToolbarButton(it) },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 
         SpeedDialog(show = showSpeedDialog, currentSpeedIndex = currentSpeedIndex, speedIntervals = speedIntervals, onDismiss = { showSpeedDialog = false }, onSpeedSelected = { idx, speed -> exoPlayer.playbackParameters = PlaybackParameters(speed); speedFeedback = speed; currentSpeedIndex = idx; showSpeedDialog = false })
         TranscodeDialog(show = showTranscodeDialog, selectedModeIndex = selectedTranscodeModeIndex, transcodeModes = transcodeModes, status = choice?.status(currentTranscodeMode), onDismiss = { showTranscodeDialog = false }, onModeSelected = { idx -> if (selectedTranscodeModeIndex != idx && !((isDisc || tooBigToDecode) && transcodeModes[idx].isOriginal)) { if (transcodeModes[idx].isOriginal) { originalByHand = true; choice?.clear(); transcodeStartOffset = playbackPosition; selectedTranscodeModeIndex = idx } else chooseTranscode(idx, playbackPosition) }; showTranscodeDialog = false })
+        choice?.let { c ->
+            AudioDialog(show = showAudioDialog, labels = audioLabels(c.audioTracks),
+                selected = c.audioTracks.indexOfFirst { it.index == c.shownTrack },
+                note = c.status(currentTranscodeMode),
+                onDismiss = { showAudioDialog = false },
+                onSelected = { i -> showAudioDialog = false; c.audioTracks.getOrNull(i)?.let { chooseAudio(it.index) } })
+        }
         DiscDialog(
             show = showDiscDialog,
             info = discInfo,

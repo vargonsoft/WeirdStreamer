@@ -126,12 +126,19 @@ fun audioLadder(track: AudioTrackInfo?, output: AudioOutput, small: Boolean): Li
  * nothing. What fails steps down: a copied video gets a transcode, audio the next on its ladder.
  */
 class StreamChoice(private val api: ApiService, private val encodedPath: String) {
-    /** A decision for a stream, applied once the player knows where the stream will start. */
-    class Plan(val copiesVideo: Boolean, val audio: AudioStep?, val ladder: List<AudioStep>)
+    /** A decision for a stream, applied once the player knows where the stream will start.
+     *  [track] is the audio track it plays (the server's index; -1: the file's default). */
+    class Plan(val copiesVideo: Boolean, val audio: AudioStep?, val ladder: List<AudioStep>, val track: Int)
 
     var copiesVideo by mutableStateOf(false)
         private set
     var audio by mutableStateOf<AudioStep?>(null)
+        private set
+    /** The audio track chosen (the server's index among the file's audio tracks), -1 for the default. */
+    var audioTrack by mutableStateOf(-1)
+        private set
+    /** The file's audio tracks, once the server has said. */
+    var audioTracks by mutableStateOf<List<AudioTrackInfo>>(emptyList())
         private set
     private var ladder = emptyList<AudioStep>()
     private var videoFailed = false
@@ -139,12 +146,29 @@ class StreamChoice(private val api: ApiService, private val encodedPath: String)
 
     private suspend fun codecs(): CodecsInfo? = codecs ?: withContext(Dispatchers.IO) {
         runCatching { api.getCodecs(encodedPath).body() }.getOrNull()
-    }?.also { codecs = it }
+    }?.also { codecs = it; audioTracks = it.audio.orEmpty() }
 
-    private fun track() = codecs?.audio?.let { list -> list.firstOrNull { it.isDefault } ?: list.firstOrNull() }
+    /** Asks the server for the file's tracks (once). */
+    suspend fun load() { codecs() }
+
+    private fun defaultTrack() = codecs?.audio?.let { list -> list.firstOrNull { it.isDefault } ?: list.firstOrNull() }
+
+    private fun track(index: Int = audioTrack) = codecs?.audio?.getOrNull(index) ?: defaultTrack()
+
+    /** The track the list shows as playing: the one chosen, else the default. */
+    val shownTrack: Int get() = if (audioTrack >= 0) audioTrack else defaultTrack()?.index ?: -1
+
+    /** Whether the original file can play audio track [index] on this device: the player switches to it itself. */
+    fun originalPlays(context: Context, index: Int): Boolean {
+        val track = codecs?.audio?.getOrNull(index) ?: return true
+        return track === defaultTrack() || AudioOutput.current(context).plays(track)
+    }
+
+    /** Chooses audio track [index] for the original file, which plays it itself (no new stream). */
+    fun chooseForOriginal(index: Int) { audioTrack = index }
 
     /** The stream for [mode]; [failed] is what the original just failed on, if it did. */
-    suspend fun plan(context: Context, mode: TranscodeMode, mayCopy: Boolean, failed: FailedSide? = null): Plan {
+    suspend fun plan(context: Context, mode: TranscodeMode, mayCopy: Boolean, failed: FailedSide? = null, track: Int = audioTrack): Plan {
         val info = codecs()
         if (failed == FailedSide.VIDEO) videoFailed = true
         val video = info?.video
@@ -153,32 +177,36 @@ class StreamChoice(private val api: ApiService, private val encodedPath: String)
         val all = when {
             info == null -> emptyList()
             mode.safe -> listOf(AudioStep.STEREO)
-            else -> audioLadder(track(), AudioOutput.current(context), small = mode.bitrate != null || mode.resolution != null)
+            else -> audioLadder(track(track), AudioOutput.current(context), small = mode.bitrate != null || mode.resolution != null)
         }
         val steps = if (failed == FailedSide.AUDIO) all - AudioStep.KEEP else all
-        return Plan(copy, steps.firstOrNull(), steps)
+        return Plan(copy, steps.firstOrNull(), steps, track)
     }
 
     /** The next thing to try after [failed]; null when nothing is left. */
     fun nextAfter(failed: FailedSide): Plan? {
         if (failed != FailedSide.AUDIO && copiesVideo) {
             videoFailed = true
-            return Plan(false, audio, ladder)
+            return Plan(false, audio, ladder, audioTrack)
         }
         if (failed == FailedSide.VIDEO) return null
         val next = ladder.getOrNull(ladder.indexOf(audio) + 1) ?: return null
         if (audio == AudioStep.AAC_SURROUND) AudioFallback.stereo = true
-        return Plan(copiesVideo, next, ladder)
+        return Plan(copiesVideo, next, ladder, audioTrack)
     }
 
     fun apply(plan: Plan) {
         copiesVideo = plan.copiesVideo
         audio = plan.audio
         ladder = plan.ladder
+        audioTrack = plan.track
     }
 
-    /** Back to the original file. */
-    fun clear() = apply(Plan(false, null, emptyList()))
+    /** Back to the original file, keeping the audio track chosen. */
+    fun clear() = apply(Plan(false, null, emptyList(), audioTrack))
+
+    /** The stream's audio track parameter (audio=N), after the video's. */
+    fun trackQuery(): String = if (audioTrack >= 0) "&audio=$audioTrack" else ""
 
     /** Stops copying, for burned-in subtitles: the stream restarts with a new plan. */
     fun stopCopying() { copiesVideo = false }
@@ -247,4 +275,22 @@ fun unplayableSide(tracks: androidx.media3.common.Tracks): FailedSide? = when {
     unplayable(tracks, C.TRACK_TYPE_VIDEO) -> FailedSide.VIDEO
     unplayable(tracks, C.TRACK_TYPE_AUDIO) -> FailedSide.AUDIO
     else -> null
+}
+
+/**
+ * Has the player play the original file's audio track [index] (the server's index among the file's
+ * audio tracks; -1: the player's own choice). The player lists a file's audio tracks in the order
+ * the server does; when it sees another number of them, nothing changes and this returns false.
+ */
+fun selectAudioTrack(player: androidx.media3.common.Player, index: Int, serverCount: Int): Boolean {
+    val params = player.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+    if (index < 0) {
+        player.trackSelectionParameters = params.build()
+        return true
+    }
+    val groups = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+    if (groups.size != serverCount || index >= groups.size) return false
+    player.trackSelectionParameters = params
+        .setOverrideForType(androidx.media3.common.TrackSelectionOverride(groups[index].mediaTrackGroup, 0)).build()
+    return true
 }

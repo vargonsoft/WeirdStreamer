@@ -336,9 +336,38 @@ struct VideoCodec: Decodable {
 }
 
 struct AudioTrackInfo: Decodable {
+    let index: Int?          // among the file's audio tracks: a stream's audio= param
     let codec: String?
     let channels: Int?
+    let language: String?    // ISO 639-2: eng, spa…
+    let title: String?
     let `default`: Bool?
+}
+
+/// Names a file's audio tracks as the server lists them, as the web and Android do: "English ·
+/// Commentary · AAC · stereo", with the file's default marked.
+func audioLabels(_ tracks: [AudioTrackInfo]) -> [String] {
+    tracks.enumerated().map { i, t in
+        let language = languageName(t.language)
+        var parts = [language ?? "Track \((t.index ?? i) + 1)"]
+        if let title = t.title?.trimmingCharacters(in: .whitespaces), !title.isEmpty,
+           title.lowercased() != language?.lowercased() {
+            parts.append(String(title.prefix(40)))
+        }
+        if let codec = t.codec?.lowercased() {
+            let names = ["eac3": "E-AC-3", "ac3": "AC-3", "truehd": "TrueHD", "opus": "Opus", "vorbis": "Vorbis"]
+            parts.append(names[codec] ?? codec.uppercased())
+        }
+        switch t.channels ?? 0 {
+        case 0: break
+        case 1: parts.append("mono")
+        case 2: parts.append("stereo")
+        case 6: parts.append("5.1")
+        case 8: parts.append("7.1")
+        case let n: parts.append("\(n) ch")
+        }
+        return parts.joined(separator: " · ") + (t.default == true ? " (default)" : "")
+    }
 }
 
 /// Where a stream that copies the video really starts (`/api/media/seekpoint`).

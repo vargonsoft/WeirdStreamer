@@ -150,6 +150,10 @@ for each TODO item are at the end of this file.
   - `Movies/HEVC Test`, `Hi10 Test` (10-bit H.264), `AVI Test` (MPEG-4 Part 2 and MP3),
     `VP9 Test` (WebM), `AV1 Test` and `ASF Test` (WMV 8 and WMA in ASF): clips for the codec checks. New files
     only stream once a scan has added them (`api.scanMedia()`, or Scan Media in the web UI).
+  - `Movies/Audio Test/Audio Test.mkv`: 90 seconds of H.264 with three audio tracks: English AAC
+    stereo (default), English AAC mono "Commentary" and Spanish DTS 5.1 (which the emulators can't
+    decode). Their channel counts tell which one plays: `adb shell dumpsys media.audio_flinger`
+    shows the active track's channel mask (3 stereo, 1 mono).
   - `Movies/Sparse Keyframes`: 2 minutes of H.264 with a keyframe every 10 seconds and AC-3
     audio (so it plays as a copy): for short jumps forward in a copied video.
   - `Movies/AVI BFrame Test`: 30 seconds of H.264 with B-frames in AVI, whose packets have no
@@ -189,7 +193,7 @@ for each TODO item are at the end of this file.
     focus starts on the first server tile, and the test server (`http://10.0.2.2:9100`) is the
     second: DPAD_RIGHT, DPAD_CENTER. On the phone, `phone.sh tapt "http://10.0.2.2:9100"`.
   - In the TV player, DPAD_DOWN (with controls hidden) opens the toolbar. Its buttons are
-    Transcode, Zoom, Speed, Fill+, Fill−, Aspect, Subtitles, Rotate (and Disc), and it remembers
+    Transcode, Zoom, Speed, Fill+, Fill−, Aspect, Subtitles, Audio (files with more than one track), Rotate (and Disc), and it remembers
     the last button focused, so press DPAD_LEFT several times before counting.
   - If a screenshot shows a Google TV "Set up" screen or the launcher, the app isn't in front.
     Press BACK and `am start` again, and check
@@ -340,9 +344,15 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     - Compatibility (Safe) keeps nothing: H.264 and stereo AAC, whatever the device says.
   - Subtitles: `onTracksChanged` collects `C.TRACK_TYPE_TEXT` formats and labels them
     (`subtitleLabels`). `selectSubtitleTrack(index)` sets a `TrackSelectionOverride`, and
-    `SubtitleMemory` remembers the choice per video. **Audio track selection should copy this
-    pattern** with `C.TRACK_TYPE_AUDIO`, and get its own dialog row in the player toolbar
-    (`PlayerZoomToolbar` buttons 0–8).
+    `SubtitleMemory` remembers the choice per video.
+  - Audio tracks (files from the server with more than one; a disc's are in its dialog): the
+    toolbar's Audio button (id 9, after Subtitles) opens `AudioDialog`, the server's tracks named
+    by `audioLabels`. The choice is `StreamChoice.audioTrack` (the server's index, -1 the default),
+    kept per video in `AudioMemory` (`TrackMemory`, like `SubtitleMemory`). The original plays a
+    track the device decodes itself (`selectAudioTrack`: a `TrackSelectionOverride` on the
+    player's audio groups, which are in the server's order; if their number differs, the server
+    plays it); one it can't decode switches to Compatibility (Auto). Server streams carry
+    `audio=N` (`trackQuery`), and the audio ladder works from that track.
 - **Phone player** (`PhoneVideoPlayer.kt`, ExoPlayer):
   - Same transcode menu (a dropdown) and fallback to Compatibility (Auto) as the TV.
   - Touch handling today: the root `Box` has `pointerInput { detectTransformGestures }` for
@@ -350,8 +360,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     brightness, volume) must not break pinch-zoom: handle single-finger drags separately.
     Brightness can go through `window.attributes.screenBrightness`, volume through
     `AudioManager`.
-  - It has a subtitle menu like the TV's (tracks, online search, timing), but no audio track
-    choice yet (only a disc's).
+  - It has a subtitle menu like the TV's (tracks, online search, timing) and an Audio menu (files
+    with more than one track) that works as the TV's.
   - Picture-in-picture (`PhonePip.kt`): going home while a video plays shrinks it into a window
     (auto-enter from Android 12, `onUserLeaveHint` in `MainActivity` before), with a play/pause
     button; the player hides its controls there (`viewModel.inPictureInPicture`). Closing the
@@ -397,9 +407,6 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 
 ## Notes on the TODO items
 
-- **Audio track selection on TV, phone and web:**
-  - Android: ExoPlayer exposes audio tracks like text tracks (see the TV subtitle pattern above).
-  - Web: done (the player's Audio menu, `audio=N`).
 - **Phone gestures:** see Phone player above. Typical behaviour:
   - A horizontal drag seeks, with a "+0:30 / 12:34" overlay, applied on release. For transcoded
     streams, seek through `seekPlayer`.

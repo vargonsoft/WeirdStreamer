@@ -28,6 +28,9 @@ or LocalDevVPN.
   (.iso) are always transcoded, a title at a time; the Disc button (Android's disc sheet) picks
   chapters, angles, audio and subtitle tracks and other titles (picture subtitles burned in by the
   server), as a panel in the player; a title the server can't convert says so.
+- **Audio:** files with more than one audio track get an Audio menu (the choice remembered per
+  video). AVPlayer plays only the original's default track, so another track comes from the server
+  (Compatibility (Auto) with `audio=N`, as on the web).
 - **Subtitles:** the CC menu lists the file's tracks (Off unless it has forced ones, the choice
   remembered per video). Text tracks come from the server as WebVTT in 2-minute windows, fetched
   ahead, and PGS as .sup decoded on the phone and drawn over the video at the disc's scale; other

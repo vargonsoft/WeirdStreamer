@@ -54,6 +54,11 @@ final class PlaybackModel {
     private(set) var segments: MediaSegments?
     private(set) var copiesVideo = false
     private(set) var subtitles: ServerSubtitles?
+    /// The file's audio tracks, as the server lists them, and the one chosen (the server's index;
+    /// -1: the file's default). A track other than the default comes from the server (audio=N),
+    /// as on the web: AVPlayer plays only the original's default track here.
+    private(set) var audioTracks: [AudioTrackInfo] = []
+    private(set) var audioTrack = -1
     /// A DVD image (.iso): always transcoded by the server, one title at a time, with the chosen
     /// angle and tracks; the Disc sheet changes them.
     let isDisc: Bool
@@ -146,6 +151,11 @@ final class PlaybackModel {
         let remembered = model.setting(subtitleMemoryKey(model)).flatMap { label in subs.labels.firstIndex(of: label) }
         subs.select(remembered ?? subs.tracks.firstIndex { $0.forced == true && $0.isText } ?? -1)
         subtitles = subs
+        // Audio: the track chosen for this video before, else the file's default.
+        audioTracks = codecs?.audio ?? []
+        if let label = model.setting(audioMemoryKey(model)), let i = audioLabels(audioTracks).firstIndex(of: label) {
+            audioTrack = audioTracks[i].index ?? i
+        }
         // As Android: the original unless this phone can't play it, then Compatibility (Auto).
         modeIndex = originalPlays() ? 0 : 1
         await open(at: request.startAt)
@@ -170,6 +180,7 @@ final class PlaybackModel {
         guard let codecs else { return true }
         if let v = codecs.video?.codec?.lowercased(), !playableVideo.contains(v) { return false }
         if let a = defaultAudio()?.codec?.lowercased(), !playableAudio.contains(a) { return false }
+        if choosesOtherAudio { return false } // another track comes from the server
         return true
     }
 
@@ -177,9 +188,22 @@ final class PlaybackModel {
         codecs?.audio?.first { $0.default == true } ?? codecs?.audio?.first
     }
 
+    /// The audio track the stream plays: the one chosen, else the default.
+    private func playingAudio() -> AudioTrackInfo? {
+        audioTracks.first { $0.index == audioTrack } ?? defaultAudio()
+    }
+
+    /// The track the Audio menu checks: the one chosen, else the default.
+    var shownAudioTrack: Int { audioTrack >= 0 ? audioTrack : (defaultAudio()?.index ?? -1) }
+
+    /// Whether a track other than the file's default is chosen.
+    private var choosesOtherAudio: Bool {
+        audioTrack >= 0 && audioTrack != (defaultAudio()?.index ?? -1)
+    }
+
     private var keepsAudio: Bool {
         guard !mode.safe, mode.bitrate == nil, mode.resolution == nil,
-              let codec = defaultAudio()?.codec?.lowercased() else { return false }
+              let codec = playingAudio()?.codec?.lowercased() else { return false }
         return playableAudio.contains(codec)
     }
 
@@ -214,6 +238,7 @@ final class PlaybackModel {
         } else {
             parts.append(keepsAudio ? "audiocodec=copy" : "audiocodec=aac")
         }
+        if audioTrack >= 0 { parts.append("audio=\(audioTrack)") }
         if burn >= 0 { parts.append("subtitle=\(burn)") }
         if start > 0 { parts.append("start=" + String(format: "%.2f", start)) }
         return parts.joined(separator: "&")
@@ -390,6 +415,29 @@ final class PlaybackModel {
         Task { await open(at: at) }
     }
 
+    /// Plays audio track `index` (the server's) and remembers it for this video. The original
+    /// plays only its default track, so another one switches it to Compatibility (Auto).
+    func chooseAudio(_ index: Int) {
+        guard let model, let i = audioTracks.firstIndex(where: { $0.index == index }) else { return }
+        model.setSetting(audioMemoryKey(model), audioLabels(audioTracks)[i])
+        guard index != shownAudioTrack || audioTrack < 0 else { return }
+        let before = audioTrack
+        audioTrack = index
+        if mode.isOriginal {
+            guard choosesOtherAudio else { return } // the default, which the original plays already
+            modeIndex = 1
+            originalByHand = false
+        } else if before < 0 && !choosesOtherAudio {
+            return // the default, which the stream plays already
+        }
+        let at = position
+        Task { await open(at: at) }
+    }
+
+    private func audioMemoryKey(_ model: AppModel) -> String {
+        "audio_choice_\(model.currentAddress ?? "")|\(request.path)"
+    }
+
     /// The picture's shape, for drawing PGS subtitles on it.
     var videoAspect: CGFloat {
         guard let size = player.currentItem?.presentationSize, size.height > 0 else { return 0 }
@@ -408,7 +456,7 @@ final class PlaybackModel {
     /// The Transcode menu's line on what the stream does.
     var status: String? {
         guard let codecs else { return nil }
-        let track = defaultAudio()
+        let track = playingAudio()
         let ch = track?.channels ?? 0
         let channels = ch >= 8 ? " 7.1" : (ch >= 6 ? " 5.1" : "")
         let kept = "original" + (track?.codec.map { " (\($0.uppercased())\(channels))" } ?? "")
@@ -683,6 +731,7 @@ struct PlayerView: View {
                         // Disc: chapters, angles, tracks, titles
                         PlayerIcon(system: "opticaldisc", label: "Disc") { showDisc = true; holdControls() }
                     }
+                    if playback.audioTracks.count > 1 { audioMenu }
                     if let subtitles = playback.subtitles { subtitleMenu(subtitles) }
                     PlayerIcon(system: "rotate.right", label: "Rotate") {
                         rotation = (rotation + 90).truncatingRemainder(dividingBy: 360)
@@ -743,6 +792,26 @@ struct PlayerView: View {
             }
             .foregroundStyle(.white)
         }
+    }
+
+    /// Audio: the file's tracks (a check on the one playing).
+    private var audioMenu: some View {
+        Menu {
+            let tracks = playback.audioTracks
+            let labels = audioLabels(tracks)
+            ForEach(Array(tracks.enumerated()), id: \.offset) { i, track in
+                let index = track.index ?? i
+                Button { playback.chooseAudio(index); touch() } label: {
+                    if index == playback.shownAudioTrack { Label(labels[i], systemImage: "checkmark") } else { Text(labels[i]) }
+                }
+            }
+        } label: {
+            Image(systemName: "waveform").font(.system(size: 22))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48).contentShape(Rectangle())
+        }
+        .simultaneousGesture(TapGesture().onEnded { holdControls() })
+        .accessibilityLabel("Audio")
     }
 
     /// Subtitles: Off and the tracks (a check on the one in use), then Timing and Search online.

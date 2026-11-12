@@ -147,6 +147,21 @@ fun PlayerControlsProgress(
     }
 }
 
+// The toolbar's buttons, in order: Left and Right move through this list (ids aren't in order).
+fun toolbarButtons(isSmbSource: Boolean, isDisc: Boolean, hasAudioChoice: Boolean): List<Int> = buildList {
+    if (!isSmbSource) add(0) // Transcode
+    addAll(listOf(1, 2, 3, 4, 5, 6))
+    if (hasAudioChoice && !isDisc) add(9) // Audio
+    add(7)
+    if (isDisc) add(8) // Disc: chapters, angles, tracks, titles
+}
+
+// The button beside id in the toolbar (step -1 left, +1 right), staying at the ends.
+fun toolbarStep(buttons: List<Int>, id: Int, step: Int): Int {
+    val at = buttons.indexOf(id).takeIf { it >= 0 } ?: return buttons.first()
+    return buttons[(at + step).coerceIn(0, buttons.lastIndex)]
+}
+
 @Composable
 fun PlayerZoomToolbar(
     visible: Boolean,
@@ -156,6 +171,7 @@ fun PlayerZoomToolbar(
     currentAspectRatioName: String,
     isSmbSource: Boolean,
     isDisc: Boolean = false,
+    hasAudioChoice: Boolean = false, // a file with more than one audio track (a disc's are in its dialog)
     onButtonFocused: (Int) -> Unit,
     onButtonClicked: (Int) -> Unit,
     modifier: Modifier = Modifier
@@ -174,10 +190,7 @@ fun PlayerZoomToolbar(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val buttons = mutableListOf<Int>()
-            if (!isSmbSource) buttons.add(0) // Transcode
-            buttons.addAll(listOf(1, 2, 3, 4, 5, 6, 7))
-            if (isDisc) buttons.add(8) // Disc: chapters, angles, tracks, titles
+            val buttons = toolbarButtons(isSmbSource, isDisc, hasAudioChoice)
 
             buttons.forEach { id ->
                 val isFocused = toolbarFocusedButton == id
@@ -226,6 +239,7 @@ fun ToolbarButton(
             6 -> Icons.Default.Subtitles
             7 -> Icons.AutoMirrored.Filled.RotateRight
             8 -> Icons.Default.Album
+            9 -> Icons.Default.Audiotrack
             else -> Icons.Default.QuestionMark
         }
 
@@ -239,6 +253,7 @@ fun ToolbarButton(
             6 -> "Subtitles"
             7 -> "Rotate"
             8 -> "Disc"
+            9 -> "Audio"
             else -> ""
         }
 

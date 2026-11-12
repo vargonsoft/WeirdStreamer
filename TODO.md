@@ -6,8 +6,8 @@ Requests saved for later, newest last.
 
 - [x] **Web: a 4K film plays with no audio.** Find out why (likely an audio codec the browser
       can't decode, such as DTS, TrueHD or E-AC-3) and fix it.
-- [ ] **Audio track selection on TV, phone and web.** Choose among a file's audio tracks
-      (languages, commentary, formats) the way subtitles can be chosen on TV. (Web: done.)
+- [x] **Audio track selection on TV, phone and web.** Choose among a file's audio tracks
+      (languages, commentary, formats) the way subtitles can be chosen on TV. Also on the iPhone.
 - [x] **Web: transcode automatically when the browser can't play a file**, as Android does when
       the device can't decode it (check the video and audio codecs and the container against what
       the browser supports, or fall back when playback fails).

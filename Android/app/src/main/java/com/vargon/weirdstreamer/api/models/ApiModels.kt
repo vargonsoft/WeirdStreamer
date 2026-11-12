@@ -479,7 +479,10 @@ data class CodecsInfo(
 )
 
 data class AudioTrackInfo(
+    @SerializedName("index") val index: Int = 0, // among the file's audio tracks: a stream's audio= param
     @SerializedName("codec") val codec: String = "",
+    @SerializedName("language") val language: String? = null, // ISO 639-2: eng, spa…
+    @SerializedName("title") val title: String? = null,
     @SerializedName("channels") val channels: Int = 0,
     @SerializedName("default") val isDefault: Boolean = false,
 )

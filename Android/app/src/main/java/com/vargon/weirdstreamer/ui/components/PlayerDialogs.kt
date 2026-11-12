@@ -292,6 +292,59 @@ fun SubtitleDialog(
     }
 }
 
+/** A file's audio tracks, as the server lists them; [note] says what the stream does with the audio. */
+@Composable
+fun AudioDialog(
+    show: Boolean,
+    labels: List<String>,
+    selected: Int,
+    note: String?,
+    onDismiss: () -> Unit,
+    onSelected: (Int) -> Unit,
+) {
+    if (!show) return
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .width(680.dp)
+                .heightIn(max = 600.dp)
+                .background(Color.Black.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
+                .border(2.dp, Color.White, RoundedCornerShape(16.dp)),
+            color = Color.Black.copy(alpha = 0.9f)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(text = "Audio", style = MaterialTheme.typography.headlineSmall, color = Color.White)
+                if (note != null) {
+                    Text(note, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.7f))
+                }
+                val currentRequester = remember { FocusRequester() }
+                LaunchedEffect(Unit) { runCatching { currentRequester.requestFocus() } }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    labels.forEachIndexed { index, label ->
+                        SubtitleRow(label, selected = selected == index,
+                            requester = if (selected == index || (selected < 0 && index == 0)) currentRequester else null) { onSelected(index) }
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TvSecondaryButton(onClick = onDismiss) { Text("Close") }
+                }
+            }
+        }
+    }
+}
+
 /**
  * Subtitles found online (OpenSubtitles, through the server), best first; choosing one downloads
  * it to the server, which keeps it for next time.
