@@ -712,21 +712,14 @@ struct PlayerView: View {
                     }
                     .padding(.leading, 8)
                     Spacer(minLength: 4)
-                    Menu {
-                        if let status = playback.status { Section(status) {} }
-                        ForEach(Array(TranscodeMode.all.enumerated()), id: \.offset) { i, mode in
-                            Button { playback.chooseMode(i); touch() } label: {
-                                if i == playback.modeIndex { Label(mode.name, systemImage: "checkmark") } else { Text(mode.name) }
-                            }
-                            .disabled(playback.isDisc && mode.isOriginal) // discs can't play as they are
-                        }
-                    } label: {
-                        Image(systemName: "slider.horizontal.below.rectangle").font(.system(size: 22))
-                            .foregroundStyle(playback.isTranscoding ? Color.green : .white)
-                            .frame(width: 48, height: 48).contentShape(Rectangle())
-                    }
-                    .simultaneousGesture(TapGesture().onEnded { holdControls() })
-                    .accessibilityLabel("Transcode")
+                    PickMenu(icon: "slider.horizontal.below.rectangle", tint: playback.isTranscoding ? .green : .white,
+                             label: "Transcode", header: playback.status,
+                             items: TranscodeMode.all.enumerated().map { i, mode in
+                                 MenuItem(title: mode.name, checked: i == playback.modeIndex,
+                                          disabled: playback.isDisc && mode.isOriginal) // discs can't play as they are
+                             },
+                             onPick: { i in playback.chooseMode(i); touch() }, onOpen: holdControls)
+                        .equatable()
                     if playback.disc != nil {
                         // Disc: chapters, angles, tracks, titles
                         PlayerIcon(system: "opticaldisc", label: "Disc") { showDisc = true; holdControls() }
@@ -796,50 +789,38 @@ struct PlayerView: View {
 
     /// Audio: the file's tracks (a check on the one playing).
     private var audioMenu: some View {
-        Menu {
-            let tracks = playback.audioTracks
-            let labels = audioLabels(tracks)
-            ForEach(Array(tracks.enumerated()), id: \.offset) { i, track in
-                let index = track.index ?? i
-                Button { playback.chooseAudio(index); touch() } label: {
-                    if index == playback.shownAudioTrack { Label(labels[i], systemImage: "checkmark") } else { Text(labels[i]) }
-                }
-            }
-        } label: {
-            Image(systemName: "waveform").font(.system(size: 22))
-                .foregroundStyle(.white)
-                .frame(width: 48, height: 48).contentShape(Rectangle())
-        }
-        .simultaneousGesture(TapGesture().onEnded { holdControls() })
-        .accessibilityLabel("Audio")
+        let tracks = playback.audioTracks
+        let labels = audioLabels(tracks)
+        let indexes = tracks.enumerated().map { i, track in track.index ?? i }
+        return PickMenu(icon: "waveform", tint: .white, label: "Audio", header: nil,
+                        items: labels.enumerated().map { i, label in
+                            MenuItem(title: label, checked: indexes[i] == playback.shownAudioTrack)
+                        },
+                        onPick: { i in playback.chooseAudio(indexes[i]); touch() }, onOpen: holdControls)
+            .equatable()
     }
 
     /// Subtitles: Off and the tracks (a check on the one in use), then Timing and Search online.
     private func subtitleMenu(_ subtitles: ServerSubtitles) -> some View {
-        Menu {
-            let labels = subtitles.labels
-            ForEach(-1..<labels.count, id: \.self) { i in
-                Button { playback.chooseSubtitle(i); touch() } label: {
-                    let label = i < 0 ? "Off" : labels[i]
-                    if i == subtitles.selected { Label(label, systemImage: "checkmark") } else { Text(label) }
-                }
-            }
-            Divider()
-            if subtitles.selectedTrack?.isText == true {
-                Button { showTiming = true; touch() } label: {
-                    Label("Timing: \(subtitleOffsetText(subtitles.offsetMs))", systemImage: "clock")
-                }
-            }
-            Button { showSubtitleSearch = true; touch() } label: {
-                Label("Search online…", systemImage: "magnifyingglass")
-            }
-        } label: {
-            Image(systemName: "captions.bubble").font(.system(size: 22))
-                .foregroundStyle(subtitles.selected >= 0 ? Color.green : .white)
-                .frame(width: 48, height: 48).contentShape(Rectangle())
+        let labels = subtitles.labels
+        var items = (-1..<labels.count).map { i in
+            MenuItem(title: i < 0 ? "Off" : labels[i], checked: i == subtitles.selected)
         }
-        .simultaneousGesture(TapGesture().onEnded { holdControls() })
-        .accessibilityLabel("Subtitles")
+        let timing = subtitles.selectedTrack?.isText == true ? items.count : -1
+        if timing >= 0 {
+            items.append(MenuItem(title: "Timing: \(subtitleOffsetText(subtitles.offsetMs))", systemImage: "clock", dividerBefore: true))
+        }
+        let search = items.count
+        items.append(MenuItem(title: "Search online…", systemImage: "magnifyingglass", dividerBefore: timing < 0))
+        return PickMenu(icon: "captions.bubble", tint: subtitles.selected >= 0 ? .green : .white, label: "Subtitles", header: nil,
+                        items: items,
+                        onPick: { i in
+                            if i == search { showSubtitleSearch = true }
+                            else if i == timing { showTiming = true }
+                            else { playback.chooseSubtitle(i - 1) }
+                            touch()
+                        }, onOpen: holdControls)
+            .equatable()
     }
 
     private var trickplayRow: some View {
@@ -983,6 +964,55 @@ struct PlayerView: View {
 }
 
 /// A white icon button on the video.
+/// One line of a PickMenu.
+struct MenuItem: Equatable {
+    var title: String
+    var checked = false
+    var disabled = false
+    var systemImage: String? = nil
+    var dividerBefore = false
+}
+
+/// A player menu (Transcode, Audio, Subtitles) that's rebuilt only when what it shows changes.
+/// Built in the player's body, an open menu was rebuilt on every position update and dropped
+/// the pick under the finger. Equal by its contents, so the player compares it with `.equatable()`
+/// and leaves it alone; its actions only reach the model and the player's @State.
+struct PickMenu: View, Equatable {
+    let icon: String
+    let tint: Color
+    let label: String
+    let header: String?
+    let items: [MenuItem]
+    let onPick: (Int) -> Void
+    let onOpen: () -> Void
+
+    static func == (a: PickMenu, b: PickMenu) -> Bool {
+        a.icon == b.icon && a.tint == b.tint && a.label == b.label && a.header == b.header && a.items == b.items
+    }
+
+    var body: some View {
+        Menu {
+            if let header { Section(header) {} }
+            ForEach(items.indices, id: \.self) { i in
+                let item = items[i]
+                if item.dividerBefore { Divider() }
+                Button { onPick(i) } label: {
+                    if item.checked { Label(item.title, systemImage: "checkmark") }
+                    else if let image = item.systemImage { Label(item.title, systemImage: image) }
+                    else { Text(item.title) }
+                }
+                .disabled(item.disabled)
+            }
+        } label: {
+            Image(systemName: icon).font(.system(size: 22))
+                .foregroundStyle(tint)
+                .frame(width: 48, height: 48).contentShape(Rectangle())
+        }
+        .simultaneousGesture(TapGesture().onEnded { onOpen() })
+        .accessibilityLabel(label)
+    }
+}
+
 struct PlayerIcon: View {
     let system: String
     let label: String
