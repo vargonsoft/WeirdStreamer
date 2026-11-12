@@ -569,7 +569,6 @@ struct PlayerView: View {
     @State private var playback: PlaybackModel
     @State private var showControls = true
     @State private var lastInteraction = Date()
-    @State private var menuOpen = false // a Transcode, Audio or Subtitles menu is showing
     @State private var aspectIndex = 0
     @State private var rotation: Double = 0
     @State private var zoom: CGFloat = 1
@@ -688,7 +687,7 @@ struct PlayerView: View {
         .task(id: lastInteraction) {
             // A newer interaction cancels this wait: then the controls stay (the new task decides).
             do { try await Task.sleep(for: .seconds(max(1, lastInteraction.timeIntervalSinceNow + 5))) } catch { return }
-            if playback.isPlaying && scrubbing == nil && !showDisc && !showSpeed && !menuOpen { showControls = false }
+            if playback.isPlaying && scrubbing == nil && !showDisc && !showSpeed { showControls = false }
         }
         .onDisappear { playback.stop() }
     }
@@ -697,9 +696,6 @@ struct PlayerView: View {
 
     /// A menu is open: the controls (and the menu with them) stay up a while longer.
     private func holdControls() { lastInteraction = Date().addingTimeInterval(25) }
-
-    /// A menu opened or closed: the controls stay up while it shows, and hide 5 s after it closes.
-    private func menuShown(_ open: Bool) { menuOpen = open; touch() }
 
     private var controls: some View {
         ZStack {
@@ -722,7 +718,7 @@ struct PlayerView: View {
                                  MenuItem(title: mode.name, checked: i == playback.modeIndex,
                                           disabled: playback.isDisc && mode.isOriginal) // discs can't play as they are
                              },
-                             onPick: { i in playback.chooseMode(i); touch() }, onOpen: menuShown)
+                             onPick: { i in playback.chooseMode(i); touch() }, onOpen: holdControls)
                         .equatable()
                     if playback.disc != nil {
                         // Disc: chapters, angles, tracks, titles
@@ -800,7 +796,7 @@ struct PlayerView: View {
                         items: labels.enumerated().map { i, label in
                             MenuItem(title: label, checked: indexes[i] == playback.shownAudioTrack)
                         },
-                        onPick: { i in playback.chooseAudio(indexes[i]); touch() }, onOpen: menuShown)
+                        onPick: { i in playback.chooseAudio(indexes[i]); touch() }, onOpen: holdControls)
             .equatable()
     }
 
@@ -823,7 +819,7 @@ struct PlayerView: View {
                             else if i == timing { showTiming = true }
                             else { playback.chooseSubtitle(i - 1) }
                             touch()
-                        }, onOpen: menuShown)
+                        }, onOpen: holdControls)
             .equatable()
     }
 
@@ -977,8 +973,8 @@ struct MenuItem: Equatable {
     var dividerBefore = false
 }
 
-/// A player menu (Transcode, Audio, Subtitles). It tells the player when its list opens and
-/// closes, so the controls (and the menu with them) don't hide while it's open. Equal by its
+/// A player menu (Transcode, Audio, Subtitles). It tells the player when its list opens, so the
+/// controls (and the menu with them) don't hide while a pick is being made. Equal by its
 /// contents, so the player compares it with `.equatable()` and position updates leave it alone;
 /// its actions only reach the model and the player's @State.
 struct PickMenu: View, Equatable {
@@ -988,7 +984,7 @@ struct PickMenu: View, Equatable {
     let header: String?
     let items: [MenuItem]
     let onPick: (Int) -> Void
-    let onOpen: (Bool) -> Void // the menu's list opened (true) or closed (false)
+    let onOpen: () -> Void // the menu's list opened
 
     static func == (a: PickMenu, b: PickMenu) -> Bool {
         a.icon == b.icon && a.tint == b.tint && a.label == b.label && a.header == b.header && a.items == b.items
@@ -1009,10 +1005,10 @@ struct PickMenu: View, Equatable {
                     .disabled(item.disabled)
                 }
             }
-            // A tap gesture on a Menu never fires (the menu takes the touch), but its list
-            // appears and disappears with the menu.
-            .onAppear { onOpen(true) }
-            .onDisappear { onOpen(false) }
+            // A tap gesture on a Menu never fires (the menu takes the touch), but its list appears
+            // when it opens. Its onDisappear doesn't fire when it closes, so opening holds the
+            // controls a while (holdControls) and a pick starts the usual 5 s again.
+            .onAppear { onOpen() }
         } label: {
             Image(systemName: icon).font(.system(size: 22))
                 .foregroundStyle(tint)
