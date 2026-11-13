@@ -61,9 +61,13 @@ final class ServerSubtitles {
     var selectedTrack: SubtitleTrack? { tracks.indices.contains(selected) ? tracks[selected] : nil }
     var offsetMs: Int { selectedTrack?.offsetMs ?? 0 }
 
-    /// Whether the selected track is ASS/SSA, which libass draws styled (AssSubtitleView). Not for
-    /// a download: it saved the track as WebVTT, so it shows the plain lines.
-    var styled: Bool { downloadId == nil && selectedTrack?.isStyled == true }
+    /// Whether the selected track is ASS/SSA, which libass draws styled (AssSubtitleView). A
+    /// download's only when it saved the whole script (one saved before as WebVTT shows plain lines).
+    var styled: Bool {
+        guard let track = selectedTrack, track.isStyled else { return false }
+        guard let downloadId else { return true }
+        return DownloadExtras.savedSubtitle(downloadId, track)?.styled == true
+    }
 
     /// The ASS script loaded so far: the header and every line, for libass.
     func assScript() -> String { assHeader + assLines.joined(separator: "\n") + "\n" }
@@ -73,6 +77,11 @@ final class ServerSubtitles {
     /// The video's embedded fonts (name, data), which its ASS tracks name: fetched once.
     func videoFonts() async -> [(String, Data)] {
         if let fontData { return fontData }
+        if let downloadId {
+            let saved = DownloadExtras.savedFonts(downloadId)
+            fontData = saved
+            return saved
+        }
         guard let client else { return [] }
         var got: [(String, Data)] = []
         for font in fonts {
@@ -138,9 +147,11 @@ final class ServerSubtitles {
         if let downloadId {
             // Saved whole: read once.
             guard outside || fromMs != 0 || untilMs != Int64.max else { return }
-            let file = DownloadExtras.subtitleFolder(downloadId).appendingPathComponent(DownloadExtras.subtitleName(track))
-            guard let body = try? Data(contentsOf: file) else { return }
-            if track.isPGS {
+            guard let saved = DownloadExtras.savedSubtitle(downloadId, track),
+                  let body = try? Data(contentsOf: saved.url) else { return }
+            if saved.styled {
+                addAssWindow(String(decoding: body, as: UTF8.self))
+            } else if track.isPGS {
                 let all = await Task.detached { decodePgs(body) }.value
                 guard gen == generation else { return }
                 pictures = all
@@ -195,7 +206,14 @@ final class ServerSubtitles {
                      ("start", String(format: "%.3f", Double(start) / 1000)),
                      ("duration", String(format: "%.3f", Double(Self.windowMs) / 1000)), ("format", "ass")]
         guard let data = try? await client.data("/api/media/subtitles", query: query), gen == generation else { return }
-        let body = String(decoding: data, as: UTF8.self).replacingOccurrences(of: "\r", with: "")
+        addAssWindow(String(decoding: data, as: UTF8.self))
+        if outside { fromMs = start }
+        untilMs = start + Self.windowMs
+    }
+
+    /// Adds an ASS script's lines (a window, or a download's whole script); the first one gives the header.
+    private func addAssWindow(_ text: String) {
+        let body = text.replacingOccurrences(of: "\r", with: "")
         let events = body.range(of: "\n[Events]")
         if assHeader.isEmpty {
             let tail = events.map { String(body[$0.lowerBound...]) } ?? ""
@@ -210,8 +228,6 @@ final class ServerSubtitles {
             }
         }
         assVersion += 1
-        if outside { fromMs = start }
-        untilMs = start + Self.windowMs
     }
 
     /// The line (or lines) to show at `playerMs` (none for an ASS track libass draws).

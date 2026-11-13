@@ -39,7 +39,8 @@ or LocalDevVPN.
   Android: the server's `format=ass` windows (the first one's header, every window's lines once),
   the video's embedded fonts (`/api/media/font`) and the system's through CoreText, on the picture
   through zoom and rotation, redrawn only when libass reports a change (also while paused).
-  Downloads keep them as plain WebVTT lines. Timing ("Already said" / "Not said yet", saved to
+  Downloads save them whole (`<track>.ass`) with the video's fonts (`font-<index>-<name>`) and draw
+  them the same way offline; one saved before as WebVTT shows plain lines until its next refresh. Timing ("Already said" / "Not said yet", saved to
   the server) and Search online (OpenSubtitles through the server) are there too. Settings › App ›
   Subtitle style: the iPhone's own caption style (Accessibility › Subtitles & Captioning) or a
   custom one (box or outline, colors and opacities, font, size), with a preview.
@@ -54,7 +55,7 @@ or LocalDevVPN.
   Compatibility keeps what the iPhone plays: an MKV of H.264 and AAC is copied into MP4 (the server
   takes `keep_video` and `keep_audio` together for a file that isn't MP4 already).
   Each download's extras are saved in `Documents/DownloadExtras/<id>/` for playing offline: its
-  subtitles (text as WebVTT, PGS as .sup; this phone's languages, forced ones and files beside
+  subtitles (text as WebVTT, ASS/SSA whole as .ass with the video's fonts, PGS as .sup; this phone's languages, forced ones and files beside
   the video), intro and credits (Skip Credits goes on to the next downloaded episode), trickplay
   frames, codecs report and thumbnail; again every 12 hours and when a subtitle is added. With the
   server unreachable, its error has a Downloads button. Download ahead (as Android's): two minutes

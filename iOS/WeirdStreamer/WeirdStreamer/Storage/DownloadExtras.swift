@@ -1,8 +1,9 @@
 import Foundation
 
 // What a download needs to play offline as it does streamed, as the Android app's DownloadWorker
-// saves it: the codecs report (length, tracks), its subtitle tracks (text as WebVTT, PGS as .sup:
-// this phone's languages, forced ones, files beside the video and untagged ones), its intro and
+// saves it: the codecs report (length, tracks), its subtitle tracks (text as WebVTT, ASS/SSA whole
+// as .ass with the video's fonts, PGS as .sup: this phone's languages, forced ones, files beside the
+// video and untagged ones), its intro and
 // credits, its trickplay frames and its thumbnail. They're kept in `Documents/DownloadExtras/<id>/`
 // and saved again every 12 hours while the server is open, and when a subtitle is added to the video.
 
@@ -23,13 +24,42 @@ enum DownloadExtras {
     /// The file a saved subtitle track is kept in: a file beside the video by its key (its index
     /// can change as files come and go), the video's own tracks by index.
     static func subtitleName(_ t: SubtitleTrack) -> String {
-        let base: String
+        subtitleBase(t) + (t.isStyled ? ".ass" : t.isText ? ".vtt" : ".sup")
+    }
+
+    private static func subtitleBase(_ t: SubtitleTrack) -> String {
         if t.external != nil, let key = t.key {
-            base = String(key.map { $0.isLetter || $0.isNumber ? $0 : "-" })
-        } else {
-            base = String(t.index)
+            return String(key.map { $0.isLetter || $0.isNumber ? $0 : "-" })
         }
-        return base + (t.isText ? ".vtt" : ".sup")
+        return String(t.index)
+    }
+
+    /// A saved track's file and whether it's the whole ASS script (libass draws it): an ASS track
+    /// saved before as WebVTT shows its plain lines until the next refresh saves it again.
+    static func savedSubtitle(_ id: String, _ t: SubtitleTrack) -> (url: URL, styled: Bool)? {
+        let dir = subtitleFolder(id)
+        let file = dir.appendingPathComponent(subtitleName(t))
+        if FileManager.default.fileExists(atPath: file.path) { return (file, t.isStyled) }
+        let plain = dir.appendingPathComponent(subtitleBase(t) + ".vtt")
+        if t.isStyled, FileManager.default.fileExists(atPath: plain.path) { return (plain, false) }
+        return nil
+    }
+
+    /// A saved font of the video's: "font-<index>-<its name>".
+    static func fontName(_ font: FontAttachment) -> String {
+        let name = (font.name ?? "font").map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_" ? $0 : "-" }
+        return "font-\(font.index)-" + String(name)
+    }
+
+    /// The video's fonts saved with its ASS tracks: (name, data) for libass.
+    static func savedFonts(_ id: String) -> [(String, Data)] {
+        let dir = subtitleFolder(id)
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasPrefix("font-") }.sorted()
+        return names.compactMap { name in
+            guard let data = try? Data(contentsOf: dir.appendingPathComponent(name)) else { return nil }
+            let parts = name.split(separator: "-", maxSplits: 2)
+            return (parts.count == 3 ? String(parts[2]) : name, data)
+        }
     }
 
     static func remove(_ id: String) {
@@ -57,7 +87,9 @@ enum DownloadExtras {
             try write(body, to: dir.appendingPathComponent("codecs.json"))
         }
         if let codecs {
-            try await step { try await saveSubtitles(id: id, encoded: encoded, tracks: codecs.subtitles ?? [], client: client) }
+            try await step {
+                try await saveSubtitles(id: id, encoded: encoded, tracks: codecs.subtitles ?? [], fonts: codecs.fonts ?? [], client: client)
+            }
         }
         try await step {
             do {
@@ -76,7 +108,8 @@ enum DownloadExtras {
         return complete
     }
 
-    private static func saveSubtitles(id: String, encoded: String, tracks: [SubtitleTrack], client: ServerClient) async throws {
+    private static func saveSubtitles(id: String, encoded: String, tracks: [SubtitleTrack], fonts: [FontAttachment],
+                                      client: ServerClient) async throws {
         let languages = Set(deviceSubtitleLanguages().compactMap { Locale(identifier: $0).language.languageCode?.identifier(.alpha3) })
         let wanted = tracks.filter { t in
             (t.isText || t.isPGS) &&
@@ -90,7 +123,7 @@ enum DownloadExtras {
             let file = dir.appendingPathComponent(subtitleName(t))
             if (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 > 0 { saved.append(t); continue }
             var query = [("path", encoded), ("track", String(t.index)), ("start", "0"), ("duration", "0")]
-            if !t.isText { query.append(("format", "sup")) }
+            if t.isStyled { query.append(("format", "ass")) } else if !t.isText { query.append(("format", "sup")) }
             do {
                 try write(try await client.data("/api/media/subtitles", query: query), to: file)
                 saved.append(t)
@@ -100,11 +133,27 @@ enum DownloadExtras {
                 continue // this track only
             }
         }
+        // The video's fonts, which its ASS tracks name, when one is saved.
+        var fontFiles: [String] = []
+        if saved.contains(where: \.isStyled) {
+            for font in fonts {
+                let file = dir.appendingPathComponent(fontName(font))
+                if (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 > 0 { fontFiles.append(fontName(font)); continue }
+                do {
+                    try write(try await client.data("/api/media/font", query: [("path", encoded), ("font", String(font.index))]), to: file)
+                    fontFiles.append(fontName(font))
+                } catch ServerError.transport(let m) {
+                    throw ServerError.transport(m)
+                } catch {
+                    continue // this font only
+                }
+            }
+        }
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         try write(try encoder.encode(saved), to: dir.appendingPathComponent("tracks.json"))
-        // Tracks gone from the server: their files aren't needed.
-        let keep = Set(saved.map(subtitleName) + ["tracks.json"])
+        // Tracks gone from the server (or saved before in another form): their files aren't needed.
+        let keep = Set(saved.map(subtitleName) + fontFiles + ["tracks.json"])
         for name in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] where !keep.contains(name) {
             try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
         }
