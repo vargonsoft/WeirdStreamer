@@ -270,6 +270,8 @@
                 <video id="video-player" disableremoteplayback></video>
                 <div id="player-cutout-subs" class="player-cutout-subs" hidden></div>
                 <div id="player-pgs-box" class="player-pgs-box" hidden><canvas id="player-pgs"></canvas></div>
+                <!-- ASS/SSA subtitles: libass (JASSUB) draws into a canvas made here when they're on -->
+                <div id="player-ass-box" class="player-pgs-box" hidden></div>
                 <div id="player-failed" class="player-failed" hidden>Can't play this video<span id="player-failed-reason" class="player-failed-reason"></span></div>
                 <!-- Skip Intro / Skip Credits, over the picture's lower right -->
                 <button type="button" id="player-skip" class="btn player-skip" hidden></button>

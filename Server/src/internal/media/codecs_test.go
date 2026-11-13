@@ -139,3 +139,35 @@ func TestSubtitleArgs(t *testing.T) {
 		t.Errorf("from the start, to the end: got %s", got)
 	}
 }
+
+func TestAssSubtitleArgs(t *testing.T) {
+	got := strings.Join(AssSubtitleArgs("/m/a.mkv", 2, 90.5, 120), " ")
+	want := "-v error -ss 90.500 -i /m/a.mkv -copyts -start_at_zero -to 210.500 -map 0:s:2 -c:s ass -f ass pipe:1"
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	// A file is seeked as it's read: an output -ss would shift ASS lines.
+	got = strings.Join(AssSubtitleFileArgs("/m/a.ass", "UTF-8", 90.5, 120), " ")
+	want = "-v error -sub_charenc UTF-8 -ss 90.500 -i /m/a.ass -copyts -to 210.500 -map 0:s:0 -c:s ass -f ass pipe:1"
+	if got != want {
+		t.Errorf("file: got  %s\nwant %s", got, want)
+	}
+}
+
+func TestIsFont(t *testing.T) {
+	for _, c := range []struct {
+		mime, name string
+		want       bool
+	}{
+		{"font/otf", "a.otf", true},
+		{"application/x-truetype-font", "a.ttf", true},
+		{"application/vnd.ms-opentype", "a", true},
+		{"application/octet-stream", "A.TTF", true},
+		{"image/jpeg", "cover.jpg", false},
+		{"text/plain", "notes.txt", false},
+	} {
+		if got := isFont(c.mime, c.name); got != c.want {
+			t.Errorf("isFont(%q, %q) = %v", c.mime, c.name, got)
+		}
+	}
+}

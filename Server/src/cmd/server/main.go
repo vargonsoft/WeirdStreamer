@@ -196,6 +196,7 @@ func main() {
 	api.HandleFunc("/media/segments", mediaHandler.SetSegment).Methods("PUT")
 	api.HandleFunc("/library/autoskip", mediaHandler.SetAutoSkip).Methods("PUT")
 	api.HandleFunc("/media/subtitles", mediaHandler.GetSubtitles).Methods("GET")
+	api.HandleFunc("/media/font", mediaHandler.GetFont).Methods("GET")
 	api.HandleFunc("/media/subtitles/search", mediaHandler.SearchSubtitles).Methods("GET")
 	api.HandleFunc("/media/subtitles/download", mediaHandler.DownloadSubtitle).Methods("POST")
 	api.HandleFunc("/downloads/options", mediaHandler.DownloadOptions).Methods("GET")

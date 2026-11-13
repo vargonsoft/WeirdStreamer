@@ -1633,8 +1633,10 @@ function subtitleTextTrack() {
 
 function stopSubtitles() {
     if (subs && subs.abort) subs.abort.abort();
+    if (subs && subs.renderer) subs.renderer.destroy();
     subs = null;
     document.getElementById('player-pgs-box').hidden = true;
+    document.getElementById('player-ass-box').hidden = true;
     const track = subtitleTextTrack();
     while (track.cues && track.cues.length) track.removeCue(track.cues[0]);
     track.mode = 'disabled';
@@ -1651,6 +1653,14 @@ function restartSubtitles(position) {
                  loading: false, abort: new AbortController() };
         loadPictureWindow(subs);
         requestAnimationFrame(() => showPictureSubtitles(subs));
+        return;
+    }
+    if (sub && drawsAssSubtitles(sub)) {
+        const from = Math.max(0, position - 10);
+        subs = { ass: true, index: sub.index, header: '', format: '', lines: [], seen: new Set(),
+                 shift: (sub.offset_ms || 0) / 1000, renderer: null, from, until: from, loading: false,
+                 abort: new AbortController() };
+        loadAssWindow(subs);
         return;
     }
     if (!sub || !sub.text) return;
@@ -1732,6 +1742,136 @@ function placePictureSubtitles(box, canvas, set) {
     canvas.style.height = `${set.height * scale}px`;
 }
 
+// ASS/SSA: the server sends each window as a whole script (styles and its Dialogue lines). The
+// first window's header is kept, every window's lines are added once, and libass (JASSUB, in
+// vendor/jassub) is given the script so far: it draws the lines styled, positioned and animated,
+// in the video's own fonts.
+async function loadAssWindow(s) {
+    const from = s.until;
+    s.until = from + SUBTITLE_WINDOW;
+    s.loading = true;
+    const url = `${API_BASE}/api/media/subtitles?path=${encodeURIComponent(api.encodePath(player.item.path))}` +
+        `&track=${s.index}&start=${from.toFixed(2)}&duration=${SUBTITLE_WINDOW}&format=ass`;
+    try {
+        const headers = api.token ? { Authorization: `Bearer ${api.token}` } : {};
+        const res = await fetch(url, { signal: s.abort.signal, credentials: 'same-origin', headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = (await res.text()).replace(/\r/g, '');
+        if (subs !== s) return;
+        const events = text.indexOf('\n[Events]');
+        if (!s.header) s.header = (events >= 0 ? text.slice(0, events) : text).trim() + '\n\n[Events]\n';
+        const lines = (events >= 0 ? text.slice(events) : '').split('\n');
+        if (!s.format) s.format = lines.find(line => line.startsWith('Format:')) ||
+            'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text';
+        // A window starts at a keyframe before from: lines there came with the window before too.
+        for (const line of lines) {
+            if (line.startsWith('Dialogue:') && !s.seen.has(line)) {
+                s.seen.add(line);
+                s.lines.push(line);
+            }
+        }
+        await showAssSubtitles(s);
+    } catch (err) {
+        if (err.name !== 'AbortError') console.warn('Subtitles failed:', err);
+    } finally {
+        s.loading = false;
+    }
+}
+
+// ASS/SSA tracks, which libass draws styled (see loadAssWindow).
+function drawsAssSubtitles(sub) {
+    return sub.codec === 'ass' || sub.codec === 'ssa';
+}
+
+// JASSUB's script, loaded the first time an ASS track is shown.
+let jassubLoading = null;
+function loadJassub() {
+    if (window.JASSUB) return Promise.resolve();
+    if (!jassubLoading) {
+        jassubLoading = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'vendor/jassub/jassub.umd.js';
+            script.onload = resolve;
+            script.onerror = () => { jassubLoading = null; reject(new Error('Could not load JASSUB')); };
+            document.head.appendChild(script);
+        });
+    }
+    return jassubLoading;
+}
+
+// The video's embedded fonts (the codecs report's fonts), which its ASS tracks name: fetched once
+// per video, through the API (JASSUB's own fetches wouldn't carry the sign-in).
+let assFonts = { path: null, fonts: [] };
+async function videoFonts(p) {
+    if (assFonts.path === p.item.path) return assFonts.fonts;
+    const headers = api.token ? { Authorization: `Bearer ${api.token}` } : {};
+    const path = encodeURIComponent(api.encodePath(p.item.path));
+    const fonts = await Promise.all(((p.codecs && p.codecs.fonts) || []).map(async f => {
+        try {
+            const res = await fetch(`${API_BASE}/api/media/font?path=${path}&font=${f.index}`, { credentials: 'same-origin', headers });
+            return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
+        } catch (err) {
+            console.warn('Font failed:', f.name, err);
+            return null;
+        }
+    }));
+    assFonts = { path: p.item.path, fonts: fonts.filter(Boolean) };
+    return assFonts.fonts;
+}
+
+// Gives libass the script so far, starting it the first time: over the picture, at the file's
+// time less the track's timing correction (JASSUB's time is the video's plus timeOffset).
+async function showAssSubtitles(s) {
+    const script = s.header + s.format + '\n' + s.lines.join('\n') + '\n';
+    if (s.renderer) {
+        s.renderer.setTrack(script);
+        redrawAss(s);
+        return;
+    }
+    await loadJassub();
+    const fonts = await videoFonts(player);
+    if (subs !== s) return;
+    // A new canvas each time: JASSUB may hand one over to its worker, and it can't be used again.
+    const box = document.getElementById('player-ass-box');
+    const canvas = document.createElement('canvas');
+    canvas.id = 'player-ass';
+    box.replaceChildren(canvas);
+    box.hidden = false;
+    placeAssSubtitles(s);
+    const at = file => new URL(`vendor/jassub/${file}`, location.href).href;
+    s.renderer = new JASSUB({
+        video: videoPlayer, canvas, subContent: script, fonts,
+        workerUrl: at('jassub-worker.js'), wasmUrl: at('jassub-worker.wasm'), modernWasmUrl: at('jassub-worker-modern.wasm'),
+        availableFonts: { 'liberation sans': at('default.woff2') }, fallbackFont: 'liberation sans',
+        timeOffset: player.offset - s.shift,
+    });
+    redrawAss(s);
+}
+
+// JASSUB draws as the video's frames go by: while paused, a new script or timing is drawn here.
+function redrawAss(s) {
+    if (!s.renderer) return;
+    s.renderer.timeOffset = player.offset - s.shift;
+    if (videoPlayer.paused) s.renderer.setCurrentTime(true, videoPlayer.currentTime + s.renderer.timeOffset);
+}
+
+// Keeps the ASS canvas on the picture (inside any bars the video element has around it), as the
+// player's size changes: JASSUB sizes the canvas to the picture, and this box puts it there.
+function placeAssSubtitles(s) {
+    if (subs !== s) return;
+    const v = videoPlayer, box = document.getElementById('player-ass-box');
+    const ratio = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9;
+    const width = Math.min(v.offsetWidth, v.offsetHeight * ratio), height = width / ratio;
+    const place = `${v.offsetLeft + (v.offsetWidth - width) / 2}px,${v.offsetTop + (v.offsetHeight - height) / 2}px,${width}px,${height}px`;
+    if (box.dataset.place !== place) {
+        box.dataset.place = place;
+        const [left, top, w, h] = place.split(',');
+        Object.assign(box.style, { left, top, width: w, height: h });
+    }
+    if (s.renderer) s.renderer.timeOffset = player.offset - s.shift;
+    requestAnimationFrame(() => placeAssSubtitles(s));
+}
+
 function loadSubtitleWindow(s) {
     const from = s.until;
     s.until = from + SUBTITLE_WINDOW;
@@ -1750,6 +1890,7 @@ function keepSubtitlesAhead(position) {
     const duration = playerDuration();
     if (duration && s.until >= duration) return;
     if (s.sets) loadPictureWindow(s);
+    else if (s.ass) loadAssWindow(s);
     else loadSubtitleWindow(s);
 }
 
@@ -1775,7 +1916,8 @@ function shiftSubtitles(direction) {
     // The cues already loaded move by the change; ones loaded later come with it.
     if (subs && subs.index === sub.index) {
         subs.shift += delta / 1000;
-        for (const cue of [...(subs.track.cues || [])]) {
+        if (subs.ass) redrawAss(subs);
+        for (const cue of [...((subs.track && subs.track.cues) || [])]) {
             cue.endTime = Math.max(0, cue.endTime + delta / 1000);
             cue.startTime = Math.max(0, cue.startTime + delta / 1000);
         }

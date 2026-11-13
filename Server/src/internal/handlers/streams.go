@@ -214,7 +214,8 @@ func (h *MediaHandler) GetDisc(w http.ResponseWriter, r *http.Request) {
 
 // GetSubtitles streams a text subtitle track of a file as WebVTT (GET /api/media/subtitles?
 // path=<base64 path>&track=<index among its subtitles>&start=<s>&duration=<s>). Cue times count
-// from start; without a duration the cues go to the end of the file.
+// from start; without a duration the cues go to the end of the file. format=sup gives a PGS track's
+// raw pictures, format=ass an ASS/SSA track (or file) as an ASS script, header and all.
 func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
 	if !ok {
@@ -230,21 +231,41 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	start, duration = max(start, 0), max(duration, 0)
 	// Tracks past the video's own are its subtitle files, in the codecs report's order.
 	own := 0
-	if c, err := media.ProbeCodecs(path); err == nil {
-		own = len(c.Subtitles)
+	codecs, err := media.ProbeCodecs(path)
+	if err == nil {
+		own = len(codecs.Subtitles)
+	} else {
+		codecs = nil
 	}
+	assFormat := r.URL.Query().Get("format") == "ass"
 	if track >= own {
 		external := externalSubtitles(path)
 		if track-own >= len(external) {
 			respondError(w, http.StatusNotFound, "No such subtitle track")
 			return
 		}
-		file := external[track-own].Path
-		media.ServeSubtitleFile(w, r, file, subtitles.Charset(file), start, duration)
+		file := external[track-own]
+		if assFormat {
+			if !media.IsAssSubtitle(file.Codec) {
+				respondError(w, http.StatusBadRequest, "Not an ASS/SSA track")
+				return
+			}
+			media.ServeAssSubtitleFile(w, r, file.Path, subtitles.Charset(file.Path), start, duration)
+			return
+		}
+		media.ServeSubtitleFile(w, r, file.Path, subtitles.Charset(file.Path), start, duration)
 		return
 	}
 	if r.URL.Query().Get("format") == "sup" { // a PGS track, for the players to draw
 		media.ServePictureSubtitles(w, r, path, track, start, duration)
+		return
+	}
+	if assFormat { // an ASS/SSA track, for the players' ASS renderers
+		if codecs == nil || !media.IsAssSubtitle(codecs.Subtitles[track].Codec) {
+			respondError(w, http.StatusBadRequest, "Not an ASS/SSA track")
+			return
+		}
+		media.ServeAssSubtitles(w, r, path, track, start, duration)
 		return
 	}
 	media.ServeSubtitles(w, r, path, track, start, duration)
@@ -304,4 +325,41 @@ func (h *MediaHandler) GetCodecs(w http.ResponseWriter, r *http.Request) {
 	addExternalSubtitles(codecs, externalSubtitles(path))
 	h.addSubtitleOffsets(path, codecs)
 	respondJSON(w, http.StatusOK, codecs)
+}
+
+// GetFont serves a font embedded in a video, for the players' ASS renderers (GET /api/media/font?
+// path=<base64 path>&font=<index among its attachments, from the codecs report's fonts>).
+func (h *MediaHandler) GetFont(w http.ResponseWriter, r *http.Request) {
+	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
+	if !ok {
+		return
+	}
+	index, err := strconv.Atoi(r.URL.Query().Get("font"))
+	if err != nil || index < 0 {
+		respondError(w, http.StatusBadRequest, "Invalid font")
+		return
+	}
+	codecs, err := media.ProbeCodecs(path)
+	if err != nil {
+		respondError(w, http.StatusUnprocessableEntity, "Could not read the file")
+		return
+	}
+	name := ""
+	for _, f := range codecs.Fonts {
+		if f.Index == index {
+			name = f.Name
+		}
+	}
+	if name == "" {
+		respondError(w, http.StatusNotFound, "No such font")
+		return
+	}
+	data, err := media.ReadFont(path, index)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "No such font")
+		return
+	}
+	w.Header().Set("Content-Type", media.FontMimeType(name))
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.Write(data)
 }

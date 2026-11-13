@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -17,6 +18,16 @@ type Codecs struct {
 	Video     *VideoCodec     `json:"video,omitempty"`
 	Audio     []AudioCodec    `json:"audio"`
 	Subtitles []SubtitleCodec `json:"subtitles"`
+	// Fonts embedded in the file (Matroska attachments), which its ASS/SSA tracks may name: the
+	// players' ASS renderers fetch them with GET /api/media/font.
+	Fonts []FontAttachment `json:"fonts"`
+}
+
+// FontAttachment is a font embedded in a video: Index is its place among the file's attachments
+// (the font= param), Name its file name there.
+type FontAttachment struct {
+	Index int    `json:"index"`
+	Name  string `json:"name"`
 }
 
 type VideoCodec struct {
@@ -66,10 +77,28 @@ func IsTextSubtitle(codec string) bool {
 	return false
 }
 
+// IsAssSubtitle reports whether a subtitle codec is ASS/SSA, which players draw styled from the
+// track's own script (format=ass) rather than its WebVTT lines.
+func IsAssSubtitle(codec string) bool { return codec == "ass" || codec == "ssa" }
+
+// isFont reports whether an attachment is a font, by its MIME type or else its file name.
+func isFont(mimetype, name string) bool {
+	m := strings.ToLower(mimetype)
+	if strings.HasPrefix(m, "font/") || strings.Contains(m, "truetype") || strings.Contains(m, "opentype") ||
+		strings.Contains(m, "font-sfnt") || strings.Contains(m, "x-font") {
+		return true
+	}
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2":
+		return true
+	}
+	return false
+}
+
 // ProbeCodecs reads the codecs of a file's first video stream and of all its audio streams.
 func ProbeCodecs(path string) (*Codecs, error) {
 	out, err := exec.Command("ffprobe", "-v", "error",
-		"-show_entries", "format=format_name,duration:stream=codec_type,codec_name,profile,level,pix_fmt,channels:stream_tags=language,title:stream_disposition=default,forced,attached_pic",
+		"-show_entries", "format=format_name,duration:stream=codec_type,codec_name,profile,level,pix_fmt,channels:stream_tags=language,title,filename,mimetype:stream_disposition=default,forced,attached_pic",
 		"-of", "json", path).Output()
 	if err != nil {
 		return nil, err
@@ -93,7 +122,8 @@ func ProbeCodecs(path string) (*Codecs, error) {
 	if err := json.Unmarshal(out, &probe); err != nil {
 		return nil, err
 	}
-	c := &Codecs{Container: probe.Format.FormatName, Audio: []AudioCodec{}, Subtitles: []SubtitleCodec{}}
+	c := &Codecs{Container: probe.Format.FormatName, Audio: []AudioCodec{}, Subtitles: []SubtitleCodec{}, Fonts: []FontAttachment{}}
+	attachments := 0
 	c.Duration, _ = strconv.ParseFloat(probe.Format.Duration, 64)
 	c.Duration = orPackets(path, c.Duration)
 	for _, s := range probe.Streams {
@@ -109,6 +139,11 @@ func ProbeCodecs(path string) (*Codecs, error) {
 			c.Subtitles = append(c.Subtitles, SubtitleCodec{Index: len(c.Subtitles), Codec: s.CodecName,
 				Language: s.Tags["language"], Title: s.Tags["title"], Default: s.Disposition["default"] == 1,
 				Forced: s.Disposition["forced"] == 1, Text: IsTextSubtitle(s.CodecName)})
+		case "attachment":
+			if isFont(s.Tags["mimetype"], s.Tags["filename"]) {
+				c.Fonts = append(c.Fonts, FontAttachment{Index: attachments, Name: filepath.Base(s.Tags["filename"])})
+			}
+			attachments++
 		}
 	}
 	return c, nil
@@ -403,6 +438,28 @@ func PictureSubtitleArgs(filePath string, track int, start, duration float64) []
 	return append(args[:len(args)-5], "-c:s", "copy", "-f", "sup", "pipe:1")
 }
 
+// AssSubtitleArgs are ffmpeg's arguments for an ASS/SSA track as ASS (format=ass), as SubtitleArgs
+// has its WebVTT lines: each window is a whole script, its header (styles) and the Dialogue lines
+// from about start to start+duration, at their times in the file.
+func AssSubtitleArgs(filePath string, track int, start, duration float64) []string {
+	args := SubtitleArgs(filePath, track, start, duration)
+	return append(args[:len(args)-5], "-c:s", "ass", "-f", "ass", "pipe:1")
+}
+
+// AssSubtitleFileArgs are AssSubtitleArgs for an .ass/.ssa file. Unlike WebVTT, ASS output shifts
+// the lines by an output -ss, so the file is seeked as it's read (-ss before -i).
+func AssSubtitleFileArgs(filePath, charset string, start, duration float64) []string {
+	args := []string{"-v", "error", "-sub_charenc", charset}
+	if start > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(start, 'f', 3, 64))
+	}
+	args = append(args, "-i", filePath, "-copyts")
+	if duration > 0 {
+		args = append(args, "-to", strconv.FormatFloat(start+duration, 'f', 3, 64))
+	}
+	return append(args, "-map", "0:s:0", "-c:s", "ass", "-f", "ass", "pipe:1")
+}
+
 // SubtitleFileArgs are SubtitleArgs for a subtitle file (beside the video, or downloaded), read in
 // charset. A subtitle file can't seek: the cues before start are dropped as they're read instead.
 func SubtitleFileArgs(filePath, charset string, start, duration float64) []string {
@@ -425,6 +482,43 @@ func ServeSubtitles(w http.ResponseWriter, r *http.Request, filePath string, tra
 // ServePictureSubtitles streams a PGS track as raw .sup data.
 func ServePictureSubtitles(w http.ResponseWriter, r *http.Request, filePath string, track int, start, duration float64) error {
 	return serveSubtitleStream(w, r, PictureSubtitleArgs(filePath, track, start, duration), "application/octet-stream")
+}
+
+// ServeAssSubtitles streams an ASS/SSA track as an ASS script (see AssSubtitleArgs).
+func ServeAssSubtitles(w http.ResponseWriter, r *http.Request, filePath string, track int, start, duration float64) error {
+	return serveSubtitleStream(w, r, AssSubtitleArgs(filePath, track, start, duration), "text/x-ssa; charset=utf-8")
+}
+
+// ServeAssSubtitleFile streams an .ass/.ssa file as an ASS script, as ServeAssSubtitles a track.
+func ServeAssSubtitleFile(w http.ResponseWriter, r *http.Request, filePath, charset string, start, duration float64) error {
+	return serveSubtitleStream(w, r, AssSubtitleFileArgs(filePath, charset, start, duration), "text/x-ssa; charset=utf-8")
+}
+
+// ReadFont reads a font embedded in a video (index among its attachments, as Codecs.Fonts gives
+// it). ffmpeg writes it out and then complains that nothing else is written, so its exit status
+// is ignored: no bytes means no such attachment.
+func ReadFont(filePath string, index int) ([]byte, error) {
+	out, _ := exec.Command("ffmpeg", "-v", "quiet", "-y", "-dump_attachment:t:"+strconv.Itoa(index), "pipe:1",
+		"-i", filePath).Output()
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no attachment %d", index)
+	}
+	return out, nil
+}
+
+// FontMimeType is the Content-Type for a font file, by its name.
+func FontMimeType(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".otf":
+		return "font/otf"
+	case ".ttc", ".otc":
+		return "font/collection"
+	case ".woff":
+		return "font/woff"
+	case ".woff2":
+		return "font/woff2"
+	}
+	return "font/ttf"
 }
 
 // ServeSubtitleFile streams a subtitle file as WebVTT, as ServeSubtitles does a video's track.

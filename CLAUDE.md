@@ -154,6 +154,11 @@ for each TODO item are at the end of this file.
     stereo (default), English AAC mono "Commentary" and Spanish DTS 5.1 (which the emulators can't
     decode). Their channel counts tell which one plays: `adb shell dumpsys media.audio_flinger`
     shows the active track's channel mask (3 stereo, 1 mono).
+  - `Movies/ASS Test/ASS Test.mkv`: 2 minutes of H.264 with an English ASS track and an embedded
+    font (Z003, a calligraphic one no device has), plus `ASS Test.fr.ass` beside it. Every 4
+    seconds a line names its second ("English 32") and a sign in the embedded font does too
+    ("Sign 32", top left); a moving, fading line every 10 s, a red karaoke line every 20 s, and a
+    tilted green "ASS en" for the whole video (top right).
   - `Movies/Sparse Keyframes`: 2 minutes of H.264 with a keyframe every 10 seconds and AC-3
     audio (so it plays as a copy): for short jumps forward in a copied video.
   - `Movies/AVI BFrame Test`: 30 seconds of H.264 with B-frames in AVI, whose packets have no
@@ -304,7 +309,17 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     draws it over the video, as `PgsSubtitles.kt` and `SubtitleOverlay` do on Android, so it needs
     no transcode. Pictures decode only when shown (a film's worth would take hundreds of MB). PGS
     draws for the disc's 16:9 frame: it's centered on the video at the video's scale, not
-    stretched to a cropped video. DVD subtitles are still burned in with `subtitle=N`. Track choices are kept per video in `localStorage`. Subtitles are off unless
+    stretched to a cropped video. DVD subtitles are still burned in with `subtitle=N`.
+  - ASS/SSA tracks and files (codec `ass` or `ssa`) are drawn styled by libass: JASSUB 1.8.8, vendored in
+    `Server/web/vendor/jassub` (loaded on first use). `format=ass` gives each 2-minute window as a
+    whole script (header, styles and its Dialogue lines, at the file's times); `loadAssWindow` keeps
+    the first header, adds each window's lines once and hands libass the script so far. The
+    video's embedded fonts (the codecs report's `fonts`) come from `GET /api/media/font?path=&font=N`,
+    fetched through the API (JASSUB's own fetches wouldn't be signed in). JASSUB's time is the
+    video's plus `timeOffset` (the stream's offset less the track's timing correction), and its
+    canvas sits in `player-ass-box` over the picture; while paused, `redrawAss` draws changes.
+    Windows miss a line that started before them (a seek past the start of a long sign).
+    Track choices are kept per video in `localStorage`. Subtitles are off unless
     the file has forced ones, as on Android.
   - The seek bar shows trickplay frames (made by `cmd/cli trickplay`) on hover.
   - `startPlaybackReports` sends progress to `POST /api/streams/progress`. Resume and

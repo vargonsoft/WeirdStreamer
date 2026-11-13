@@ -3335,6 +3335,7 @@ body.has-az #main-screen .content { padding-right: 28px; }
     pointer-events: none;
 }
 .player-pgs-box[hidden] { display: none; }
+#player-ass { position: absolute; left: 0; top: 0; }
 .player-pgs-box canvas { position: absolute; }
 
 /* Stays over the picture once a video can't play, as on Android */
