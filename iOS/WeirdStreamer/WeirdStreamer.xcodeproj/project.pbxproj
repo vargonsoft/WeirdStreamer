@@ -409,6 +409,20 @@
 				);
 				MARKETING_VERSION = 1.0;
 				LM_SKIP_METADATA_EXTRACTION = YES; /* no App Intents: skips a step that only warns that there are none */
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64; /* libass is built for Apple silicon simulators only */
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/../native/build/$(PLATFORM_NAME)/lib"; /* native/build-libass.sh */
+				OTHER_LDFLAGS = (
+					"-lassrender",
+					"-lass",
+					"-lharfbuzz",
+					"-lfribidi",
+					"-lfreetype",
+					"-liconv",
+					"-lc++",
+					"-framework",
+					CoreText,
+				);
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/../native/include";
 				PRODUCT_BUNDLE_IDENTIFIER = com.vargon.WeirdStreamer;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -442,6 +456,20 @@
 				);
 				MARKETING_VERSION = 1.0;
 				LM_SKIP_METADATA_EXTRACTION = YES; /* no App Intents: skips a step that only warns that there are none */
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64; /* libass is built for Apple silicon simulators only */
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/../native/build/$(PLATFORM_NAME)/lib"; /* native/build-libass.sh */
+				OTHER_LDFLAGS = (
+					"-lassrender",
+					"-lass",
+					"-lharfbuzz",
+					"-lfribidi",
+					"-lfreetype",
+					"-liconv",
+					"-lc++",
+					"-framework",
+					CoreText,
+				);
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/../native/include";
 				PRODUCT_BUNDLE_IDENTIFIER = com.vargon.WeirdStreamer;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

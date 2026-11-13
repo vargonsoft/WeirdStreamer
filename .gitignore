@@ -64,3 +64,5 @@ xcuserdata/
 # The server's own ffmpeg (scripts/build-ffmpeg.sh) and its build folder
 /Server/ffmpeg/
 /Server/ffmpeg-build/
+# The iPhone app's libass build (iOS/native/build-libass.sh)
+/iOS/native/build/

@@ -93,7 +93,9 @@ for each TODO item are at the end of this file.
   (AVPlayer can't play a transcode's fragmented MP4 of unknown length: a server on 127.0.0.1 relays
   it as HLS), `Views/PlayerView.swift`, `Storage/Downloads.swift` and `DownloadExtras.swift`.
   Build for the simulator signed ad hoc (`CODE_SIGN_IDENTITY=-`): unsigned builds can't use the
-  Keychain, where sign-ins are kept. The e2e server's `e2e_ios` account is for the simulator.
+  Keychain, where sign-ins are kept. Run `iOS/native/build-libass.sh` once first: it builds the ASS
+  subtitle renderer (`iOS/native/assrender.c`, libass and its libraries, as Android's) into
+  `iOS/native/build/` (git-ignored), which the project links (`Views/AssSubtitleView.swift`). The e2e server's `e2e_ios` account is for the simulator.
 
 ## Live server
 

@@ -1,0 +1,4 @@
+module AssRender {
+    header "assrender.h"
+    export *
+}

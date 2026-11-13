@@ -148,6 +148,7 @@ final class PlaybackModel {
         // Subtitles: the one chosen for this video before, else a forced text track, else off.
         let subs = ServerSubtitles(client: client, path: request.path)
         subs.setTracks(codecs?.subtitles ?? [])
+        subs.setFonts(codecs?.fonts ?? [])
         let remembered = model.setting(subtitleMemoryKey(model)).flatMap { label in subs.labels.firstIndex(of: label) }
         subs.select(remembered ?? subs.tracks.firstIndex { $0.forced == true && $0.isText } ?? -1)
         subtitles = subs
@@ -593,7 +594,14 @@ struct PlayerView: View {
             GeometryReader { geo in
                 let turned = rotation.truncatingRemainder(dividingBy: 180) != 0
                 let size = turned ? CGSize(width: geo.size.height, height: geo.size.width) : geo.size
-                VideoLayerView(player: playback.player, aspect: aspectValues[aspectIndex])
+                ZStack {
+                    VideoLayerView(player: playback.player, aspect: aspectValues[aspectIndex])
+                    // ASS subtitles on the picture itself, through its zoom and rotation.
+                    if let subtitles = playback.subtitles, subtitles.styled {
+                        AssSubtitleView(subtitles: subtitles, position: { Int64(playback.position * 1000) },
+                                        videoAspect: { playback.videoAspect })
+                    }
+                }
                     .frame(width: size.width, height: size.height)
                     .rotationEffect(.degrees(rotation))
                     .scaleEffect(zoom)

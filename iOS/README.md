@@ -34,7 +34,12 @@ or LocalDevVPN.
 - **Subtitles:** the CC menu lists the file's tracks (Off unless it has forced ones, the choice
   remembered per video). Text tracks come from the server as WebVTT in 2-minute windows, fetched
   ahead, and PGS as .sup decoded on the phone and drawn over the video at the disc's scale; other
-  picture subtitles are burned in by a transcode. Timing ("Already said" / "Not said yet", saved to
+  picture subtitles are burned in by a transcode. ASS/SSA tracks and .ass/.ssa files are drawn
+  styled by libass (`Views/AssSubtitleView.swift`, `iOS/native/assrender.c`), as on the web and
+  Android: the server's `format=ass` windows (the first one's header, every window's lines once),
+  the video's embedded fonts (`/api/media/font`) and the system's through CoreText, on the picture
+  through zoom and rotation, redrawn only when libass reports a change (also while paused).
+  Downloads keep them as plain WebVTT lines. Timing ("Already said" / "Not said yet", saved to
   the server) and Search online (OpenSubtitles through the server) are there too. Settings › App ›
   Subtitle style: the iPhone's own caption style (Accessibility › Subtitles & Captioning) or a
   custom one (box or outline, colors and opacities, font, size), with a preview.
@@ -87,7 +92,16 @@ Caches, deleted when the player closes and at the next launch. Originals still s
 
 ## Building and testing
 
-Open `WeirdStreamer.xcodeproj` in Xcode 26 or later. From the command line (simulator):
+Open `WeirdStreamer.xcodeproj` in Xcode 26 or later. First build libass and what it needs
+(FreeType, FriBiDi, HarfBuzz; the versions and checksums Android pins) into `iOS/native/build/`
+(git-ignored), which the project links: once, and again after changing `iOS/native/assrender.c`.
+It needs cmake and pkg-config (Homebrew). Simulators are Apple silicon only.
+
+```bash
+iOS/native/build-libass.sh
+```
+
+From the command line (simulator):
 
 ```bash
 xcodebuild -project WeirdStreamer.xcodeproj -scheme WeirdStreamer \

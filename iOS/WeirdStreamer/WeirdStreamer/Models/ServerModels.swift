@@ -267,6 +267,13 @@ struct CodecsInfo: Decodable {
     let video: VideoCodec?
     let audio: [AudioTrackInfo]?
     let subtitles: [SubtitleTrack]?
+    let fonts: [FontAttachment]?    // the video's embedded fonts, which its ASS tracks name
+}
+
+/// A font embedded in the video (an MKV attachment): GET /api/media/font?path=&font=index.
+struct FontAttachment: Decodable, Hashable {
+    let index: Int
+    let name: String?
 }
 
 /// A subtitle track: the video's own, a file beside it, or a download from OpenSubtitles.
@@ -285,6 +292,8 @@ struct SubtitleTrack: Codable, Hashable {
 
     var isText: Bool { text == true }
     var isPGS: Bool { codec == "hdmv_pgs_subtitle" }
+    /// ASS/SSA (tracks and .ass/.ssa files): drawn styled by libass.
+    var isStyled: Bool { codec == "ass" || codec == "ssa" }
 }
 
 /// An OpenSubtitles result; sent back as it came to download it.

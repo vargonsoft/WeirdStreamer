@@ -34,6 +34,15 @@ final class ServerSubtitles {
     @ObservationIgnored private var untilMs: Int64 = 0
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var saving: Task<Void, Never>?
+    // An ASS track: the first window's header (to its [Events] and Format lines) and every
+    // Dialogue line loaded, once each; assVersion counts changes, for the renderer to take the
+    // script again.
+    @ObservationIgnored private var assHeader = ""
+    @ObservationIgnored private var assLines: [String] = []
+    @ObservationIgnored private var assKnown: Set<String> = []
+    @ObservationIgnored private(set) var assVersion = 0
+    @ObservationIgnored private var fonts: [FontAttachment] = []
+    @ObservationIgnored private var fontData: [(String, Data)]?
 
     private static let windowMs: Int64 = 120_000
     private static let aheadMs: Int64 = 40_000
@@ -52,6 +61,29 @@ final class ServerSubtitles {
     var selectedTrack: SubtitleTrack? { tracks.indices.contains(selected) ? tracks[selected] : nil }
     var offsetMs: Int { selectedTrack?.offsetMs ?? 0 }
 
+    /// Whether the selected track is ASS/SSA, which libass draws styled (AssSubtitleView). Not for
+    /// a download: it saved the track as WebVTT, so it shows the plain lines.
+    var styled: Bool { downloadId == nil && selectedTrack?.isStyled == true }
+
+    /// The ASS script loaded so far: the header and every line, for libass.
+    func assScript() -> String { assHeader + assLines.joined(separator: "\n") + "\n" }
+
+    func setFonts(_ list: [FontAttachment]) { fonts = list }
+
+    /// The video's embedded fonts (name, data), which its ASS tracks name: fetched once.
+    func videoFonts() async -> [(String, Data)] {
+        if let fontData { return fontData }
+        guard let client else { return [] }
+        var got: [(String, Data)] = []
+        for font in fonts {
+            if let data = try? await client.data("/api/media/font", query: [("path", encodedPath), ("font", String(font.index))]) {
+                got.append((font.name ?? "font\(font.index)", data))
+            }
+        }
+        fontData = got
+        return got
+    }
+
     /// The picture track to burn into the stream (subtitle=N), or -1.
     var burnIn: Int {
         guard let t = selectedTrack, !t.isText, !t.isPGS else { return -1 }
@@ -67,6 +99,10 @@ final class ServerSubtitles {
         selected = tracks.indices.contains(index) ? index : -1
         cues = []
         pictures = []
+        assHeader = ""
+        assLines = []
+        assKnown = []
+        assVersion += 1
         fromMs = 0
         untilMs = 0
         generation += 1
@@ -116,6 +152,10 @@ final class ServerSubtitles {
             return
         }
         guard let client else { return }
+        if styled {
+            await keepAssAhead(track, client: client, start: start, outside: outside, generation: gen)
+            return
+        }
         var query = [("path", encodedPath), ("track", String(track.index)),
                      ("start", String(format: "%.3f", Double(start) / 1000)),
                      ("duration", String(format: "%.3f", Double(Self.windowMs) / 1000))]
@@ -146,9 +186,37 @@ final class ServerSubtitles {
         untilMs = start + Self.windowMs
     }
 
-    /// The line (or lines) to show at `playerMs`.
+    /// An ASS track's windows (format=ass: each a whole script at the file's times): the first
+    /// one's header is kept, and every window's Dialogue lines are added once (they overlap a
+    /// little where a window starts). A jump outside what's loaded adds the window there too: the
+    /// lines loaded stay, as libass only shows those of the moment.
+    private func keepAssAhead(_ track: SubtitleTrack, client: ServerClient, start: Int64, outside: Bool, generation gen: Int) async {
+        let query = [("path", encodedPath), ("track", String(track.index)),
+                     ("start", String(format: "%.3f", Double(start) / 1000)),
+                     ("duration", String(format: "%.3f", Double(Self.windowMs) / 1000)), ("format", "ass")]
+        guard let data = try? await client.data("/api/media/subtitles", query: query), gen == generation else { return }
+        let body = String(decoding: data, as: UTF8.self).replacingOccurrences(of: "\r", with: "")
+        let events = body.range(of: "\n[Events]")
+        if assHeader.isEmpty {
+            let tail = events.map { String(body[$0.lowerBound...]) } ?? ""
+            let format = tail.components(separatedBy: "\n").first { $0.hasPrefix("Format:") }
+                ?? "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+            let head = events.map { String(body[..<$0.lowerBound]) } ?? body
+            assHeader = head.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n[Events]\n" + format + "\n"
+        }
+        if let events {
+            for line in body[events.lowerBound...].components(separatedBy: "\n") where line.hasPrefix("Dialogue:") {
+                if assKnown.insert(line).inserted { assLines.append(line) }
+            }
+        }
+        assVersion += 1
+        if outside { fromMs = start }
+        untilMs = start + Self.windowMs
+    }
+
+    /// The line (or lines) to show at `playerMs` (none for an ASS track libass draws).
     func cueAt(_ playerMs: Int64) -> AttributedString? {
-        guard selectedTrack?.isText == true else { return nil }
+        guard selectedTrack?.isText == true, !styled else { return nil }
         let positionMs = playerMs - Int64(offsetMs)
         let at = cues.filter { positionMs >= $0.startMs && positionMs < $0.endMs }
         guard !at.isEmpty else { return nil }
