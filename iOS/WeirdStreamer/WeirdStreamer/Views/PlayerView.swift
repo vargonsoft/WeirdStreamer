@@ -569,7 +569,7 @@ struct PlayerView: View {
     @State private var playback: PlaybackModel
     @State private var showControls = true
     @State private var lastInteraction = Date()
-    @State private var menuOpenedAt: Date? // a Transcode, Audio or Subtitles menu opened then (and no pick since)
+    @State private var openMenu: PlayerMenu? // the Transcode, Audio or Subtitles list on screen
     @State private var aspectIndex = 0
     @State private var rotation: Double = 0
     @State private var zoom: CGFloat = 1
@@ -634,16 +634,25 @@ struct PlayerView: View {
 
             if showControls { controls.transition(.opacity) }
 
+            if showControls, let menu = openMenu, let list = pickList(menu) {
+                PickListView(list: list, onPick: { i in
+                    openMenu = nil
+                    touch()
+                    list.onPick(i)
+                }, onClose: { openMenu = nil; touch() })
+            }
+
             if showTiming, let subtitles = playback.subtitles {
                 SubtitleTimingPanel(offsetMs: subtitles.offsetMs, onShift: { subtitles.shift($0); touch() },
-                                    onClose: { showTiming = false })
+                                    onClose: { showTiming = false; touch() })
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(.top, 24).padding(.horizontal, 12)
             }
 
             if showSubtitleSearch, let subtitles = playback.subtitles {
-                SubtitleSearchDialog(subtitles: subtitles, onDismiss: { showSubtitleSearch = false }) { index in
+                SubtitleSearchDialog(subtitles: subtitles, onDismiss: { showSubtitleSearch = false; touch() }) { index in
                     showSubtitleSearch = false
+                    touch()
                     playback.chooseSubtitle(index)
                 }
             }
@@ -689,28 +698,47 @@ struct PlayerView: View {
             // A newer interaction cancels this wait: then the controls stay (the new task decides).
             do {
                 try await Task.sleep(for: .seconds(max(1, lastInteraction.timeIntervalSinceNow + 5)))
-                // An open menu holds the controls up to 25 s from its opening (a Menu says when it
-                // opens, not when it closes without a pick).
-                if let opened = menuOpenedAt, opened.timeIntervalSinceNow > -25 {
-                    try await Task.sleep(for: .seconds(25 + opened.timeIntervalSinceNow))
-                }
             } catch { return }
-            menuOpenedAt = nil
-            if playback.isPlaying && scrubbing == nil && !showDisc && !showSpeed { showControls = false }
+            // An open menu keeps the controls up; closing it (a pick or a tap outside) starts the 5 s again.
+            if playback.isPlaying && scrubbing == nil && !showDisc && !showSpeed && openMenu == nil { showControls = false }
         }
         .onDisappear { playback.stop() }
     }
 
     private func touch() { lastInteraction = Date() }
 
-    /// A menu is open: the controls (and the menu with them) stay up a while longer.
+    /// A panel opened from the controls (the Disc sheet): they stay up a while longer.
     private func holdControls() { lastInteraction = Date().addingTimeInterval(25) }
 
-    /// A menu opened: the controls stay up to 25 s from now, or 5 s after a pick.
-    private func menuShown() { menuOpenedAt = Date(); touch() }
+    /// A toolbar menu button: opens its list, or closes it if it's open.
+    private func menuButton(_ menu: PlayerMenu, icon: String, tint: Color, label: String) -> some View {
+        Button {
+            openMenu = openMenu == menu ? nil : menu
+            touch()
+        } label: {
+            Image(systemName: icon).font(.system(size: 22)).foregroundStyle(tint)
+                .frame(width: 48, height: 48).contentShape(Rectangle())
+        }
+        .accessibilityLabel(label)
+    }
 
-    /// A menu's line was picked: the controls hide 5 s from now.
-    private func menuPicked() { menuOpenedAt = nil; touch() }
+    private func pickList(_ menu: PlayerMenu) -> PickList? {
+        switch menu {
+        case .transcode: return transcodeList
+        case .audio: return playback.audioTracks.count > 1 ? audioList : nil
+        case .subtitles: return playback.subtitles.map(subtitleList)
+        }
+    }
+
+    /// Transcode: the modes (a check on the one in use), under what the stream does.
+    private var transcodeList: PickList {
+        PickList(header: playback.status,
+                 items: TranscodeMode.all.enumerated().map { i, mode in
+                     MenuItem(title: mode.name, checked: i == playback.modeIndex,
+                              disabled: playback.isDisc && mode.isOriginal) // discs can't play as they are
+                 },
+                 onPick: { i in playback.chooseMode(i) })
+    }
 
     private var controls: some View {
         ZStack {
@@ -727,20 +755,19 @@ struct PlayerView: View {
                     }
                     .padding(.leading, 8)
                     Spacer(minLength: 4)
-                    PickMenu(icon: "slider.horizontal.below.rectangle", tint: playback.isTranscoding ? .green : .white,
-                             label: "Transcode", header: playback.status,
-                             items: TranscodeMode.all.enumerated().map { i, mode in
-                                 MenuItem(title: mode.name, checked: i == playback.modeIndex,
-                                          disabled: playback.isDisc && mode.isOriginal) // discs can't play as they are
-                             },
-                             onPick: { i in playback.chooseMode(i); menuPicked() }, onOpen: menuShown)
-                        .equatable()
+                    menuButton(.transcode, icon: "slider.horizontal.below.rectangle",
+                               tint: playback.isTranscoding ? .green : .white, label: "Transcode")
                     if playback.disc != nil {
                         // Disc: chapters, angles, tracks, titles
                         PlayerIcon(system: "opticaldisc", label: "Disc") { showDisc = true; holdControls() }
                     }
-                    if playback.audioTracks.count > 1 { audioMenu }
-                    if let subtitles = playback.subtitles { subtitleMenu(subtitles) }
+                    if playback.audioTracks.count > 1 {
+                        menuButton(.audio, icon: "waveform", tint: .white, label: "Audio")
+                    }
+                    if let subtitles = playback.subtitles {
+                        menuButton(.subtitles, icon: "captions.bubble",
+                                   tint: subtitles.selected >= 0 ? .green : .white, label: "Subtitles")
+                    }
                     PlayerIcon(system: "rotate.right", label: "Rotate") {
                         rotation = (rotation + 90).truncatingRemainder(dividingBy: 360)
                         touch()
@@ -803,20 +830,19 @@ struct PlayerView: View {
     }
 
     /// Audio: the file's tracks (a check on the one playing).
-    private var audioMenu: some View {
+    private var audioList: PickList {
         let tracks = playback.audioTracks
         let labels = audioLabels(tracks)
         let indexes = tracks.enumerated().map { i, track in track.index ?? i }
-        return PickMenu(icon: "waveform", tint: .white, label: "Audio", header: nil,
+        return PickList(header: nil,
                         items: labels.enumerated().map { i, label in
                             MenuItem(title: label, checked: indexes[i] == playback.shownAudioTrack)
                         },
-                        onPick: { i in playback.chooseAudio(indexes[i]); menuPicked() }, onOpen: menuShown)
-            .equatable()
+                        onPick: { i in playback.chooseAudio(indexes[i]) })
     }
 
     /// Subtitles: Off and the tracks (a check on the one in use), then Timing and Search online.
-    private func subtitleMenu(_ subtitles: ServerSubtitles) -> some View {
+    private func subtitleList(_ subtitles: ServerSubtitles) -> PickList {
         let labels = subtitles.labels
         var items = (-1..<labels.count).map { i in
             MenuItem(title: i < 0 ? "Off" : labels[i], checked: i == subtitles.selected)
@@ -827,15 +853,11 @@ struct PlayerView: View {
         }
         let search = items.count
         items.append(MenuItem(title: "Search online…", systemImage: "magnifyingglass", dividerBefore: timing < 0))
-        return PickMenu(icon: "captions.bubble", tint: subtitles.selected >= 0 ? .green : .white, label: "Subtitles", header: nil,
-                        items: items,
-                        onPick: { i in
-                            if i == search { showSubtitleSearch = true }
-                            else if i == timing { showTiming = true }
-                            else { playback.chooseSubtitle(i - 1) }
-                            menuPicked()
-                        }, onOpen: menuShown)
-            .equatable()
+        return PickList(header: nil, items: items, onPick: { i in
+            if i == search { showSubtitleSearch = true }
+            else if i == timing { showTiming = true }
+            else { playback.chooseSubtitle(i - 1) }
+        })
     }
 
     private var trickplayRow: some View {
@@ -978,8 +1000,7 @@ struct PlayerView: View {
     }
 }
 
-/// A white icon button on the video.
-/// One line of a PickMenu.
+/// One line of a player menu (PickList).
 struct MenuItem: Equatable {
     var title: String
     var checked = false
@@ -988,51 +1009,74 @@ struct MenuItem: Equatable {
     var dividerBefore = false
 }
 
-/// A player menu (Transcode, Audio, Subtitles). It tells the player when its list opens, so the
-/// controls (and the menu with them) don't hide while a pick is being made. Equal by its
-/// contents, so the player compares it with `.equatable()` and position updates leave it alone;
-/// its actions only reach the model and the player's @State.
-struct PickMenu: View, Equatable {
-    let icon: String
-    let tint: Color
-    let label: String
+/// The player's menus.
+enum PlayerMenu { case transcode, audio, subtitles }
+
+/// What a player menu lists, and what a pick does (by the line's index).
+struct PickList {
     let header: String?
     let items: [MenuItem]
     let onPick: (Int) -> Void
-    let onOpen: () -> Void // the menu's list opened
+}
 
-    static func == (a: PickMenu, b: PickMenu) -> Bool {
-        a.icon == b.icon && a.tint == b.tint && a.label == b.label && a.header == b.header && a.items == b.items
-    }
+/// A player menu's list, drawn by the player under its toolbar. Not a SwiftUI Menu: UIKit presents
+/// that outside the player and never says when it closes without a pick, so the controls either
+/// hid under an open menu (taking it with them) or stayed up after it closed. This one is the
+/// player's own state (`openMenu`): the controls stay while it's open and hide 5 s after it closes.
+/// A tap outside closes it.
+struct PickListView: View {
+    let list: PickList
+    let onPick: (Int) -> Void
+    let onClose: () -> Void
 
     var body: some View {
-        Menu {
-            Group {
-                if let header { Section(header) {} }
-                ForEach(items.indices, id: \.self) { i in
-                    let item = items[i]
-                    if item.dividerBefore { Divider() }
-                    Button { onPick(i) } label: {
-                        if item.checked { Label(item.title, systemImage: "checkmark") }
-                        else if let image = item.systemImage { Label(item.title, systemImage: image) }
-                        else { Text(item.title) }
-                    }
-                    .disabled(item.disabled)
-                }
+        ZStack(alignment: .topTrailing) {
+            Color.black.opacity(0.001).ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onClose)
+            ViewThatFits(in: .vertical) {
+                rows
+                ScrollView { rows }
             }
-            // A tap gesture on a Menu never fires (the menu takes the touch), but its list appears
-            // when it opens. Its onDisappear doesn't fire when it closes: the player holds the
-            // controls 25 s from the opening, or 5 s after a pick.
-            .onAppear { onOpen() }
-        } label: {
-            Image(systemName: icon).font(.system(size: 22))
-                .foregroundStyle(tint)
-                .frame(width: 48, height: 48).contentShape(Rectangle())
+            .frame(width: 290)
+            .background(.ultraThinMaterial.opacity(0.95), in: RoundedRectangle(cornerRadius: 14))
+            .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
+            .frame(maxHeight: 520, alignment: .top) // longer lists scroll
+            .padding(.top, 70).padding(.trailing, 12)
+            .environment(\.colorScheme, .dark)
         }
-        .accessibilityLabel(label)
+    }
+
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let header = list.header {
+                Text(header).font(.footnote).foregroundStyle(.white.opacity(0.7))
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                Divider().overlay(.white.opacity(0.2))
+            }
+            ForEach(list.items.indices, id: \.self) { i in
+                let item = list.items[i]
+                if item.dividerBefore { Divider().overlay(.white.opacity(0.2)) }
+                Button { onPick(i) } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: item.checked ? "checkmark" : (item.systemImage ?? "checkmark"))
+                            .frame(width: 20)
+                            .opacity(item.checked || item.systemImage != nil ? 1 : 0)
+                        Text(item.title).multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(item.disabled ? 0.35 : 1))
+                .disabled(item.disabled)
+            }
+        }
     }
 }
 
+/// A white icon button on the video.
 struct PlayerIcon: View {
     let system: String
     let label: String
