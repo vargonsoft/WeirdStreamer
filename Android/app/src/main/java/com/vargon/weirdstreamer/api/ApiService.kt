@@ -88,6 +88,10 @@ interface ApiService {
                              @Query("start") start: Double, @Query("duration") duration: Double,
                              @Query("format") format: String? = null): Response<ResponseBody>
 
+    /** A font embedded in a video, for its ASS/SSA tracks: font is its index from the codecs report. */
+    @GET("/api/media/font")
+    suspend fun getFont(@Query("path") path: String, @Query("font") font: Int): Response<ResponseBody>
+
     @PUT("/api/media/subtitle-offset")
     suspend fun setSubtitleOffset(@Body request: com.vargon.weirdstreamer.api.models.SubtitleOffsetRequest): Response<Unit>
 

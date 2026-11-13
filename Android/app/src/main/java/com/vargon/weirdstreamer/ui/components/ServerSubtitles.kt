@@ -77,6 +77,38 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
 
     private val SubtitleTrack.drawn: Boolean get() = codec == "hdmv_pgs_subtitle"
 
+    /**
+     * Whether the selected track is ASS/SSA, which libass draws styled ([AssSubtitle]). Not for a
+     * download: it saved the track as WebVTT, so it shows the plain lines.
+     */
+    val styled: Boolean get() = saved == null && selectedTrack?.let { isStyled(it) } == true
+
+    // An ASS track: the first window's header (to its [Events] and Format lines) and every line
+    // loaded, once each; assVersion counts changes, for the renderer to take the script again.
+    private var assHeader = ""
+    private var assLines = LinkedHashSet<String>()
+    @Volatile var assVersion = 0
+        private set
+
+    /** The ASS script loaded so far: the header and every line, for libass. */
+    fun assScript(): String = assHeader + assLines.joinToString("\n") + "\n"
+
+    private var fonts: List<com.vargon.weirdstreamer.api.models.FontAttachment> = emptyList()
+    private var fontData: List<Pair<String, ByteArray>>? = null
+
+    /** The video's embedded fonts, which its ASS tracks name: fetched once. */
+    suspend fun videoFonts(): List<Pair<String, ByteArray>> {
+        fontData?.let { return it }
+        val api = api ?: return emptyList()
+        val got = withContext(Dispatchers.IO) {
+            fonts.mapNotNull { f ->
+                runCatching { api.getFont(encodedPath, f.index).body()?.bytes() }.getOrNull()?.let { f.name to it }
+            }
+        }
+        fontData = got
+        return got
+    }
+
     /** The selected track's timing correction (ms; positive shows its lines later). */
     val offsetMs: Int get() = selectedTrack?.offsetMs ?: 0
 
@@ -112,7 +144,7 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
             if (saved != null) runCatching {
                 com.google.gson.Gson().fromJson(java.io.File(saved, "tracks.json").readText(), Array<SubtitleTrack>::class.java).toList()
             }.getOrNull()
-            else runCatching { api?.getCodecs(encodedPath)?.body() }.getOrNull()?.subtitles
+            else runCatching { api?.getCodecs(encodedPath)?.body() }.getOrNull()?.also { fonts = it.fonts.orEmpty() }?.subtitles
         }
         got?.let { tracks = it }
         loaded = true
@@ -145,6 +177,9 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
         selected = if (index in tracks.indices) index else -1
         cues = emptyList()
         pictures = emptyList()
+        assHeader = ""
+        assLines = LinkedHashSet()
+        assVersion++
         fromMs = 0
         untilMs = 0
         generation++
@@ -157,6 +192,10 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
         val positionMs = playerMs - offsetMs // in the subtitles' own time
         selectedTrack?.takeIf { it.drawn }?.let { track ->
             keepPicturesAhead(track, positionMs)
+            return
+        }
+        selectedTrack?.takeIf { isStyled(it) }?.let { track ->
+            keepAssAhead(track, positionMs)
             return
         }
         val track = selectedTrack?.takeIf { it.text } ?: return
@@ -180,6 +219,36 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
             val known = cues.mapTo(HashSet()) { it.startMs to it.text.text }
             cues = cues + window.filter { (it.startMs to it.text.text) !in known }
         }
+        untilMs = start + WINDOW_MS
+    }
+
+    /**
+     * An ASS track's windows (format=ass: each a whole script at the file's times): the first
+     * one's header is kept, and every window's Dialogue lines are added once (they overlap a little
+     * where a window starts). A jump outside what's loaded adds the window there too: the lines
+     * loaded stay, as libass only shows those of the moment.
+     */
+    private suspend fun keepAssAhead(track: SubtitleTrack, positionMs: Long) {
+        val api = api ?: return
+        val outside = positionMs < fromMs || positionMs > untilMs
+        if (!outside && positionMs < untilMs - AHEAD_MS) return
+        val start = if (outside) (positionMs - 10_000).coerceAtLeast(0) else untilMs
+        val gen = generation
+        val body = withContext(Dispatchers.IO) {
+            runCatching {
+                api.getSubtitles(encodedPath, track.index, start / 1000.0, WINDOW_MS / 1000.0, "ass").body()?.string()
+            }.getOrNull()
+        }?.replace("\r", "") ?: return
+        if (gen != generation) return
+        val events = body.indexOf("\n[Events]")
+        if (assHeader.isEmpty()) {
+            val format = body.substring(events.coerceAtLeast(0)).lineSequence().firstOrNull { it.startsWith("Format:") }
+                ?: "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+            assHeader = (if (events >= 0) body.substring(0, events) else body).trim() + "\n\n[Events]\n" + format + "\n"
+        }
+        if (events >= 0) body.substring(events).lineSequence().filter { it.startsWith("Dialogue:") }.forEach { assLines.add(it) }
+        assVersion++
+        if (outside) fromMs = start
         untilMs = start + WINDOW_MS
     }
 
@@ -211,7 +280,7 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
 
     /** The line to show at [positionMs], if any. */
     fun cueAt(playerMs: Long): AnnotatedString? {
-        if (selectedTrack?.text != true) return null
+        if (selectedTrack?.text != true || styled) return null
         val positionMs = playerMs - offsetMs // in the subtitles' own time
         val at = cues.filter { positionMs >= it.startMs && positionMs < it.endMs }
         return when (at.size) {
@@ -244,6 +313,9 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
 
     companion object {
         private const val WINDOW_MS = 120_000L
+
+        /** ASS/SSA tracks (and .ass/.ssa files), which libass draws styled. */
+        fun isStyled(track: SubtitleTrack): Boolean = track.codec == "ass" || track.codec == "ssa"
         private const val AHEAD_MS = 40_000L
 
         /** For a stream URL from the server (…/api/media/stream?path=…): null for other sources. */
@@ -362,13 +434,14 @@ fun serverSubtitleLabels(tracks: List<SubtitleTrack>): List<String> {
 }
 
 /**
- * Draws the selected text subtitle over the video, at [position] (the file's time, in ms: a
+ * Draws the selected text subtitle over the video (an ASS one with [AssSubtitle], unless the player
+ * draws those on the picture, [drawsStyled] false), at [position] (the file's time, in ms: a
  * transcode's start offset included), loading the cues ahead as playback goes on; [bottomPadding]
  * keeps it above the player's controls while they show.
  */
 @Composable
 fun SubtitleOverlay(subtitles: ServerSubtitles?, position: () -> Long, fontSize: TextUnit, modifier: Modifier = Modifier,
-                    bottomPadding: Dp = 48.dp, videoAspect: () -> Float = { 0f }) {
+                    bottomPadding: Dp = 48.dp, videoAspect: () -> Float = { 0f }, drawsStyled: Boolean = true) {
     if (subtitles == null) return
     val currentPosition by rememberUpdatedState(position)
     var text by remember { mutableStateOf<AnnotatedString?>(null) }
@@ -397,6 +470,11 @@ fun SubtitleOverlay(subtitles: ServerSubtitles?, position: () -> Long, fontSize:
             }
             delay(50)
         }
+    }
+    if (subtitles.styled) {
+        // Drawn here, or by the player on the picture itself (drawsStyled false).
+        if (drawsStyled) AssSubtitle(subtitles, position, videoAspect)
+        return
     }
     picture?.let { PictureSubtitle(it, videoAspect) }
     val shown = text ?: return

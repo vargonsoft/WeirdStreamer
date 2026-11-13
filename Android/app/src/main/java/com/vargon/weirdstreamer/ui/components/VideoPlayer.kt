@@ -710,6 +710,22 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         } else handleBackAction()
     }
 
+
+    // The picture's transform (rotation, the aspect's stretch, fill, zoom and pan), for the video
+    // and the ASS subtitles placed on it.
+    val videoTransform: androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit = {
+        rotationZ = rotation
+        val isRotated = (rotation / 90f).toInt() % 2 != 0
+        val rotationScale = if (isRotated && size.width != 0f && size.height != 0f) minOf(size.width / size.height, size.height / size.width) else 1f
+        val stretchX = if (currentAspectRatio != null && currentAspectRatio!! > videoAspectRatio) currentAspectRatio!! / videoAspectRatio else 1f
+        val stretchY = if (currentAspectRatio != null && currentAspectRatio!! <= videoAspectRatio) videoAspectRatio / currentAspectRatio!! else 1f
+        val commonScale = (1f + (videoPaddingPx * 0.005f)) * zoomLevel * rotationScale
+        scaleX = commonScale * stretchX; scaleY = commonScale * stretchY
+        translationX = panX; translationY = panY
+    }
+    val subtitlePosition = { if (!currentTranscodeMode.isOriginal) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition }
+    val videoShape = { exoPlayer.videoSize.let { if (it.height > 0) it.width * it.pixelWidthHeightRatio / it.height else 0f } }
+
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black)
             .then(if (isZoomMode) Modifier.border(2.dp, Color.White) else Modifier)
@@ -887,17 +903,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                         }
                     },
                     update = { view -> view.player = exoPlayer },
-                    modifier = Modifier.fillMaxSize().graphicsLayer {
-                        rotationZ = rotation
-                        val isRotated = (rotation / 90f).toInt() % 2 != 0
-                        val rotationScale = if (isRotated && size.width != 0f && size.height != 0f) minOf(size.width / size.height, size.height / size.width) else 1f
-                        val stretchX = if (currentAspectRatio != null && currentAspectRatio!! > videoAspectRatio) currentAspectRatio!! / videoAspectRatio else 1f
-                        val stretchY = if (currentAspectRatio != null && currentAspectRatio!! <= videoAspectRatio) videoAspectRatio / currentAspectRatio!! else 1f
-                        val commonScale = (1f + (videoPaddingPx * 0.005f)) * zoomLevel * rotationScale
-                        scaleX = commonScale * stretchX; scaleY = commonScale * stretchY
-                        translationX = panX; translationY = panY
-                    }
+                    modifier = Modifier.fillMaxSize().graphicsLayer(videoTransform)
                 )
+                // ASS subtitles are placed on the picture: drawn here, moved with it (zoom, fill, rotation).
+                serverSubs?.takeIf { it.styled }?.let { subs ->
+                    AssSubtitle(subs, position = subtitlePosition, videoAspect = videoShape,
+                        modifier = Modifier.fillMaxSize().graphicsLayer(videoTransform))
+                }
             }
         }
 
@@ -911,11 +923,8 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         }
         SkipFeedbackOverlay(feedback = skipFeedback)
         SpeedFeedbackOverlay(speed = speedFeedback)
-        SubtitleOverlay(serverSubs, position = {
-            if (!currentTranscodeMode.isOriginal) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
-        }, fontSize = 26.sp, bottomPadding = if (showControls || showZoomToolbar) 190.dp else 48.dp, videoAspect = {
-            exoPlayer.videoSize.let { if (it.height > 0) it.width * it.pixelWidthHeightRatio / it.height else 0f }
-        })
+        SubtitleOverlay(serverSubs, position = subtitlePosition, fontSize = 26.sp,
+            bottomPadding = if (showControls || showZoomToolbar) 190.dp else 48.dp, videoAspect = videoShape, drawsStyled = false)
 
         FrameFeedbackOverlay(feedback = frameFeedback)
 

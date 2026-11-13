@@ -53,7 +53,20 @@ android {
         compose = true
         buildConfig = true
     }
+    // The ASS subtitle renderer (libassrender.so), which native/build-libass.sh builds.
+    sourceSets["main"].jniLibs.srcDir(rootProject.file("native/build/jniLibs"))
 }
+
+// Builds the ASS renderer for each processor type before the app: libass and its libraries once,
+// the renderer again when its source changes.
+val buildAssRenderer by tasks.registering(Exec::class) {
+    description = "Builds libassrender.so (native/build-libass.sh)"
+    inputs.file(file("src/main/cpp/assrender.c"))
+    inputs.file(rootProject.file("native/build-libass.sh"))
+    outputs.dir(rootProject.file("native/build/jniLibs"))
+    commandLine(rootProject.file("native/build-libass.sh").path)
+}
+tasks.named("preBuild") { dependsOn(buildAssRenderer) }
 
 dependencies {
     implementation(libs.androidx.core.ktx)

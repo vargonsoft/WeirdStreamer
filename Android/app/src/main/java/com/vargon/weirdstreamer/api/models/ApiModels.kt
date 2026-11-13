@@ -476,6 +476,13 @@ data class CodecsInfo(
     @SerializedName("video") val video: VideoCodec? = null,
     @SerializedName("audio") val audio: List<AudioTrackInfo>? = null,
     @SerializedName("subtitles") val subtitles: List<SubtitleTrack>? = null,
+    // Fonts embedded in the video, which its ASS/SSA tracks name (GET /api/media/font)
+    @SerializedName("fonts") val fonts: List<FontAttachment>? = null,
+)
+
+data class FontAttachment(
+    @SerializedName("index") val index: Int = 0, // among the file's attachments: the font= param
+    @SerializedName("name") val name: String = "",
 )
 
 data class AudioTrackInfo(

@@ -357,6 +357,21 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
       error that doesn't say which does the video first. At the end the player says it can't
       play the video.
     - Compatibility (Safe) keeps nothing: H.264 and stereo AAC, whatever the device says.
+  - ASS/SSA subtitles (TV and phone) are drawn by libass: `AssRenderer.kt` over `libassrender.so`
+    (`app/src/main/cpp/assrender.c`, JNI). `ServerSubtitles` loads `format=ass` windows into one
+    script (`assScript`, `assVersion`) and the video's fonts (`videoFonts`), and `AssSubtitle` draws
+    it: each frame the position is checked, libass draws on its own thread into the back of two
+    bitmaps, shown when the subtitles changed. It sits in the video's own box with the video's
+    `graphicsLayer` transform (`videoTransform`: zoom, pan, fill, aspect, rotation), so the lines
+    stay on the picture; `SubtitleOverlay(drawsStyled = false)` leaves it to the player. Fonts the
+    script names that aren't the video's fall back to the system's Roboto. Downloads saved ASS
+    tracks as WebVTT, so they still show plain lines (`styled` is false offline).
+  - Native build: `Android/native/build-libass.sh` builds libass 0.17.5, HarfBuzz 15.0.0, FriBiDi
+    1.0.17 and FreeType 2.15.0 (pinned, checksummed sources) as static libraries once, and
+    `libassrender.so` for arm64-v8a, armeabi-v7a, x86_64 and x86 (about 1.7 MB each) into
+    `Android/native/build/jniLibs` (git-ignored), which the app packages. Gradle runs it before every
+    build (`buildAssRenderer`). It needs the Android NDK r29 (`~/Android/Sdk/ndk/29.0.14206865`, or
+    `ANDROID_NDK_HOME`), cmake, make and pkg-config, on Linux x86-64.
   - Subtitles: `onTracksChanged` collects `C.TRACK_TYPE_TEXT` formats and labels them
     (`subtitleLabels`). `selectSubtitleTrack(index)` sets a `TrackSelectionOverride`, and
     `SubtitleMemory` remembers the choice per video.

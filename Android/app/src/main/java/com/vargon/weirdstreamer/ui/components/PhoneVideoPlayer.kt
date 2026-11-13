@@ -596,6 +596,47 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         aspect = (currentAspectRatio ?: videoAspectRatio).let { if ((rotation / 90f).toInt() % 2 != 0) 1f / it else it },
         onPlayPause = { if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play() })
 
+    // The picture's transform (rotation, the aspect's stretch, pinch-zoom), for the video and the
+    // ASS subtitles placed on it.
+    val videoTransform: androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit = {
+        this.rotationZ = rotation
+
+        val isRotated = (rotation / 90f).toInt() % 2 != 0
+
+        // 1. Handle base scaling for rotation to prevent squishing and overflow
+        val rotationScale = if (isRotated && size.width != 0f && size.height != 0f) {
+            minOf(size.width / size.height, size.height / size.width)
+        } else {
+            1f
+        }
+
+        // 2. Handle aspect ratio stretching
+        val stretchScaleX: Float
+        val stretchScaleY: Float
+        if (currentAspectRatio != null) {
+            if (currentAspectRatio!! > videoAspectRatio) {
+                stretchScaleX = currentAspectRatio!! / videoAspectRatio
+                stretchScaleY = 1f
+            } else {
+                stretchScaleX = 1f
+                stretchScaleY = videoAspectRatio / currentAspectRatio!!
+            }
+        } else {
+            stretchScaleX = 1f
+            stretchScaleY = 1f
+        }
+
+        // 3. Combine all scales including manual pinch-to-zoom
+        val commonScale = zoomScale * rotationScale
+        this.scaleX = commonScale * stretchScaleX
+        this.scaleY = commonScale * stretchScaleY
+
+        this.translationX = zoomOffsetX
+        this.translationY = zoomOffsetY
+    }
+    val subtitlePosition = { if (transcodeStartOffset > 0) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition }
+    val videoShape = { exoPlayer.videoSize.let { if (it.height > 0) it.width * it.pixelWidthHeightRatio / it.height else 0f } }
+
     BackHandler { 
         if (showTiming) {
             showTiming = false
@@ -667,52 +708,19 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     },
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer {
-                            this.rotationZ = rotation
-                            
-                            val isRotated = (rotation / 90f).toInt() % 2 != 0
-                            
-                            // 1. Handle base scaling for rotation to prevent squishing and overflow
-                            val rotationScale = if (isRotated && size.width != 0f && size.height != 0f) {
-                                minOf(size.width / size.height, size.height / size.width)
-                            } else {
-                                1f
-                            }
-                            
-                            // 2. Handle aspect ratio stretching
-                            val stretchScaleX: Float
-                            val stretchScaleY: Float
-                            if (currentAspectRatio != null) {
-                                if (currentAspectRatio!! > videoAspectRatio) {
-                                    stretchScaleX = currentAspectRatio!! / videoAspectRatio
-                                    stretchScaleY = 1f
-                                } else {
-                                    stretchScaleX = 1f
-                                    stretchScaleY = videoAspectRatio / currentAspectRatio!!
-                                }
-                            } else {
-                                stretchScaleX = 1f
-                                stretchScaleY = 1f
-                            }
-                            
-                            // 3. Combine all scales including manual pinch-to-zoom
-                            val commonScale = zoomScale * rotationScale
-                            this.scaleX = commonScale * stretchScaleX
-                            this.scaleY = commonScale * stretchScaleY
-
-                            this.translationX = zoomOffsetX
-                            this.translationY = zoomOffsetY
-                        }
+                        .graphicsLayer(videoTransform)
                 )
+                // ASS subtitles are placed on the picture: drawn here, moved with it.
+                serverSubs?.takeIf { it.styled }?.let { subs ->
+                    AssSubtitle(subs, position = subtitlePosition, videoAspect = videoShape,
+                        modifier = Modifier.fillMaxSize().graphicsLayer(videoTransform))
+                }
             }
         }
 
-        SubtitleOverlay(serverSubs, position = {
-            if (transcodeStartOffset > 0) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
-        }, fontSize = if (inPip) 9.sp else phoneSubtitleFontSize(),
-            bottomPadding = if (inPip) 4.dp else if (showControls) 160.dp else 32.dp, videoAspect = {
-            exoPlayer.videoSize.let { if (it.height > 0) it.width * it.pixelWidthHeightRatio / it.height else 0f }
-        })
+        SubtitleOverlay(serverSubs, position = subtitlePosition, fontSize = if (inPip) 9.sp else phoneSubtitleFontSize(),
+            bottomPadding = if (inPip) 4.dp else if (showControls) 160.dp else 32.dp, videoAspect = videoShape,
+            drawsStyled = false)
 
         // Loading Spinner
         if (playbackFailed) {
