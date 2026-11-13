@@ -114,7 +114,15 @@ fun downloadsInOrder(items: List<DownloadItem>): List<DownloadItem> =
  */
 fun savedSubtitleName(t: com.vargon.weirdstreamer.api.models.SubtitleTrack) =
     (if (t.external != null && t.key != null) t.key.replace(Regex("[^A-Za-z0-9]"), "-") else "${t.index}") +
-        if (t.text) ".vtt" else ".sup"
+        when {
+            com.vargon.weirdstreamer.ui.components.ServerSubtitles.isStyled(t) -> ".ass" // the whole script, drawn by libass
+            t.text -> ".vtt"
+            else -> ".sup"
+        }
+
+/** A font of the video's saved with its download, for its ASS tracks: font-<index>-<name>. */
+fun savedFontName(f: com.vargon.weirdstreamer.api.models.FontAttachment) =
+    "font-${f.index}-" + f.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
 
 /** How long a download's subtitles, skip times and trickplay frames go before they're saved again. */
 const val EXTRAS_REFRESH_MS = 12 * 60 * 60 * 1000L

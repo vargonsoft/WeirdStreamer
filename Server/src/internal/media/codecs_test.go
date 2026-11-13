@@ -146,12 +146,6 @@ func TestAssSubtitleArgs(t *testing.T) {
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
-	// A file is seeked as it's read: an output -ss would shift ASS lines.
-	got = strings.Join(AssSubtitleFileArgs("/m/a.ass", "UTF-8", 90.5, 120), " ")
-	want = "-v error -sub_charenc UTF-8 -ss 90.500 -i /m/a.ass -copyts -to 210.500 -map 0:s:0 -c:s ass -f ass pipe:1"
-	if got != want {
-		t.Errorf("file: got  %s\nwant %s", got, want)
-	}
 }
 
 func TestIsFont(t *testing.T) {

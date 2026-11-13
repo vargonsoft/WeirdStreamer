@@ -39,6 +39,7 @@ type MediaHandler struct {
 	segments           *media.SegmentAnalyzer // nil until StartSegmentAnalysis
 	pruner             *media.Pruner          // nil until StartCleanup
 	trickplay          *media.TrickplayJob    // nil until StartTrickplay
+	assCache           *media.AssJob          // nil until StartAssCache
 	thumbnails         *thumbnailQueue        // missing thumbnails pages asked for
 }
 
@@ -49,6 +50,15 @@ func (h *MediaHandler) StartTrickplay(ctx context.Context) {
 		return found
 	})
 	go h.trickplay.Run(ctx)
+}
+
+// StartAssCache copies videos' ASS/SSA tracks out of them in the background, until ctx ends.
+func (h *MediaHandler) StartAssCache(ctx context.Context) {
+	h.assCache = media.NewAssJob(h.db, h.streams, func(path string) bool {
+		_, found := libraryForPath(path)
+		return found
+	})
+	go h.assCache.Run(ctx)
 }
 
 // StartCleanup forgets files that are gone, in the background until ctx ends.
@@ -707,6 +717,9 @@ func (h *MediaHandler) scan() {
 	}
 	if h.trickplay != nil {
 		h.trickplay.Wake() // and new videos' seek-bar pictures
+	}
+	if h.assCache != nil {
+		h.assCache.Wake() // and their styled subtitle tracks
 	}
 }
 

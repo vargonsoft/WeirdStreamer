@@ -136,6 +136,8 @@ func main() {
 	mediaHandler.StartCleanup(ctx)
 	// Trickplay frames (the pictures over the seek bars) for videos without them.
 	mediaHandler.StartTrickplay(ctx)
+	// Videos' styled (ASS/SSA) subtitle tracks, copied out of them for whole windows and downloads.
+	mediaHandler.StartAssCache(ctx)
 	// New files, found every hour (and on Scan Media).
 	go mediaHandler.StartScans(ctx)
 	go media.CountStorage() // the data folders' sizes, for Settings → Jobs

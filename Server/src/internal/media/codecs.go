@@ -446,20 +446,6 @@ func AssSubtitleArgs(filePath string, track int, start, duration float64) []stri
 	return append(args[:len(args)-5], "-c:s", "ass", "-f", "ass", "pipe:1")
 }
 
-// AssSubtitleFileArgs are AssSubtitleArgs for an .ass/.ssa file. Unlike WebVTT, ASS output shifts
-// the lines by an output -ss, so the file is seeked as it's read (-ss before -i).
-func AssSubtitleFileArgs(filePath, charset string, start, duration float64) []string {
-	args := []string{"-v", "error", "-sub_charenc", charset}
-	if start > 0 {
-		args = append(args, "-ss", strconv.FormatFloat(start, 'f', 3, 64))
-	}
-	args = append(args, "-i", filePath, "-copyts")
-	if duration > 0 {
-		args = append(args, "-to", strconv.FormatFloat(start+duration, 'f', 3, 64))
-	}
-	return append(args, "-map", "0:s:0", "-c:s", "ass", "-f", "ass", "pipe:1")
-}
-
 // SubtitleFileArgs are SubtitleArgs for a subtitle file (beside the video, or downloaded), read in
 // charset. A subtitle file can't seek: the cues before start are dropped as they're read instead.
 func SubtitleFileArgs(filePath, charset string, start, duration float64) []string {
@@ -487,11 +473,6 @@ func ServePictureSubtitles(w http.ResponseWriter, r *http.Request, filePath stri
 // ServeAssSubtitles streams an ASS/SSA track as an ASS script (see AssSubtitleArgs).
 func ServeAssSubtitles(w http.ResponseWriter, r *http.Request, filePath string, track int, start, duration float64) error {
 	return serveSubtitleStream(w, r, AssSubtitleArgs(filePath, track, start, duration), "text/x-ssa; charset=utf-8")
-}
-
-// ServeAssSubtitleFile streams an .ass/.ssa file as an ASS script, as ServeAssSubtitles a track.
-func ServeAssSubtitleFile(w http.ResponseWriter, r *http.Request, filePath, charset string, start, duration float64) error {
-	return serveSubtitleStream(w, r, AssSubtitleFileArgs(filePath, charset, start, duration), "text/x-ssa; charset=utf-8")
 }
 
 // ReadFont reads a font embedded in a video (index among its attachments, as Codecs.Fonts gives

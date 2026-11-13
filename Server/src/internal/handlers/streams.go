@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -250,7 +251,13 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 				respondError(w, http.StatusBadRequest, "Not an ASS/SSA track")
 				return
 			}
-			media.ServeAssSubtitleFile(w, r, file.Path, subtitles.Charset(file.Path), start, duration)
+			// A file is small: read whole, every window is cut from all of it.
+			script, err := media.AssFileScript(r.Context(), file.Path, subtitles.Charset(file.Path))
+			if err != nil {
+				respondError(w, http.StatusUnprocessableEntity, "Could not read the subtitle file")
+				return
+			}
+			media.ServeAssWindow(w, script, start, duration)
 			return
 		}
 		media.ServeSubtitleFile(w, r, file.Path, subtitles.Charset(file.Path), start, duration)
@@ -264,6 +271,14 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 		if codecs == nil || !media.IsAssSubtitle(codecs.Subtitles[track].Codec) {
 			respondError(w, http.StatusBadRequest, "Not an ASS/SSA track")
 			return
+		}
+		// From the track copied out by the ASS job when there is one: every line on screen in the
+		// window, those started before it too. Else read from the video.
+		if cached := media.CachedAss(path, track); cached != "" {
+			if script, err := os.ReadFile(cached); err == nil {
+				media.ServeAssWindow(w, script, start, duration)
+				return
+			}
 		}
 		media.ServeAssSubtitles(w, r, path, track, start, duration)
 		return

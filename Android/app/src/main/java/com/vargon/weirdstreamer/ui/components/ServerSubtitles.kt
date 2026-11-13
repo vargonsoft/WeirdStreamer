@@ -78,10 +78,13 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
     private val SubtitleTrack.drawn: Boolean get() = codec == "hdmv_pgs_subtitle"
 
     /**
-     * Whether the selected track is ASS/SSA, which libass draws styled ([AssSubtitle]). Not for a
-     * download: it saved the track as WebVTT, so it shows the plain lines.
+     * Whether the selected track is ASS/SSA, which libass draws styled ([AssSubtitle]): a
+     * download's when it has the whole script saved (one saved before as WebVTT shows that plain
+     * until the worker saves it again).
      */
-    val styled: Boolean get() = saved == null && selectedTrack?.let { isStyled(it) } == true
+    val styled: Boolean get() = selectedTrack?.let { t ->
+        isStyled(t) && (saved == null || java.io.File(saved, com.vargon.weirdstreamer.downloads.savedSubtitleName(t)).exists())
+    } == true
 
     // An ASS track: the first window's header (to its [Events] and Format lines) and every line
     // loaded, once each; assVersion counts changes, for the renderer to take the script again.
@@ -96,9 +99,17 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
     private var fonts: List<com.vargon.weirdstreamer.api.models.FontAttachment> = emptyList()
     private var fontData: List<Pair<String, ByteArray>>? = null
 
-    /** The video's embedded fonts, which its ASS tracks name: fetched once. */
+    /** The video's embedded fonts, which its ASS tracks name: fetched once (a download's, saved beside it). */
     suspend fun videoFonts(): List<Pair<String, ByteArray>> {
         fontData?.let { return it }
+        saved?.let { dir ->
+            val got = withContext(Dispatchers.IO) {
+                dir.listFiles().orEmpty().filter { it.name.startsWith("font-") && !it.name.endsWith(".part") }
+                    .mapNotNull { f -> runCatching { f.name.substringAfter('-').substringAfter('-') to f.readBytes() }.getOrNull() }
+            }
+            fontData = got
+            return got
+        }
         val api = api ?: return emptyList()
         val got = withContext(Dispatchers.IO) {
             fonts.mapNotNull { f ->
@@ -159,6 +170,18 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
         val gen = generation
         val file = java.io.File(dir, com.vargon.weirdstreamer.downloads.savedSubtitleName(track))
             .takeIf { it.exists() } ?: java.io.File(dir, "${track.index}." + if (track.text) "vtt" else "sup") // saved before files went by key
+        if (styled) {
+            // The whole ASS script, for libass.
+            val script = withContext(Dispatchers.IO) { runCatching { file.readText() }.getOrNull() } ?: return
+            if (gen != generation) return
+            assHeader = script.replace("\r", "").trimEnd() + "\n"
+            assLines = LinkedHashSet()
+            assVersion++
+            fromMs = 0
+            untilMs = Long.MAX_VALUE
+            savedGeneration = gen
+            return
+        }
         val (text, pics) = withContext(Dispatchers.IO) {
             runCatching {
                 if (track.text) parseWebVtt(file.readText()) to emptyList<PgsSet>()

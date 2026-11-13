@@ -21,6 +21,7 @@ import com.vargon.weirdstreamer.CredentialManager
 import com.vargon.weirdstreamer.api.ApiClient
 import com.vargon.weirdstreamer.api.models.CodecsInfo
 import com.vargon.weirdstreamer.api.models.CreateDownloadRequest
+import com.vargon.weirdstreamer.ui.components.ServerSubtitles
 import com.vargon.weirdstreamer.ui.components.deviceSubtitleLanguages
 import com.google.gson.Gson
 import java.util.Locale
@@ -288,8 +289,9 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
     /**
      * Saves [item]'s subtitle tracks beside it, for playing offline: the ones the players draw
-     * (text, as WebVTT, and PGS pictures), in this phone's languages, forced ones and files the
-     * server has beside the video. Each is read from the server whole, as it sends a window.
+     * (text, as WebVTT; ASS/SSA whole, styled, with the video's fonts; and PGS pictures), in this
+     * phone's languages, forced ones and files the server has beside the video. Each is read from
+     * the server whole, as it sends a window.
      */
     private suspend fun saveSubtitles(item: DownloadItem, known: CodecsInfo?) = withContext(Dispatchers.IO) {
         val encodedPath = Base64.encodeToString(item.sourcePath.toByteArray(), Base64.NO_WRAP)
@@ -306,7 +308,11 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             val file = File(dir, savedSubtitleName(t))
             if (file.length() > 0) return@filter true
             val url = "${normalizedServerUrl(item.serverAddress)}/api/media/subtitles?path=${URLEncoder.encode(encodedPath, "UTF-8")}" +
-                "&track=${t.index}&start=0&duration=0" + if (t.text) "" else "&format=sup"
+                "&track=${t.index}&start=0&duration=0" + when {
+                    ServerSubtitles.isStyled(t) -> "&format=ass"
+                    t.text -> ""
+                    else -> "&format=sup"
+                }
             http.newCall(Request.Builder().url(url).build()).execute().use { r ->
                 if (!r.isSuccessful) return@filter false // this track only
                 val tmp = File(dir, file.name + ".part")
@@ -314,8 +320,20 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 tmp.renameTo(file)
             }
         }
+        // The fonts the ASS tracks name (embedded in the video), when any are saved.
+        val fonts = if (saved.none { ServerSubtitles.isStyled(it) }) emptyList() else info.fonts.orEmpty().filter { f ->
+            val file = File(dir, savedFontName(f))
+            if (file.length() > 0) return@filter true
+            val url = "${normalizedServerUrl(item.serverAddress)}/api/media/font?path=${URLEncoder.encode(encodedPath, "UTF-8")}&font=${f.index}"
+            http.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                if (!r.isSuccessful) return@filter false
+                val tmp = File(dir, file.name + ".part")
+                tmp.outputStream().use { r.body!!.byteStream().copyTo(it) }
+                tmp.renameTo(file)
+            }
+        }
         // Files of tracks gone from the server (or saved under their index before): not needed.
-        val keep = saved.map(::savedSubtitleName).toSet() + "tracks.json"
+        val keep = saved.map(::savedSubtitleName).toSet() + fonts.map(::savedFontName) + "tracks.json"
         File(dir, "tracks.json").writeText(Gson().toJson(saved))
         dir.listFiles().orEmpty().filter { it.name !in keep }.forEach { it.delete() }
     }

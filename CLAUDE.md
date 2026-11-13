@@ -66,7 +66,7 @@ for each TODO item are at the end of this file.
     `keep_audio`, the rest H.264 CRF 18 and stereo AAC; nothing to convert makes it an original)
     or Compressed. A download belongs to the account it was made in (`DownloadItem.account`): only
     that account sees and plays it, and the worker downloads it with that account's token (older
-    ones have none, and every account sees them). Each download also saves its subtitle tracks (text as WebVTT, PGS as .sup; the
+    ones have none, and every account sees them). Each download also saves its subtitle tracks (text as WebVTT, ASS/SSA whole as .ass with the video's fonts, PGS as .sup; the
     phone's languages, forced ones and files beside the video) in `subtitles/<id>/`, which
     `ServerSubtitles.forDownload` reads offline (a file's by its `key`, the video's own by index), its intro and credits (`segments/<id>.json`, which `segmentsFor` reads for a `file://` path; offline, Skip Credits goes on to the next downloaded episode) and its trickplay frames (`trickplay/<id>/`, from `GET /api/media/trickplay?path=`). The worker saves them again every 12 hours and when a subtitle is downloaded for the video (`DownloadStore.needsExtras`, `extrasChanged`); older downloads get them on its next run.
     The server's front page shows the account's finished downloads from it as a Downloads row after Continue
@@ -320,7 +320,15 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     fetched through the API (JASSUB's own fetches wouldn't be signed in). JASSUB's time is the
     video's plus `timeOffset` (the stream's offset less the track's timing correction), and its
     canvas sits in `player-ass-box` over the picture; while paused, `redrawAss` draws changes.
-    Windows miss a line that started before them (a seek past the start of a long sign).
+  - **ASS cache** (`media/asscache.go`): a window read from the video can't see a line that started
+    before it (a long sign on screen when playback starts or jumps). The "Styled subtitles" job
+    (after each scan and every 6 hours, like trickplay, waiting while the file's disk is busy)
+    probes every library video that changed since it last looked and copies each ASS/SSA track
+    out whole (one ffmpeg read per video) into `<subtitlePath>/ass/<hash[:2]>/<hash>-<track>.ass`,
+    with `index.json` keyed by path hash (size and mtime, its ASS tracks). `format=ass` windows
+    are then cut from the copy (`AssWindow`: the header and every line on screen in the window);
+    until a video's turn they're read from the video as before. `.ass`/`.ssa` files beside a video
+    are read whole and cut the same way. `duration=0` gives the whole track (downloads).
     Track choices are kept per video in `localStorage`. Subtitles are off unless
     the file has forced ones, as on Android.
   - The seek bar shows trickplay frames (made by `cmd/cli trickplay`) on hover.
@@ -366,8 +374,10 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     bitmaps, shown when the subtitles changed. It sits in the video's own box with the video's
     `graphicsLayer` transform (`videoTransform`: zoom, pan, fill, aspect, rotation), so the lines
     stay on the picture; `SubtitleOverlay(drawsStyled = false)` leaves it to the player. Fonts the
-    script names that aren't the video's fall back to the system's Roboto. Downloads saved ASS
-    tracks as WebVTT, so they still show plain lines (`styled` is false offline).
+    script names that aren't the video's fall back to the system's Roboto. Downloads save ASS tracks
+    whole (`<n>.ass`, `format=ass&duration=0`) with the video's fonts (`font-<index>-<name>`), and
+    play them styled offline; one saved before as WebVTT shows plain lines until the worker saves it
+    again.
   - Native build: `Android/native/build-libass.sh` builds libass 0.17.5, HarfBuzz 15.0.0, FriBiDi
     1.0.17 and FreeType 2.15.0 (pinned, checksummed sources) as static libraries once, and
     `libassrender.so` for arm64-v8a, armeabi-v7a, x86_64 and x86 (about 1.7 MB each) into
