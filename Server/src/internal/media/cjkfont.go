@@ -46,6 +46,7 @@ var cjkFontCandidates = []string{
 	"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
 	"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
 	"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.otf",
+	"/usr/share/fonts/noto/NotoSansCJK-Regular.ttc", // Alpine's font-noto-cjk (and the Docker image)
 }
 
 // IsCJK reports whether r is a Chinese, Japanese or Korean character, or the punctuation and

@@ -4,9 +4,9 @@ run
 var
 e2e
 logs
-config.json
+config.yml
 web/downloads
 .git
 .env
-docker/config.container.json
+docker/config.container.yml
 docker/docker-compose.override.yml

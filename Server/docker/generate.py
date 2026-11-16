@@ -134,6 +134,9 @@ def write_container_config(config, libraries):
     container["database"]["mediaPath"] = "/app/var/data/media.db"
     for key, name in MEDIA_DIRS.items():
         container["media"][key] = f"/app/var/{name}"
+    # The image's own CJK font and subsetter (see the Dockerfile), not the ones this machine's config may name
+    container["media"]["cjkFontPath"] = "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc"
+    container["media"]["subsetCommand"] = "pyftsubset"
     for library, (_, host) in zip(container["media"]["paths"], libraries):
         library["path"] = host
     # Owner-only: the file holds the TMDB token and the JWT secret

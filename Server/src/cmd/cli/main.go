@@ -101,6 +101,8 @@ func printUsage() {
 	fmt.Println("                                                           (config.example.yml); -h for the options")
 	fmt.Println("  cli config add-path <path>                             - Add media directory")
 	fmt.Println("  cli config list-paths                                  - List media directories")
+	fmt.Println("  cli config set-cjk-font <path>                         - Set media.cjkFontPath (\"\" for the default)")
+	fmt.Println("  cli config set-subset-command <command>                - Set media.subsetCommand (\"\" for the default)")
 }
 
 func handleUserCommand(db *database.DB, args []string) {
@@ -404,6 +406,24 @@ func handleConfigCommand(args []string) {
 			}
 			fmt.Printf("  %d. %s (%s) [Groups: %v]%s\n", i+1, mediaPath.Name, mediaPath.Path, mediaPath.Groups, typeLabel)
 		}
+
+	case "set-cjk-font", "set-subset-command":
+		// The CJK subtitle font and its subsetter (setup.sh sets them when it installs them)
+		if len(args) != 2 {
+			fmt.Printf("Usage: cli config %s <value>\n", subcommand)
+			os.Exit(1)
+		}
+		key := "cjkFontPath"
+		if subcommand == "set-cjk-font" {
+			config.GlobalConfig.Media.CJKFontPath = args[1]
+		} else {
+			key = "subsetCommand"
+			config.GlobalConfig.Media.SubsetCommand = args[1]
+		}
+		if err := config.Save(config.Path(), config.GlobalConfig); err != nil {
+			log.Fatalf("Failed to save config: %v", err)
+		}
+		fmt.Printf("Set media.%s to %q\n", key, args[1])
 
 	default:
 		fmt.Printf("Unknown config subcommand: %s\n", subcommand)

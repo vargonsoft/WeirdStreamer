@@ -50,9 +50,16 @@ if command -v "$subset" >/dev/null; then
 else
     echo "Optional: pyftsubset (fontTools) isn't installed; styled subtitles in Chinese, Japanese or Korean show as boxes"
 fi
-if ! ls /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc \
+# The places the server looks (cjkFontCandidates in internal/media/cjkfont.go)
+cjk_font=""
+for f in /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc \
     /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf \
-    /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.otf >/dev/null 2>&1; then
+    /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.otf /usr/share/fonts/noto/NotoSansCJK-Regular.ttc; do
+    if [ -f "$f" ]; then cjk_font=$f; break; fi
+done
+if [ -n "$cjk_font" ]; then
+    echo "Noto Sans CJK is there ($cjk_font)"
+else
     echo "Optional: no Noto Sans CJK font found (set media.cjkFontPath in config.yml if yours is elsewhere)"
 fi
 exit "$missing"

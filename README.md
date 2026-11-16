@@ -153,15 +153,19 @@ fetches one too, since its system fonts lack some Chinese characters.
 It needs two things, both optional:
 
 - **Noto Sans CJK:** found in the usual places (`/usr/share/fonts/opentype/noto/`, Debian's
-  `fonts-noto-cjk` package), or set `media.cjkFontPath` in `config.yml`. The players use its family
+  `fonts-noto-cjk` package; `/usr/share/fonts/noto/`, Alpine's `font-noto-cjk`), or set
+  `media.cjkFontPath` in `config.yml`. The players use its family
   name ("Noto Sans CJK JP"), so other CJK fonts won't be matched.
-- **fontTools' `pyftsubset`**, which makes the subsets. Debian and Ubuntu have it as `python3-fonttools`,
+- **fontTools' `pyftsubset`**, which makes the subsets. Debian and Ubuntu have it as `fonttools`,
   or in a virtualenv: `python3 -m venv DIR && DIR/bin/pip install fonttools brotli`, then set
   `media.subsetCommand` to `DIR/bin/pyftsubset` (the default is `pyftsubset` on the `PATH`).
 
 Without them, those characters show as boxes; nothing else changes. The iPhone app's system fonts have
 Japanese and Korean, but not simplified Chinese, so it needs them too for those lines.
-`Server/scripts/check-ffmpeg.sh` reports both.
+`Server/scripts/check-ffmpeg.sh` reports both. The Docker image has both (the font adds 19 MB, Python
+and fontTools about 60 MB), and the release package's `setup.sh` offers to install what's missing:
+fontTools from the system's packages or in a virtualenv in the package's folder, the font from the
+system's packages (each only on a yes; it never downloads a font itself).
 
 ### HEIC photos
 

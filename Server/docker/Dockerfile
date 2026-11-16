@@ -54,6 +54,15 @@ FROM alpine:${ALPINE_VERSION}
 # Fonts for burned-in subtitles (libass draws them with fontconfig)
 RUN apk add --no-cache ca-certificates x264-libs libass chromaprint libdvdread libdvdnav zlib fontconfig font-dejavu
 
+# Styled subtitles in Chinese, Japanese and Korean: the server makes small subsets of Noto Sans CJK
+# with fontTools' pyftsubset (see the README's CJK subtitle font section). font-noto-cjk also holds
+# the bold and the serif fonts (67 MB more), which the server doesn't use: only the regular sans is
+# kept (19 MB), at /usr/share/fonts/noto/NotoSansCJK-Regular.ttc, where the server looks for it.
+RUN apk add --no-cache py3-fonttools py3-brotli font-noto-cjk \
+ && rm /usr/share/fonts/noto/NotoSansCJK-Bold.ttc /usr/share/fonts/noto/NotoSerifCJK-Bold.ttc \
+       /usr/share/fonts/noto/NotoSerifCJK-Regular.ttc \
+ && fc-cache -f
+
 WORKDIR /app
 
 COPY --from=ffmpeg /opt/ffmpeg /opt/ffmpeg
@@ -66,6 +75,11 @@ COPY --from=builder /out/server /out/cli /app/
 COPY web ./web
 
 RUN FFMPEG=ffmpeg sh /opt/ffmpeg/check-ffmpeg.sh
+# check-ffmpeg.sh only reports the CJK font and subsetter: here a subset must really be made, as
+# the server makes them (the collection's first font, all layout features).
+RUN pyftsubset /usr/share/fonts/noto/NotoSansCJK-Regular.ttc --font-number=0 --text="日本語 한국어 中文" \
+        --layout-features='*' --output-file=/tmp/cjk-check.ttf \
+ && test -s /tmp/cjk-check.ttf && rm /tmp/cjk-check.ttf
 
 EXPOSE 9000
 CMD ["/app/server"]
