@@ -106,8 +106,8 @@ iOS/native/build-libass.sh
 From the command line (simulator):
 
 ```bash
-xcodebuild -project WeirdStreamer.xcodeproj -scheme WeirdStreamer \
-  -destination 'generic/platform=iOS Simulator' CODE_SIGN_IDENTITY=- build
+xcodebuild -project iOS/WeirdStreamer/WeirdStreamer.xcodeproj -scheme WeirdStreamer \
+  -destination 'generic/platform=iOS Simulator' CODE_SIGN_IDENTITY='-' build
 ```
 
 Build with signing (ad hoc is enough): an unsigned build (`CODE_SIGNING_ALLOWED=NO`) can't use the
