@@ -4,7 +4,7 @@ Requests saved for later, newest last.
 
 ## Playback
 
-- [x] **Web: a 4K film plays with no audio.** Find out why (likely an audio codec the browser
+- [x] **Web: a 4K film with E-AC-3 audio plays with no audio.** Find out why (likely an audio codec the browser
       can't decode, such as DTS, TrueHD or E-AC-3) and fix it.
 - [x] **Audio track selection on TV, phone and web.** Choose among a file's audio tracks
       (languages, commentary, formats) the way subtitles can be chosen on TV. Also on the iPhone.

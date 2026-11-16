@@ -7,10 +7,9 @@ for each TODO item are at the end of this file.
 
 ## Rules (from the user)
 
-- **Off limits:** the `k` and `p` libraries and `p2`, personal folders kept outside this project
-  (their locations are in the user's own notes, not here). Don't browse, list, play or screenshot
-  them. The one exception so far: reading codec/format details (ffprobe, no frames) of a file the
-  user names.
+- **Off limits:** the personal media libraries kept outside this project (the user's own notes say
+  which). Don't browse, list, play or screenshot them. The one exception so far: reading
+  codec/format details (ffprobe, no frames) of a file the user names.
 - **Secrets:** the TMDB token is in `Server/config.yml` and the test password is in
   `Server/e2e/pw`. Never print or repeat either.
 - **Live server restarts:** only when asked, with `Server/scripts/restart-live.sh` (below). It won't
@@ -96,7 +95,7 @@ for each TODO item are at the end of this file.
   Build for the simulator signed ad hoc (`CODE_SIGN_IDENTITY=-`): unsigned builds can't use the
   Keychain, where sign-ins are kept. Run `iOS/native/build-libass.sh` once first: it builds the ASS
   subtitle renderer (`iOS/native/assrender.c`, libass and its libraries, as Android's) into
-  `iOS/native/build/` (git-ignored), which the project links (`Views/AssSubtitleView.swift`). The e2e server's `e2e_ios` account is for the simulator.
+  `iOS/native/build/` (git-ignored), which the project links (`Views/AssSubtitleView.swift`). The e2e server has an account for the simulator (see `Server/e2e/NOTES.md`).
 
 ## Live server
 
@@ -133,91 +132,27 @@ for each TODO item are at the end of this file.
 ## Test environment
 
 - `Server/scripts/run-e2e.sh` builds the server and runs a test server from `Server/e2e/` (git-ignored)
-  on **http://localhost:9100**. Android emulators reach it at `http://10.0.2.2:9100`. It has its
-  own config, databases and accounts (`e2e_admin`, `e2e_adult`, `e2e_normal`; password in
-  `Server/e2e/pw`), and serves `Server/web` through a symlink.
+  on localhost port 9100; Android emulators reach the host at `10.0.2.2`. The test server's accounts,
+  sample library, emulators and helper scripts are described in `Server/e2e/NOTES.md` (git-ignored):
+  read it before testing. Its passwords are in `Server/e2e/pw`; never print them.
 - On macOS, Homebrew's ffmpeg lacks the DVD reader, the chromaprint muxer and libass:
   `Server/scripts/build-ffmpeg.sh` builds the server's own into `Server/ffmpeg/bin` (git-ignored),
   which `run-e2e.sh` and `live.sh` put first on the PATH. `scripts/check-ffmpeg.sh` lists what's needed.
-- Sample library in `Server/e2e/sample/`: Movies and TV Shows (typed libraries with TMDB
-  matches). Most files are short ffmpeg test patterns named after real titles. Notable ones:
-  - `Movies/Example Film/…ts`: 5 minutes of H.264 and AAC in MPEG-TS (despite its name), which
-    Chrome can't open: Compatibility (Auto) copies it into MP4.
-  - `Movies/Subtitle Test/Subtitle Test.mkv`: 16 subtitle tracks, several per language, the
-    first marked default.
-  - `Movies/Example Movie/Example Movie.iso`: a symlink to a real DVD image on the share.
-  - `Movies/a 4K film/`: a symlink to the real 4K file (E-AC-3 audio, text and PGS subtitles).
-  - `Movies/EAC3 Test/EAC3 Test.mkv`: 2 minutes of H.264 with two audio tracks (E-AC-3 5.1
-    default, AAC "commentary" at 880 Hz) and English and Spanish subtitles every 4 seconds that
-    name the second they're at. Has trickplay frames.
-  - `Movies/HEVC Test`, `Hi10 Test` (10-bit H.264), `AVI Test` (MPEG-4 Part 2 and MP3),
-    `VP9 Test` (WebM), `AV1 Test` and `ASF Test` (WMV 8 and WMA in ASF): clips for the codec checks. New files
-    only stream once a scan has added them (`api.scanMedia()`, or Scan Media in the web UI).
-  - `Movies/Audio Test/Audio Test.mkv`: 90 seconds of H.264 with three audio tracks: English AAC
-    stereo (default), English AAC mono "Commentary" and Spanish DTS 5.1 (which the emulators can't
-    decode). Their channel counts tell which one plays: `adb shell dumpsys media.audio_flinger`
-    shows the active track's channel mask (3 stereo, 1 mono).
-  - `Movies/ASS Test/ASS Test.mkv`: 2 minutes of H.264 with an English ASS track and an embedded
-    font (Z003, a calligraphic one no device has), plus `ASS Test.fr.ass` beside it. Every 4
-    seconds a line names its second ("English 32") and a sign in the embedded font does too
-    ("Sign 32", top left); a moving, fading line every 10 s, a red karaoke line every 20 s, and a
-    tilted green "ASS en" for the whole video (top right).
-  - `Movies/CJK Test/CJK Test.mkv`: 1 minute with an ASS track whose lines cycle through Japanese,
-    Korean, Chinese and English every 5 seconds ("日本語の字幕テスト 40" at 40 s, the line starts at
-    40.02). The CJK fallback check: a player's own fonts lack those characters.
-  - `Movies/Sparse Keyframes`: 2 minutes of H.264 with a keyframe every 10 seconds and AC-3
-    audio (so it plays as a copy): for short jumps forward in a copied video.
-  - `Movies/AVI BFrame Test`: 30 seconds of H.264 with B-frames in AVI, whose packets have no
-    pts (framecrc prints -9223372036854775808): `SeekPoint` reads the dts instead.
-  - `Clips/Live Photos/`: Apple Live Photos as an iPhone saves them, a photo and a .MOV of the
-    same name carrying Apple's content identifier: `IMG_0001.HEIC` (HEVC clip) and `IMG_0002.JPG`
-    (H.264). `IMG_0003.JPG` and `.MOV` share a name without the identifier, so both stay listed.
-  - `Clips/Motion Photos/`: six Samsung-style motion photos (a 4000×3000 JPEG with an MP4 after
-    `MotionPhoto_Data`, about 9.6 MB each), for paging through them in the viewers.
-  - `TV Shows/Example Show/Season 1/`: four episodes. S01E01 is a 60-second clip; S01E02 is empty;
-    S01E03 and S01E04 are 8-second clips with their episode drawn on them (for going on to the
-    next episode).
-- Emulators: `emulator-5554` is Android TV (AVD `Television_1080p_API_34`) and `emulator-5556`
-  is a phone (AVD `Medium_Phone_API_35`). `Android/tools/start-emulators.sh` starts whichever
-  isn't running and waits for boot. They start from a saved snapshot (`default_boot`) and never save
-  one themselves (`-no-snapshot-save`), so a change to their state (sources, sign-ins) is gone at the next
-  start unless saved with `adb -s <emulator> emu avd snapshot save default_boot`. The real Babylon 5
-  server and share must not be on them: tests use the e2e server only. The adb binary is `~/Android/Sdk/platform-tools/adb` (not
-  on PATH). Both emulators already have the app signed in to the test server as `e2e_admin`.
-- Helper scripts in `Android/tools/` (save screenshots in your scratchpad, then view them with
-  Read):
-  - `tv-keys.sh OUT.png DPAD_DOWN DPAD_CENTER …` presses keys on the TV, then screenshots.
-    `HOLD_CENTER` is a real 1.5s hold of OK (`input keyevent --longpress` is too short).
-  - `phone.sh texts` lists what's on the phone screen. `phone.sh tapt "Settings"` taps an
-    element by its text or content description. `phone.sh tap X Y`, `phone.sh swipe …` and
-    `phone.sh shot OUT.png` do the rest.
+- Emulators run the TV and phone apps; the tests use the e2e server only, never the live server or a
+  real device. `Android/tools/start-emulators.sh` starts them (details in `Server/e2e/NOTES.md`).
+  Install debug builds on emulators only.
 - Typical Android test loop:
   1. `cd Android && ./gradlew :app:assembleDebug`.
-  2. `adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk` (and 5556).
-  3. `adb shell am force-stop com.vargon.weirdstreamer`, then
-     `am start -n com.vargon.weirdstreamer/.MainActivity`.
-  4. Navigate and screenshot.
-
-  Install debug builds on emulators only.
-- Navigation tips:
-  - The app opens on the source list (WeirdStreamer servers first, then SMB shares). On the TV,
-    focus starts on the first server tile, and the test server (`http://10.0.2.2:9100`) is the
-    second: DPAD_RIGHT, DPAD_CENTER. On the phone, `phone.sh tapt "http://10.0.2.2:9100"`.
-  - In the TV player, DPAD_DOWN (with controls hidden) opens the toolbar. Its buttons are
-    Transcode, Zoom, Speed, Fill+, Fill−, Aspect, Subtitles, Audio (files with more than one track), Rotate (and Disc), and it remembers
-    the last button focused, so press DPAD_LEFT several times before counting.
-  - If a screenshot shows a Google TV "Set up" screen or the launcher, the app isn't in front.
-    Press BACK and `am start` again, and check
-    `adb shell dumpsys activity activities | grep topResumedActivity`.
-  - Long chains of key presses without screenshots go wrong easily. Screenshot after each few
-    steps.
-- Web UI: use the browser pane at http://localhost:9100 and sign in as `e2e_admin` (password in
-  `Server/e2e/pw`; type it yourself, don't print it). `window.api` and the app.js functions are
-  available from the page's JavaScript for setting up state, such as
-  `api.reportPlayback(path, seconds, true)` to create a resume point.
+  2. Install the debug APK on the emulator with `adb`, then `adb shell am force-stop` and
+     `am start` for the app's main activity.
+  3. Navigate and screenshot.
+- Web UI: use the browser pane at http://localhost:9100 and sign in as an e2e account (the password
+  is in `Server/e2e/pw`; type it yourself, don't print it). `window.api` and the app.js functions are
+  available from the page's JavaScript for setting up state, such as `api.reportPlayback(path,
+  seconds, true)` to create a resume point.
 - To create test media, use ffmpeg test patterns. For example, `testsrc` plus `sine` with extra
   `-i subs.srt` inputs and `-metadata:s:s:N language=…` builds an MKV with many subtitle tracks.
-  Put new files under `Server/e2e/sample/Movies/<Folder>/`.
+  Put new files under `Server/e2e/sample/` (see `Server/e2e/NOTES.md` for the layout).
 
 ## Release builds
 
