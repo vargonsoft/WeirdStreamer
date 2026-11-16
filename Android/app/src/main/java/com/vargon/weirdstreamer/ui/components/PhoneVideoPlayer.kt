@@ -13,7 +13,6 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -37,7 +36,6 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -652,12 +650,30 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }
     }
 
+    // Swipes (PhoneGestures.kt): sideways seeks, applied on release; up and down set the
+    // brightness (left half) or the volume (right half) as the finger moves.
+    var swipeIndicator by remember { mutableStateOf<SwipeIndicator?>(null) }
+    var swipeReleased by remember { mutableIntStateOf(0) } // hides the indicator a moment after
+    var swipeSeekFrom by remember { mutableLongStateOf(0L) }
+    var swipeSeekDelta by remember { mutableFloatStateOf(0f) }
+    var swipeLevel by remember { mutableFloatStateOf(0f) }
+    val swipeSeek by rememberUpdatedState<(Long) -> Unit> { seekPlayer(it) }
+    val gesturesOn by rememberUpdatedState(!inPip && !showSpeedDialog)
+    fun swipeSeekTarget() = (swipeSeekFrom + swipeSeekDelta.toLong()).coerceIn(0L, duration.coerceAtLeast(0L))
+    // The player's brightness lasts while it's open; leaving it gives the system's back.
+    DisposableEffect(activity) { onDispose { activity?.setPlayerBrightness(null) } }
+    LaunchedEffect(swipeReleased) {
+        if (swipeReleased > 0) { delay(700); swipeIndicator = null }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
+            .phonePlayerGestures(
+                enabled = { gesturesOn },
+                zoomed = { zoomScale > 1f },
+                onTransform = { pan, zoom ->
                     zoomScale = (zoomScale * zoom).coerceIn(1f, 10f)
                     if (zoomScale > 1f) {
                         zoomOffsetX += pan.x
@@ -666,8 +682,47 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         zoomOffsetX = 0f
                         zoomOffsetY = 0f
                     }
+                },
+                onSwipeStart = { kind ->
+                    swipeReleased = 0
+                    when (kind) {
+                        PlayerSwipe.Seek -> { swipeSeekFrom = playbackPosition; swipeSeekDelta = 0f }
+                        PlayerSwipe.Brightness -> swipeLevel = activity?.playerBrightness() ?: 0.5f
+                        PlayerSwipe.Volume -> swipeLevel = context.mediaVolume()
+                    }
+                },
+                onSwipe = { kind, move, size ->
+                    when (kind) {
+                        PlayerSwipe.Seek -> {
+                            if (duration > 0) {
+                                // The screen's width is 90 seconds.
+                                swipeSeekDelta += move.x / size.width.coerceAtLeast(1) * 90_000f
+                                val target = swipeSeekTarget()
+                                swipeSeekDelta = (target - swipeSeekFrom).toFloat()
+                                swipeIndicator = SwipeIndicator.Seek(seekGestureText(target - swipeSeekFrom, target))
+                            }
+                        }
+                        else -> {
+                            // The height of the screen goes from none to full.
+                            swipeLevel = (swipeLevel - move.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                            val shown = if (kind == PlayerSwipe.Volume) {
+                                context.setMediaVolume(swipeLevel)
+                            } else {
+                                activity?.setPlayerBrightness(swipeLevel)
+                                swipeLevel
+                            }
+                            swipeIndicator = SwipeIndicator.Level(kind == PlayerSwipe.Volume, shown)
+                        }
+                    }
+                },
+                onSwipeEnd = { kind, cancelled ->
+                    if (kind == PlayerSwipe.Seek) {
+                        val target = swipeSeekTarget()
+                        if (!cancelled && duration > 0 && target != swipeSeekFrom) swipeSeek(target)
+                        swipeIndicator = null
+                    } else swipeReleased++
                 }
-            }
+            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -1129,6 +1184,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
             PhoneSkipButton(prompt, onClick = { doSkip(prompt, segments) },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = if (showControls) 150.dp else 40.dp))
         }
+
+        swipeIndicator?.let { PhoneSwipeIndicator(it, Modifier.align(Alignment.Center)) }
 
         // Speed Selection Dialog
         if (showSpeedDialog) {

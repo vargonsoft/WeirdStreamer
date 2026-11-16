@@ -13,10 +13,10 @@ Requests saved for later, newest last.
       the browser supports, or fall back when playback fails).
 - [x] **Web: a custom player for all videos** that looks and works more like the TV's player,
       replacing the browser's built-in controls (discs already use custom controls).
-- [ ] **Phone player gestures**, as in popular video players:
-  - [ ] Swipe left or right to seek back or forward.
-  - [ ] Swipe up or down on the left side for brightness.
-  - [ ] Swipe up or down on the right side for volume.
+- [x] **Phone player gestures**, as in popular video players:
+  - [x] Swipe left or right to seek back or forward.
+  - [x] Swipe up or down on the left side for brightness.
+  - [x] Swipe up or down on the right side for volume.
 - [x] **Styled ASS/SSA subtitles.** Drawn by libass everywhere: JASSUB on the web, native on the
       Android TV and phone and the iPhone, from the server's `format=ass` script and the video's
       embedded fonts, on originals and transcodes alike, and files beside the video too. The

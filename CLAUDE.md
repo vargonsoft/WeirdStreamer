@@ -415,11 +415,13 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     `audio=N` (`trackQuery`), and the audio ladder works from that track.
 - **Phone player** (`PhoneVideoPlayer.kt`, ExoPlayer):
   - Same transcode menu (a dropdown) and fallback to Compatibility (Auto) as the TV.
-  - Touch handling today: the root `Box` has `pointerInput { detectTransformGestures }` for
-    pinch-zoom and pan, and `clickable` to show or hide the controls. Swipe gestures (seek,
-    brightness, volume) must not break pinch-zoom: handle single-finger drags separately.
-    Brightness can go through `window.attributes.screenBrightness`, volume through
-    `AudioManager`.
+  - Touch (`PhoneGestures.kt`, `phonePlayerGestures`, one detector on the root `Box`, then
+    `clickable` to show or hide the controls): two fingers pinch-zoom and pan; one finger pans a
+    zoomed picture; on an unzoomed one a sideways swipe seeks (the screen's width is 90 s, a
+    "+0:30 / 12:34" indicator, applied on release through `seekPlayer`), and up or down sets the
+    brightness on the left half (`window.attributes.screenBrightness`, given back to the system
+    when the player closes) or the media volume on the right (`AudioManager`), with a level
+    indicator. Drags the seek bar or trickplay row take are left to them.
   - It has a subtitle menu like the TV's (tracks, online search, timing) and an Audio menu (files
     with more than one track) that works as the TV's.
   - Picture-in-picture (`PhonePip.kt`): going home while a video plays shrinks it into a window
@@ -467,9 +469,3 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 
 ## Notes on the TODO items
 
-- **Phone gestures:** see Phone player above. Typical behaviour:
-  - A horizontal drag seeks, with a "+0:30 / 12:34" overlay, applied on release. For transcoded
-    streams, seek through `seekPlayer`.
-  - A vertical drag on the left half changes brightness; on the right half, volume. Each shows a
-    level indicator.
-  - Double-tapping the sides for ±10s is common too.
