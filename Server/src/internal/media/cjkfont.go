@@ -14,12 +14,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
 )
@@ -96,17 +97,43 @@ func cjkFontFile() string {
 	return ""
 }
 
-var subsetMu sync.Mutex // one subsetter at a time: each reads the whole font
+// subsetSlots lets one subsetter run at a time (each reads the whole font). A waiting request gives
+// up when its own context ends, rather than queueing behind the others for nothing.
+var subsetSlots = make(chan struct{}, 1)
+
+// maxCachedSubsets bounds the subset cache: the oldest files go first.
+const maxCachedSubsets = 500
 
 // SubsetCJK returns a subset of the CJK font holding the CJK characters of text, and the base Latin
 // (baseText). Subsets are kept in <subtitlePath>/cjk, so each set is made once.
+// ErrTooManyCharacters: the text has more distinct CJK characters than a subset is made for.
+var ErrTooManyCharacters = errors.New("too many CJK characters")
+
+// maxCJKCharacters bounds a subset (and its cache entry): far more than any subtitle track's.
+const maxCJKCharacters = 8000
+
+// ErrNoFont: no CJK font is installed or configured (media.cjkFontPath).
+var ErrNoFont = errors.New("no CJK font")
+
+// ErrNoSubsetter: the subsetter (media.subsetCommand) isn't installed.
+var ErrNoSubsetter = errors.New("no subsetter")
+
 func SubsetCJK(ctx context.Context, text string) ([]byte, error) {
-	chars := baseText + CJKCharacters(text)
+	cjk := CJKCharacters(text)
+	if len([]rune(cjk)) > maxCJKCharacters {
+		return nil, ErrTooManyCharacters
+	}
+	chars := baseText + cjk
 	font := cjkFontFile()
 	if font == "" {
-		return nil, errors.New("no CJK font: set media.cjkFontPath, or install Noto Sans CJK")
+		return nil, ErrNoFont
 	}
-	sum := sha256.Sum256([]byte(font + "\x00" + chars))
+	// The key covers the font's file (replacing it makes new subsets), not just its path.
+	info, err := os.Stat(font)
+	if err != nil {
+		return nil, ErrNoFont
+	}
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d\x00%d\x00%s", font, info.Size(), info.ModTime().UnixNano(), chars)))
 	name := hex.EncodeToString(sum[:16]) + ".ttf"
 	var cacheFile string
 	if root := config.GlobalConfig.Media.SubtitlePath; root != "" {
@@ -116,8 +143,12 @@ func SubsetCJK(ctx context.Context, text string) ([]byte, error) {
 		}
 	}
 
-	subsetMu.Lock()
-	defer subsetMu.Unlock()
+	select {
+	case subsetSlots <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-subsetSlots }()
 	if cacheFile != "" {
 		if b, err := os.ReadFile(cacheFile); err == nil { // made while this one waited
 			return b, nil
@@ -126,6 +157,15 @@ func SubsetCJK(ctx context.Context, text string) ([]byte, error) {
 	command := config.GlobalConfig.Media.SubsetCommand
 	if command == "" {
 		command = "pyftsubset"
+	}
+	// The characters go in a file, not an argument: a long list would exceed the command line's limit.
+	textFile, err := tempFileName("cjk-text-*.txt")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(textFile)
+	if err := os.WriteFile(textFile, []byte(chars), 0o600); err != nil {
+		return nil, err
 	}
 	out, err := os.CreateTemp(TempDir(), tempPrefix+"cjk-*.ttf")
 	if err != nil {
@@ -137,7 +177,7 @@ func SubsetCJK(ctx context.Context, text string) ([]byte, error) {
 	if strings.HasSuffix(strings.ToLower(font), ".ttc") || strings.HasSuffix(strings.ToLower(font), ".otc") {
 		args = append(args, "--font-number=0") // the Japanese set, of the collection's
 	}
-	args = append(args, "--text="+chars, "--layout-features=*", "--output-file="+out.Name())
+	args = append(args, "--text-file="+textFile, "--layout-features=*", "--output-file="+out.Name())
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Stderr = &stderr
@@ -147,9 +187,11 @@ func SubsetCJK(ctx context.Context, text string) ([]byte, error) {
 		}
 		var exErr *exec.Error
 		if errors.As(err, &exErr) {
-			return nil, fmt.Errorf("the subsetter %q isn't installed (media.subsetCommand, or fontTools' pyftsubset)", command)
+			return nil, ErrNoSubsetter
 		}
-		return nil, fmt.Errorf("the subsetter failed: %v: %s", err, lastLines(stderr.String(), 2))
+		// The details (which may name paths) go to the server's log, not to clients.
+		log.Printf("[SUBTITLES] pyftsubset failed: %v: %s", err, lastLines(stderr.String(), 3))
+		return nil, errors.New("the subsetter failed")
 	}
 	b, err := os.ReadFile(out.Name())
 	if err != nil {
@@ -160,8 +202,32 @@ func SubsetCJK(ctx context.Context, text string) ([]byte, error) {
 			tmp := cacheFile + ".tmp"
 			if os.WriteFile(tmp, b, 0o644) == nil {
 				os.Rename(tmp, cacheFile)
+				pruneSubsets(filepath.Dir(cacheFile))
 			}
 		}
 	}
 	return b, nil
+}
+
+// pruneSubsets removes the oldest cached subsets beyond maxCachedSubsets (the subset just made is
+// the newest, so it stays).
+func pruneSubsets(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) <= maxCachedSubsets {
+		return
+	}
+	type file struct {
+		name string
+		mod  time.Time
+	}
+	var files []file
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil && !e.IsDir() && strings.HasSuffix(e.Name(), ".ttf") {
+			files = append(files, file{e.Name(), info.ModTime()})
+		}
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].mod.Before(files[j].mod) })
+	for i := 0; i < len(files)-maxCachedSubsets; i++ {
+		os.Remove(filepath.Join(dir, files[i].name))
+	}
 }

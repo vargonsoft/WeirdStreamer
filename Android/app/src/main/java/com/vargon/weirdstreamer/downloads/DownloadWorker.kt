@@ -339,7 +339,8 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val cjkFile = File(dir, "font-cjk.ttf")
         val styledText = saved.filter { ServerSubtitles.isStyled(it) }
             .joinToString("\n") { runCatching { File(dir, savedSubtitleName(it)).readText() }.getOrDefault("") }
-        val cjkChars = styledText.filter { ServerSubtitles.isCjk(it) }.toSet().joinToString("")
+        val cjkChars = styledText.codePoints().toArray().filter { ServerSubtitles.isCjkCodePoint(it) }.distinct()
+            .let { cps -> StringBuilder().apply { cps.forEach { appendCodePoint(it) } }.toString() }
         if (styledText.isNotEmpty()) {
             val body = Gson().toJson(mapOf("text" to cjkChars))
                 .toRequestBody("application/json".toMediaType())

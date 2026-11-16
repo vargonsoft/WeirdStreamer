@@ -36,6 +36,7 @@ import com.vargon.weirdstreamer.api.models.SubtitleTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -100,28 +101,36 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
     private var fontData: List<Pair<String, ByteArray>>? = null
 
     // The CJK fonts made for the selected track's lines (the server's subsets), and the characters
-    // they cover: a renderer added to later (the view changes size) gets them all again.
-    private val cjkSeen = HashSet<Char>()
+    // (code points) they cover. A renderer made later takes the fonts so far; each fetch serialises
+    // on [cjkLock], and a fetch that ends after the track changed is dropped.
+    private val cjkLock = kotlinx.coroutines.sync.Mutex()
+    private val cjkSeen = HashSet<Int>()
     private val cjkFonts = mutableListOf<ByteArray>()
 
+    /** The CJK fonts made so far for the selected track (what a renderer needs when it's made). */
+    fun cjkFontsSoFar(): List<ByteArray> = synchronized(cjkFonts) { cjkFonts.toList() }
+
     /**
-     * Every CJK font for the Chinese, Japanese and Korean characters in [script]: those not made for
-     * yet are fetched now (the server's subsets, which its players' own fonts often lack). Empty when
-     * there are none, or the server can't make them (those lines show as boxes).
+     * Makes the server's CJK subset for the Chinese, Japanese and Korean characters in [script] that
+     * none has been made for yet (the players' own fonts often lack them), and returns it: null when
+     * there are no new ones, or the server can't make it (those lines show as boxes). Done off the
+     * drawing thread: the lines show before the font arrives.
      */
-    suspend fun cjkFontsFor(script: String): List<ByteArray> {
-        val api = api ?: return cjkFonts.toList()
-        val fresh = script.filter { isCjk(it) && it !in cjkSeen }.toSet().toList()
-        if (fresh.isEmpty() && cjkFonts.isNotEmpty()) return cjkFonts.toList() // the first always asks: the subset is the lines' default font
-        cjkSeen.addAll(fresh)
+    suspend fun fetchCjkFont(script: String): ByteArray? = cjkLock.withLock {
+        val api = api ?: return@withLock null
+        val gen = generation
+        val fresh = script.codePoints().toArray().filter { isCjkCodePoint(it) && it !in cjkSeen }.distinct()
+        if (fresh.isEmpty() && synchronized(cjkFonts) { cjkFonts.isNotEmpty() }) return@withLock null // the first always asks: the subset is the lines' default font
+        val text = StringBuilder().apply { fresh.forEach { appendCodePoint(it) } }.toString()
         val font = withContext(Dispatchers.IO) {
             runCatching {
-                api.getSubtitleFont(com.vargon.weirdstreamer.api.models.SubtitleFontRequest(fresh.joinToString(""))).body()?.bytes()
+                api.getSubtitleFont(com.vargon.weirdstreamer.api.models.SubtitleFontRequest(text)).body()?.bytes()
             }.getOrNull()
         }
-        if (font == null) cjkSeen.removeAll(fresh.toSet()) // tried again with the next lines
-        else cjkFonts.add(font)
-        return cjkFonts.toList()
+        if (font == null || gen != generation) return@withLock null
+        cjkSeen.addAll(fresh)
+        synchronized(cjkFonts) { cjkFonts.add(font) }
+        font
     }
 
     /** The video's embedded fonts, which its ASS tracks name: fetched once (a download's, saved beside it). */
@@ -223,8 +232,8 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
 
     fun select(index: Int) {
         selected = if (index in tracks.indices) index else -1
+        synchronized(cjkFonts) { cjkFonts.clear() }
         cjkSeen.clear()
-        cjkFonts.clear()
         cues = emptyList()
         pictures = emptyList()
         assHeader = ""
@@ -365,9 +374,10 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
         private const val WINDOW_MS = 120_000L
 
         /** Chinese, Japanese and Korean characters (and their punctuation), as the server's CJK fonts cover. */
-        fun isCjk(c: Char): Boolean = when (c.code) {
+        fun isCjkCodePoint(cp: Int): Boolean = when (cp) {
             in 0x1100..0x11FF, in 0x3000..0x303F, in 0x3040..0x30FF, in 0x31F0..0x31FF, in 0x3130..0x318F,
-            in 0x3400..0x4DBF, in 0x4E00..0x9FFF, in 0xAC00..0xD7AF, in 0xF900..0xFAFF, in 0xFF00..0xFFEF -> true
+            in 0x3400..0x4DBF, in 0x4E00..0x9FFF, in 0xAC00..0xD7AF, in 0xF900..0xFAFF, in 0xFF00..0xFFEF,
+            in 0x20000..0x2FA1F -> true
             else -> false
         }
 

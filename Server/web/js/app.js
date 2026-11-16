@@ -1770,7 +1770,9 @@ async function loadAssWindow(s) {
                 s.lines.push(line);
             }
         }
-        await addCjkFonts(s, lines.filter(line => line.startsWith('Dialogue:')).join('\n'));
+        // The lines show at once; a font for their CJK characters follows when it's made (addCjkFonts
+        // adds it to the renderer, which then draws them again).
+        addCjkFonts(s, lines.filter(line => line.startsWith('Dialogue:')).join('\n'));
         await showAssSubtitles(s);
     } catch (err) {
         if (err.name !== 'AbortError') console.warn('Subtitles failed:', err);
@@ -1843,11 +1845,11 @@ async function showAssSubtitles(s) {
     s.renderer = new JASSUB({
         video: videoPlayer, canvas, subContent: script, fonts,
         workerUrl: at('jassub-worker.js'), wasmUrl: at('jassub-worker.wasm'), modernWasmUrl: at('jassub-worker-modern.wasm'),
-        // The renderer's default font is the CJK subset's family (its Latin and CJK glyphs; libass
-        // can't fall back from one family to another without a font provider).
-        availableFonts: { 'liberation sans': at('default.woff2') }, fallbackFont: CJK_FAMILY,
+        // Until a CJK subset is loaded the default font is Liberation Sans, so Latin lines always draw.
+        availableFonts: { 'liberation sans': at('default.woff2') }, fallbackFont: 'liberation sans',
         timeOffset: player.offset - s.shift,
     });
+    if (s.cjkFonts.length) s.renderer.setDefaultFont(CJK_FAMILY);
     redrawAss(s);
 }
 
@@ -1855,7 +1857,7 @@ async function showAssSubtitles(s) {
 // Chinese, Japanese and Korean characters (and their punctuation): a player's own fonts often lack
 // them, so the server makes a subset of a CJK font for the ones a track uses (once each).
 const CJK_FAMILY = 'noto sans cjk jp'; // the name the subsets carry
-const CJK_CHARACTER = /[\u1100-\u11FF\u3000-\u303F\u3040-\u30FF\u31F0-\u31FF\u3130-\u318F\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/g;
+const CJK_CHARACTER = /[ᄀ-ᇿ　-〿぀-ヿㇰ-ㇿ㄰-㆏㐀-䶿一-鿿가-힯豈-﫿＀-￯\u{20000}-\u{2FA1F}]/gu;
 
 // The first call always asks (the subset holds the basic Latin too, the renderer's default font).
 async function addCjkFonts(s, text) {
@@ -1875,6 +1877,8 @@ async function addCjkFonts(s, text) {
         s.cjkFonts.push(font);
         if (s.renderer) {
             s.renderer.addFont(font);
+            // The subset holds the Latin too: it becomes the default font, for every glyph after.
+            s.renderer.setDefaultFont(CJK_FAMILY);
             redrawAss(s);
         }
     } catch (err) {

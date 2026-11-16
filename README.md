@@ -151,8 +151,9 @@ just the characters a subtitle uses (and basic Latin), which takes a few kilobyt
 
 It needs two things, both optional:
 
-- **A CJK font:** Noto Sans CJK, found in the usual places (`/usr/share/fonts/opentype/noto/`, Debian's
-  `fonts-noto-cjk` package). Another one: set `media.cjkFontPath` in `config.yml`.
+- **Noto Sans CJK:** found in the usual places (`/usr/share/fonts/opentype/noto/`, Debian's
+  `fonts-noto-cjk` package), or set `media.cjkFontPath` in `config.yml`. The players use its family
+  name ("Noto Sans CJK JP"), so other CJK fonts won't be matched.
 - **fontTools' `pyftsubset`**, which makes the subsets. Debian and Ubuntu have it as `python3-fonttools`,
   or in a virtualenv: `python3 -m venv DIR && DIR/bin/pip install fonttools brotli`, then set
   `media.subsetCommand` to `DIR/bin/pyftsubset` (the default is `pyftsubset` on the `PATH`).

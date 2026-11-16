@@ -19,7 +19,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
@@ -53,9 +55,13 @@ fun AssSubtitle(subtitles: ServerSubtitles, position: () -> Long, videoAspect: (
         }
         try {
             val fonts = subtitles.videoFonts()
-            withContext(thread) { fonts.forEach { (name, data) -> renderer.addFont(name, data) } }
+            withContext(thread) {
+                fonts.forEach { (name, data) -> renderer.addFont(name, data) }
+                subtitles.cjkFontsSoFar().forEach { renderer.addFont("cjk.ttf", it) }
+            }
+            // CJK subsets made while this renderer runs (their fetches run beside the drawing).
+            val madeLater = ConcurrentLinkedQueue<ByteArray>()
             var version = -1
-            var cjkAdded = 0 // of the CJK fonts this renderer has
             var size = IntSize.Zero
             val bitmaps = arrayOfNulls<Bitmap>(2)
             var back = 0
@@ -69,7 +75,7 @@ fun AssSubtitle(subtitles: ServerSubtitles, position: () -> Long, videoAspect: (
                 val timeMs = currentPosition() - subtitles.offsetMs
                 val v = subtitles.assVersion
                 val script = if (v != version) subtitles.assScript() else null
-                val cjk = if (script != null) subtitles.cjkFontsFor(script) else null
+                if (script != null) launch { subtitles.fetchCjkFont(script)?.let { madeLater.add(it) } }
                 val drawn = withContext(thread) {
                     var force = false
                     if (script != null) {
@@ -77,9 +83,9 @@ fun AssSubtitle(subtitles: ServerSubtitles, position: () -> Long, videoAspect: (
                         version = v
                         force = true
                     }
-                    if (cjk != null && cjk.size > cjkAdded) {
-                        cjk.drop(cjkAdded).forEach { renderer.addFont("cjk.ttf", it) }
-                        cjkAdded = cjk.size
+                    while (true) {
+                        val font = madeLater.poll() ?: break
+                        renderer.addFont("cjk.ttf", font)
                         force = true
                     }
                     if (picture != size) {

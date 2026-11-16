@@ -3,12 +3,14 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/auth"
@@ -287,6 +289,33 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	media.ServeSubtitles(w, r, path, track, start, duration)
 }
 
+// subsetLimit is a per-user budget of subset requests: 20 a minute.
+var subsetLimit = &requestBudget{perMinute: 20, used: map[string][]time.Time{}}
+
+type requestBudget struct {
+	mu        sync.Mutex
+	perMinute int
+	used      map[string][]time.Time
+}
+
+func (b *requestBudget) allow(user string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	recent := b.used[user][:0]
+	for _, t := range b.used[user] {
+		if now.Sub(t) < time.Minute {
+			recent = append(recent, t)
+		}
+	}
+	if len(recent) >= b.perMinute {
+		b.used[user] = recent
+		return false
+	}
+	b.used[user] = append(recent, now)
+	return true
+}
+
 // fontType names a font's type from its first bytes: OpenType with CFF outlines (OTTO), or TrueType.
 func fontType(b []byte) string {
 	if bytes.HasPrefix(b, []byte("OTTO")) {
@@ -299,6 +328,11 @@ func fontType(b []byte) string {
 // in the text given, with the basic Latin (POST /api/media/subtitle-font with {"text": "…"}), for
 // the players' ASS renderers: the default font of their lines.
 func (h *MediaHandler) GetSubtitleFont(w http.ResponseWriter, r *http.Request) {
+	// Subsets take CPU and time: a signed-in user gets a few a minute (the cache answers the rest).
+	if claims := auth.GetClaims(r.Context()); claims != nil && !subsetLimit.allow(claims.Username) {
+		respondError(w, http.StatusTooManyRequests, "Too many font requests; try again in a minute")
+		return
+	}
 	var req struct {
 		Text string `json:"text"`
 	}
@@ -308,9 +342,13 @@ func (h *MediaHandler) GetSubtitleFont(w http.ResponseWriter, r *http.Request) {
 	}
 	font, err := media.SubsetCJK(r.Context(), req.Text)
 	switch {
+	case errors.Is(err, media.ErrTooManyCharacters):
+		respondError(w, http.StatusBadRequest, "Too many characters for one font")
+		return
 	case err != nil:
+		// Clients get no paths or commands: the reason is in the server's log.
 		log.Printf("[SUBTITLES] CJK font: %v", err)
-		respondError(w, http.StatusServiceUnavailable, "Can't make a CJK font here: "+err.Error())
+		respondError(w, http.StatusServiceUnavailable, "No CJK font on this server")
 		return
 	}
 	w.Header().Set("Content-Type", fontType(font))

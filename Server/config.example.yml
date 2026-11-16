@@ -80,7 +80,8 @@ media:
   tempPath: ./var/tmp
   # Styled (ASS) subtitles in Chinese, Japanese or Korean need a CJK font: the server makes a small
   # subset of it for each video's lines, for the web player and the Android apps (which can't
-  # reach the fonts of the browser or the device). Empty: Noto Sans CJK where it's installed
+  # reach the fonts of the browser or the device). It must be Noto Sans CJK: the players use that
+  # family's name. Empty: Noto Sans CJK where it's installed
   # (/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc). Without one, those lines show as boxes.
   cjkFontPath: ""
   # The subsetter: pyftsubset from fontTools (in a Python virtualenv: python3 -m venv DIR, then
