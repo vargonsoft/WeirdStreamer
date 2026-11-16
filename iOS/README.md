@@ -37,7 +37,9 @@ or LocalDevVPN.
   picture subtitles are burned in by a transcode. ASS/SSA tracks and .ass/.ssa files are drawn
   styled by libass (`Views/AssSubtitleView.swift`, `iOS/native/assrender.c`), as on the web and
   Android: the server's `format=ass` windows (the first one's header, every window's lines once),
-  the video's embedded fonts (`/api/media/font`) and the system's through CoreText, on the picture
+  the video's embedded fonts (`/api/media/font`) and the system's through CoreText (iOS has
+  Chinese, Japanese and Korean system fonts, so the app doesn't fetch the server's CJK subsets; not yet
+  checked on a device), on the picture
   through zoom and rotation, redrawn only when libass reports a change (also while paused).
   Downloads save them whole (`<track>.ass`) with the video's fonts (`font-<index>-<name>`) and draw
   them the same way offline; one saved before as WebVTT shows plain lines until its next refresh. Timing ("Already said" / "Not said yet", saved to

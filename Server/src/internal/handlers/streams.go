@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -284,6 +285,37 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	media.ServeSubtitles(w, r, path, track, start, duration)
+}
+
+// fontType names a font's type from its first bytes: OpenType with CFF outlines (OTTO), or TrueType.
+func fontType(b []byte) string {
+	if bytes.HasPrefix(b, []byte("OTTO")) {
+		return "font/otf"
+	}
+	return "font/ttf"
+}
+
+// GetSubtitleFont makes a subset of the CJK font for the Chinese, Japanese and Korean characters
+// in the text given, with the basic Latin (POST /api/media/subtitle-font with {"text": "…"}), for
+// the players' ASS renderers: the default font of their lines.
+func (h *MediaHandler) GetSubtitleFont(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request")
+		return
+	}
+	font, err := media.SubsetCJK(r.Context(), req.Text)
+	switch {
+	case err != nil:
+		log.Printf("[SUBTITLES] CJK font: %v", err)
+		respondError(w, http.StatusServiceUnavailable, "Can't make a CJK font here: "+err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", fontType(font))
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.Write(font)
 }
 
 // GetSeekPoint reports where a stream that copies the video (transcode=audio) starts when asked to

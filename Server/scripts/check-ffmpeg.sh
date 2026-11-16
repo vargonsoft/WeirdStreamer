@@ -41,4 +41,18 @@ check muxers chromaprint optional "intro detection by audio" "intros aren't dete
 if [ "$missing" = 0 ]; then
     echo "ffmpeg has everything Weird Streamer needs: $("$ff" -version | head -1)"
 fi
+
+# Not ffmpeg, and optional (it doesn't change the exit status): the CJK subtitle font and the
+# subsetter that makes its subsets (see the README's CJK subtitle font section).
+subset="${SUBSET:-pyftsubset}"
+if command -v "$subset" >/dev/null; then
+    echo "pyftsubset is there ($subset): styled subtitles get Chinese, Japanese and Korean fonts"
+else
+    echo "Optional: pyftsubset (fontTools) isn't installed; styled subtitles in Chinese, Japanese or Korean show as boxes"
+fi
+if ! ls /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc \
+    /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf \
+    /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.otf >/dev/null 2>&1; then
+    echo "Optional: no Noto Sans CJK font found (set media.cjkFontPath in config.yml if yours is elsewhere)"
+fi
 exit "$missing"

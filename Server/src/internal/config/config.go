@@ -281,6 +281,8 @@ type MediaConfig struct {
 	TranscodeCachePath    string      `json:"transcodeCachePath,omitempty" yaml:"transcodeCachePath"` // Transcodes while they play, so a client can resume
 	SubtitlePath          string      `json:"subtitlePath,omitempty" yaml:"subtitlePath"`             // Subtitles downloaded from OpenSubtitles
 	TempPath              string      `json:"tempPath,omitempty" yaml:"tempPath"`                     // Short-lived work files (HEIC conversions)
+	CJKFontPath           string      `json:"cjkFontPath,omitempty" yaml:"cjkFontPath"`               // A CJK font for styled subtitles' Chinese, Japanese and Korean (default: Noto Sans CJK, where it's installed)
+	SubsetCommand         string      `json:"subsetCommand,omitempty" yaml:"subsetCommand"`           // fontTools' pyftsubset, which makes that font's subset for each video (default "pyftsubset")
 	SupportedVideoFormats []string    `json:"supportedVideoFormats" yaml:"supportedVideoFormats"`
 	SupportedImageFormats []string    `json:"supportedImageFormats" yaml:"supportedImageFormats"`
 	SupportedDocFormats   []string    `json:"supportedDocFormats" yaml:"supportedDocFormats"`

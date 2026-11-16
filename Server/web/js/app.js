@@ -1659,7 +1659,7 @@ function restartSubtitles(position) {
         const from = Math.max(0, position - 10);
         subs = { ass: true, index: sub.index, header: '', format: '', lines: [], seen: new Set(),
                  shift: (sub.offset_ms || 0) / 1000, renderer: null, from, until: from, loading: false,
-                 abort: new AbortController() };
+                 abort: new AbortController(), cjkSeen: new Set(), cjkFonts: [] };
         loadAssWindow(subs);
         return;
     }
@@ -1770,6 +1770,7 @@ async function loadAssWindow(s) {
                 s.lines.push(line);
             }
         }
+        await addCjkFonts(s, lines.filter(line => line.startsWith('Dialogue:')).join('\n'));
         await showAssSubtitles(s);
     } catch (err) {
         if (err.name !== 'AbortError') console.warn('Subtitles failed:', err);
@@ -1829,7 +1830,7 @@ async function showAssSubtitles(s) {
         return;
     }
     await loadJassub();
-    const fonts = await videoFonts(player);
+    const fonts = [...await videoFonts(player), ...s.cjkFonts];
     if (subs !== s) return;
     // A new canvas each time: JASSUB may hand one over to its worker, and it can't be used again.
     const box = document.getElementById('player-ass-box');
@@ -1842,13 +1843,46 @@ async function showAssSubtitles(s) {
     s.renderer = new JASSUB({
         video: videoPlayer, canvas, subContent: script, fonts,
         workerUrl: at('jassub-worker.js'), wasmUrl: at('jassub-worker.wasm'), modernWasmUrl: at('jassub-worker-modern.wasm'),
-        availableFonts: { 'liberation sans': at('default.woff2') }, fallbackFont: 'liberation sans',
+        // The renderer's default font is the CJK subset's family (its Latin and CJK glyphs; libass
+        // can't fall back from one family to another without a font provider).
+        availableFonts: { 'liberation sans': at('default.woff2') }, fallbackFont: CJK_FAMILY,
         timeOffset: player.offset - s.shift,
     });
     redrawAss(s);
 }
 
 // JASSUB draws as the video's frames go by: while paused, a new script or timing is drawn here.
+// Chinese, Japanese and Korean characters (and their punctuation): a player's own fonts often lack
+// them, so the server makes a subset of a CJK font for the ones a track uses (once each).
+const CJK_FAMILY = 'noto sans cjk jp'; // the name the subsets carry
+const CJK_CHARACTER = /[\u1100-\u11FF\u3000-\u303F\u3040-\u30FF\u31F0-\u31FF\u3130-\u318F\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/g;
+
+// The first call always asks (the subset holds the basic Latin too, the renderer's default font).
+async function addCjkFonts(s, text) {
+    const fresh = [...new Set(text.match(CJK_CHARACTER) || [])].filter(ch => !s.cjkSeen.has(ch));
+    if (!fresh.length && s.cjkFonts.length) return;
+    fresh.forEach(ch => s.cjkSeen.add(ch));
+    try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (api.token) headers.Authorization = `Bearer ${api.token}`;
+        const res = await fetch(`${API_BASE}/api/media/subtitle-font`, {
+            method: 'POST', signal: s.abort.signal, credentials: 'same-origin', headers,
+            body: JSON.stringify({ text: fresh.join('') }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const font = new Uint8Array(await res.arrayBuffer());
+        if (subs !== s) return;
+        s.cjkFonts.push(font);
+        if (s.renderer) {
+            s.renderer.addFont(font);
+            redrawAss(s);
+        }
+    } catch (err) {
+        fresh.forEach(ch => s.cjkSeen.delete(ch)); // tried again with the next window
+        if (err.name !== 'AbortError') console.warn('CJK font failed (those lines show as boxes):', err.message);
+    }
+}
+
 function redrawAss(s) {
     if (!s.renderer) return;
     s.renderer.timeOffset = player.offset - s.shift;

@@ -141,6 +141,25 @@ make -j"$(nproc)" && sudo make install
 That installs `ffmpeg` and `ffprobe` in `/usr/local/bin`, which comes before the system's on the
 usual `PATH`; the systemd service finds them there too.
 
+### CJK subtitle font
+
+Styled (ASS/SSA) subtitles are drawn with libass, which needs a font for every character. The web
+player, the Android apps and the iPhone app each draw from the fonts they can reach: a browser or a
+phone's own fonts rarely include Chinese, Japanese or Korean characters, and a complete CJK font is
+20 MB or more. So for the web and the Android apps the server makes a small subset of one, holding
+just the characters a subtitle uses (and basic Latin), which takes a few kilobytes.
+
+It needs two things, both optional:
+
+- **A CJK font:** Noto Sans CJK, found in the usual places (`/usr/share/fonts/opentype/noto/`, Debian's
+  `fonts-noto-cjk` package). Another one: set `media.cjkFontPath` in `config.yml`.
+- **fontTools' `pyftsubset`**, which makes the subsets. Debian and Ubuntu have it as `python3-fonttools`,
+  or in a virtualenv: `python3 -m venv DIR && DIR/bin/pip install fonttools brotli`, then set
+  `media.subsetCommand` to `DIR/bin/pyftsubset` (the default is `pyftsubset` on the `PATH`).
+
+Without them, those characters show as boxes; nothing else changes. The iPhone app doesn't need them:
+iOS has the Chinese, Japanese and Korean fonts itself. `Server/scripts/check-ffmpeg.sh` reports both.
+
 ### HEIC photos
 
 Phones save photos as HEIC (`.heic`, `.heif`). The server uses `heif-convert`, from libheif's
@@ -165,8 +184,10 @@ later, and the same app works on Android TV and on phones. Install it from the f
 - **Server:** Go 1.24 with a C compiler (for SQLite), and [ffmpeg](#ffmpeg). `Server/start-server.sh` builds
   it, walks through the configuration and runs it. See [Server/README.md](Server/README.md),
   which also covers Docker.
-- **Android app:** a JDK 17 or later and the Android SDK, then `./gradlew assembleDebug` in
-  `Android/`.
+- **Android app:** a JDK 17 or later, the Android SDK and NDK r29 (`ANDROID_NDK_HOME`, or
+  `~/Android/Sdk/ndk/29.0.14206865`), with cmake, make, pkg-config and curl. The build compiles the
+  ASS subtitle renderer with them (`Android/native/build-libass.sh`, run by Gradle), then
+  `./gradlew assembleDebug` in `Android/`.
 - **A release:** `./release.sh` checks the tools, runs the server tests and builds everything in
   `dist/<version>/`: the server package, the APK and their checksums.
 

@@ -1,5 +1,7 @@
 package com.vargon.weirdstreamer.downloads
 
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import com.vargon.weirdstreamer.repository.normalizedServerUrl
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -332,8 +334,26 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 tmp.renameTo(file)
             }
         }
+        // The CJK font for the saved ASS tracks' Chinese, Japanese and Korean characters (the server's
+        // subset), so they're drawn offline too: "font-cjk.ttf", one per download.
+        val cjkFile = File(dir, "font-cjk.ttf")
+        val styledText = saved.filter { ServerSubtitles.isStyled(it) }
+            .joinToString("\n") { runCatching { File(dir, savedSubtitleName(it)).readText() }.getOrDefault("") }
+        val cjkChars = styledText.filter { ServerSubtitles.isCjk(it) }.toSet().joinToString("")
+        if (styledText.isNotEmpty()) {
+            val body = Gson().toJson(mapOf("text" to cjkChars))
+                .toRequestBody("application/json".toMediaType())
+            runCatching {
+                http.newCall(Request.Builder().url("${normalizedServerUrl(item.serverAddress)}/api/media/subtitle-font").post(body).build()).execute().use { r ->
+                    if (!r.isSuccessful) return@use
+                    val tmp = File(dir, cjkFile.name + ".part")
+                    tmp.outputStream().use { r.body!!.byteStream().copyTo(it) }
+                    tmp.renameTo(cjkFile)
+                }
+            }
+        }
         // Files of tracks gone from the server (or saved under their index before): not needed.
-        val keep = saved.map(::savedSubtitleName).toSet() + fonts.map(::savedFontName) + "tracks.json"
+        val keep = saved.map(::savedSubtitleName).toSet() + fonts.map(::savedFontName) + "font-cjk.ttf" + "tracks.json"
         File(dir, "tracks.json").writeText(Gson().toJson(saved))
         dir.listFiles().orEmpty().filter { it.name !in keep }.forEach { it.delete() }
     }

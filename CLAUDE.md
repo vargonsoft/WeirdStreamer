@@ -161,6 +161,9 @@ for each TODO item are at the end of this file.
     seconds a line names its second ("English 32") and a sign in the embedded font does too
     ("Sign 32", top left); a moving, fading line every 10 s, a red karaoke line every 20 s, and a
     tilted green "ASS en" for the whole video (top right).
+  - `Movies/CJK Test/CJK Test.mkv`: 1 minute with an ASS track whose lines cycle through Japanese,
+    Korean, Chinese and English every 5 seconds ("日本語の字幕テスト 40" at 40 s, the line starts at
+    40.02). The CJK fallback check: a player's own fonts lack those characters.
   - `Movies/Sparse Keyframes`: 2 minutes of H.264 with a keyframe every 10 seconds and AC-3
     audio (so it plays as a copy): for short jumps forward in a copied video.
   - `Movies/AVI BFrame Test`: 30 seconds of H.264 with B-frames in AVI, whose packets have no
@@ -320,6 +323,19 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     fetched through the API (JASSUB's own fetches wouldn't be signed in). JASSUB's time is the
     video's plus `timeOffset` (the stream's offset less the track's timing correction), and its
     canvas sits in `player-ass-box` over the picture; while paused, `redrawAss` draws changes.
+  - **CJK subtitle fonts** (`media/cjkfont.go`, `POST /api/media/subtitle-font` with `{"text"}`):
+    libass has no font for Chinese, Japanese or Korean characters in the web player or on Android,
+    and a complete CJK font is 20 MB or more. So the server makes a subset of
+    `media.cjkFontPath` (default: Noto Sans CJK where installed) with `media.subsetCommand`
+    (fontTools' `pyftsubset`) holding the text's CJK characters plus basic and Latin-1 Latin, cached
+    in `<subtitlePath>/cjk` per character set (OpenType, a few KB). Its family is "Noto Sans CJK JP",
+    and the players use that as the renderer's default font, since libass finds a glyph's font by
+    the family it asks for (no font provider): JASSUB's `fallbackFont` (`CJK_FAMILY` in `app.js`) and
+    Android's `ass_set_fonts` default family (`assrender.c`). The web and Android fetch a subset
+    with each ASS track (`addCjkFonts`, `ServerSubtitles.cjkFontsFor`). Downloads save it as
+    `font-cjk.ttf`. The iPhone uses CoreText's system fonts and doesn't fetch it. Without a font or
+    the subsetter the endpoint answers 503 and those lines show as boxes. Set `cjkFontPath` and
+    `subsetCommand` in config.example.yml; the checks are in `scripts/check-ffmpeg.sh`.
   - **ASS cache** (`media/asscache.go`): a window read from the video can't see a line that started
     before it (a long sign on screen when playback starts or jumps). The "Styled subtitles" job
     (after each scan and every 6 hours, like trickplay, waiting while the file's disk is busy)
@@ -378,7 +394,7 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     whole (`<n>.ass`, `format=ass&duration=0`) with the video's fonts (`font-<index>-<name>`), and
     play them styled offline; one saved before as WebVTT shows plain lines until the worker saves it
     again.
-  - Native build: `Android/native/build-libass.sh` builds libass 0.17.5, HarfBuzz 15.0.0, FriBiDi
+  - Native build (needs the NDK r29, cmake, make, pkg-config, curl; `release.sh` checks them): `Android/native/build-libass.sh` builds libass 0.17.5, HarfBuzz 15.0.0, FriBiDi
     1.0.17 and FreeType 2.15.0 (pinned, checksummed sources) as static libraries once, and
     `libassrender.so` for arm64-v8a, armeabi-v7a, x86_64 and x86 (about 1.7 MB each) into
     `Android/native/build/jniLibs` (git-ignored), which the app packages. Gradle runs it before every

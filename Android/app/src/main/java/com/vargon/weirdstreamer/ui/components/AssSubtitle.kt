@@ -55,6 +55,7 @@ fun AssSubtitle(subtitles: ServerSubtitles, position: () -> Long, videoAspect: (
             val fonts = subtitles.videoFonts()
             withContext(thread) { fonts.forEach { (name, data) -> renderer.addFont(name, data) } }
             var version = -1
+            var cjkAdded = 0 // of the CJK fonts this renderer has
             var size = IntSize.Zero
             val bitmaps = arrayOfNulls<Bitmap>(2)
             var back = 0
@@ -68,11 +69,17 @@ fun AssSubtitle(subtitles: ServerSubtitles, position: () -> Long, videoAspect: (
                 val timeMs = currentPosition() - subtitles.offsetMs
                 val v = subtitles.assVersion
                 val script = if (v != version) subtitles.assScript() else null
+                val cjk = if (script != null) subtitles.cjkFontsFor(script) else null
                 val drawn = withContext(thread) {
                     var force = false
                     if (script != null) {
                         renderer.setScript(script)
                         version = v
+                        force = true
+                    }
+                    if (cjk != null && cjk.size > cjkAdded) {
+                        cjk.drop(cjkAdded).forEach { renderer.addFont("cjk.ttf", it) }
+                        cjkAdded = cjk.size
                         force = true
                     }
                     if (picture != size) {

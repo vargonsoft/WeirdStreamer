@@ -92,6 +92,10 @@ interface ApiService {
     @GET("/api/media/font")
     suspend fun getFont(@Query("path") path: String, @Query("font") font: Int): Response<ResponseBody>
 
+    /** A subset of the server's CJK font for the Chinese, Japanese and Korean characters in [body]'s text. */
+    @POST("/api/media/subtitle-font")
+    suspend fun getSubtitleFont(@Body body: com.vargon.weirdstreamer.api.models.SubtitleFontRequest): Response<ResponseBody>
+
     @PUT("/api/media/subtitle-offset")
     suspend fun setSubtitleOffset(@Body request: com.vargon.weirdstreamer.api.models.SubtitleOffsetRequest): Response<Unit>
 

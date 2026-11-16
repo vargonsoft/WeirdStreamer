@@ -28,8 +28,10 @@ static void log_libass(int level, const char *fmt, va_list args, void *data) {
 static void apply_fonts(Context *c) {
     if (!c->fonts_dirty) return;
     // No system font provider: the fonts libass has are the video's own, added from memory, and
-    // the default font for everything else.
-    ass_set_fonts(c->renderer, c->default_font, "sans-serif", ASS_FONTPROVIDER_NONE, NULL, 0);
+    // the default font for everything else. A glyph none of them has (a Chinese, Japanese or Korean
+    // character) is looked for in the default family, which is the CJK subset's (the server's, added
+    // as fonts): libass's own fallback needs a provider. Family names it doesn't know are skipped.
+    ass_set_fonts(c->renderer, c->default_font, "Noto Sans CJK JP", ASS_FONTPROVIDER_NONE, NULL, 0);
     c->fonts_dirty = 0;
 }
 

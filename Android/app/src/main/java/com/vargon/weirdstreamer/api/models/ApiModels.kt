@@ -480,6 +480,9 @@ data class CodecsInfo(
     @SerializedName("fonts") val fonts: List<FontAttachment>? = null,
 )
 
+/** POST /api/media/subtitle-font: the text whose CJK characters need a font. */
+data class SubtitleFontRequest(@SerializedName("text") val text: String)
+
 data class FontAttachment(
     @SerializedName("index") val index: Int = 0, // among the file's attachments: the font= param
     @SerializedName("name") val name: String = "",

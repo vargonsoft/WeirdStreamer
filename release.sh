@@ -16,7 +16,8 @@
 #       bin/cli, the web UI (with this APK to download), setup.sh (writes config.yml, can create
 #       the admin user and install a systemd service), check-ffmpeg.sh, config.example.yml, LICENSE,
 #       NOTICE and VERSION.
-#       Where it runs it needs ffmpeg, and for HEIC photos heif-convert (libheif's tools).
+#       Where it runs it needs ffmpeg, and for HEIC photos heif-convert (libheif's tools). For CJK
+#       subtitle fonts it's optional: fontTools' pyftsubset and Noto Sans CJK (see the README).
 #   WeirdStreamer-<version>.apk                         the Android app (TV and phone)
 #   SHA256SUMS
 #
@@ -91,6 +92,14 @@ key="$HOME/.config/.android/debug.keystore"
 
 for tool in git python3 tar sha256sum; do
     command -v "$tool" >/dev/null || problem "$tool is missing."
+done
+
+# The Android build compiles the ASS subtitle renderer (Android/native/build-libass.sh): the NDK
+# and the tools it uses.
+ndk_dir="${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk/29.0.14206865}"
+[ -d "$ndk_dir" ] || problem "The Android NDK r29 isn't at $ndk_dir (set ANDROID_NDK_HOME): the ASS renderer is built with it."
+for tool in cmake make pkg-config curl; do
+    command -v "$tool" >/dev/null || problem "$tool is missing (the ASS renderer's build needs it)."
 done
 
 # Publishing: gh, signed in, and the GitHub remote it goes to ("owner/name", from its URL).
