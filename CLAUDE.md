@@ -332,8 +332,10 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     and the players use that as the renderer's default font, since libass finds a glyph's font by
     the family it asks for (no font provider): JASSUB's `fallbackFont` (`CJK_FAMILY` in `app.js`) and
     Android's `ass_set_fonts` default family (`assrender.c`). The web and Android fetch a subset
-    with each ASS track (`addCjkFonts`, `ServerSubtitles.cjkFontsFor`). Downloads save it as
-    `font-cjk.ttf`. The iPhone uses CoreText's system fonts and doesn't fetch it. Without a font or
+    with each ASS track (`addCjkFonts`, Android's `ServerSubtitles.fetchCjkFont`). Downloads save it as
+    `font-cjk.ttf`. The iPhone fetches the same subsets (`ServerSubtitles.fetchCjkFont`,
+    `ServerClient.subtitleFont`, default family in `iOS/native/assrender.c`) and saves them with its
+    downloads, tested on the simulator only. Without a font or
     the subsetter the endpoint answers 503 and those lines show as boxes. Set `cjkFontPath` and
     `subsetCommand` in config.example.yml; the checks are in `scripts/check-ffmpeg.sh`.
   - **ASS cache** (`media/asscache.go`): a window read from the video can't see a line that started

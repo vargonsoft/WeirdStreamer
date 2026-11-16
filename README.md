@@ -146,8 +146,9 @@ usual `PATH`; the systemd service finds them there too.
 Styled (ASS/SSA) subtitles are drawn with libass, which needs a font for every character. The web
 player, the Android apps and the iPhone app each draw from the fonts they can reach: a browser or a
 phone's own fonts rarely include Chinese, Japanese or Korean characters, and a complete CJK font is
-20 MB or more. So for the web and the Android apps the server makes a small subset of one, holding
-just the characters a subtitle uses (and basic Latin), which takes a few kilobytes.
+20 MB or more. So for the web and the apps the server makes a small subset of one, holding
+just the characters a subtitle uses (and basic Latin), which takes a few kilobytes. The iPhone app
+fetches one too, since its system fonts lack some Chinese characters.
 
 It needs two things, both optional:
 
@@ -158,8 +159,9 @@ It needs two things, both optional:
   or in a virtualenv: `python3 -m venv DIR && DIR/bin/pip install fonttools brotli`, then set
   `media.subsetCommand` to `DIR/bin/pyftsubset` (the default is `pyftsubset` on the `PATH`).
 
-Without them, those characters show as boxes; nothing else changes. The iPhone app doesn't need them:
-iOS has the Chinese, Japanese and Korean fonts itself. `Server/scripts/check-ffmpeg.sh` reports both.
+Without them, those characters show as boxes; nothing else changes. The iPhone app's system fonts have
+Japanese and Korean, but not simplified Chinese, so it needs them too for those lines.
+`Server/scripts/check-ffmpeg.sh` reports both.
 
 ### HEIC photos
 

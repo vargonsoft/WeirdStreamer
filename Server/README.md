@@ -10,7 +10,7 @@ and serves the web UI. The Android TV and phone app talks to the same API.
 - `ffmpeg` and `ffprobe` on `PATH`, for thumbnails, trickplay, transcoding and disc playback.
 - Python 3 with PyYAML (`python3-yaml`), for the scripts that read `config.yml`.
 - Optional: fontTools' `pyftsubset` and a CJK font (Noto Sans CJK), for styled subtitles in Chinese,
-  Japanese or Korean. See the [README](../README.md#cjk-subtitle-font).
+  Japanese or Korean (the web, Android and iPhone apps all fetch subsets from the server). See the [README](../README.md#cjk-subtitle-font).
 - Optional: a TMDB API read access token for movie and TV metadata.
 
 ## Build and run
