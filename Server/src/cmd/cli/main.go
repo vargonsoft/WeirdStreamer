@@ -20,7 +20,20 @@ import (
 	"golang.org/x/term"
 )
 
+// version is the release's, set at build time (-ldflags "-X main.version=..."); "dev" otherwise.
+var version = "dev"
+
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "-h", "--help", "help":
+			printUsage()
+			os.Exit(0)
+		case "--version", "-version":
+			fmt.Println("WeirdStreamer cli", version)
+			os.Exit(0)
+		}
+	}
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)

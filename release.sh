@@ -174,7 +174,7 @@ pkg="$stage/weirdstreamer-$version"
 mkdir -p "$pkg/bin"
 for cmd in server cli; do
     # (go-sqlite3's C has a harmless const warning)
-    CGO_ENABLED=1 CGO_CFLAGS="-O2 -g -Wno-discarded-qualifiers" go -C Server/src build -trimpath -ldflags "-s -w" -o "$pkg/bin/$cmd" "./cmd/$cmd"
+    CGO_ENABLED=1 CGO_CFLAGS="-O2 -g -Wno-discarded-qualifiers" go -C Server/src build -trimpath -ldflags "-s -w -X main.version=$version" -o "$pkg/bin/$cmd" "./cmd/$cmd"
 done
 
 echo "== Android"

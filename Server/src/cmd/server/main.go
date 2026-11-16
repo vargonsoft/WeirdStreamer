@@ -44,7 +44,33 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and JWT token.
 
+// version is the release's, set at build time (-ldflags "-X main.version=..."); "dev" otherwise.
+var version = "dev"
+
+const serverUsage = `Usage: server [-h | --help | --version]
+
+Runs the WeirdStreamer server with the config in ./config.yml (or the CONFIG_PATH
+environment variable). Its command-line options:
+  -h, --help     show this help and exit
+  --version      show the version and exit
+
+The admin commands are in the cli program (run it with no arguments to list them).
+`
+
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "-h", "--help", "help":
+			fmt.Print(serverUsage)
+			os.Exit(0)
+		case "--version", "-version":
+			fmt.Println("WeirdStreamer server", version)
+			os.Exit(0)
+		default:
+			fmt.Fprint(os.Stderr, serverUsage)
+			os.Exit(2)
+		}
+	}
 	// A stop signal (a restart) cancels ctx: the background jobs stop and the server shuts down.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
