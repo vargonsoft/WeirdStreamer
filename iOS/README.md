@@ -1,8 +1,6 @@
 # WeirdStreamer for iPhone
 
-The iPhone app for a WeirdStreamer server, built to work like the Android phone app (its screens,
-words and behaviour are ported from `Android/…/ui/components/Phone*.kt` and `MediaViewModel.kt`).
-It is **not** for the App Store: it's sideloaded with AltStore and refreshed through Remote AltStore
+The iPhone and iPad app for a WeirdStreamer server. It is **not** for the App Store: it's sideloaded with AltStore and refreshed through Remote AltStore
 or LocalDevVPN.
 
 ## What's there (as on Android)
@@ -130,12 +128,11 @@ self-signed server needs its certificate installed on the phone (Settings › Ge
 Certificate Trust Settings), or plain HTTP. iOS refuses self-signed certificates valid for more
 than 825 days.
 
-## Not yet ported from Android
+## Not yet included
 
 - SMB shares: iOS has no SMB client, so this needs a library (AMSMB2, libsmb2) or one written
   for the app.
-- Phone gestures beyond pinch (Android doesn't have them yet either) and the update banner
-  (AltStore handles updates).
+- The update banner (AltStore handles updates).
 - Tried against a Linux e2e server (whose ffmpeg reads DVDs): the Library view and title pages,
   and a real DVD image (titles, chapters, audio tracks, burned-in subtitles, resume). Not yet tried:
   Compressed downloads, Download ahead, PGS subtitles, backup and

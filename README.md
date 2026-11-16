@@ -7,7 +7,16 @@
 
 Weird Streamer is a self-hosted media server for your own videos, photos and documents. A Go
 server indexes your folders and streams them, as they are or transcoded on the fly, to a web UI
-and to one Android app that runs on both Android TV and phones.
+and to two apps: one Android app for Android TV, phones and tablets, and one app for iPhone and iPad.
+
+- [Features](#features)
+- [Install](#install): [Server](#server), [ffmpeg](#ffmpeg), [CJK subtitle font](#cjk-subtitle-font),
+  [HEIC photos](#heic-photos), [Android app](#android-app), [iPhone and iPad app](#iphone-and-ipad-app)
+- [Build from source](#build-from-source)
+- [Repository layout](#repository-layout)
+- [License](#license)
+
+App READMEs: [Server](Server/README.md), [Android](Android/README.md), [iPhone](iOS/README.md).
 
 ## Features
 
@@ -53,6 +62,9 @@ and to one Android app that runs on both Android TV and phones.
 - **Themes:** Ember (the default) and 20 others, the same on the web and in the Android app,
   picked from a grid of previews in Settings › Themes.
 - **The Android app** also browses SMB shares directly, without a server.
+- **The iPhone and iPad app** plays the same library: browsing, the same transcode modes, styled (ASS)
+  subtitles, PGS, and downloads that play offline with their subtitles and skip data. It runs on
+  iOS 17 or later, sideloaded (see [the iPhone and iPad app](#iphone-and-ipad-app)).
 - **Runs at home:** HTTPS with HTTP/2, works behind a reverse proxy such as nginx, and keeps sign-in
   and access logs.
 
@@ -144,10 +156,10 @@ usual `PATH`; the systemd service finds them there too.
 ### CJK subtitle font
 
 Styled (ASS/SSA) subtitles are drawn with libass, which needs a font for every character. The web
-player, the Android apps and the iPhone app each draw from the fonts they can reach: a browser or a
+player, the Android apps and the iPhone and iPad app each draw from the fonts they can reach: a browser or a
 phone's own fonts rarely include Chinese, Japanese or Korean characters, and a complete CJK font is
 20 MB or more. So for the web and the apps the server makes a small subset of one, holding
-just the characters a subtitle uses (and basic Latin), which takes a few kilobytes. The iPhone app
+just the characters a subtitle uses (and basic Latin), which takes a few kilobytes. The iPhone and iPad app
 fetches one too, since its system fonts lack some Chinese characters.
 
 It needs two things, both optional:
@@ -156,16 +168,31 @@ It needs two things, both optional:
   `fonts-noto-cjk` package; `/usr/share/fonts/noto/`, Alpine's `font-noto-cjk`), or set
   `media.cjkFontPath` in `config.yml`. The players use its family
   name ("Noto Sans CJK JP"), so other CJK fonts won't be matched.
-- **fontTools' `pyftsubset`**, which makes the subsets. Debian and Ubuntu have it as `fonttools`,
-  or in a virtualenv: `python3 -m venv DIR && DIR/bin/pip install fonttools brotli`, then set
-  `media.subsetCommand` to `DIR/bin/pyftsubset` (the default is `pyftsubset` on the `PATH`).
+- **fontTools' `pyftsubset`**, which makes the subsets. On Debian and Ubuntu, install the `fonttools`
+  package:
 
-Without them, those characters show as boxes; nothing else changes. The iPhone app's system fonts have
+  ```bash
+  sudo apt install fonttools
+  ```
+
+  Or in a virtualenv, then set `media.subsetCommand` in `config.yml` to the `pyftsubset` it makes
+  (the default is `pyftsubset` on the `PATH`):
+
+  ```bash
+  python3 -m venv ~/fonttools
+  ~/fonttools/bin/pip install fonttools brotli
+  ```
+
+Without them, those characters show as boxes; nothing else changes. The iPhone and iPad app's system fonts have
 Japanese and Korean, but not simplified Chinese, so it needs them too for those lines.
 `Server/scripts/check-ffmpeg.sh` reports both. The Docker image has both (the font adds 19 MB, Python
 and fontTools about 60 MB). Otherwise, install them yourself if you want that support: fontTools from
 your system's packages, and the Noto Sans CJK font from yours (`fonts-noto-cjk` on Debian and Ubuntu,
-`google-noto-sans-cjk-ttc-fonts` on Fedora).
+`google-noto-sans-cjk-ttc-fonts` on Fedora):
+
+```bash
+sudo apt install fonts-noto-cjk
+```
 
 ### HEIC photos
 
@@ -186,6 +213,16 @@ later, and the same app works on Android TV and on phones. Install it from the f
 (sideloading), then add your server by its name or address. Without a port, the app looks for it on
 9000, 443, 80 and 8080, over HTTPS or HTTP, and saves the address it found.
 
+Its own README, [Android/README.md](Android/README.md), covers building and testing it.
+
+### iPhone and iPad app
+
+The iPhone and iPad app is for sideloading, not the App Store: it runs on iOS 17 or later and is installed
+with [AltStore](https://altstore.io) (or LocalDevVPN, with Remote AltStore), with a free Apple ID.
+It has no paid entitlements, so there are no push notifications, iCloud or Apple Pay. Add your
+server by its name or address. The app's README, [iOS/README.md](iOS/README.md), covers what it
+does and how to build it.
+
 ## Build from source
 
 - **Server:** Go 1.24 with a C compiler (for SQLite), and [ffmpeg](#ffmpeg). `Server/start-server.sh` builds
@@ -195,6 +232,9 @@ later, and the same app works on Android TV and on phones. Install it from the f
   `~/Android/Sdk/ndk/29.0.14206865`), with cmake, make, pkg-config and curl. The build compiles the
   ASS subtitle renderer with them (`Android/native/build-libass.sh`, run by Gradle), then
   `./gradlew assembleDebug` in `Android/`.
+- **iPhone and iPad app:** Xcode 26 or later, and cmake and pkg-config (Homebrew). Run
+  `iOS/native/build-libass.sh` once, then open `iOS/WeirdStreamer/WeirdStreamer.xcodeproj`. Its
+  README has the details and the simulator build.
 - **A release:** `./release.sh` checks the tools, runs the server tests and builds everything in
   `dist/<version>/`: the server package, the APK and their checksums.
 
@@ -212,7 +252,8 @@ go vet ./internal/... ./cmd/... && go test ./internal/...
 | `Server/web` | The web UI (HTML, CSS and JavaScript, no build step) |
 | `Server/scripts`, `Server/package` | Building, running and setting up the server |
 | `Server/docker` | Running the server in a container |
-| `Android` | The Android TV and phone app (Kotlin, Jetpack Compose, ExoPlayer) |
+| `Android` | The Android TV and phone app (Kotlin, Jetpack Compose, ExoPlayer), with [its README](Android/README.md) |
+| `iOS` | The iPhone and iPad app (SwiftUI, SwiftData), with [its README](iOS/README.md) |
 | `Logo` | The app icon and wordmark |
 
 ## License
