@@ -7,9 +7,10 @@ for each TODO item are at the end of this file.
 
 ## Rules (from the user)
 
-- **Off limits:** the `k` and `p` libraries (`/home/USER/.personal/...`) and `p2`
-  (`/home/USER/.personal2/...`). Don't browse, list, play or screenshot them. The one exception
-  so far: reading codec/format details (ffprobe, no frames) of a file the user names.
+- **Off limits:** the `k` and `p` libraries and `p2`, personal folders kept outside this project
+  (their locations are in the user's own notes, not here). Don't browse, list, play or screenshot
+  them. The one exception so far: reading codec/format details (ffprobe, no frames) of a file the
+  user names.
 - **Secrets:** the TMDB token is in `Server/config.yml` and the test password is in
   `Server/e2e/pw`. Never print or repeat either.
 - **Live server restarts:** only when asked, with `Server/scripts/restart-live.sh` (below). It won't
