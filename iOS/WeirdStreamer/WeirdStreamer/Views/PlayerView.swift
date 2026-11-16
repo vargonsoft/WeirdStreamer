@@ -1,6 +1,7 @@
 import SwiftUI
 import AVKit
 import AVFoundation
+import MediaPlayer
 
 // The phone player, as Android's PhoneVideoPlayer: the video on black (pinch to zoom, drag to
 // pan, aspect ratio and rotation), and controls that show on a tap and hide after 5 seconds —
@@ -582,6 +583,20 @@ struct PlayerView: View {
     @State private var showDisc = false
     @State private var showTiming = false
     @State private var showSubtitleSearch = false
+    // Swipes (as Android's PhoneGestures): sideways seeks, applied on release; up and down set the
+    // brightness (left half) or the volume (right half) as the finger moves.
+    @State private var swipe: PlayerSwipe?
+    @State private var swipeCancelled = false   // a second finger came: this drag swipes no more
+    @State private var swipeLast: CGSize = .zero // the drag's translation last time
+    @State private var dragging = false
+    @State private var swipeSeekFrom: Double = 0
+    @State private var swipeSeekDelta: Double = 0
+    @State private var swipeLevel: Double = 0
+    @State private var swipeIndicator: SwipeIndicator?
+    @State private var swipeHide: Task<Void, Never>?
+    @State private var videoArea: CGSize = .zero
+    @State private var bottomControlsTop: CGFloat = .infinity // global y; see `controls`
+    @State private var brightnessBefore: CGFloat? // the screen's, given back when the player closes
 
     init(request: PlayRequest) {
         self.request = request
@@ -607,22 +622,39 @@ struct PlayerView: View {
                     .scaleEffect(zoom)
                     .offset(pan)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                Color.clear
+                    .onAppear { videoArea = geo.size }
+                    .onChange(of: geo.size) { _, now in videoArea = now }
             }
             .ignoresSafeArea()
             .contentShape(Rectangle())
             .onTapGesture { showControls.toggle(); lastInteraction = Date() }
             .gesture(MagnificationGesture()
-                .onChanged { zoom = max(1, min(pinchBase * $0, 5)) }
+                .onChanged {
+                    endSwipe(cancelled: true) // a second finger: the swipe stops, the pinch zooms
+                    zoom = max(1, min(pinchBase * $0, 5))
+                }
                 .onEnded { _ in
                     pinchBase = zoom
                     if zoom == 1 { pan = .zero; panBase = .zero }
+                    if !dragging { swipeCancelled = false }
                 })
-            .simultaneousGesture(DragGesture(minimumDistance: 10)
+            .simultaneousGesture(DragGesture(minimumDistance: 10, coordinateSpace: .global)
                 .onChanged { drag in
-                    guard zoom > 1 else { return }
-                    pan = CGSize(width: panBase.width + drag.translation.width, height: panBase.height + drag.translation.height)
+                    dragging = true
+                    if zoom > 1 {
+                        pan = CGSize(width: panBase.width + drag.translation.width, height: panBase.height + drag.translation.height)
+                    } else {
+                        swipeMoved(drag)
+                    }
                 }
-                .onEnded { _ in panBase = pan })
+                .onEnded { _ in
+                    panBase = pan
+                    endSwipe(cancelled: false)
+                    swipeCancelled = false
+                    swipeLast = .zero
+                    dragging = false
+                })
 
             if let subtitles = playback.subtitles {
                 SubtitleOverlay(subtitles: subtitles, position: { Int64(playback.position * 1000) },
@@ -641,6 +673,11 @@ struct PlayerView: View {
             }
 
             if showControls { controls.transition(.opacity) }
+
+            if let swipeIndicator {
+                SwipeIndicatorView(indicator: swipeIndicator).allowsHitTesting(false)
+            }
+            VolumeControl().frame(width: 1, height: 1).opacity(0.01).allowsHitTesting(false)
 
             if showControls, let menu = openMenu, let list = pickList(menu) {
                 PickListView(list: list, onPick: { i in
@@ -710,10 +747,86 @@ struct PlayerView: View {
             // An open menu keeps the controls up; closing it (a pick or a tap outside) starts the 5 s again.
             if playback.isPlaying && scrubbing == nil && !showDisc && !showSpeed && openMenu == nil { showControls = false }
         }
-        .onDisappear { playback.stop() }
+        .onDisappear {
+            playback.stop()
+            if let brightnessBefore { currentScreen?.brightness = brightnessBefore }
+        }
     }
 
     private func touch() { lastInteraction = Date() }
+
+    private var currentScreen: UIScreen? {
+        UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.screen }.first
+    }
+
+    /// A one-finger drag on the unzoomed picture: once past the slop, mostly sideways seeks, up or
+    /// down is brightness (left half) or volume (right half).
+    private func swipeMoved(_ drag: DragGesture.Value) {
+        guard !swipeCancelled, !showSpeed, !showDisc, videoArea.width > 0, videoArea.height > 0,
+              !(showControls && drag.startLocation.y >= bottomControlsTop) else { return }
+        let move = CGSize(width: drag.translation.width - swipeLast.width, height: drag.translation.height - swipeLast.height)
+        swipeLast = drag.translation
+        let kind: PlayerSwipe
+        if let swipe {
+            kind = swipe
+        } else {
+            kind = abs(drag.translation.width) > abs(drag.translation.height) ? .seek
+                : (drag.startLocation.x < videoArea.width / 2 ? .brightness : .volume)
+            swipe = kind
+            swipeHide?.cancel()
+            switch kind {
+            case .seek:
+                swipeSeekFrom = playback.position
+                swipeSeekDelta = 0
+            case .brightness:
+                if brightnessBefore == nil { brightnessBefore = currentScreen?.brightness }
+                swipeLevel = Double(currentScreen?.brightness ?? 0.5)
+            case .volume:
+                swipeLevel = Double(VolumeControl.level)
+            }
+            return
+        }
+        switch kind {
+        case .seek:
+            let duration = playback.duration
+            guard duration > 0 else { return }
+            // The screen's width is 90 seconds.
+            swipeSeekDelta += move.width / videoArea.width * 90
+            let target = min(max(swipeSeekFrom + swipeSeekDelta, 0), duration)
+            swipeSeekDelta = target - swipeSeekFrom
+            swipeIndicator = .seek(seekGestureText(delta: swipeSeekDelta, target: target))
+        case .brightness, .volume:
+            // The height of the picture's area goes from none to full.
+            swipeLevel = min(max(swipeLevel - move.height / videoArea.height, 0), 1)
+            if kind == .volume {
+                VolumeControl.set(Float(swipeLevel))
+            } else {
+                currentScreen?.brightness = CGFloat(swipeLevel)
+            }
+            swipeIndicator = .level(volume: kind == .volume, level: swipeLevel)
+        }
+    }
+
+    /// The swipe ended (a lift, or a second finger: `cancelled`): a seek is applied unless cancelled,
+    /// a level's indicator fades a moment after.
+    private func endSwipe(cancelled: Bool) {
+        if cancelled && swipe == nil && !swipeCancelled { swipeCancelled = true; return }
+        guard let kind = swipe else { return }
+        swipe = nil
+        swipeLast = .zero
+        if cancelled { swipeCancelled = true }
+        if kind == .seek {
+            let target = swipeSeekFrom + swipeSeekDelta
+            if !cancelled, playback.duration > 0, abs(swipeSeekDelta) >= 0.5 { playback.seek(to: target) }
+            swipeIndicator = nil
+        } else {
+            swipeHide?.cancel()
+            swipeHide = Task {
+                try? await Task.sleep(for: .milliseconds(700))
+                if !Task.isCancelled { swipeIndicator = nil }
+            }
+        }
+    }
 
     /// A panel opened from the controls (the Disc sheet): they stay up a while longer.
     private func holdControls() { lastInteraction = Date().addingTimeInterval(25) }
@@ -832,6 +945,9 @@ struct PlayerView: View {
                     .font(.caption2)
                 }
                 .padding(16)
+                // Where the bottom controls start: a drag there (the seek bar's track, which its
+                // Slider lets through, the trickplay row) is theirs, never a swipe.
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { bottomControlsTop = $0 }
             }
             .foregroundStyle(.white)
         }
@@ -1191,4 +1307,74 @@ struct PlayerPanel<Content: View>: View {
         }
         .transition(.move(edge: .bottom))
     }
+}
+
+// MARK: Swipe gestures
+
+/// What a one-finger swipe on the player's picture does.
+enum PlayerSwipe { case seek, brightness, volume }
+
+/// What a swipe shows while it lasts: the seek's text, or the brightness or volume level.
+enum SwipeIndicator: Equatable {
+    case seek(String)
+    case level(volume: Bool, level: Double)
+}
+
+/// A seek's "+0:30 / 12:34": the jump, then where it lands.
+func seekGestureText(delta: Double, target: Double) -> String {
+    func clock(_ seconds: Double) -> String {
+        let s = Int(abs(seconds))
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
+            : String(format: "%d:%02d", s / 60, s % 60)
+    }
+    return (delta < 0 ? "−" : "+") + clock(delta) + " / " + clock(target)
+}
+
+struct SwipeIndicatorView: View {
+    let indicator: SwipeIndicator
+
+    var body: some View {
+        VStack(spacing: 10) {
+            switch indicator {
+            case .seek(let text):
+                Text(text).font(.title2.weight(.medium)).monospacedDigit()
+            case .level(let volume, let level):
+                let percent = Int((level * 100).rounded())
+                HStack(spacing: 10) {
+                    Image(systemName: !volume ? "sun.max.fill" : percent == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 24))
+                    Text("\(percent)%").font(.title3.weight(.medium)).monospacedDigit()
+                }
+                ProgressView(value: min(max(level, 0), 1))
+                    .tint(.white)
+                    .frame(width: 160)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 20).padding(.vertical, 14)
+        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// The system volume, set through an MPVolumeView kept on screen but invisible (iOS has no other
+/// way for an app; it also keeps the system's volume pop-up away while the player is open).
+struct VolumeControl: UIViewRepresentable {
+    @MainActor private static weak var view: MPVolumeView?
+
+    /// The output volume, 0 to 1.
+    @MainActor static var level: Float { AVAudioSession.sharedInstance().outputVolume }
+
+    @MainActor static func set(_ level: Float) {
+        guard let slider = view?.subviews.compactMap({ $0 as? UISlider }).first else { return }
+        slider.value = min(max(level, 0), 1)
+        slider.sendActions(for: .valueChanged)
+    }
+
+    func makeUIView(context: Context) -> MPVolumeView {
+        let view = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        Self.view = view
+        return view
+    }
+
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
 }
