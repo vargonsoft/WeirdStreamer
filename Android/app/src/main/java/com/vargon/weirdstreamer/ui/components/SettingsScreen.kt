@@ -276,6 +276,16 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
+            // The account in use signs another TV in, with the code that TV shows.
+            viewModel.connectedServer?.let { server ->
+                item {
+                    TvSignInTvSection(server)
+                    Spacer(modifier = Modifier.height(24.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+            }
+
             // Dynamic Provider Sections
             viewModel.sourceProviders.forEach { provider ->
                 item {

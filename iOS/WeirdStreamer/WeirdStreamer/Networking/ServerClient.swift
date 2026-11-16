@@ -279,6 +279,20 @@ final class ServerClient: Sendable {
         return try await perform(try request("POST", "/api/media/subtitle-font", body: body))
     }
 
+    /// Signs in a TV as this account with the code it shows (POST /api/pairing/claim). The code
+    /// goes upper-case without spaces or hyphens. An unknown, expired or used code (404) and too
+    /// many tries (429) throw `ServerError.http` with the server's message.
+    func claimPairingCode(_ code: String) async throws {
+        let normalized = code.uppercased().filter { $0 != " " && $0 != "-" }
+        do {
+            try await send("POST", "/api/pairing/claim", body: ["code": normalized])
+        } catch ServerError.http(404, let message) {
+            throw ServerError.http(status: 404, message: message ?? "That code isn't valid. Check the code on the TV.")
+        } catch ServerError.http(429, let message) {
+            throw ServerError.http(status: 429, message: message ?? "Too many tries. Wait a minute and try again.")
+        }
+    }
+
     /// Sign-in: returns the token and the user. Used with no token yet.
     func login(username: String, password: String) async throws -> LoginResponse {
         struct Body: Encodable { let username: String; let password: String }

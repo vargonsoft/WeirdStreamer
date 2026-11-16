@@ -89,6 +89,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.vargon.weirdstreamer.api.models.AdminStream
 import com.vargon.weirdstreamer.api.models.ChangePasswordRequest
+import com.vargon.weirdstreamer.repository.normalizePairingCode
 import com.vargon.weirdstreamer.api.models.CreateUserRequest
 import com.vargon.weirdstreamer.api.models.ServerUser
 import com.vargon.weirdstreamer.repository.ServerRepository
@@ -778,6 +779,40 @@ fun AccountTab(server: ServerRepository) {
                     }
                 }) { Text("Change password") }
             }
+        }
+        item { SectionTitle("Sign in on a TV") }
+        item { SignInOnTv(server) }
+    }
+}
+
+/** The code a TV shows on its sign-in screen, entered here, signs that TV in as this account. */
+@Composable
+private fun SignInOnTv(server: ServerRepository) {
+    val scope = rememberCoroutineScope()
+    var code by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    fun claim() {
+        val clean = normalizePairingCode(code)
+        if (clean.length != 5) { message = "Enter the 5-character code the TV shows." to true; return }
+        if (busy) return
+        busy = true
+        scope.launch {
+            val result = server.claimPairing(clean)
+            busy = false
+            message = if (result.isSuccess) { code = ""; "The TV is signing in." to false }
+                else (result.exceptionOrNull()?.message ?: "Couldn't sign the TV in") to true
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Enter the code the TV shows on its sign-in screen.", style = MaterialTheme.typography.bodyMedium)
+        OutlinedTextField(code, { code = it.uppercase().take(8) }, label = { Text("Code") }, singleLine = true,
+            keyboardOptions = pairingCodeKeyboard(),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { claim() }),
+            modifier = Modifier.fillMaxWidth())
+        Message(message?.first, message?.second ?: false)
+        Button(shape = AppButtonShape, colors = phoneButtonColors(), enabled = !busy, onClick = { claim() }) {
+            Text("Sign in on the TV")
         }
     }
 }

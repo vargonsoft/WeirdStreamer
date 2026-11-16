@@ -978,6 +978,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         authRequiredSource = MediaSource(provider.typeId, address)
     }
 
+    /** The TV signed in with a code (its token is saved, as a password sign-in saves it): opens the server as that account. */
+    fun signedInWithCode(source: MediaSource) {
+        authStateRefreshTrigger++
+        loadPath(source, currentPath)
+    }
+
     fun signOutServerAccount(provider: SourceProvider, address: String, username: String) {
         if (provider.typeId == "SMB") credentialManager.signOutSmbAccount(address, username)
         else credentialManager.signOutServerAccount(address, username)

@@ -275,7 +275,7 @@ struct ThemesTab: View {
     }
 }
 
-/// The open account: who it is, and changing its password.
+/// The open account: who it is, changing its password, and signing in a TV with the code it shows.
 struct AccountTab: View {
     @Environment(AppModel.self) private var model
     @State private var current = ""
@@ -283,6 +283,9 @@ struct AccountTab: View {
     @State private var confirm = ""
     @State private var message: (String, Bool)?
     @State private var working = false
+    @State private var tvCode = ""
+    @State private var tvMessage: (String, Bool)?
+    @State private var pairing = false
 
     var body: some View {
         ScrollView {
@@ -298,8 +301,48 @@ struct AccountTab: View {
                 Button("Change password") { Task { await change() } }
                     .buttonStyle(PhoneButtonStyle())
                     .disabled(working || current.isEmpty || password.isEmpty)
+
+                Divider().overlay(Palette.raised).padding(.vertical, 8)
+                Text("Sign in on a TV").font(.subheadline.weight(.medium)).foregroundStyle(Palette.accent)
+                Text("Enter the code the TV shows, and the TV signs in as \(model.currentAccount ?? "this account").")
+                    .font(.footnote).foregroundStyle(Palette.muted)
+                // PhoneTextField's look, with capitals: its own field turns autocapitalization off.
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("TV code").font(.caption).foregroundStyle(Palette.accent)
+                    TextField("Code on the TV", text: $tvCode)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .font(.body)
+                        .onChange(of: tvCode) { _, value in
+                            let limited = String(value.uppercased().prefix(8))
+                            if limited != value { tvCode = limited }
+                        }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .background(Palette.raised, in: UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4))
+                .overlay(alignment: .bottom) { Rectangle().fill(Palette.accent).frame(height: 1) }
+                if let tvMessage {
+                    Text(tvMessage.0).font(.footnote).foregroundStyle(tvMessage.1 ? Palette.error : Palette.muted)
+                }
+                Button("Sign in on the TV") { Task { await signInTV() } }
+                    .buttonStyle(PhoneButtonStyle())
+                    .disabled(pairing || tvCode.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(16)
+        }
+    }
+
+    private func signInTV() async {
+        guard let client = model.client else { return }
+        pairing = true
+        defer { pairing = false }
+        do {
+            try await client.claimPairingCode(tvCode)
+            tvMessage = ("The TV is signing in.", false)
+            tvCode = ""
+        } catch {
+            model.handle(error)
+            tvMessage = (error.localizedDescription, true)
         }
     }
 

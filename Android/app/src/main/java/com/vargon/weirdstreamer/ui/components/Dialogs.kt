@@ -21,7 +21,9 @@ import androidx.tv.material3.*
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun AuthDialog(host: String, onDismiss: () -> Unit, initialUsername: String? = null, title: String? = null, hint: String? = null, onLogin: (String, String, Boolean) -> Unit) {
+fun AuthDialog(host: String, onDismiss: () -> Unit, initialUsername: String? = null, title: String? = null, hint: String? = null,
+    onUseCode: (() -> Unit)? = null, // a WeirdStreamer server: sign in with a code from another device instead
+    onLogin: (String, String, Boolean) -> Unit) {
     var username by remember { mutableStateOf(initialUsername.orEmpty()) }
     var password by remember { mutableStateOf("") }
     var savePassword by remember { mutableStateOf(true) }
@@ -44,6 +46,7 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, initialUsername: String? = n
                     label = { FieldText("Username") },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .tvFieldLeavesOnUpDown()
                         .focusRequester(focusRequester),
                     singleLine = true,
                     keyboardOptions = usernameKeyboard(ImeAction.Next),
@@ -58,7 +61,7 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, initialUsername: String? = n
                     onValueChange = { password = it },
                     label = { FieldText("Password") },
                     visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().focusRequester(passwordRequester),
+                    modifier = Modifier.fillMaxWidth().tvFieldLeavesOnUpDown().focusRequester(passwordRequester),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
@@ -76,11 +79,16 @@ fun AuthDialog(host: String, onDismiss: () -> Unit, initialUsername: String? = n
                 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Button(shape = tvButtonShape(), colors = tvButtonColors(),
-                    onClick = { onLogin(username, password, savePassword) },
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Text("Login")
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    onUseCode?.let {
+                        TvSecondaryButton(onClick = it) { Text("Sign in with a code") }
+                        Spacer(modifier = Modifier.width(16.dp))
+                    }
+                    Button(shape = tvButtonShape(), colors = tvButtonColors(),
+                        onClick = { onLogin(username, password, savePassword) }
+                    ) {
+                        Text("Login")
+                    }
                 }
             }
         }

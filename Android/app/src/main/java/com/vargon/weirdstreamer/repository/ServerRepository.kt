@@ -16,6 +16,9 @@ import com.vargon.weirdstreamer.api.models.WatchedRequest
 import com.vargon.weirdstreamer.api.models.LibraryFile
 import com.vargon.weirdstreamer.api.models.LibraryListing
 import com.vargon.weirdstreamer.api.models.LoginRequest
+import com.vargon.weirdstreamer.api.models.PairingClaim
+import com.vargon.weirdstreamer.api.models.PairingCode
+import com.vargon.weirdstreamer.api.models.PairingStatus
 import com.vargon.weirdstreamer.api.models.TitleDetail
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import kotlinx.coroutines.Dispatchers
@@ -416,7 +419,72 @@ class ServerRepository(
     }
     
     fun getToken(): String? = credentialManager.getServerToken(serverUrl)
+
+    // ---- Signing a TV in with a code ----
+
+    /** A new code for this TV to show (POST /api/auth/pairing). */
+    suspend fun createPairing(): Result<PairingCode> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.createPairing()
+            val body = response.body()
+            when {
+                response.isSuccessful && body != null -> Result.success(body)
+                response.code() == 429 -> Result.failure(Exception(response.errorMessage() ?: "Too many codes asked for. Trying again shortly."))
+                else -> Result.failure(Exception(response.errorMessage() ?: "Couldn't get a code (${response.code()})"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /** Whether the code this TV shows has been entered yet (GET /api/auth/pairing/{code}). */
+    suspend fun pollPairing(code: String): Result<PairingStatus> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.pollPairing(code)
+            val body = response.body()
+            if (response.isSuccessful && body != null) Result.success(body)
+            else Result.failure(Exception(response.errorMessage() ?: "Request failed (${response.code()})"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Signs in with the token an approved code brought, kept as a password sign-in keeps its own:
+     * its expiry is the token's (a JWT's `exp` claim, which the login response's expires_at is).
+     */
+    fun signInWithToken(token: String) {
+        val expiresAt = runCatching {
+            val claims = Base64.decode(token.split(".")[1], Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+            org.json.JSONObject(String(claims)).optLong("exp")
+        }.getOrNull()?.takeIf { it > 0 } ?: (System.currentTimeMillis() / 1000 + 7 * 24 * 3600)
+        credentialManager.saveServerToken(serverUrl, token, expiresAt)
+        credentialManager.addApiServer(serverUrl)
+    }
+
+    /** Signs the TV showing [code] in as this account (POST /api/pairing/claim); the failure is the server's message. */
+    suspend fun claimPairing(code: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.claimPairing(PairingClaim(code))
+            if (response.isSuccessful) Result.success(Unit)
+            else Result.failure(Exception(response.errorMessage() ?: when (response.code()) {
+                404 -> "That code is unknown, expired or already used."
+                429 -> "Too many tries. Wait a moment and try again."
+                else -> "Request failed (${response.code()})"
+            }))
+        } catch (e: Exception) {
+            Result.failure(Exception(e.localizedMessage ?: "Couldn't reach the server"))
+        }
+    }
+
+    private fun retrofit2.Response<*>.errorMessage(): String? = runCatching {
+        org.json.JSONObject(errorBody()?.string() ?: "").optString("message").ifBlank { null }
+    }.getOrNull()
 }
+
+/** A TV's sign-in code as the server takes it: upper case, without spaces or hyphens. */
+fun normalizePairingCode(input: String): String =
+    input.uppercase().filterNot { it.isWhitespace() || it == '-' }
 
 /** When a locked-out login can be tried again, as the web shows it: "in 4m 10s", "in 30s", or "later" if unknown. */
 internal fun retryWait(seconds: Int): String = when {

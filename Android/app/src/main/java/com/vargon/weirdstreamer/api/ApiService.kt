@@ -14,6 +14,9 @@ import com.vargon.weirdstreamer.api.models.LibraryListing
 import com.vargon.weirdstreamer.api.models.TitleDetail
 import com.vargon.weirdstreamer.api.models.LoginRequest
 import com.vargon.weirdstreamer.api.models.LoginResponse
+import com.vargon.weirdstreamer.api.models.PairingClaim
+import com.vargon.weirdstreamer.api.models.PairingCode
+import com.vargon.weirdstreamer.api.models.PairingStatus
 import com.vargon.weirdstreamer.api.models.MediaItem
 import com.vargon.weirdstreamer.api.models.StreamProgress
 import com.vargon.weirdstreamer.api.models.ContinueItem
@@ -44,6 +47,16 @@ interface ApiService {
     
     @POST("/api/auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
+
+    // Signing a TV in with a code: the TV makes one and asks after it; a signed-in account claims it.
+    @POST("/api/auth/pairing")
+    suspend fun createPairing(): Response<PairingCode>
+
+    @GET("/api/auth/pairing/{code}")
+    suspend fun pollPairing(@Path("code") code: String): Response<PairingStatus>
+
+    @POST("/api/pairing/claim")
+    suspend fun claimPairing(@Body request: PairingClaim): Response<JsonObject>
     
     @GET("/api/media")
     suspend fun getMedia(): Response<List<MediaItem>>

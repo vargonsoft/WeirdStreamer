@@ -137,6 +137,10 @@ function setupEventListeners() {
     // User management
     document.getElementById('create-user-btn')?.addEventListener('click', handleCreateUser);
     document.getElementById('change-password-btn')?.addEventListener('click', handleChangePassword);
+    document.getElementById('tv-pairing-btn')?.addEventListener('click', handleTvPairing);
+    document.getElementById('tv-pairing-code')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleTvPairing();
+    });
     
     // Theme management
     renderThemePicker();
@@ -3413,6 +3417,30 @@ async function handleChangePassword() {
         }, 3000);
     } catch (error) {
         messageEl.textContent = 'Failed to change password: ' + error.message;
+        messageEl.style.color = '#e74c3c';
+    }
+}
+
+// Sign in on a TV: the code the TV shows signs it in as this account (POST /api/pairing/claim).
+async function handleTvPairing() {
+    const input = document.getElementById('tv-pairing-code');
+    const messageEl = document.getElementById('tv-pairing-message');
+    const code = input.value.trim();
+    if (!code) {
+        messageEl.textContent = 'Enter the code the TV shows';
+        messageEl.style.color = '#e74c3c';
+        return;
+    }
+    try {
+        await api.request('/api/pairing/claim', {
+            method: 'POST',
+            body: JSON.stringify({ code }),
+        });
+        messageEl.textContent = 'The TV is signing in.';
+        messageEl.style.color = '#27ae60';
+        input.value = '';
+    } catch (error) {
+        messageEl.textContent = error.message;
         messageEl.style.color = '#e74c3c';
     }
 }

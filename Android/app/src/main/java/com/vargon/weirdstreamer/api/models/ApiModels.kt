@@ -465,6 +465,24 @@ data class LoginResponse(
     @SerializedName("user") val user: User
 )
 
+/** A code a TV shows to be signed in from another device (POST /api/auth/pairing). */
+data class PairingCode(
+    @SerializedName("code") val code: String,
+    @SerializedName("expires_at") val expiresAt: String? = null // RFC 3339
+)
+
+/** GET /api/auth/pairing/{code}: "waiting", "expired", or "approved" with the account's token and user. */
+data class PairingStatus(
+    @SerializedName("status") val status: String,
+    @SerializedName("token") val token: String? = null,
+    @SerializedName("user") val user: User? = null
+)
+
+/** POST /api/pairing/claim: signs the TV showing [code] in as the account making the request. */
+data class PairingClaim(
+    @SerializedName("code") val code: String
+)
+
 data class ErrorResponse(
     @SerializedName("error") val error: String,
     @SerializedName("message") val message: String? = null

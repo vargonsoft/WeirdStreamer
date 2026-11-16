@@ -1,5 +1,7 @@
 package com.vargon.weirdstreamer.ui.components
 
+import com.vargon.weirdstreamer.repository.ServerRepository
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -327,9 +329,26 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     }
 
     // Auth Dialog
-    if (showAuthDialog && viewModel.authRequiredSource != null) {
+    // A WeirdStreamer server's sign-in can show a code instead, entered on another device.
+    var codeSignIn by remember { mutableStateOf(false) }
+    if (!showAuthDialog || viewModel.authRequiredSource == null) codeSignIn = false
+    if (showAuthDialog && codeSignIn && viewModel.authRequiredSource?.typeId == "SERVER") {
+        val source = viewModel.authRequiredSource!!
+        val server = remember(source.serverAddress) { ServerRepository(source.serverAddress, viewModel.credentialManager) }
+        TvCodeSignInDialog(
+            host = source.displayName(),
+            server = server,
+            onSignedIn = {
+                showAuthDialog = false
+                codeSignIn = false
+                viewModel.signedInWithCode(source)
+            },
+            onUsePassword = { codeSignIn = false }
+        )
+    } else if (showAuthDialog && viewModel.authRequiredSource != null) {
         val source = viewModel.authRequiredSource!!
         AuthDialog(
+            onUseCode = if (source.typeId == "SERVER") ({ codeSignIn = true }) else null,
             host = source.displayName(),
             initialUsername = viewModel.authUsername,
             title = viewModel.authTitle,

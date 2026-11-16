@@ -139,6 +139,7 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
+	pairingHandler := handlers.NewPairingHandler(authService)
 	mediaHandler := handlers.NewMediaHandler(db, authService)
 	mediaHandler.SetDownloads(media.NewDownloadManager(config.GlobalConfig.Media.DownloadPath))
 	configHandler := handlers.NewConfigHandler(db)
@@ -182,6 +183,9 @@ func main() {
 	// Public routes
 	r.HandleFunc("/api/auth/login", authHandler.Login).Methods("POST")
 	r.HandleFunc("/api/auth/logout", authHandler.Logout).Methods("POST")
+	// TV sign-in with a short code: the TV makes one and polls it until a user claims it
+	r.HandleFunc("/api/auth/pairing", pairingHandler.Create).Methods("POST")
+	r.HandleFunc("/api/auth/pairing/{code}", pairingHandler.Poll).Methods("GET")
 	// What the apps show for a server before signing in to it
 	r.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -198,6 +202,9 @@ func main() {
 
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(authHandler.AuthMiddleware)
+
+	// A signed-in user enters a TV's code, and the TV signs in as them
+	api.HandleFunc("/pairing/claim", pairingHandler.Claim).Methods("POST")
 
 	api.HandleFunc("/media", mediaHandler.ListMedia).Methods("GET")
 	api.HandleFunc("/media/browse", mediaHandler.BrowseDirectory).Methods("GET")

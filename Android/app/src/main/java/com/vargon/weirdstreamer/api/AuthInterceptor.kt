@@ -13,8 +13,9 @@ class AuthInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         
-        // Skip adding token for login endpoint
-        if (request.url.encodedPath.endsWith("/api/auth/login")) {
+        // Skip adding token for signing in (password, or a TV's code)
+        val path = request.url.encodedPath
+        if (path.endsWith("/api/auth/login") || path.contains("/api/auth/pairing")) {
             return chain.proceed(request)
         }
         
