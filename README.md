@@ -10,8 +10,13 @@ server indexes your folders and streams them, as they are or transcoded on the f
 and to two apps: one Android app for Android TV, phones and tablets, and one app for iPhone and iPad.
 
 - [Features](#features)
-- [Install](#install): [Server](#server), [ffmpeg](#ffmpeg), [CJK subtitle font](#cjk-subtitle-font),
-  [HEIC photos](#heic-photos), [Android app](#android-app), [iPhone and iPad app](#iphone-and-ipad-app)
+- [Install](#install)
+  - [Server](#server)
+    - [ffmpeg](#ffmpeg)
+    - [CJK subtitle font](#cjk-subtitle-font)
+    - [HEIC photos](#heic-photos)
+  - [Android app](#android-app)
+  - [iPhone and iPad app](#iphone-and-ipad-app)
 - [Build from source](#build-from-source)
 - [Repository layout](#repository-layout)
 - [License](#license)
@@ -90,7 +95,7 @@ Without the service, run `./bin/server` from that folder. The server needs `ffmp
 `ffprobe` (see [ffmpeg](#ffmpeg) below), and HEIC photos need `heif-convert` (see
 [HEIC photos](#heic-photos)). Every setting is explained in `config.example.yml`.
 
-### ffmpeg
+#### ffmpeg
 
 The server runs `ffmpeg` and `ffprobe` (both come with ffmpeg) for thumbnails, seek-bar previews,
 transcoding, subtitles and finding intros. Not every ffmpeg build has all it uses:
@@ -153,7 +158,7 @@ make -j"$(nproc)" && sudo make install
 That installs `ffmpeg` and `ffprobe` in `/usr/local/bin`, which comes before the system's on the
 usual `PATH`; the systemd service finds them there too.
 
-### CJK subtitle font
+#### CJK subtitle font
 
 Styled (ASS/SSA) subtitles are drawn with libass, which needs a font for every character. The web
 player, the Android apps and the iPhone and iPad app each draw from the fonts they can reach: a browser or a
@@ -194,7 +199,7 @@ your system's packages, and the Noto Sans CJK font from yours (`fonts-noto-cjk` 
 sudo apt install fonts-noto-cjk
 ```
 
-### HEIC photos
+#### HEIC photos
 
 Phones save photos as HEIC (`.heic`, `.heif`). The server uses `heif-convert`, from libheif's
 tools, to make their thumbnails and to send them to browsers as JPEG (`autoConvertImages`).
