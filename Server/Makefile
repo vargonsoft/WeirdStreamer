@@ -5,7 +5,7 @@ SERVER_BIN=bin/server
 CLI_BIN=bin/cli
 GO=go
 GOFLAGS=-v
-LDFLAGS=-s -w
+LDFLAGS=-s -w -X main.version=$(shell ./scripts/version.sh)
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'

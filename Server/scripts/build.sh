@@ -25,7 +25,7 @@ go -C src mod download
 
 # Build server
 echo "Building server..."
-CGO_ENABLED=1 go -C src build -o ../bin/server ./cmd/server
+CGO_ENABLED=1 go -C src build -ldflags "-X main.version=$(scripts/version.sh)" -o ../bin/server ./cmd/server
 if [ $? -ne 0 ]; then
     echo "Error: Failed to build server"
     exit 1
@@ -33,7 +33,7 @@ fi
 
 # Build CLI
 echo "Building CLI tool..."
-CGO_ENABLED=1 go -C src build -o ../bin/cli ./cmd/cli
+CGO_ENABLED=1 go -C src build -ldflags "-X main.version=$(scripts/version.sh)" -o ../bin/cli ./cmd/cli
 if [ $? -ne 0 ]; then
     echo "Error: Failed to build CLI"
     exit 1

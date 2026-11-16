@@ -52,9 +52,9 @@ fi
 
 if [ "$build" = 1 ]; then
     mkdir -p bin
-    go -C src build -o ../bin/server.new ./cmd/server
+    go -C src build -ldflags "-X main.version=$(scripts/version.sh)" -o ../bin/server.new ./cmd/server
     # The CLI too: it reads the same config and databases
-    go -C src build -o ../bin/cli.new ./cmd/cli
+    go -C src build -ldflags "-X main.version=$(scripts/version.sh)" -o ../bin/cli.new ./cmd/cli
     mv bin/server.new bin/server
     mv bin/cli.new bin/cli
 fi

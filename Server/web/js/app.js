@@ -2657,6 +2657,10 @@ async function showSettings(pushHistory = true) {
     // The account signed in (watch status is kept per account)
     document.getElementById('account-signed-in').textContent =
         user.username ? `Signed in as ${user.username}${user.is_admin ? ' (admin)' : ''}` : '';
+    // The server's version (from /api/info, which is public), at the foot of My Account
+    fetch('/api/info', { cache: 'no-cache' }).then(r => r.json()).then(info => {
+        document.getElementById('server-version').textContent = info.version ? `WeirdStreamer server ${info.version}` : '';
+    }).catch(() => {});
 
     // Hide admin tabs for non-admin users
     const serverTabBtn = document.querySelector('.settings-tab[data-tab="server"]');
