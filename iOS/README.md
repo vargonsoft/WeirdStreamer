@@ -3,7 +3,7 @@
 The iPhone and iPad app for a WeirdStreamer server. It isn't on the App Store: you build it from the
 source with your own Apple developer account and install it on your device.
 
-## What's there (as on Android)
+## What's there
 
 - **Source list:** each server in its own box (its card, then its accounts as round buttons and
   Add user). + adds a server by address alone: without a scheme or port it tries 9000, 443, 80 and
@@ -14,16 +14,16 @@ source with your own Apple developer account and install it on your device.
   Settings) under the wordmark and "Server · account"; Continue Watching and Recently Added on the
   server's front page and each library's own page; folder rows and tiles with thumbnails, size,
   length and time left; the A–Z strip; Resume or Play from start for a partly watched video; hold a
-  video for Play from start and Mark watched. A swipe in from the left edge is Android's Back.
+  video for Play from start and Mark watched. A swipe in from the left edge goes back.
 - **Library view:** posters with progress, Unmatched files, title pages (backdrop, poster, details,
   cast, files with Resume / Play / watched; seasons with their rings, watched buttons for a season
   and the whole show, Auto Skip, episode rows and their details).
-- **Player:** Android's controls (Back and title, Transcode menu with its nine modes and what the
+- **Player:** controls (Back and title, Transcode menu with its nine modes and what the
   stream does, Rotate; −10 s / play / +30 s and frame steps; trickplay frames, aspect ratio, speed,
   seek bar), pinch to zoom, Skip Intro / Skip Credits, the next episode at the end, progress every
   5 seconds, picture in picture when you go home. It picks Compatibility (Auto) itself for files
-  iOS can't play (MKV, AVI, other codecs) and steps down on errors as Android does. DVD images
-  (.iso) are always transcoded, a title at a time; the Disc button (Android's disc sheet) picks
+  iOS can't play (MKV, AVI, other codecs) and steps down on errors. DVD images
+  (.iso) are always transcoded, a title at a time; the Disc button picks
   chapters, angles, audio and subtitle tracks and other titles (picture subtitles burned in by the
   server), as a panel in the player; a title the server can't convert says so.
 - **Audio:** files with more than one audio track get an Audio menu (the choice remembered per
@@ -33,8 +33,7 @@ source with your own Apple developer account and install it on your device.
   remembered per video). Text tracks come from the server as WebVTT in 2-minute windows, fetched
   ahead, and PGS as .sup decoded on the phone and drawn over the video at the disc's scale; other
   picture subtitles are burned in by a transcode. ASS/SSA tracks and .ass/.ssa files are drawn
-  styled by libass (`Views/AssSubtitleView.swift`, `iOS/native/assrender.c`), as on the web and
-  Android: the server's `format=ass` windows (the first one's header, every window's lines once),
+  styled by libass (`Views/AssSubtitleView.swift`, `iOS/native/assrender.c`), as on the web: the server's `format=ass` windows (the first one's header, every window's lines once),
   the video's embedded fonts (`/api/media/font`), the system's through CoreText, and the server's CJK
   subset (`POST /api/media/subtitle-font`) for the Chinese, Japanese and Korean characters a script
   has, since the system's simplified Chinese font can't be read by libass. Tested on the simulator
@@ -49,7 +48,8 @@ source with your own Apple developer account and install it on your device.
   photos (Samsung, Google) and Apple Live Photos loop their clip. PDFs open in PDFKit with
   Previous / page / Next and a page grid.
 - **Downloads:** the download button on videos and episodes, with Original, Compatibility or
-  Compressed (sizes and resolution as on Android; the last two are server encodes the app waits
+  Compressed (sizes and resolutions as the server
+  sets them; the last two are server encodes the app waits
   for), "Download this folder" in ⋮, and Settings › Downloads (Wi-Fi only, Download ahead, storage,
   play or remove). Downloads use a background `URLSession`, so they continue while the app is
   suspended. Progress played from a download is kept locally and sent when the server is reachable.
@@ -59,11 +59,11 @@ source with your own Apple developer account and install it on your device.
   subtitles (text as WebVTT, ASS/SSA whole as .ass with the video's fonts, PGS as .sup; this phone's languages, forced ones and files beside
   the video), intro and credits (Skip Credits goes on to the next downloaded episode), trickplay
   frames, codecs report and thumbnail; again every 12 hours and when a subtitle is added. With the
-  server unreachable, its error has a Downloads button. Download ahead (as Android's): two minutes
+  server unreachable, its error has a Downloads button. Download ahead: two minutes
   into an episode, the next 3 to 5 (as many as download in about an hour at the speed downloads
   have come at), leaving 500 MB or 5% of the phone free; those before the episode playing go.
 - **Settings:** App (show hidden files, clear the image cache, backup, the saved servers with their
-  users and Remove), Themes (all 21 of Android's, as a grid of tiles), Downloads, Account (change
+  users and Remove), Themes (all 21 themes, as a grid of tiles), Downloads, Account (change
   password), and for admins Server (groups, media paths, server settings, Scan media), Users,
   Streams and Jobs.
 
@@ -95,7 +95,7 @@ Caches, deleted when the player closes and at the next launch. Originals still s
 ## Building and testing
 
 Open `WeirdStreamer.xcodeproj` in Xcode 26 or later. First build libass and what it needs
-(FreeType, FriBiDi, HarfBuzz; the versions and checksums Android pins) into `iOS/native/build/`
+(FreeType, FriBiDi, HarfBuzz; their pinned versions and checksums) into `iOS/native/build/`
 (git-ignored), which the project links: once, and again after changing `iOS/native/assrender.c`.
 It needs cmake and pkg-config (Homebrew). Simulators are Apple silicon only.
 
@@ -121,7 +121,7 @@ The e2e server (`Server/e2e`, http://localhost:9100) has an `e2e_ios` account fo
 
 ## Certificates
 
-Like the Android app, a server you add is trusted with whatever certificate it has (home servers
+A server you add is trusted with whatever certificate it has (home servers
 often use self-signed ones), for the app's own requests and for transcodes (which go through the
 relay). An **original** file streams straight to AVPlayer, which checks the certificate itself: a
 self-signed server needs its certificate installed on the phone (Settings › General › About ›
