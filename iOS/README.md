@@ -1,7 +1,7 @@
 # WeirdStreamer for iPhone
 
-The iPhone and iPad app for a WeirdStreamer server. It is **not** for the App Store: it's sideloaded with AltStore and refreshed through Remote AltStore
-or LocalDevVPN.
+The iPhone and iPad app for a WeirdStreamer server. It isn't on the App Store: you build it from the
+source with your own Apple developer account and install it on your device.
 
 ## What's there (as on Android)
 
@@ -78,7 +78,7 @@ when it carries the chapters track ffmpeg writes for a DVD or an MKV with chapte
 growing EVENT playlist. Segments go to a temporary folder in
 Caches, deleted when the player closes and at the next launch. Originals still stream directly.
 
-## Constraints (free Apple ID, no developer program)
+## Constraints (no paid entitlements)
 
 - **No paid entitlements:** no push notifications, iCloud or CloudKit, Apple Pay, App Groups, or
   Sign in with Apple.
@@ -111,7 +111,7 @@ xcodebuild -project WeirdStreamer.xcodeproj -scheme WeirdStreamer \
 ```
 
 Build with signing (ad hoc is enough): an unsigned build (`CODE_SIGNING_ALLOWED=NO`) can't use the
-Keychain, so its sign-ins don't survive a relaunch. AltStore signs the app it installs.
+Keychain, so its sign-ins don't survive a relaunch.
 For a device build in Xcode, put your team in `WeirdStreamer/Signing.local.xcconfig`
 (`DEVELOPMENT_TEAM = <team ID>`, git-ignored), which `Signing.xcconfig` includes; it isn't needed
 for the simulator.
@@ -132,7 +132,7 @@ than 825 days.
 
 - SMB shares: iOS has no SMB client, so this needs a library (AMSMB2, libsmb2) or one written
   for the app.
-- The update banner (AltStore handles updates).
+- The update banner (you rebuild the app to update it).
 - Tried against a Linux e2e server (whose ffmpeg reads DVDs): the Library view and title pages,
   and a real DVD image (titles, chapters, audio tracks, burned-in subtitles, resume). Not yet tried:
   Compressed downloads, Download ahead, PGS subtitles, backup and

@@ -64,7 +64,7 @@ App READMEs: [Server](Server/README.md), [Android](Android/README.md), [iPhone](
 - **The Android app** also browses SMB shares directly, without a server.
 - **The iPhone and iPad app** plays the same library: browsing, the same transcode modes, styled (ASS)
   subtitles, PGS, and downloads that play offline with their subtitles and skip data. It runs on
-  iOS 17 or later, sideloaded (see [the iPhone and iPad app](#iphone-and-ipad-app)).
+  iOS 17 or later, built from the source (see [the iPhone and iPad app](#iphone-and-ipad-app)).
 - **Runs at home:** HTTPS with HTTP/2, works behind a reverse proxy such as nginx, and keeps sign-in
   and access logs.
 
@@ -217,9 +217,8 @@ Its own README, [Android/README.md](Android/README.md), covers building and test
 
 ### iPhone and iPad app
 
-The iPhone and iPad app is for sideloading, not the App Store: it runs on iOS 17 or later and is installed
-with [AltStore](https://altstore.io) (or LocalDevVPN, with Remote AltStore), with a free Apple ID.
-It has no paid entitlements, so there are no push notifications, iCloud or Apple Pay. Add your
+The iPhone and iPad app isn't on the App Store. It runs on iOS 17 or later, and you build it yourself
+from the source with your own Apple developer account, then install it on your device. Add your
 server by its name or address. The app's README, [iOS/README.md](iOS/README.md), covers what it
 does and how to build it.
 
