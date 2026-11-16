@@ -74,6 +74,7 @@ struct AddSourceDialog: View {
     @State private var picked = false
     @State private var address = ""
     @State private var checking = false
+    @State private var error: String?
 
     var body: some View {
         PhoneDialog(title: picked ? "Add WeirdStreamer Server" : "Select Source Type", onDismiss: onDismiss) {
@@ -81,6 +82,9 @@ struct AddSourceDialog: View {
                 PhoneTextField(label: "Server URL", text: $address, placeholder: "myserver or https://myserver:9000",
                                keyboard: .URL,
                                hint: "Without http:// or https://, the server is asked which it uses; without a port too, ports 9000, 443, 80 and 8080 are tried.")
+                if let error {
+                    Text(error).font(.footnote).foregroundStyle(Palette.error)
+                }
             } else {
                 Button { picked = true } label: {
                     Text("WeirdStreamer Server").font(.body)
@@ -99,10 +103,11 @@ struct AddSourceDialog: View {
                 Button {
                     guard !address.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                     checking = true
+                    error = nil
                     Task {
-                        await model.addServer(address)
+                        error = await model.addServer(address)
                         checking = false
-                        onDismiss()
+                        if error == nil { onDismiss() }
                     }
                 } label: {
                     if checking { ProgressView().tint(Palette.buttonLabel) } else { Text("Add") }

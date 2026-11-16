@@ -47,8 +47,8 @@ final class TrustPolicy: NSObject, URLSessionDelegate, @unchecked Sendable {
 /// The address probe's session: short timeouts, any certificate (it only reads /api/info).
 private let probeSession: URLSession = {
     let config = URLSessionConfiguration.ephemeral
-    config.timeoutIntervalForRequest = 4
-    config.timeoutIntervalForResource = 6
+    config.timeoutIntervalForRequest = 8 // a phone network can be slow to connect
+    config.timeoutIntervalForResource = 10
     let delegate = ProbeTrust()
     return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
 }()
@@ -81,14 +81,14 @@ final class ServerClient: Sendable {
         self.session = URLSession(configuration: config, delegate: TrustPolicy.shared, delegateQueue: nil)
     }
 
-    /// The default port, and the ports tried for an address without one, in order (as Android).
-    static let defaultPort = 9000
+    /// The ports tried for an address without one, in order (as Android).
     static let probePorts = [9000, 443, 80, 8080]
 
     /// A server address as typed, made into the one requests use, as Android's
     /// ServerSourceProvider.checkAddress: "myserver" becomes the first address a WeirdStreamer
     /// server answers on (ports 9000, 443, 80, 8080; https before http on each, all tried at once),
     /// "myserver:9100" tries https and http on that port, and an address with a scheme is used as typed.
+    /// Nil when it isn't an address, or (without a scheme) nothing answered: a port isn't guessed.
     static func checkAddress(_ typed: String) async -> String? {
         var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         while text.hasSuffix("/") { text.removeLast() }
@@ -116,7 +116,7 @@ final class ServerClient: Sendable {
         if let i = answers.firstIndex(of: .weirdStreamer) ?? answers.firstIndex(of: .other) {
             return normalized(candidates[i])
         }
-        return normalized(hasPort(text) ? "https://\(text)" : "https://\(text):\(defaultPort)")
+        return nil
     }
 
     private enum Probe { case weirdStreamer, other, none }

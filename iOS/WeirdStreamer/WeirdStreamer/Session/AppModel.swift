@@ -148,10 +148,15 @@ final class AppModel {
 
     /// Saves a server without signing in to it; its accounts are added on its row. Without a
     /// scheme, the server is asked which it uses; without a port too, 9000, 443, 80 and 8080 are tried.
-    func addServer(_ typed: String) async {
-        guard let address = await ServerClient.checkAddress(typed) else {
-            message = "That server address isn't valid."
-            return
+    /// Returns why it wasn't saved (the add dialog shows it and stays open), or nil once it is.
+    func addServer(_ typed: String) async -> String? {
+        let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let address = await ServerClient.checkAddress(text) else {
+            if text.contains("://") || ServerClient.normalized("https://" + text) == nil {
+                return "That server address isn't valid."
+            }
+            return "No server answered at \(text). Check the address and that the phone is online, "
+                + "or type it in full (https://\(text):9000) to add it anyway."
         }
         if !servers.contains(where: { $0.address == address }) {
             context.insert(SavedServer(address: address))
@@ -159,6 +164,7 @@ final class AppModel {
             reloadServers()
         }
         await refreshServerName(address)
+        return nil
     }
 
     /// Removes a server from this phone, with its accounts' sign-ins and its queued progress.
