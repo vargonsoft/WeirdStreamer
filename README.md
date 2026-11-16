@@ -163,9 +163,9 @@ It needs two things, both optional:
 Without them, those characters show as boxes; nothing else changes. The iPhone app's system fonts have
 Japanese and Korean, but not simplified Chinese, so it needs them too for those lines.
 `Server/scripts/check-ffmpeg.sh` reports both. The Docker image has both (the font adds 19 MB, Python
-and fontTools about 60 MB), and the release package's `setup.sh` offers to install what's missing:
-fontTools from the system's packages or in a virtualenv in the package's folder, the font from the
-system's packages (each only on a yes; it never downloads a font itself).
+and fontTools about 60 MB). Otherwise, install them yourself if you want that support: fontTools from
+your system's packages, and the Noto Sans CJK font from yours (`fonts-noto-cjk` on Debian and Ubuntu,
+`google-noto-sans-cjk-ttc-fonts` on Fedora).
 
 ### HEIC photos
 

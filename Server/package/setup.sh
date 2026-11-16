@@ -64,123 +64,6 @@ write_config() {
     echo "config.yml is owner-only: it holds the JWT secret."
 }
 
-# A value of config.yml's media section (unquoted), or "" when it isn't set
-media_setting() {
-    sed -n "/^media:/,/^[^ #]/s/^  $1: *\"\{0,1\}\([^\"]*\)\"\{0,1\} *\$/\1/p" config.yml | head -1
-}
-# The system's package manager, for the offers below: apt-get or dnf, else ""
-package_manager() {
-    if command -v apt-get >/dev/null; then echo apt-get
-    elif command -v dnf >/dev/null; then echo dnf
-    fi
-}
-# Where the server looks for Noto Sans CJK by itself (cjkFontCandidates in internal/media/cjkfont.go)
-cjk_font_candidates=(/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc
-    /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf
-    /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.otf /usr/share/fonts/noto/NotoSansCJK-Regular.ttc)
-# Where Noto Sans CJK is: those places, else where fontconfig knows it. Prints nothing when there's none.
-find_cjk_font() {
-    local f
-    for f in "${cjk_font_candidates[@]}"; do
-        [ -f "$f" ] && { echo "$f"; return; }
-    done
-    command -v fc-list >/dev/null && fc-list --format '%{file}\n' 2>/dev/null | grep -m1 '/NotoSansCJK-Regular\.tt[co]$' || true
-}
-
-# Optional: styled (ASS) subtitles in Chinese, Japanese or Korean need a CJK font and fontTools'
-# pyftsubset to make subsets of it (see the README's CJK subtitle font section). Offers to install
-# what's missing, when there's someone to ask; nothing is installed or downloaded without a yes.
-setup_cjk() {
-    local subset font pm choice
-    subset=$(media_setting subsetCommand)
-    font=$(media_setting cjkFontPath)
-    if [ -z "$font" ]; then
-        font=$(find_cjk_font)
-        # One the server wouldn't find by itself goes in config.yml
-        [ -z "$font" ] || [[ " ${cjk_font_candidates[*]} " == *" $font "* ]] || ./bin/cli config set-cjk-font "$font"
-    elif [ ! -f "$font" ]; then
-        echo "Note: config.yml's media.cjkFontPath ($font) isn't there."
-        font=$(find_cjk_font)
-        [ -z "$font" ] || ./bin/cli config set-cjk-font "$font"
-    fi
-    if command -v "${subset:-pyftsubset}" >/dev/null && [ -n "$font" ]; then
-        return 0
-    fi
-    echo "== Chinese, Japanese and Korean subtitles (optional)"
-    echo "Styled subtitles in Chinese, Japanese or Korean need fontTools' pyftsubset and the Noto Sans CJK"
-    echo "font, or those lines show as boxes (the README's CJK subtitle font section). Everything else"
-    echo "works without them."
-    if [ ! -t 0 ]; then
-        command -v "${subset:-pyftsubset}" >/dev/null || echo "Note: pyftsubset (fontTools) isn't installed."
-        [ -n "$font" ] || echo "Note: no Noto Sans CJK font found."
-        return 0
-    fi
-    pm=$(package_manager)
-
-    if ! command -v "${subset:-pyftsubset}" >/dev/null; then
-        echo "pyftsubset isn't installed${subset:+ (config.yml names $subset)}. It can be installed:"
-        [ -n "$pm" ] && echo "  s: the system's package (sudo $pm install fonttools)"
-        command -v python3 >/dev/null &&
-            echo "  v: in a Python virtualenv here ($dir/fonttools; pip downloads fonttools and brotli, about 10 MB, from PyPI)"
-        echo "  n: not now"
-        choice=$(ask "Install pyftsubset?" n)
-        case "$choice" in
-            [Ss]*)
-                if [ -z "$pm" ]; then
-                    echo "No apt-get or dnf here: install fontTools with your system's package manager."
-                elif as_root "$pm" install fonttools && command -v pyftsubset >/dev/null; then
-                    # The package's pyftsubset is on the PATH, the default
-                    [ -z "$subset" ] || ./bin/cli config set-subset-command ""
-                else
-                    echo "fontTools wasn't installed. Setup goes on without it." >&2
-                fi
-                ;;
-            [Vv]*)
-                if python3 -m venv "$dir/fonttools" && "$dir/fonttools/bin/pip" install --quiet fonttools brotli &&
-                    [ -x "$dir/fonttools/bin/pyftsubset" ]; then
-                    ./bin/cli config set-subset-command "$dir/fonttools/bin/pyftsubset"
-                else
-                    echo "The virtualenv wasn't made (Debian and Ubuntu need the python3-venv package for it)." >&2
-                    echo "Setup goes on without it." >&2
-                fi
-                ;;
-            *) echo "Skipped. The README's CJK subtitle font section says how to add it later." ;;
-        esac
-    fi
-
-    if [ -z "$font" ]; then
-        local package="" size=""
-        case "$pm" in
-            apt-get)
-                package=fonts-noto-cjk
-                size=$(apt-cache show --no-all-versions "$package" 2>/dev/null |
-                    awk '/^Size:/ { d = $2 } /^Installed-Size:/ { i = $2 } END { if (d && i) printf "a %d MB download, %d MB installed", (d + 524288) / 1048576, (i + 512) / 1024 }')
-                ;;
-            dnf) package=google-noto-sans-cjk-ttc-fonts ;;
-        esac
-        if [ -z "$package" ]; then
-            echo "No Noto Sans CJK font found. Install it with your system's package manager (it's 20 MB or"
-            echo "more), then set media.cjkFontPath in config.yml if the server doesn't find it."
-        else
-            [ -n "$size" ] || size="20 MB or more; $pm shows the size before installing"
-            echo "No Noto Sans CJK font found. The system's $package package has it ($size)."
-            if ask_yes "Install $package now (sudo $pm install $package)?" n; then
-                if as_root "$pm" install "$package" && font=$(find_cjk_font) && [ -n "$font" ]; then
-                    echo "Installed: $font"
-                    # config.yml names it where the server wouldn't look by itself (or names one that's gone)
-                    if [ -n "$(media_setting cjkFontPath)" ] || [[ " ${cjk_font_candidates[*]} " != *" $font "* ]]; then
-                        ./bin/cli config set-cjk-font "$font"
-                    fi
-                else
-                    echo "The font wasn't installed, or wasn't found after. Setup goes on without it." >&2
-                fi
-            else
-                echo "Skipped. The README's CJK subtitle font section says how to add it later."
-            fi
-        fi
-    fi
-}
-
 install_service() {
     if ! command -v systemctl >/dev/null || [ ! -d /run/systemd/system ]; then
         echo "This machine doesn't run systemd: start the server with ./bin/server instead." >&2
@@ -273,6 +156,12 @@ elif ! ./check-ffmpeg.sh; then
     echo "Note: this ffmpeg lacks what's listed above (the README's ffmpeg section says how to get one"
     echo "that has it). Setup goes on; ./check-ffmpeg.sh checks again later."
 fi
+# Optional: styled (ASS) subtitles in Chinese, Japanese or Korean need a CJK font and fontTools'
+# pyftsubset to make a subset of it (see the README's CJK subtitle font section).
+if ! command -v "${SUBSET:-pyftsubset}" >/dev/null; then
+    echo "Note: pyftsubset (fontTools) isn't installed. Styled subtitles in Chinese, Japanese or Korean"
+    echo "will show as boxes until it is: see the README's CJK subtitle font section."
+fi
 # Optional: only HEIC/HEIF photos need it (their thumbnails, and JPEG for browsers).
 if ! command -v heif-convert >/dev/null; then
     echo "Note: heif-convert isn't installed, so HEIC photos (iPhones' and many phones') will have no"
@@ -285,8 +174,6 @@ if [ -f config.yml ]; then
 else
     write_config
 fi
-
-setup_cjk
 
 echo "== Admin user"
 admin=""
