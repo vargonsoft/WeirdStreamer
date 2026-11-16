@@ -1,0 +1,5 @@
+// Signing for device builds. The team is personal, so it's kept out of git: put it in
+// Signing.local.xcconfig beside this file (git-ignored), as
+//     DEVELOPMENT_TEAM = <your team ID>
+// Without it, builds for the simulator work as they are, and Xcode asks for a team for a device.
+#include? "Signing.local.xcconfig"

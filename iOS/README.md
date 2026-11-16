@@ -114,6 +114,9 @@ xcodebuild -project WeirdStreamer.xcodeproj -scheme WeirdStreamer \
 
 Build with signing (ad hoc is enough): an unsigned build (`CODE_SIGNING_ALLOWED=NO`) can't use the
 Keychain, so its sign-ins don't survive a relaunch. AltStore signs the app it installs.
+For a device build in Xcode, put your team in `WeirdStreamer/Signing.local.xcconfig`
+(`DEVELOPMENT_TEAM = <team ID>`, git-ignored), which `Signing.xcconfig` includes; it isn't needed
+for the simulator.
 The deployment target is iOS 17 (SwiftData's minimum).
 
 The e2e server (`Server/e2e`, http://localhost:9100) has an `e2e_ios` account for the simulator.

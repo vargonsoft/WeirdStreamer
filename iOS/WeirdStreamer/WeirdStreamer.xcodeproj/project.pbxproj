@@ -27,6 +27,7 @@
 		A893E74830A3CB92002264C1 /* WeirdStreamer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WeirdStreamer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A893E75730A3CB95002264C1 /* WeirdStreamerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WeirdStreamerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A893E76130A3CB95002264C1 /* WeirdStreamerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WeirdStreamerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A893E7A030A3CB95002264C1 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +76,7 @@
 		A893E73F30A3CB92002264C1 = {
 			isa = PBXGroup;
 			children = (
+				A893E7A030A3CB95002264C1 /* Signing.xcconfig */,
 				A893E74A30A3CB92002264C1 /* WeirdStreamer */,
 				A893E75A30A3CB95002264C1 /* WeirdStreamerTests */,
 				A893E76430A3CB95002264C1 /* WeirdStreamerUITests */,
@@ -271,6 +273,7 @@
 /* Begin XCBuildConfiguration section */
 		A893E76930A3CB95002264C1 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A893E7A030A3CB95002264C1 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -334,6 +337,7 @@
 		};
 		A893E76A30A3CB95002264C1 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A893E7A030A3CB95002264C1 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;

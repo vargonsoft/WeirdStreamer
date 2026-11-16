@@ -66,3 +66,5 @@ xcuserdata/
 /Server/ffmpeg-build/
 # The iPhone app's libass build (iOS/native/build-libass.sh)
 /iOS/native/build/
+# The iPhone app's signing team (iOS/WeirdStreamer/Signing.xcconfig)
+/iOS/WeirdStreamer/Signing.local.xcconfig
