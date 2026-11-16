@@ -272,6 +272,13 @@ final class ServerClient: Sendable {
         try await perform(try request("GET", path, query: query))
     }
 
+    /// A subset of the server's CJK subtitle font holding these characters (POST
+    /// /api/media/subtitle-font): the font's bytes. Throws when the server has no CJK font.
+    func subtitleFont(_ text: String) async throws -> Data {
+        let body = try JSONSerialization.data(withJSONObject: ["text": text])
+        return try await perform(try request("POST", "/api/media/subtitle-font", body: body))
+    }
+
     /// Sign-in: returns the token and the user. Used with no token yet.
     func login(username: String, password: String) async throws -> LoginResponse {
         struct Body: Encodable { let username: String; let password: String }

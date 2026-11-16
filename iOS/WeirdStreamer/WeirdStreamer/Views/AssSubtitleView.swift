@@ -11,6 +11,7 @@ actor AssRenderer {
     private var width = 0
     private var height = 0
     private var version = -1
+    private var forced = false // fonts were added: the next draw redraws the picture
 
     enum Drawn: Sendable {
         case unchanged
@@ -26,13 +27,15 @@ actor AssRenderer {
 
     func addFont(_ name: String, _ data: Data) {
         data.withUnsafeBytes { assr_add_font(handle, name, $0.baseAddress, $0.count) }
+        forced = true // a glyph the new font has may be on screen now
     }
 
     /// Draws the script at `timeMs` on a width × height picture (pixels) of a video of `aspect`.
     /// `script` (with its `version`) replaces the one libass has when it's newer.
     func draw(script: String?, version: Int, width: Int, height: Int, aspect: CGFloat, timeMs: Int64) -> Drawn {
         guard width > 0, height > 0 else { return .unchanged }
-        var force = false
+        var force = forced
+        forced = false
         if let script, version != self.version {
             let bytes = Array(script.utf8)
             let ok = bytes.withUnsafeBytes { assr_set_script(handle, $0.baseAddress?.assumingMemoryBound(to: CChar.self), $0.count) }
@@ -107,13 +110,19 @@ struct AssSubtitleView: View {
         for (name, data) in await subtitles.videoFonts() {
             await renderer.addFont(name, data)
         }
+        // CJK subsets: each one made (for a new script) is added as it arrives; drawn at once.
+        var addedCjk = 0
         var version = -1
         while !Task.isCancelled {
+            let fonts = subtitles.cjkFonts
+            for font in fonts[addedCjk...] { await renderer.addFont("cjk.ttf", font) }
+            addedCjk = fonts.count
             let aspect = videoAspect() > 0 ? videoAspect() : 16.0 / 9
             let w = min(area.width, area.height * aspect), h = w / aspect
             let rect = CGRect(x: (area.width - w) / 2, y: (area.height - h) / 2, width: w, height: h)
             let v = subtitles.assVersion
             let script = v != version ? subtitles.assScript() : nil
+            if let script { Task { await subtitles.fetchCjkFont(for: script) } }
             version = v
             let drawn = await renderer.draw(script: script, version: v,
                                             width: Int((w * displayScale).rounded()), height: Int((h * displayScale).rounded()),

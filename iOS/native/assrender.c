@@ -27,7 +27,11 @@ static void log_libass(int level, const char *fmt, va_list args, void *data) {
 static void apply_fonts(AssRender *r) {
     if (!r->fonts_dirty) return;
     // The video's fonts (added from memory) first, then the system's through CoreText.
-    ass_set_fonts(r->renderer, NULL, "Helvetica", ASS_FONTPROVIDER_AUTODETECT, NULL, 0);
+    // The default family is the CJK subset's (the server's, added as a font), as on Android: libass
+    // looks for a glyph that no font has in the default family, and finds the subset there by name.
+    // CoreText's own simplified Chinese font can't be read (its outlines are HVF), so it's not used.
+    // Not yet tested on a device: see iOS/README.md.
+    ass_set_fonts(r->renderer, NULL, "Noto Sans CJK JP", ASS_FONTPROVIDER_AUTODETECT, NULL, 0);
     r->fonts_dirty = 0;
 }
 

@@ -8,6 +8,32 @@ import CoreGraphics
 // the stream is (a transcode has none of its own). PGS tracks come the same way, as pictures to
 // decode here; other picture tracks (DVD) can only be burned into a transcode (`burnIn`).
 
+/// Whether a character is one the server's CJK subset must hold (the ranges of cjkfont.go's IsCJK).
+func isCjkScalar(_ v: UInt32) -> Bool {
+    switch v {
+    case 0x3000...0x303F, 0x3040...0x30FF, 0x31F0...0x31FF, 0x3130...0x318F, 0x1100...0x11FF,
+         0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7AF, 0xF900...0xFAFF, 0xFF00...0xFFEF,
+         0x20000...0x2FA1F:
+        return true
+    default:
+        return false
+    }
+}
+
+/// The CJK characters in text that `seen` doesn't hold yet, as a string (sorted, "" when none),
+/// and their code points, to add to `seen` once a subset holding them is made.
+func newCjkCharacters(in text: String, seen: Set<UInt32>) -> (text: String, scalars: Set<UInt32>) {
+    var scalars = Set<UInt32>()
+    for s in text.unicodeScalars where isCjkScalar(s.value) && !seen.contains(s.value) {
+        scalars.insert(s.value)
+    }
+    var out = ""
+    for v in scalars.sorted() {
+        if let u = Unicode.Scalar(v) { out.unicodeScalars.append(u) }
+    }
+    return (out, scalars)
+}
+
 /// One subtitle line, from start to end (milliseconds, in the file's time).
 struct SubtitleCue {
     let startMs: Int64
@@ -41,6 +67,11 @@ final class ServerSubtitles {
     @ObservationIgnored private var assLines: [String] = []
     @ObservationIgnored private var assKnown: Set<String> = []
     @ObservationIgnored private(set) var assVersion = 0
+    // The CJK subsets made for the ASS lines so far (one per fetch), and the characters they hold.
+    // A subset is requested for the characters of a new script that no subset holds yet.
+    @ObservationIgnored private(set) var cjkFonts: [Data] = []
+    @ObservationIgnored private var cjkSeen: Set<UInt32> = []
+    @ObservationIgnored private var cjkBusy = false
     @ObservationIgnored private var fonts: [FontAttachment] = []
     @ObservationIgnored private var fontData: [(String, Data)]?
 
@@ -73,6 +104,20 @@ final class ServerSubtitles {
     func assScript() -> String { assHeader + assLines.joined(separator: "\n") + "\n" }
 
     func setFonts(_ list: [FontAttachment]) { fonts = list }
+
+    /// Asks the server for a CJK subset of the characters in an ASS script that no subset holds
+    /// yet (offline, or while one is being made, nothing). The subset joins `cjkFonts`, and its
+    /// characters count as held only once it came, so a failed request is tried again.
+    func fetchCjkFont(for script: String) async {
+        guard let client, !cjkBusy else { return }
+        let (chars, scalars) = newCjkCharacters(in: script, seen: cjkSeen)
+        guard !chars.isEmpty else { return }
+        cjkBusy = true
+        defer { cjkBusy = false }
+        guard let font = try? await client.subtitleFont(chars) else { return }
+        cjkSeen.formUnion(scalars)
+        cjkFonts.append(font)
+    }
 
     /// The video's embedded fonts (name, data), which its ASS tracks name: fetched once.
     func videoFonts() async -> [(String, Data)] {

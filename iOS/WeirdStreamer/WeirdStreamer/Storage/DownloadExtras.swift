@@ -149,6 +149,23 @@ enum DownloadExtras {
                 }
             }
         }
+        // The CJK characters of the saved ASS scripts, as a subset of the server's CJK font, saved
+        // beside them for offline play (the system's fonts may lack some, as Simplified Chinese does).
+        let cjkFile = dir.appendingPathComponent("font-cjk.ttf")
+        let styledFiles = saved.filter { $0.isStyled }.map { dir.appendingPathComponent(subtitleName($0)) }
+        if !styledFiles.isEmpty {
+            if (try? cjkFile.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 > 0 {
+                fontFiles.append("font-cjk.ttf")
+            } else {
+                var text = ""
+                for file in styledFiles { text += (try? String(contentsOf: file, encoding: .utf8)) ?? "" }
+                let chars = newCjkCharacters(in: text, seen: []).text
+                if !chars.isEmpty, let font = try? await client.subtitleFont(chars) {
+                    try write(font, to: cjkFile)
+                    fontFiles.append("font-cjk.ttf")
+                }
+            }
+        }
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         try write(try encoder.encode(saved), to: dir.appendingPathComponent("tracks.json"))
