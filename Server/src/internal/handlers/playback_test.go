@@ -21,7 +21,7 @@ func TestPlaybackFinished(t *testing.T) {
 		{100, 0, false, false},     // unknown length
 	}
 	for _, c := range cases {
-		if got := playbackFinished(c.position, c.duration, c.ended); got != c.want {
+		if got := playbackFinished(c.position, c.duration, 0, c.ended); got != c.want {
 			t.Errorf("playbackFinished(%v, %v, %v) = %v, want %v", c.position, c.duration, c.ended, got, c.want)
 		}
 	}
@@ -75,5 +75,22 @@ func TestPlaybackStore(t *testing.T) {
 	db.SetWatched(user, []string{path}, true)
 	if pos, watched, _ := get(); pos != 0 || !watched {
 		t.Fatalf("marked watched: got %v watched=%v", pos, watched)
+	}
+}
+
+// Reaching the detected credits counts as finished, even well before the last two minutes.
+func TestPlaybackFinishedAtCredits(t *testing.T) {
+	const duration, credits = 7200.0, 6960.0 // a two-hour film whose credits start 4 minutes before the end
+	if playbackFinished(6900, duration, credits, false) {
+		t.Error("before the credits: not finished")
+	}
+	if !playbackFinished(6960, duration, credits, false) {
+		t.Error("at the credits: finished")
+	}
+	if !playbackFinished(7000, duration, credits, false) {
+		t.Error("in the credits: finished")
+	}
+	if playbackFinished(6900, duration, 0, false) {
+		t.Error("no credits detected: the two-minute rule applies")
 	}
 }

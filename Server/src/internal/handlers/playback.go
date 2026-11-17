@@ -30,13 +30,17 @@ const (
 	continueLimit     = 30
 )
 
-// playbackFinished reports whether a position counts as having watched the video.
-func playbackFinished(position, duration float64, ended bool) bool {
+// playbackFinished reports whether a position counts as having watched the video. creditsStart is
+// where its detected credits begin (0 when none was found): reaching them counts as finished.
+func playbackFinished(position, duration, creditsStart float64, ended bool) bool {
 	if ended {
 		return true
 	}
 	if duration <= 0 {
 		return false
+	}
+	if creditsStart > 0 && position >= creditsStart {
+		return true
 	}
 	if duration >= longVideo {
 		return position >= duration-creditsAllowance
@@ -71,6 +75,15 @@ func (h *MediaHandler) videoDuration(item *models.MediaItem) float64 {
 	return item.Duration
 }
 
+// creditsStart is where a video's detected credits begin (0 when none was found).
+func (h *MediaHandler) creditsStart(path string) float64 {
+	segs, err := h.db.GetSegments(path)
+	if err != nil || segs.Credits == nil {
+		return 0
+	}
+	return segs.Credits.Start
+}
+
 // recordPlayback saves a player's report as the user's progress in the video.
 func (h *MediaHandler) recordPlayback(r *http.Request, item *models.MediaItem, position float64, ended bool, at time.Time, onlyIfNewer bool) {
 	uid, ok := userID(r)
@@ -79,7 +92,7 @@ func (h *MediaHandler) recordPlayback(r *http.Request, item *models.MediaItem, p
 	}
 	duration := h.videoDuration(item)
 	update := database.PlaybackUpdate{Position: position, Duration: duration,
-		Finished: playbackFinished(position, duration, ended), UpdatedAt: at}
+		Finished: playbackFinished(position, duration, h.creditsStart(item.Path), ended), UpdatedAt: at}
 	if err := h.db.SavePlayback(uid, item.Path, update, onlyIfNewer); err != nil {
 		log.Printf("[PLAYBACK] Failed to save progress: %v", err)
 	}
@@ -306,7 +319,7 @@ func (h *MediaHandler) ContinueWatching(w http.ResponseWriter, r *http.Request) 
 			break
 		}
 		p := pb[path]
-		finished := (p.Watched && p.Position < minResumePosition) || (p.Duration > 0 && playbackFinished(p.Position, p.Duration, false))
+		finished := (p.Watched && p.Position < minResumePosition) || (p.Duration > 0 && playbackFinished(p.Position, p.Duration, h.creditsStart(path), false))
 		lib, found := libraryForPath(path)
 		// A library's own page asks for its list (only); the home screen blends all libraries.
 		if !found || !lib.OnContinueWatching(only != "") || (only != "" && lib.ID != only) || !h.canAccessLibrary(r, lib) {
