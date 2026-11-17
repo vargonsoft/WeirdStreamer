@@ -51,6 +51,33 @@ private const val POLL_MS = 2_000L
  * ([onSignedIn], with the token saved); an expired one, or one shown 5 minutes, is replaced.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
+/** The steps of a WeirdStreamer server's TV sign-in. */
+enum class TvSignInStep { Choose, Code, Password }
+
+/** A WeirdStreamer server's TV sign-in starts here: a code from another device, or a password. */
+@Composable
+fun TvSignInChoiceDialog(host: String, onCode: () -> Unit, onPassword: () -> Unit, onDismiss: () -> Unit) {
+    val codeFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { codeFocus.requestFocus() }
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Surface(modifier = Modifier.width(600.dp)) {
+            Column(modifier = Modifier.padding(32.dp)) {
+                Text("Sign in", style = MaterialTheme.typography.headlineSmall)
+                Text("Host: $host", style = MaterialTheme.typography.bodySmall)
+                Spacer(modifier = Modifier.height(32.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = onCode,
+                        modifier = Modifier.focusRequester(codeFocus)) {
+                        Text("Sign in with Code")
+                    }
+                    TvSecondaryButton(onClick = onPassword) { Text("Sign in with Password") }
+                }
+            }
+        }
+    }
+    BackHandler(onBack = onDismiss)
+}
+
 @Composable
 fun TvCodeSignInDialog(host: String, server: ServerRepository, onSignedIn: () -> Unit, onUsePassword: () -> Unit) {
     var code by remember { mutableStateOf<String?>(null) }

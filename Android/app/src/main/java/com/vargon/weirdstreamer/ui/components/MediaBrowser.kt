@@ -329,10 +329,22 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     }
 
     // Auth Dialog
-    // A WeirdStreamer server's sign-in can show a code instead, entered on another device.
-    var codeSignIn by remember { mutableStateOf(false) }
-    if (!showAuthDialog || viewModel.authRequiredSource == null) codeSignIn = false
-    if (showAuthDialog && codeSignIn && viewModel.authRequiredSource?.typeId == "SERVER") {
+    // A WeirdStreamer server's sign-in starts with a choice: a code from another device, or a password.
+    var signInStep by remember { mutableStateOf(TvSignInStep.Choose) }
+    if (!showAuthDialog || viewModel.authRequiredSource == null) signInStep = TvSignInStep.Choose
+    val serverSignIn = showAuthDialog && viewModel.authRequiredSource?.typeId == "SERVER"
+    if (serverSignIn && signInStep == TvSignInStep.Choose) {
+        val source = viewModel.authRequiredSource!!
+        TvSignInChoiceDialog(
+            host = source.displayName(),
+            onCode = { signInStep = TvSignInStep.Code },
+            onPassword = { signInStep = TvSignInStep.Password },
+            onDismiss = {
+                showAuthDialog = false
+                viewModel.returnToSourceSelection()
+            }
+        )
+    } else if (serverSignIn && signInStep == TvSignInStep.Code) {
         val source = viewModel.authRequiredSource!!
         val server = remember(source.serverAddress) { ServerRepository(source.serverAddress, viewModel.credentialManager) }
         TvCodeSignInDialog(
@@ -340,15 +352,14 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             server = server,
             onSignedIn = {
                 showAuthDialog = false
-                codeSignIn = false
+                signInStep = TvSignInStep.Choose
                 viewModel.signedInWithCode(source)
             },
-            onUsePassword = { codeSignIn = false }
+            onUsePassword = { signInStep = TvSignInStep.Password }
         )
     } else if (showAuthDialog && viewModel.authRequiredSource != null) {
         val source = viewModel.authRequiredSource!!
         AuthDialog(
-            onUseCode = if (source.typeId == "SERVER") ({ codeSignIn = true }) else null,
             host = source.displayName(),
             initialUsername = viewModel.authUsername,
             title = viewModel.authTitle,
