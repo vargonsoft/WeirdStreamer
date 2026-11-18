@@ -727,8 +727,8 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 	for folder, files := range filesByFolder {
 		if lib.Type == config.LibraryTypeMovie && folder != root {
 			if folderKey := movieFolderKey(lib, files); folderKey != "" {
-				keepFolders[folder] = true
-				if err := s.db.SetFolderKey(lib.ID, folder, lib.Type, folderKey); err != nil {
+				keepFolders[clientPath(folder)] = true
+				if err := s.setFolderKey(lib, folder, lib.Type, folderKey); err != nil {
 					return err
 				}
 			}
@@ -760,7 +760,7 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 				if seasons[ref.Key] == nil {
 					seasons[ref.Key] = map[int]bool{}
 				}
-				keepFiles[f] = true
+				keepFiles[clientPath(f)] = true
 				// Fetch the TMDB season the file is shown as (manual fixes included).
 				mappedSeason, _, _ := mappings.apply(ref, f)
 				seasons[ref.Key][mappedSeason] = true
@@ -775,9 +775,9 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 	}
 	// Each TV show folder stands for the show most of its episodes name.
 	for show, counts := range showKeyCounts {
-		keepFolders[show] = true
+		keepFolders[clientPath(show)] = true
 		key := mostCommonKey(counts)
-		if err := s.db.SetFolderKey(lib.ID, show, lib.Type, key); err != nil {
+		if err := s.setFolderKey(lib, show, lib.Type, key); err != nil {
 			return err
 		}
 		index.other[key] = append(index.other[key], otherByShowFolder[show]...)
@@ -899,7 +899,7 @@ func (s *Service) discoverMovies(lib config.MediaPath, folder string) ([]job, er
 		return nil, err
 	}
 	if key := movieFolderKey(lib, videos); key != "" {
-		if err := s.db.SetFolderKey(lib.ID, folder, lib.Type, key); err != nil {
+		if err := s.setFolderKey(lib, folder, lib.Type, key); err != nil {
 			return nil, err
 		}
 	}
@@ -947,7 +947,7 @@ func (s *Service) discoverShow(lib config.MediaPath, folder string) ([]job, erro
 	if len(shows.refs) == 0 {
 		return nil, nil
 	}
-	if err := s.db.SetFolderKey(lib.ID, folder, lib.Type, mostCommonKey(shows.counts)); err != nil {
+	if err := s.setFolderKey(lib, folder, lib.Type, mostCommonKey(shows.counts)); err != nil {
 		return nil, err
 	}
 	return shows.jobs(), nil

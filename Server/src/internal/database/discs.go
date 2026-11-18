@@ -6,7 +6,7 @@ import (
 )
 
 // Probed DVD disc image structure (titles, chapters, tracks), so images aren't probed again
-// after a restart. Rows are keyed by path and dropped when the file's size or time changes.
+// after a restart. Rows are keyed by client path (keys.go) and dropped when the file's size or time changes.
 
 const discSchema = `
 CREATE TABLE IF NOT EXISTS dvd_discs (
@@ -34,6 +34,9 @@ func (db *DB) GetDiscInfo(path string, size, modTime int64) ([]byte, error) {
 
 // SaveDiscInfo stores a disc image's info.
 func (db *DB) SaveDiscInfo(path string, size, modTime int64, info []byte) error {
+	if err := checkKey(path); err != nil {
+		return err
+	}
 	_, err := db.mediaConn.Exec(`INSERT OR REPLACE INTO dvd_discs (path, size, mod_time, info) VALUES (?, ?, ?, ?)`,
 		path, size, modTime, string(info))
 	return err

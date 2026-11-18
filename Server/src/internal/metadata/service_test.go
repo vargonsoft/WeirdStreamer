@@ -126,8 +126,10 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 	if l, _ := db.GetLookup("tv", "t", "big brother 7|gb"); l != nil {
 		t.Errorf("non-episode files created a lookup for the folder name: %+v", l)
 	}
-	if keys, _ := db.FolderKeys("t", []string{bb}); keys[bb] != "big brother|gb" {
-		t.Errorf("show folder key = %q, want the episodes' show", keys[bb])
+	// Stored by client path: the library's ID and the folder below it.
+	bbClient := "t/" + filepath.ToSlash(must(filepath.Rel(tv, bb)))
+	if keys, _ := db.FolderKeys("t", []string{bbClient}); keys[bbClient] != "big brother|gb" {
+		t.Errorf("show folder key = %q, want the episodes' show", keys[bbClient])
 	}
 	os.RemoveAll(bb)
 
@@ -405,6 +407,9 @@ func TestServiceSyncMatchesAndAnnotates(t *testing.T) {
 	if err := s.SetEpisodeMapping(tvLib, pinnedFile, 1, 2, false); err != nil {
 		t.Fatal(err)
 	}
+	if _, overrides, _ := db.EpisodeMappings("t"); len(overrides) != 1 || overrides["t/"+filepath.ToSlash(must(filepath.Rel(tv, pinnedFile)))] != [2]int{1, 2} {
+		t.Errorf("override not stored by client path: %v", overrides)
+	}
 	if got := episodeTitle(pinnedFile); got != "S01E02 Nature's Empty Throne" {
 		t.Errorf("pinned file = %q", got)
 	}
@@ -495,4 +500,11 @@ func waitFor(t *testing.T, cond func() bool, failure string) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+func must(s string, err error) string {
+	if err != nil {
+		panic(err)
+	}
+	return s
 }

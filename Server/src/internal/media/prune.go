@@ -132,11 +132,12 @@ func (p *Pruner) Prune(ctx context.Context, force bool) (int, error) {
 	if len(gone) == 0 {
 		return 0, nil
 	}
-	paths := make([]string, len(gone))
+	files := make([]database.GoneFile, len(gone))
 	for i, r := range gone {
-		paths[i] = r.Path
+		key, _ := config.ClientPath(r.Path) // none in no library: its client-path rows are left
+		files[i] = database.GoneFile{Path: r.Path, Key: key}
 	}
-	if err := p.db.ForgetMedia(paths); err != nil {
+	if err := p.db.ForgetMedia(files); err != nil {
 		return 0, err
 	}
 	for _, r := range gone {

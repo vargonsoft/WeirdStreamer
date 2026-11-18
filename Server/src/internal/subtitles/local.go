@@ -122,7 +122,7 @@ func sidecar(path, base string, anyName bool) (Track, bool) {
 // The downloaded subtitles of a video live in their own folder under subtitlePath, named by a
 // hash of the video's path, with an index of what each file is.
 type storedIndex struct {
-	Video     string           `json:"video"`
+	Video     string           `json:"video"` // its client path, for a person reading the file
 	Downloads []storedSubtitle `json:"downloads"`
 }
 
@@ -182,7 +182,7 @@ func Store(root, videoPath string, r Result, data []byte) (Track, error) {
 		return Track{}, err
 	}
 	idx := readIndex(dir)
-	idx.Video = videoPath
+	idx.Video, _ = config.ClientPath(videoPath)
 	kept := idx.Downloads[:0]
 	for _, d := range idx.Downloads {
 		if d.FileID != r.FileID {

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 )
 
@@ -34,7 +35,7 @@ func TestPlaybackStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	const user, path = 1, "/media/a.mp4"
+	const user, path = 1, "8838533a/a.mp4" // a client path
 	t0 := time.Now()
 	get := func() (float64, bool, bool) {
 		pb, err := db.UserPlayback(user)
@@ -75,6 +76,52 @@ func TestPlaybackStore(t *testing.T) {
 	db.SetWatched(user, []string{path}, true)
 	if pos, watched, _ := get(); pos != 0 || !watched {
 		t.Fatalf("marked watched: got %v watched=%v", pos, watched)
+	}
+	// A disk path is never stored.
+	if err := db.SavePlayback(user, "/media/a.mp4", database.PlaybackUpdate{Position: 5, UpdatedAt: t0}, false); err == nil {
+		t.Fatal("a disk path was stored")
+	}
+	if err := db.SetWatched(user, []string{"/media/a.mp4"}, true); err == nil {
+		t.Fatal("a disk path was marked watched")
+	}
+}
+
+// Progress is kept by client path: moving a library's folder keeps it, with no data changed.
+func TestPlaybackSurvivesLibraryMove(t *testing.T) {
+	dir := t.TempDir()
+	db, err := database.New(filepath.Join(dir, "users.db"), filepath.Join(dir, "media.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	saved := config.GlobalConfig
+	t.Cleanup(func() { config.GlobalConfig = saved })
+	config.GlobalConfig = &config.Config{Media: config.MediaConfig{Paths: []config.MediaPath{{ID: "8838533a", Path: "/old/shows"}}}}
+
+	key := clientPath("/old/shows/Show/S01E01.mkv")
+	if key != "8838533a/Show/S01E01.mkv" {
+		t.Fatalf("key %q", key)
+	}
+	if err := db.SavePlayback(1, key, database.PlaybackUpdate{Position: 300, Duration: 1800, UpdatedAt: time.Now()}, false); err != nil {
+		t.Fatal(err)
+	}
+
+	config.GlobalConfig.Media.Paths[0].Path = "/new/place/shows"
+	if moved := clientPath("/new/place/shows/Show/S01E01.mkv"); moved != key {
+		t.Fatalf("key changed with the library's folder: %q", moved)
+	}
+	stored, _ := db.UserPlayback(1)
+	if _, ok := stored[key]; !ok || len(stored) != 1 {
+		t.Fatalf("stored keys %v", stored)
+	}
+	pb := byDiskPath(stored)
+	if p := pb["/new/place/shows/Show/S01E01.mkv"]; p == nil || p.Position != 300 {
+		t.Fatalf("progress not found at the new folder: %v", pb)
+	}
+	// A library no longer configured: its records are left out, not mistaken for another's.
+	config.GlobalConfig.Media.Paths[0].ID = "ffffffff"
+	if pb := byDiskPath(stored); len(pb) != 0 {
+		t.Fatalf("records of a removed library listed: %v", pb)
 	}
 }
 

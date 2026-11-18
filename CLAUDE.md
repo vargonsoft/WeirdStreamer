@@ -205,6 +205,12 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   `config.CacheKey`: the SHA-256 of the library's ID and the path inside it, so moving a library's
   folder keeps them. Clients treat `path` as a name to hand back, and store it
   (downloads' `sourcePath`, offline progress, remembered track choices).
+  Stored user data is keyed by client path too, never a disk path (`config/clientpath.go`:
+  `ClientPath` / `DiskPath`; `database/keys.go` refuses a disk path): `playback.path`,
+  `segments.path`, `dvd_discs.path`, `subtitle_offsets.path`, `metadata_folders.folder_path`,
+  `episode_overrides.file_path`. Only the scanner's own records keep disk paths: `media_items` and
+  `media_added`, which describe the files on disk. A library's folder can move without touching the
+  stored data. A file outside every library has no client path, so nothing is stored for it.
 - **Streaming:** `GET /api/media/stream?path=<base64 client path>`. Query options:
   - `transcode=1` forces an ffmpeg transcode: libx264 ultrafast, AAC 192k, fragmented MP4,
     8-bit 4:2:0.

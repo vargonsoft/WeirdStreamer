@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/config"
 )
 
 // DVD-Video disc images (.iso) are played with ffmpeg's dvdvideo demuxer. It plays one program
@@ -205,7 +207,8 @@ func (t *DiscTitle) InputArgs(path string, i, angle int, seek float64) (args []s
 	return append(args, "-i", path), trim
 }
 
-// DiscStore persists probed disc info between restarts (the database); optional.
+// DiscStore persists probed disc info between restarts (the database); optional. Discs are kept
+// by client path (config.ClientPath); one outside every library isn't kept.
 type DiscStore interface {
 	GetDiscInfo(path string, size, modTime int64) ([]byte, error)
 	SaveDiscInfo(path string, size, modTime int64, info []byte) error
@@ -288,8 +291,10 @@ func discEntryFor(path string) (*discEntry, error) {
 // and stores what was probed.
 func (e *discEntry) load(path string) (*DiscInfo, error) {
 	var prev *DiscInfo
-	if discStore != nil {
-		if data, err := discStore.GetDiscInfo(path, e.size, e.modTime); err == nil && data != nil {
+	key, stored := config.ClientPath(path)
+	stored = stored && discStore != nil
+	if stored {
+		if data, err := discStore.GetDiscInfo(key, e.size, e.modTime); err == nil && data != nil {
 			var info DiscInfo
 			if json.Unmarshal(data, &info) == nil && info.Version == discInfoVersion &&
 				(len(info.Titles) > 0 || len(info.Unreadable) > 0) {
@@ -301,9 +306,9 @@ func (e *discEntry) load(path string) (*DiscInfo, error) {
 		}
 	}
 	info, err := probeDisc(path, prev)
-	if info != nil && discStore != nil {
+	if info != nil && stored {
 		if data, jerr := json.Marshal(info); jerr == nil {
-			discStore.SaveDiscInfo(path, e.size, e.modTime, data)
+			discStore.SaveDiscInfo(key, e.size, e.modTime, data)
 		}
 	}
 	return info, err

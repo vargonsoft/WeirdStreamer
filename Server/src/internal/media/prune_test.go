@@ -23,7 +23,7 @@ func TestPruneForgetsWhatIsGone(t *testing.T) {
 		os.MkdirAll(d, 0o755)
 	}
 	config.GlobalConfig = &config.Config{Media: config.MediaConfig{Paths: []config.MediaPath{
-		{Name: "Movies", Path: movies}, {Name: "Shows", Path: shows}, {Name: "Share", Path: unmounted},
+		{Name: "Movies", Path: movies, ID: "aaaaaaaa"}, {Name: "Shows", Path: shows, ID: "bbbbbbbb"}, {Name: "Share", Path: unmounted, ID: "cccccccc"},
 	}}}
 	add := func(path string, onDisk bool) {
 		if onDisk {
@@ -41,7 +41,7 @@ func TestPruneForgetsWhatIsGone(t *testing.T) {
 	for i := 0; i < 30; i++ {                               // most of a library missing at once: kept
 		add(filepath.Join(shows, "Show", "E"+string(rune('a'+i))+".mkv"), i < 5)
 	}
-	db.SaveAnalysis(filepath.Join(movies, "Deleted.mkv"), &database.Span{Start: 1, End: 2, Source: "chapters"}, nil, 1)
+	db.SaveAnalysis("aaaaaaaa/Deleted.mkv", &database.Span{Start: 1, End: 2, Source: "chapters"}, nil, 1)
 
 	n, err := NewPruner(db).Prune(context.Background(), false)
 	if err != nil {
@@ -67,7 +67,7 @@ func TestPruneForgetsWhatIsGone(t *testing.T) {
 	if len(left) != 32 {
 		t.Errorf("%d left, want 32 (Kept, Offline, the 30 episodes)", len(left))
 	}
-	if s, _ := db.GetSegments(filepath.Join(movies, "Deleted.mkv")); s.Intro != nil || s.Analyzed != 0 {
+	if s, _ := db.GetSegments("aaaaaaaa/Deleted.mkv"); s.Intro != nil || s.Analyzed != 0 {
 		t.Errorf("its segments are still there: %+v", s)
 	}
 

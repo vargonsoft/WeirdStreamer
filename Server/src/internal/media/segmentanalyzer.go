@@ -103,7 +103,8 @@ func (a *SegmentAnalyzer) pass(ctx context.Context) {
 	var todo []string
 	for _, d := range dirs {
 		for _, p := range byDir[d] {
-			if a.stale(p, done[p]) {
+			key, _ := config.ClientPath(p) // in a library: checked above
+			if a.stale(p, done[key]) {
 				todo = append(todo, d)
 				break
 			}
@@ -335,7 +336,11 @@ func (a *SegmentAnalyzer) analyzeDir(ctx context.Context, paths []string) {
 		if c := v.credits; c != nil && c.Source != "chapters" && v.duration-c.End < 5 {
 			c.End = v.duration
 		}
-		if err := a.db.SaveAnalysis(v.path, v.intro, v.credits, SegmentAnalysisVersion); err != nil {
+		key, ok := config.ClientPath(v.path)
+		if !ok {
+			continue // its library is gone from the settings since
+		}
+		if err := a.db.SaveAnalysis(key, v.intro, v.credits, SegmentAnalysisVersion); err != nil {
 			log.Printf("segments: saving %s: %v", v.path, err)
 		}
 	}

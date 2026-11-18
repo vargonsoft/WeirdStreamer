@@ -57,7 +57,7 @@ func (s *Service) Annotate(lib config.MediaPath, folder string, dirs []models.Di
 	if lib.Type == config.LibraryTypeTV {
 		folders = append(folders, ShowFolderOf(lib, folder))
 	}
-	folderKeys, err := s.db.FolderKeys(lib.ID, folders)
+	folderKeys, err := s.folderKeys(lib, folders)
 	if err != nil {
 		return
 	}
@@ -90,7 +90,7 @@ func (s *Service) Annotate(lib config.MediaPath, folder string, dirs []models.Di
 
 // Details returns the full metadata for a file or folder in lib, or nil if none is known.
 func (s *Service) Details(lib config.MediaPath, path string, isDir bool) (*models.MediaDetails, error) {
-	keys, err := s.db.FolderKeys(lib.ID, []string{path, ShowFolderOf(lib, path)})
+	keys, err := s.folderKeys(lib, []string{path, ShowFolderOf(lib, path)})
 	if err != nil {
 		return nil, err
 	}

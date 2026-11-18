@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS metadata_lookups (
 );
 CREATE INDEX IF NOT EXISTS idx_lookups_tmdb ON metadata_lookups(kind, tmdb_id);
 
--- Folders that stand for one title: single-movie folders and TV show folders.
+-- Folders that stand for one title: single-movie folders and TV show folders, by client path.
 CREATE TABLE IF NOT EXISTS metadata_folders (
 	library_id TEXT NOT NULL,
 	folder_path TEXT NOT NULL,
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS credits (
 CREATE INDEX IF NOT EXISTS idx_credits_owner ON credits(owner);
 
 -- Manual episode fixes. A season map sends every file of one season (for one show lookup) to a
--- TMDB season, shifting episode numbers by episode_offset; an override pins one file.
+-- TMDB season, shifting episode numbers by episode_offset; an override pins one file (by client path).
 CREATE TABLE IF NOT EXISTS season_maps (
 	library_id TEXT NOT NULL,
 	query_key TEXT NOT NULL,
@@ -314,7 +314,7 @@ func (db *DB) MatchedTMDBIDs(kind string) (map[int]bool, error) {
 }
 
 // PruneLibraryMetadata removes lookups and folder mappings for a library that no file uses any
-// more. keepKeys and keepFolders are what a full walk of the library found.
+// more. keepKeys and keepFolders (client paths) are what a full walk of the library found.
 func (db *DB) PruneLibraryMetadata(kind, libraryID string, keepKeys, keepFolders map[string]bool) error {
 	tx, err := db.mediaConn.Begin()
 	if err != nil {
@@ -357,14 +357,18 @@ func pruneColumn(tx *sql.Tx, selectQuery, deleteQuery, kind, libraryID string, k
 	return nil
 }
 
-// SetFolderKey records that a folder stands for one title.
+// SetFolderKey records that a folder (its client path) stands for one title.
 func (db *DB) SetFolderKey(libraryID, folderPath, kind, key string) error {
+	if err := checkKey(folderPath); err != nil {
+		return err
+	}
 	_, err := db.mediaConn.Exec(`INSERT OR REPLACE INTO metadata_folders (library_id, folder_path, kind, query_key)
 		VALUES (?, ?, ?, ?)`, libraryID, folderPath, kind, key)
 	return err
 }
 
-// FolderKeys returns the lookup keys recorded for the given folders of one library.
+// FolderKeys returns the lookup keys recorded for the given folders (client paths) of one
+// library, by client path.
 func (db *DB) FolderKeys(libraryID string, folders []string) (map[string]string, error) {
 	keys := map[string]string{}
 	if len(folders) == 0 {
@@ -577,7 +581,7 @@ type SeasonMap struct {
 }
 
 // EpisodeMappings returns a library's season maps (by "query key|file season") and per-file
-// episode overrides (by file path, as [season, episode]).
+// episode overrides (by the file's client path, as [season, episode]).
 func (db *DB) EpisodeMappings(libraryID string) (map[string]SeasonMap, map[string][2]int, error) {
 	maps := map[string]SeasonMap{}
 	rows, err := db.mediaConn.Query(`SELECT query_key, file_season, tmdb_season, episode_offset FROM season_maps WHERE library_id = ?`, libraryID)
@@ -623,7 +627,11 @@ func (db *DB) DeleteSeasonMap(libraryID, key string, fileSeason int) error {
 	return err
 }
 
+// SetEpisodeOverride pins a file (its client path) to a TMDB season and episode.
 func (db *DB) SetEpisodeOverride(libraryID, path string, season, episode int) error {
+	if err := checkKey(path); err != nil {
+		return err
+	}
 	_, err := db.mediaConn.Exec(`INSERT OR REPLACE INTO episode_overrides (library_id, file_path, season, episode) VALUES (?, ?, ?, ?)`,
 		libraryID, path, season, episode)
 	return err
@@ -634,7 +642,7 @@ func (db *DB) DeleteEpisodeOverride(libraryID, path string) error {
 	return err
 }
 
-// PruneEpisodeOverrides drops overrides for files that are gone.
+// PruneEpisodeOverrides drops overrides for files that are gone (keep: client paths).
 func (db *DB) PruneEpisodeOverrides(libraryID string, keep map[string]bool) error {
 	_, overrides, err := db.EpisodeMappings(libraryID)
 	if err != nil {

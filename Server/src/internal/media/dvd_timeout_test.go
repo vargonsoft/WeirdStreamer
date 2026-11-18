@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/config"
 )
 
 // A fake ffprobe that hangs, first on PATH, with the disc timeout shortened.
@@ -45,8 +47,12 @@ esac
 	discProbeTimeout = 300 * time.Millisecond
 	resetDiscCache()
 	discStore = nil
+	// The disc is in a library: the store keeps it by its client path.
+	savedConfig := config.GlobalConfig
+	config.GlobalConfig = &config.Config{Media: config.MediaConfig{Paths: []config.MediaPath{{ID: "dddddddd", Path: dir}}}}
 	t.Cleanup(func() {
 		discProbeTimeout, discProbeBudget, DiscRequestWait, discStore = savedTimeout, savedBudget, savedWait, savedStore
+		config.GlobalConfig = savedConfig
 		resetDiscCache()
 	})
 	iso := filepath.Join(dir, "disc.iso")
@@ -168,10 +174,15 @@ func TestExitedCommandIsNotATimeout(t *testing.T) {
 // the disc is unchanged; a changed disc is probed again.
 func TestStuckTitleSavedNotProbedAgain(t *testing.T) {
 	iso := fakeFFprobe(t, "2", "1 3")
-	useDiscStore()
+	store := useDiscStore()
 	info, err := LoadDisc(iso)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for k := range store.data {
+		if !strings.HasPrefix(k, "dddddddd/disc.iso") {
+			t.Fatalf("stored under %q, not the disc's client path", k)
+		}
 	}
 	read, unreadable := titleNumbers(info)
 	if !sameInts(read, 1, 3) || !sameInts(unreadable, 2) || info.MainTitle != 3 {

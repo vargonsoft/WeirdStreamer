@@ -36,7 +36,7 @@ func addExternalSubtitles(c *media.Codecs, tracks []subtitles.Track) {
 
 // addSubtitleOffsets keys the video's own tracks and adds each track's timing correction.
 func (h *MediaHandler) addSubtitleOffsets(path string, c *media.Codecs) {
-	offsets, _ := h.db.SubtitleOffsets(path)
+	offsets, _ := h.db.SubtitleOffsets(clientPath(path))
 	for i := range c.Subtitles {
 		s := &c.Subtitles[i]
 		if s.Key == "" {
@@ -70,7 +70,7 @@ func (h *MediaHandler) SetSubtitleOffset(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusBadRequest, "Offset out of range")
 		return
 	}
-	if err := h.db.SetSubtitleOffset(path, req.Key, req.OffsetMs); err != nil {
+	if err := h.db.SetSubtitleOffset(clientPath(path), req.Key, req.OffsetMs); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to save")
 		return
 	}

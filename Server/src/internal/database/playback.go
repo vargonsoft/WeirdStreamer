@@ -7,7 +7,7 @@ import (
 )
 
 // Where each user is in each video: their last position, and whether they've watched it. Rows
-// are keyed by user and absolute file path, in the users database.
+// are keyed by user and the video's client path (keys.go), in the users database.
 
 const playbackSchema = `
 CREATE TABLE IF NOT EXISTS playback (
@@ -38,6 +38,9 @@ type PlaybackUpdate struct {
 // A watched video stays watched when it's played again. With onlyIfNewer, a report older than
 // the stored one (an offline report sent late) is ignored.
 func (db *DB) SavePlayback(userID int64, path string, u PlaybackUpdate, onlyIfNewer bool) error {
+	if err := checkKey(path); err != nil {
+		return err
+	}
 	position, watched := u.Position, 0
 	if u.Finished {
 		position, watched = 0, 1
@@ -65,6 +68,9 @@ func (db *DB) SetWatched(userID int64, paths []string, watched bool) error {
 	defer tx.Rollback()
 	now := time.Now().UnixMilli()
 	for _, path := range paths {
+		if err := checkKey(path); err != nil {
+			return err
+		}
 		if watched {
 			_, err = tx.Exec(`
 				INSERT INTO playback (user_id, path, position, duration, watched, updated_at) VALUES (?, ?, 0, 0, 1, ?)
@@ -80,7 +86,7 @@ func (db *DB) SetWatched(userID int64, paths []string, watched bool) error {
 	return tx.Commit()
 }
 
-// UserPlayback returns all of a user's records, by path.
+// UserPlayback returns all of a user's records, by client path.
 func (db *DB) UserPlayback(userID int64) (map[string]*models.Playback, error) {
 	rows, err := db.userConn.Query(`SELECT path, position, duration, watched, updated_at FROM playback WHERE user_id = ?`, userID)
 	if err != nil {
@@ -150,6 +156,9 @@ func (db *DB) RecentFinished(userID int64, minPosition float64, limit int) ([]st
 // Continue Watching's remove. A video with no record gets one (no position, not watched): an
 // up-next episode removed that way stays off the list until the show is watched further.
 func (db *DB) ClearPosition(userID int64, path string) error {
+	if err := checkKey(path); err != nil {
+		return err
+	}
 	_, err := db.userConn.Exec(`
 		INSERT INTO playback (user_id, path, position, duration, watched, updated_at) VALUES (?, ?, 0, 0, 0, ?)
 		ON CONFLICT(user_id, path) DO UPDATE SET position = 0, updated_at = excluded.updated_at`,

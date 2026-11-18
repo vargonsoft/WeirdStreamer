@@ -8,7 +8,7 @@ import (
 // Each video's intro and credits, for the players' Skip buttons: found by the segment analyzer
 // (from chapters, a season's shared audio or dark frames; source says which) or set by hand
 // ("manual", which analysis leaves alone). analyzed is the analyzer version that last looked at
-// the file (0: not yet), so a better analyzer looks again.
+// the file (0: not yet), so a better analyzer looks again. Rows are keyed by client path (keys.go).
 
 const segmentSchema = `
 CREATE TABLE IF NOT EXISTS segments (
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS auto_skip (
 	PRIMARY KEY (user_id, show_id)
 );`
 
-// Subtitle tracks' timing corrections, shared by every player: by video and track key.
+// Subtitle tracks' timing corrections, shared by every player: by video (client path) and track key.
 const subtitleOffsetSchema = `
 CREATE TABLE IF NOT EXISTS subtitle_offsets (
 	path TEXT NOT NULL,
@@ -94,6 +94,9 @@ func spanValues(s *Span) (any, any, string) {
 
 // SaveAnalysis stores what the analyzer found for a video, keeping a part set by hand.
 func (db *DB) SaveAnalysis(path string, intro, credits *Span, version int) error {
+	if err := checkKey(path); err != nil {
+		return err
+	}
 	is, ie, isrc := spanValues(intro)
 	cs, ce, csrc := spanValues(credits)
 	_, err := db.mediaConn.Exec(`
@@ -117,6 +120,9 @@ func (db *DB) SetManualSegment(path, kind string, span *Span) error {
 	if kind != "intro" && kind != "credits" {
 		return errors.New("unknown segment kind")
 	}
+	if err := checkKey(path); err != nil {
+		return err
+	}
 	if span == nil {
 		_, err := db.mediaConn.Exec(`UPDATE segments SET `+kind+`_start = NULL, `+kind+`_end = NULL, `+kind+`_source = '', analyzed = 0 WHERE path = ?`, path)
 		return err
@@ -135,7 +141,8 @@ type Analysis struct {
 	Credits bool
 }
 
-// AnalyzedVersions returns, for each video in the segments table, how far the analyzer got.
+// AnalyzedVersions returns, for each video in the segments table (by client path), how far the
+// analyzer got.
 func (db *DB) AnalyzedVersions() (map[string]Analysis, error) {
 	rows, err := db.mediaConn.Query(`SELECT path, analyzed, credits_start IS NOT NULL FROM segments`)
 	if err != nil {
@@ -154,7 +161,7 @@ func (db *DB) AnalyzedVersions() (map[string]Analysis, error) {
 	return out, rows.Err()
 }
 
-// VideoPaths lists every video's path.
+// VideoPaths lists every video's disk path (media_items).
 func (db *DB) VideoPaths() ([]string, error) {
 	rows, err := db.mediaConn.Query(`SELECT path FROM media_items WHERE type = 'video' ORDER BY path`)
 	if err != nil {
@@ -244,17 +251,33 @@ func (db *DB) MediaRecords() ([]MediaRecord, error) {
 	return out, rows.Err()
 }
 
-// ForgetMedia removes files' records: their rows, intros and credits, and disc info.
-func (db *DB) ForgetMedia(paths []string) error {
+// GoneFile is a file to forget: its disk path (media_items, media_added) and its client path
+// (segments, disc info, subtitle offsets; "" when it's in no library, which leaves those alone).
+type GoneFile struct {
+	Path string
+	Key  string
+}
+
+// ForgetMedia removes files' records: their rows, intros and credits, disc info and subtitle
+// timing.
+func (db *DB) ForgetMedia(files []GoneFile) error {
 	tx, err := db.mediaConn.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	for _, p := range paths {
-		for _, q := range []string{`DELETE FROM media_items WHERE path = ?`, `DELETE FROM media_added WHERE path = ?`, `DELETE FROM segments WHERE path = ?`,
-			`DELETE FROM dvd_discs WHERE path = ?`, `DELETE FROM subtitle_offsets WHERE path = ?`} {
-			if _, err := tx.Exec(q, p); err != nil {
+	for _, f := range files {
+		for _, q := range []string{`DELETE FROM media_items WHERE path = ?`, `DELETE FROM media_added WHERE path = ?`} {
+			if _, err := tx.Exec(q, f.Path); err != nil {
+				return err
+			}
+		}
+		if checkKey(f.Key) != nil {
+			continue
+		}
+		for _, q := range []string{`DELETE FROM segments WHERE path = ?`, `DELETE FROM dvd_discs WHERE path = ?`,
+			`DELETE FROM subtitle_offsets WHERE path = ?`} {
+			if _, err := tx.Exec(q, f.Key); err != nil {
 				return err
 			}
 		}
@@ -283,6 +306,9 @@ func (db *DB) SubtitleOffsets(path string) (map[string]int, error) {
 
 // SetSubtitleOffset sets a subtitle track's timing correction (0 forgets it).
 func (db *DB) SetSubtitleOffset(path, track string, ms int) error {
+	if err := checkKey(path); err != nil {
+		return err
+	}
 	if ms == 0 {
 		_, err := db.mediaConn.Exec(`DELETE FROM subtitle_offsets WHERE path = ? AND track = ?`, path, track)
 		return err

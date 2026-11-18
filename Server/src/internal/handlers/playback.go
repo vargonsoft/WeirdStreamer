@@ -77,7 +77,7 @@ func (h *MediaHandler) videoDuration(item *models.MediaItem) float64 {
 
 // creditsStart is where a video's detected credits begin (0 when none was found).
 func (h *MediaHandler) creditsStart(path string) float64 {
-	segs, err := h.db.GetSegments(path)
+	segs, err := h.db.GetSegments(clientPath(path))
 	if err != nil || segs.Credits == nil {
 		return 0
 	}
@@ -93,12 +93,13 @@ func (h *MediaHandler) recordPlayback(r *http.Request, item *models.MediaItem, p
 	duration := h.videoDuration(item)
 	update := database.PlaybackUpdate{Position: position, Duration: duration,
 		Finished: playbackFinished(position, duration, h.creditsStart(item.Path), ended), UpdatedAt: at}
-	if err := h.db.SavePlayback(uid, item.Path, update, onlyIfNewer); err != nil {
+	if err := h.db.SavePlayback(uid, clientPath(item.Path), update, onlyIfNewer); err != nil {
 		log.Printf("[PLAYBACK] Failed to save progress: %v", err)
 	}
 }
 
-// requestPlayback loads the signed-in user's progress for annotating results (nil if none).
+// requestPlayback loads the signed-in user's progress for annotating results, by disk path (nil
+// if none).
 func (h *MediaHandler) requestPlayback(r *http.Request) map[string]*models.Playback {
 	uid, ok := userID(r)
 	if !ok {
@@ -109,7 +110,30 @@ func (h *MediaHandler) requestPlayback(r *http.Request) map[string]*models.Playb
 		log.Printf("[PLAYBACK] Failed to load progress: %v", err)
 		return nil
 	}
-	return pb
+	return byDiskPath(pb)
+}
+
+// byDiskPath re-keys playback records, stored by client path, by the disk paths the handlers work
+// with, leaving out those of libraries no longer configured.
+func byDiskPath(pb map[string]*models.Playback) map[string]*models.Playback {
+	out := make(map[string]*models.Playback, len(pb))
+	for client, p := range pb {
+		if path, _, ok := diskPath(client); ok {
+			out[path] = p
+		}
+	}
+	return out
+}
+
+// clientPaths is the client paths of disk paths, leaving out those outside every library.
+func clientPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if c := clientPath(p); c != "" {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func annotateItems(items []models.MediaItem, pb map[string]*models.Playback) {
@@ -211,7 +235,7 @@ func (h *MediaHandler) SetWatched(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if err := h.db.SetWatched(uid, paths, req.Watched); err != nil {
+	if err := h.db.SetWatched(uid, clientPaths(paths), req.Watched); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to save")
 		return
 	}
@@ -310,6 +334,15 @@ func (h *MediaHandler) ContinueWatching(w http.ResponseWriter, r *http.Request) 
 		paths = append(paths, done...)
 		sort.SliceStable(paths, func(i, j int) bool { return pb[paths[i]].UpdatedAt > pb[paths[j]].UpdatedAt })
 	}
+	// Stored by client path: from here on, disk paths.
+	clients := paths
+	paths = make([]string, 0, len(clients))
+	for _, c := range clients {
+		if path, _, ok := diskPath(c); ok {
+			paths = append(paths, path)
+		}
+	}
+	pb = byDiskPath(pb)
 	items := []continueItem{}
 	listed := map[string]bool{}         // paths on the list
 	shows := map[int]bool{}             // shows with an entry already (a newer one than the rows that follow)
@@ -342,6 +375,7 @@ func (h *MediaHandler) ContinueWatching(w http.ResponseWriter, r *http.Request) 
 				if all, err = h.db.UserPlayback(uid); err != nil {
 					all = map[string]*models.Playback{}
 				}
+				all = byDiskPath(all)
 			}
 			// The first episode after this one not watched yet (marking a season watched leaves
 			// its episodes in any order). One taken off the list since is left off.
@@ -510,7 +544,7 @@ func (h *MediaHandler) RemoveFromContinue(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if err := h.db.ClearPosition(uid, path); err != nil {
+	if err := h.db.ClearPosition(uid, clientPath(path)); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to save")
 		return
 	}

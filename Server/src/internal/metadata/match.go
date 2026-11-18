@@ -66,7 +66,7 @@ func (s *Service) MatchTarget(lib config.MediaPath, path string, isDir bool) (Re
 	if lib.Type == config.LibraryTypeTV {
 		path = ShowFolderOf(lib, path)
 	}
-	keys, err := s.db.FolderKeys(lib.ID, []string{path})
+	keys, err := s.folderKeys(lib, []string{path})
 	if err != nil {
 		return Ref{}, err
 	}

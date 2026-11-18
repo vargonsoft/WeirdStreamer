@@ -80,7 +80,7 @@ func TestMediaAdded(t *testing.T) {
 		t.Errorf("a file from the future dated %d, want now", got[0].AddedAt)
 	}
 
-	if err := db.ForgetMedia([]string{found, future}); err != nil {
+	if err := db.ForgetMedia([]GoneFile{{Path: found}, {Path: future}}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ = db.NewestMedia(filepath.Join(dir, "lib"), 10); len(got) != 1 || got[0].Path != old {

@@ -43,7 +43,7 @@ func (h *MediaHandler) GetSegments(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	segs, err := h.db.GetSegments(path)
+	segs, err := h.db.GetSegments(clientPath(path))
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to load segments")
 		return
@@ -101,7 +101,7 @@ func (h *MediaHandler) SetSegment(w http.ResponseWriter, r *http.Request) {
 		}
 		span = &database.Span{Start: req.Start, End: req.End, Source: "manual"}
 	}
-	if err := h.db.SetManualSegment(path, req.Kind, span); err != nil {
+	if err := h.db.SetManualSegment(clientPath(path), req.Kind, span); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to save")
 		return
 	}

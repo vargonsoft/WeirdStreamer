@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/base64"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"github.com/weirdstreamer/server/internal/auth"
@@ -14,20 +13,7 @@ import (
 // libraryForPath returns the configured library that contains path. Paths are compared by
 // directory boundary, so "/media/movies-private/x" does not belong to "/media/movies".
 func libraryForPath(path string) (config.MediaPath, bool) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return config.MediaPath{}, false
-	}
-	for _, lib := range config.GlobalConfig.Media.Paths {
-		root, err := filepath.Abs(lib.Path)
-		if err != nil {
-			continue
-		}
-		if absPath == root || strings.HasPrefix(absPath, root+string(filepath.Separator)) {
-			return lib, true
-		}
-	}
-	return config.MediaPath{}, false
+	return config.LibraryOf(config.GlobalConfig.Media.Paths, path)
 }
 
 // groupCanAccess reports whether members of group may access lib.
@@ -66,53 +52,15 @@ func (h *MediaHandler) canAccessPath(r *http.Request, path string) bool {
 // a disk path for every response, and diskPath turns one a client sent back into the disk path.
 
 // clientPath is the path clients know a media file or folder by, or "" for one outside every
-// library.
+// library (config.ClientPath).
 func clientPath(path string) string {
-	if path == "" {
-		return ""
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return ""
-	}
-	lib, ok := libraryForPath(abs)
-	if !ok {
-		return ""
-	}
-	root, err := filepath.Abs(lib.Path)
-	if err != nil {
-		return ""
-	}
-	rel, err := filepath.Rel(root, abs)
-	if err != nil || rel == "." {
-		return lib.ID
-	}
-	return lib.ID + "/" + filepath.ToSlash(rel)
+	client, _ := config.ClientPath(path)
+	return client
 }
 
-// diskPath finds the file or folder a client path names, and its library. A path that isn't a
-// library's ID and a path within it (a disk path, or one that climbs out with "..") names nothing.
+// diskPath finds the file or folder a client path names, and its library (config.DiskPath).
 func diskPath(client string) (string, config.MediaPath, bool) {
-	parts := strings.SplitN(strings.Trim(client, "/"), "/", 2)
-	if strings.HasPrefix(client, "/") || parts[0] == "" {
-		return "", config.MediaPath{}, false
-	}
-	lib, ok := libraryByID(parts[0])
-	if !ok {
-		return "", config.MediaPath{}, false
-	}
-	path, err := filepath.Abs(lib.Path)
-	if err != nil {
-		return "", config.MediaPath{}, false
-	}
-	if len(parts) == 2 {
-		path = filepath.Join(path, filepath.FromSlash(parts[1]))
-	}
-	// It must stay inside the library it was addressed through.
-	if in, ok := libraryForPath(path); !ok || in.ID != lib.ID {
-		return "", config.MediaPath{}, false
-	}
-	return path, lib, true
+	return config.DiskPath(client)
 }
 
 // filePath reads a base64 client path a request sent, checking the user may see the file: the

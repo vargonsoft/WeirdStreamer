@@ -11,13 +11,20 @@ import (
 // episodeMappings holds one library's manual episode fixes.
 type episodeMappings struct {
 	seasons   map[string]database.SeasonMap // "query key|file season"
-	overrides map[string][2]int             // file path -> TMDB season, episode
+	overrides map[string][2]int             // file's disk path -> TMDB season, episode
 }
 
 func (s *Service) loadEpisodeMappings(libraryID string) episodeMappings {
-	seasons, overrides, err := s.db.EpisodeMappings(libraryID)
+	seasons, stored, err := s.db.EpisodeMappings(libraryID)
 	if err != nil {
 		return episodeMappings{}
+	}
+	// Stored by client path; looked up by disk path.
+	overrides := make(map[string][2]int, len(stored))
+	for client, se := range stored {
+		if path, _, ok := config.DiskPath(client); ok {
+			overrides[path] = se
+		}
 	}
 	return episodeMappings{seasons: seasons, overrides: overrides}
 }
@@ -84,10 +91,10 @@ func (s *Service) SetEpisodeMapping(lib config.MediaPath, path string, season, e
 			FileSeason: ref.Season, TMDBSeason: season, EpisodeOffset: episode - ref.Episode})
 		if err == nil {
 			// The file follows its season again rather than an older pin.
-			err = s.db.DeleteEpisodeOverride(lib.ID, path)
+			err = s.db.DeleteEpisodeOverride(lib.ID, clientPath(path))
 		}
 	} else {
-		err = s.db.SetEpisodeOverride(lib.ID, path, season, episode)
+		err = s.db.SetEpisodeOverride(lib.ID, clientPath(path), season, episode)
 	}
 	if err != nil {
 		return err
@@ -105,7 +112,7 @@ func (s *Service) ClearEpisodeMapping(lib config.MediaPath, path string, wholeSe
 	if wholeSeason {
 		return s.db.DeleteSeasonMap(lib.ID, ref.Key, ref.Season)
 	}
-	return s.db.DeleteEpisodeOverride(lib.ID, path)
+	return s.db.DeleteEpisodeOverride(lib.ID, clientPath(path))
 }
 
 // fetchMappedSeason makes sure the TMDB season a mapping points at is stored.

@@ -53,7 +53,6 @@ func main() {
 	if err := config.Load(configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-
 	// Ensure database directory exists
 	userDBDir := filepath.Dir(config.GlobalConfig.Database.UserPath)
 	if err := os.MkdirAll(userDBDir, 0755); err != nil {
