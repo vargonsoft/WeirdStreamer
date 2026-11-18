@@ -475,6 +475,9 @@ func (s *Streamer) runTranscode(w http.ResponseWriter, r *http.Request, filePath
 		return err
 	}
 	defer spool.detach()
+	if err := spool.ready(r.Context(), offset); err != nil {
+		return err
+	}
 
 	// The length isn't known, so a resumed part can't name its real end.
 	w.Header().Set("Content-Type", "video/mp4")

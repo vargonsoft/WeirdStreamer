@@ -59,7 +59,7 @@ func userID(r *http.Request) (int64, bool) {
 // videoDuration is a video's length for progress: a disc's main title, else the file's.
 func (h *MediaHandler) videoDuration(item *models.MediaItem) float64 {
 	if media.IsDiscImage(item.Path) {
-		if info, err := media.LoadDisc(item.Path); err == nil {
+		if info, err := media.LoadDiscWithin(item.Path, media.DiscRequestWait); err == nil {
 			if t := info.Title(0); t != nil {
 				return t.Duration
 			}

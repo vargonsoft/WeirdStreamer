@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -148,7 +149,15 @@ func (tg *ThumbnailGenerator) generate(filePath string) (string, error) {
 			seekTimes = nil
 			if args, err := DiscFrameArgs(filePath, 0.1); err == nil {
 				args = append(args, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
-				if err := exec.Command("ffmpeg", args...).Run(); err == nil {
+				// One frame, so no progress to watch until it's made: a stuck DVD demuxer is
+				// stopped after a fixed time instead.
+				ctx, cancel := context.WithTimeout(context.Background(), discThumbnailTimeout)
+				err := exec.CommandContext(ctx, "ffmpeg", args...).Run()
+				if ctx.Err() != nil {
+					log.Printf("[THUMBNAIL] %s: %v", filePath, ErrFFmpegStalled)
+				}
+				cancel()
+				if err == nil {
 					if info, statErr := os.Stat(part); statErr == nil && info.Size() > 1024 {
 						success = true
 					}

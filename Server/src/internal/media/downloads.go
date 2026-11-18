@@ -1,7 +1,6 @@
 package media
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -65,6 +64,9 @@ type DownloadSource struct {
 	Width    int     `json:"width"`
 	Height   int     `json:"height"`
 	Disc     bool    `json:"disc"` // a DVD image: downloads are its main title as MP4, never the image
+	// MainTitleUncertain: a title of the disc that couldn't be read may be longer than the one
+	// downloaded (DiscInfo.MainTitleUncertain).
+	MainTitleUncertain bool `json:"main_title_uncertain,omitempty"`
 }
 
 // DownloadManager runs download encodes one at a time.
@@ -101,12 +103,13 @@ func Source(path string) (*DownloadSource, error) {
 	}
 	src := &DownloadSource{Size: st.Size()}
 	if IsDiscImage(path) {
-		info, err := LoadDisc(path)
+		info, err := LoadDiscWithin(path, DiscRequestWait)
 		if err != nil {
 			return nil, err
 		}
 		t := info.Title(0)
 		src.Disc, src.Duration = true, t.Duration
+		src.MainTitleUncertain = info.MainTitleUncertain
 		// The main title as square-pixel video, as it's encoded.
 		src.Height = t.Height
 		aspect := t.Aspect
@@ -345,7 +348,17 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 	part := job.file + ".part"
 	args = append(args, "-movflags", "+faststart", "-f", "mp4", "-progress", "pipe:1", "-nostats", "-y", part)
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", append([]string{"-hide_banner", "-loglevel", "error", "-nostdin"}, args...)...)
+	if src.MainTitleUncertain {
+		log.Printf("[DOWNLOAD] %s: a title that can't be read may be longer than the one downloaded as the main title", filepath.Base(job.Path))
+	}
+	run, stop := context.WithCancel(ctx)
+	defer stop()
+	var watch *stallWatch
+	if src.Disc {
+		watch = watchStalls(stop) // a stuck DVD demuxer: see watchdog.go
+		defer watch.done()
+	}
+	cmd := exec.CommandContext(run, "ffmpeg", append([]string{"-hide_banner", "-loglevel", "error", "-nostdin"}, args...)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -355,9 +368,7 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		line := scanner.Text()
+	watchProgressLines(stdout, watch, func(line string) {
 		if v, ok := strings.CutPrefix(line, "out_time_us="); ok {
 			if us, err := strconv.ParseFloat(v, 64); err == nil && us > 0 {
 				m.mu.Lock()
@@ -365,9 +376,12 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 				m.mu.Unlock()
 			}
 		}
-	}
+	})
 	if err := cmd.Wait(); err != nil {
 		os.Remove(part)
+		if watch.stalled() {
+			return ErrFFmpegStalled
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if len(msg) > 300 {
 			msg = msg[len(msg)-300:]

@@ -367,9 +367,28 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, audioTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages, bitrate, resolution, sess); err != nil {
 		log.Printf("[STREAM] Failed to stream %s: %v", path, err)
+		if respondDiscBusy(w, err) {
+			return
+		}
+		if errors.Is(err, media.ErrFFmpegStalled) {
+			w.Header().Set(unreadableHeader, "unreadable")
+			respondError(w, http.StatusServiceUnavailable, "Can't play this title: "+err.Error())
+			return
+		}
 		respondError(w, http.StatusInternalServerError, "Failed to stream media")
 		return
 	}
+}
+
+// respondDiscBusy answers a request that didn't wait for a disc still being read (503 with
+// Retry-After), if that's what err says.
+func respondDiscBusy(w http.ResponseWriter, err error) bool {
+	if !errors.Is(err, media.ErrDiscReading) {
+		return false
+	}
+	w.Header().Set("Retry-After", "30")
+	respondError(w, http.StatusServiceUnavailable, "The server is still reading this disc. Try again in a minute.")
+	return true
 }
 
 // unreadableHeader marks a response for a video the server can't read, so players stop trying
@@ -585,7 +604,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			// An installer or data disc image isn't a video: scans leave it out, and so does this.
-			if media.IsNonDiscISO(entryPath) {
+			if media.IsNonDiscISOWithin(entryPath, 0) {
 				continue
 			}
 

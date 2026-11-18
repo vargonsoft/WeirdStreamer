@@ -31,6 +31,9 @@ func (h *MediaHandler) DownloadOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	src, err := media.Source(path)
+	if respondDiscBusy(w, err) {
+		return
+	}
 	if err != nil {
 		respondError(w, http.StatusNotFound, "Media not found")
 		return

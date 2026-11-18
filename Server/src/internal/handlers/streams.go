@@ -43,8 +43,9 @@ func (h *MediaHandler) beginStream(r *http.Request, item *models.MediaItem) *med
 	}
 	sess := h.streams.Begin(streamKey(r, item.Path), h.streamDescriber(r, item))
 	if media.IsDiscImage(item.Path) {
-		// A disc's stream plays one of its titles: show that title's length.
-		if info, err := media.LoadDisc(item.Path); err == nil {
+		// A disc's stream plays one of its titles: show that title's length (when the disc has
+		// been read: this doesn't wait for it, serveDisc does).
+		if info, err := media.LoadDiscWithin(item.Path, 0); err == nil {
 			if t := info.Title(media.ParseDiscOptions(r).Title); t != nil {
 				sess.FillIn(func(s *media.StreamInfo) { s.Duration, s.Width, s.Height = t.Duration, t.Width, t.Height })
 			}
@@ -207,7 +208,10 @@ func (h *MediaHandler) GetDisc(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "Not a disc image")
 		return
 	}
-	info, err := media.LoadDisc(path)
+	info, err := media.LoadDiscWithin(path, media.DiscRequestWait)
+	if respondDiscBusy(w, err) {
+		return
+	}
 	if err != nil {
 		log.Printf("[DISC] Could not read %s: %v", path, err)
 		respondError(w, http.StatusUnprocessableEntity, "Could not read the disc: "+withoutDiskPath(err.Error(), path))

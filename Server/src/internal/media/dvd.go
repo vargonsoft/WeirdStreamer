@@ -2,17 +2,20 @@ package media
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // DVD-Video disc images (.iso) are played with ffmpeg's dvdvideo demuxer. It plays one program
@@ -25,13 +28,84 @@ func IsDiscImage(path string) bool {
 }
 
 // discInfoVersion changes when probing changes, so discs stored by older builds are probed again.
-const discInfoVersion = 5
+const discInfoVersion = 6
 
 // DiscInfo describes what a DVD disc image holds.
 type DiscInfo struct {
 	Titles    []DiscTitle `json:"titles"`
 	MainTitle int         `json:"main_title"` // number of the main feature: the longest title
 	Version   int         `json:"version"`
+	// Unreadable lists the titles ffprobe got stuck on (killed after discProbeTimeout). They're
+	// saved with the rest and not probed again while the disc's size and time stay the same.
+	Unreadable []UnreadableTitle `json:"unreadable,omitempty"`
+	// NextTitle: probing stopped at this title when the disc's time (discProbeBudget) ran out; it
+	// and the titles after it weren't probed. The next start goes on from there. 0 when done.
+	NextTitle int `json:"next_title,omitempty"`
+	// MainTitleUncertain: a title that couldn't be read (or wasn't probed yet) may be longer than
+	// MainTitle, so the main title may be a bonus feature. Trickplay, thumbnails and downloads say so.
+	MainTitleUncertain bool `json:"main_title_uncertain,omitempty"`
+}
+
+// UnreadableTitle is a title ffprobe couldn't read: its length from the disc's tables (0 when
+// they can't be read) and why.
+type UnreadableTitle struct {
+	Number   int     `json:"number"`
+	Duration float64 `json:"duration,omitempty"`
+	Reason   string  `json:"reason"`
+}
+
+// discProbeTimeout bounds each ffprobe call on a disc. A title's probe takes seconds; one that
+// runs longer is stuck (ffmpeg's DVD demuxer loops forever on some titles of some images). The
+// title is then saved as unreadable, so this is paid once per disc. A variable so tests can
+// shorten it.
+var discProbeTimeout = 60 * time.Second
+
+// discThumbnailTimeout bounds making a disc's thumbnail: one frame, so ffmpeg shows no progress
+// before it's done (an accurate seek into a chained title decodes up to it first).
+var discThumbnailTimeout = 3 * time.Minute
+
+// discProbeBudget bounds probing one disc in all, so a disc with several stuck titles doesn't
+// hold up a scan for long: four stuck titles (a minute each) and the rest still fit. Titles not
+// reached are probed at the next start (DiscInfo.NextTitle).
+var discProbeBudget = 5 * time.Minute
+
+// errProbeTimeout: an ffprobe call on a disc ran past discProbeTimeout and was killed.
+var errProbeTimeout = errors.New("ffprobe timed out reading the title")
+
+// errProbeBudget: an ffprobe call was killed because the disc's probe budget ran out.
+var errProbeBudget = errors.New("the disc's probe time ran out")
+
+// ErrDiscReading: a request didn't wait for a disc still being probed (LoadDiscWithin).
+var ErrDiscReading = errors.New("still reading this disc; try again in a minute")
+
+// DiscRequestWait is how long a request waits for a disc being probed before giving up with
+// ErrDiscReading (the probe goes on, and its result is kept). Below the time players give up
+// on a request.
+var DiscRequestWait = 20 * time.Second
+
+// ffprobeOutput runs ffprobe for at most discProbeTimeout, and no longer than ctx allows.
+func ffprobeOutput(ctx context.Context, args ...string) ([]byte, error) {
+	call, cancel := context.WithTimeout(ctx, discProbeTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(call, "ffprobe", args...)
+	// Once killed, don't wait on its output for longer than this (a child it started could keep
+	// the pipe open).
+	cmd.WaitDelay = 5 * time.Second
+	out, err := cmd.Output()
+	if err != nil && killedAtDeadline(cmd, call) {
+		if ctx.Err() != nil {
+			return nil, errProbeBudget
+		}
+		return nil, errProbeTimeout
+	}
+	return out, err
+}
+
+// killedAtDeadline reports whether cmd was killed by exec for its context: it ended by a signal,
+// not by exiting, and its context is done. One that exited just as the deadline passed isn't.
+func killedAtDeadline(cmd *exec.Cmd, ctx context.Context) bool {
+	ps := cmd.ProcessState
+	return ps != nil && !ps.Exited() && ctx.Err() != nil
 }
 
 // DiscTitle is one title (the feature, a bonus feature, an episode...).
@@ -145,17 +219,50 @@ var (
 
 type discEntry struct {
 	size, modTime int64
-	info          *DiscInfo
 	once          sync.Once
+	done          chan struct{} // closed when info and err are set
+	info          *DiscInfo
 	err           error
 }
 
 // SetDiscStore sets where probed disc info is kept.
 func SetDiscStore(s DiscStore) { discStore = s }
 
-// LoadDisc returns a disc image's info, probing it the first time (a few seconds) and caching
-// it in memory and in the DiscStore.
+// LoadDisc returns a disc image's info, probing it the first time (seconds, up to discProbeBudget)
+// and caching it in memory and in the DiscStore. For background work; requests use LoadDiscWithin.
 func LoadDisc(path string) (*DiscInfo, error) {
+	e, err := discEntryFor(path)
+	if err != nil {
+		return nil, err
+	}
+	<-e.done
+	return e.info, e.err
+}
+
+// LoadDiscWithin is LoadDisc waiting at most wait for a probe (one already running, or started
+// here), then answering ErrDiscReading while the probe goes on. wait 0 takes only what's known.
+func LoadDiscWithin(path string, wait time.Duration) (*DiscInfo, error) {
+	e, err := discEntryFor(path)
+	if err != nil {
+		return nil, err
+	}
+	select {
+	case <-e.done:
+		return e.info, e.err
+	default:
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-e.done:
+		return e.info, e.err
+	case <-timer.C:
+		return nil, ErrDiscReading
+	}
+}
+
+// discEntryFor returns the disc's cache entry, its probe started.
+func discEntryFor(path string) (*discEntry, error) {
 	st, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -164,47 +271,113 @@ func LoadDisc(path string) (*DiscInfo, error) {
 	discMu.Lock()
 	e := discCache[path]
 	if e == nil || e.size != size || e.modTime != modTime {
-		e = &discEntry{size: size, modTime: modTime}
+		e = &discEntry{size: size, modTime: modTime, done: make(chan struct{})}
 		discCache[path] = e
 	}
 	discMu.Unlock()
-
 	e.once.Do(func() {
-		if discStore != nil {
-			if data, err := discStore.GetDiscInfo(path, size, modTime); err == nil && data != nil {
-				var info DiscInfo
-				if json.Unmarshal(data, &info) == nil && len(info.Titles) > 0 && info.Version == discInfoVersion {
-					e.info = &info
-					return
-				}
-			}
-		}
-		e.info, e.err = probeDisc(path)
-		if e.err == nil && discStore != nil {
-			if data, err := json.Marshal(e.info); err == nil {
-				discStore.SaveDiscInfo(path, size, modTime, data)
-			}
-		}
+		go func() {
+			defer close(e.done)
+			e.info, e.err = e.load(path)
+		}()
 	})
-	return e.info, e.err
+	return e, nil
+}
+
+// load reads the disc's stored info, or probes it (going on from where a stored probe stopped),
+// and stores what was probed.
+func (e *discEntry) load(path string) (*DiscInfo, error) {
+	var prev *DiscInfo
+	if discStore != nil {
+		if data, err := discStore.GetDiscInfo(path, e.size, e.modTime); err == nil && data != nil {
+			var info DiscInfo
+			if json.Unmarshal(data, &info) == nil && info.Version == discInfoVersion &&
+				(len(info.Titles) > 0 || len(info.Unreadable) > 0) {
+				if info.NextTitle == 0 {
+					return &info, info.readableErr()
+				}
+				prev = &info
+			}
+		}
+	}
+	info, err := probeDisc(path, prev)
+	if info != nil && discStore != nil {
+		if data, jerr := json.Marshal(info); jerr == nil {
+			discStore.SaveDiscInfo(path, e.size, e.modTime, data)
+		}
+	}
+	return info, err
+}
+
+// readableErr is the error for a disc none of whose titles could be read (all stuck).
+func (d *DiscInfo) readableErr() error {
+	if len(d.Titles) > 0 {
+		return nil
+	}
+	if d.NextTitle > 0 {
+		return fmt.Errorf("no titles read yet (%w)", errProbeBudget)
+	}
+	return errors.New("no readable titles on the disc: ffprobe got stuck on every one")
 }
 
 // probeDisc reads a disc's title chains from its IFO tables and each title's chapters and tracks
-// with ffprobe.
-func probeDisc(path string) (*DiscInfo, error) {
+// with ffprobe, within discProbeBudget. prev, when given, is a probe stopped by the budget: its
+// titles are kept and probing goes on from its NextTitle. The info is returned (to be saved)
+// even with an error when titles were found stuck, so they aren't probed again.
+func probeDisc(path string, prev *DiscInfo) (*DiscInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), discProbeBudget)
+	defer cancel()
 	tables, tablesErr := readDVDTables(path)
 	count := 99
 	if tablesErr == nil {
 		count = len(tables)
 	}
 	info := &DiscInfo{}
-	for n := 1; n <= count; n++ {
-		t, err := probeTitle(path, n, false)
+	first := 1
+	if prev != nil {
+		info.Titles, info.Unreadable = prev.Titles, prev.Unreadable
+		first = prev.NextTitle
+	}
+	stuck := func(n int, err error) {
+		u := UnreadableTitle{Number: n, Reason: fmt.Sprintf("%v (after %s)", err, discProbeTimeout)}
+		if tablesErr == nil {
+			if segs := tables[n-1].segments(); validChain(segs) {
+				u.Duration = segs[len(segs)-1].Start + segs[len(segs)-1].Duration
+			}
+		}
+		info.Unreadable = append(info.Unreadable, u)
+		log.Printf("[DISC] Title %d of %s can't be read, skipped: %v", n, path, err)
+	}
+	for n := first; n <= count; n++ {
+		if ctx.Err() != nil {
+			info.NextTitle = n
+			break
+		}
+		t, err := probeTitle(ctx, path, n, false)
 		padding := false
-		if err != nil {
+		if err != nil && !errors.Is(err, errProbeTimeout) && !errors.Is(err, errProbeBudget) {
 			// ffmpeg refuses a title of nothing but padding cells unless told not to trim them.
-			t, err = probeTitle(path, n, true)
+			t, err = probeTitle(ctx, path, n, true)
 			padding = err == nil
+		}
+		if err == nil && !padding {
+			var readable bool
+			readable, err = readsPacket(ctx, path, n, 1)
+			if err == nil && !readable {
+				t.FirstChapter, err = firstReadableChapter(ctx, path, n, len(t.Chapters))
+				// Nothing read from any chapter: what ffmpeg trims is all there is.
+				padding = t.FirstChapter == 0
+			}
+		}
+		if errors.Is(err, errProbeBudget) {
+			info.NextTitle = n
+			break
+		}
+		if errors.Is(err, errProbeTimeout) {
+			// Skip this title only: the titles after it may probe fine (a title can hang while
+			// the ones around it work).
+			stuck(n, err)
+			continue
 		}
 		if err != nil {
 			if tablesErr != nil {
@@ -214,11 +387,6 @@ func probeDisc(path string) (*DiscInfo, error) {
 		}
 		t.Angles = 1
 		t.Segments = []DiscSegment{{Start: 0, Duration: t.Duration}}
-		if !padding && !readsPacket(path, n, 1) {
-			t.FirstChapter = firstReadableChapter(path, n, len(t.Chapters))
-			// Nothing read from any chapter: what ffmpeg trims is all there is.
-			padding = t.FirstChapter == 0
-		}
 		t.Padding = padding
 		if tablesErr == nil {
 			tt := tables[n-1]
@@ -239,39 +407,68 @@ func probeDisc(path string) (*DiscInfo, error) {
 		}
 		info.Titles = append(info.Titles, *t)
 	}
+	if info.NextTitle > 0 {
+		log.Printf("[DISC] Probing %s stopped at title %d after %s; the rest at the next start", path, info.NextTitle, discProbeBudget)
+	}
+	info.Version = discInfoVersion
 	if len(info.Titles) == 0 {
+		if len(info.Unreadable) > 0 || info.NextTitle > 0 {
+			return info, info.readableErr()
+		}
 		if tablesErr != nil {
 			return nil, fmt.Errorf("not a readable DVD image: %w", tablesErr)
 		}
 		return nil, errors.New("no playable titles on the disc")
 	}
 	info.MainTitle = mainTitle(info.Titles)
-	info.Version = discInfoVersion
+	info.MainTitleUncertain = mainTitleUncertain(info)
 	return info, nil
+}
+
+// mainTitleUncertain reports whether a title that wasn't read could be longer than the main
+// title: an unreadable one longer than it or of unknown length, or titles not probed yet.
+func mainTitleUncertain(info *DiscInfo) bool {
+	if info.NextTitle > 0 {
+		return true
+	}
+	main := info.Title(info.MainTitle)
+	for _, u := range info.Unreadable {
+		if u.Duration == 0 || main == nil || u.Duration > main.Duration {
+			return true
+		}
+	}
+	return false
 }
 
 // firstReadableChapter finds the first of a title's next few chapters (from 2) that ffmpeg reads a
 // packet of, or 0. Some discs open a title with a half-second padding cell: ffmpeg skips it, then
 // finds the title over and reads nothing, but it reads the title from the chapter after.
-func firstReadableChapter(path string, title, chapters int) int {
+func firstReadableChapter(ctx context.Context, path string, title, chapters int) (int, error) {
 	for c := 2; c <= min(chapters, 4); c++ {
-		if readsPacket(path, title, c) {
-			return c
+		readable, err := readsPacket(ctx, path, title, c)
+		if err != nil {
+			return 0, err
+		}
+		if readable {
+			return c, nil
 		}
 	}
-	return 0
+	return 0, nil
 }
 
 // readsPacket reports whether ffmpeg reads a packet of a title, from a chapter (from 1).
-func readsPacket(path string, title, chapter int) bool {
+func readsPacket(ctx context.Context, path string, title, chapter int) (bool, error) {
 	args := []string{"-v", "error", "-f", "dvdvideo", "-title", strconv.Itoa(title)}
 	if chapter > 1 {
 		args = append(args, "-chapter_start", strconv.Itoa(chapter))
 	}
 	args = append(args, "-i", path, "-read_intervals", "%+#1",
 		"-show_entries", "packet=pts_time", "-of", "csv=p=0")
-	out, err := exec.Command("ffprobe", args...).Output()
-	return err == nil && len(bytes.TrimSpace(withoutDVDLibLines(out))) > 0
+	out, err := ffprobeOutput(ctx, args...)
+	if errors.Is(err, errProbeTimeout) || errors.Is(err, errProbeBudget) {
+		return false, err
+	}
+	return err == nil && len(bytes.TrimSpace(withoutDVDLibLines(out))) > 0, nil
 }
 
 func ascending(times []float64) bool {
@@ -349,13 +546,13 @@ func withoutDVDLibLines(out []byte) []byte {
 }
 
 // probeTitle reads title n's length, chapters and tracks; untrimmed reads its padding cells too.
-func probeTitle(path string, n int, untrimmed bool) (*DiscTitle, error) {
+func probeTitle(ctx context.Context, path string, n int, untrimmed bool) (*DiscTitle, error) {
 	args := []string{"-v", "error", "-f", "dvdvideo", "-title", strconv.Itoa(n)}
 	if untrimmed {
 		args = append(args, "-trim", "0")
 	}
 	args = append(args, "-i", path, "-show_format", "-show_chapters", "-show_streams", "-of", "json")
-	out, err := exec.Command("ffprobe", args...).Output()
+	out, err := ffprobeOutput(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -686,6 +883,16 @@ func IsNonDiscISO(path string) bool {
 	return IsNotVideoDisc(err)
 }
 
+// IsNonDiscISOWithin is IsNonDiscISO for requests: waiting at most wait for the disc to be read,
+// and saying no until it is (the probe goes on).
+func IsNonDiscISOWithin(path string, wait time.Duration) bool {
+	if !IsDiscImage(path) {
+		return false
+	}
+	_, err := LoadDiscWithin(path, wait)
+	return IsNotVideoDisc(err)
+}
+
 // readFile reads a file by its path components (case-insensitive), up to 16 MB.
 func (fs *iso9660) readFile(parts ...string) ([]byte, error) {
 	lba, size := fs.rootLBA, fs.rootSize
@@ -725,6 +932,9 @@ func DiscFrameArgs(path string, fraction float64) ([]string, error) {
 	t := info.Title(0)
 	if t == nil {
 		return nil, errors.New("no titles")
+	}
+	if info.MainTitleUncertain {
+		log.Printf("[DISC] %s: a title that can't be read may be longer than title %d, used as the main title", path, t.Number)
 	}
 	i, offset := t.SegmentAt(t.Duration * fraction)
 	args, trim := t.InputArgs(path, i, 1, offset)

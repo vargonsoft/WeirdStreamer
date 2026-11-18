@@ -35,6 +35,10 @@ const discBaseBitrate = 5_000_000
 // serveDisc transcodes a title of a DVD image: its PGC chain joined into one stream, from
 // startTime seconds, with the chosen angle and audio track and subtitles burned in.
 func (s *Streamer) serveDisc(w http.ResponseWriter, r *http.Request, filePath, startTime, bitrate, resolution string, sess *StreamSession) error {
+	// A request doesn't wait out a long probe (ErrDiscReading); DiscTranscodeArgs then finds it read.
+	if _, err := LoadDiscWithin(filePath, DiscRequestWait); err != nil {
+		return err
+	}
 	args, desc, err := DiscTranscodeArgs(filePath, ParseDiscOptions(r), startTime, bitrate, resolution)
 	if err != nil {
 		return err

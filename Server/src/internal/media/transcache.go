@@ -138,6 +138,7 @@ type transcodeSpool struct {
 	err     error
 	closed  bool
 	sess    *StreamSession // the latest reader's, for ffmpeg's progress
+	watch   *stallWatch    // a disc's transcode: stops ffmpeg when it makes nothing (nil for files)
 }
 
 func newTranscodeSpool(prefix, filePath string, sess *StreamSession) *transcodeSpool {
@@ -201,6 +202,11 @@ func (s *transcodeSpool) start(args []string) error {
 		cancel()
 		return err
 	}
+	if isDiscArgs(args) {
+		// Progress is output: the watch runs while store waits on ffmpeg, not while it holds
+		// ffmpeg back (far enough ahead of the player, or no player).
+		s.watch = watchStalls(cancel)
+	}
 	started := time.Now()
 	s.mu.Lock()
 	sess := s.sess
@@ -213,6 +219,10 @@ func (s *transcodeSpool) start(args []string) error {
 		waited := cmd.Wait()
 		if err == nil {
 			err = waited
+		}
+		s.watch.done()
+		if s.watch.stalled() {
+			err = ErrFFmpegStalled
 		}
 		s.mu.Lock()
 		s.done, s.err = true, err
@@ -366,7 +376,13 @@ func (s *transcodeSpool) store(stdout io.Reader) error {
 			file.Close()
 		}
 	}()
-	for s.room() {
+	for {
+		s.watch.pause(true)
+		more := s.room()
+		s.watch.pause(false)
+		if !more {
+			break
+		}
 		// Up to the chunk's end: at most what's left of it goes to this file.
 		room := spoolChunk - at%spoolChunk
 		n, err := stdout.Read(buf[:min(int64(len(buf)), room)])
@@ -406,6 +422,27 @@ func (s *transcodeSpool) stored(size int64) {
 		s.first += spoolChunk
 	}
 	s.changed.Broadcast()
+}
+
+// ready waits until the byte at offset is made, or the transcode ends, and returns the
+// transcode's error if it ended without making it: the response's status waits for that, so a
+// transcode that fails before making anything is answered with an error.
+func (s *transcodeSpool) ready(ctx context.Context, offset int64) error {
+	stop := context.AfterFunc(ctx, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.changed.Broadcast()
+	})
+	defer stop()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for offset >= s.size && !s.done && !s.closed && ctx.Err() == nil {
+		s.changed.Wait()
+	}
+	if offset >= s.size && s.done && s.err != nil {
+		return s.err
+	}
+	return nil
 }
 
 // read reads from offset, waiting for bytes ffmpeg hasn't made yet. io.EOF at the stream's end.

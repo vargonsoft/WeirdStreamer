@@ -518,6 +518,9 @@ func (tg *TrickplayGenerator) generateDisc(ctx context.Context, path string, wai
 	if title == nil || len(title.Segments) == 0 {
 		return errors.New("no main title")
 	}
+	if info.MainTitleUncertain {
+		log.Printf("trickplay: %s: a title that can't be read may be longer than title %d, used as the main title", path, title.Number)
+	}
 	trickplayDir := config.GlobalConfig.Media.TrickplayPath
 	if trickplayDir == "" {
 		return fmt.Errorf("trickplay path is not configured")
@@ -581,11 +584,18 @@ func (tg *TrickplayGenerator) discSegmentFrames(ctx context.Context, path string
 	input, _ := title.InputArgs(path, i, 1, 0)
 	args := append([]string{"-hide_banner", "-loglevel", "error", "-nostdin", "-skip_frame", "nokey"}, input...)
 	args = append(args, "-map", "0:v:0", "-vf", "fps=1/10,scale=320:-1,format=yuvj420p", "-strict", "unofficial",
-		filepath.Join(tmp, "%d.jpg"))
+		"-progress", "pipe:1", "-nostats", filepath.Join(tmp, "%d.jpg"))
 	var stderr bytes.Buffer
 	cmd := backgroundCommand(run, "ffmpeg", args...)
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	// A stuck DVD demuxer makes no frames: stop it when its position stops moving (watchdog.go).
+	watch := watchStalls(cancel)
+	defer watch.done()
+	err = runWatched(cmd, watch)
+	if watch.stalled() {
+		return fmt.Errorf("disc frames: %w", ErrFFmpegStalled)
+	}
+	if err != nil {
 		if interrupted {
 			return errInterrupted
 		}
