@@ -1,12 +1,11 @@
 package database
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -110,12 +109,6 @@ func (db *DB) initSchema() error {
 	return nil
 }
 
-// PathHash is the hex SHA-256 of a media file's path. Thumbnail and trickplay files are named by it.
-func PathHash(path string) string {
-	sum := sha256.Sum256([]byte(path))
-	return hex.EncodeToString(sum[:])
-}
-
 func (db *DB) backfillPathHashes() error {
 	rows, err := db.mediaConn.Query("SELECT id, path FROM media_items WHERE path_hash IS NULL")
 	if err != nil {
@@ -150,7 +143,7 @@ func (db *DB) backfillPathHashes() error {
 	}
 	defer stmt.Close()
 	for _, r := range pending {
-		if _, err := stmt.Exec(PathHash(r.path), r.id); err != nil {
+		if _, err := stmt.Exec(config.CacheKey(r.path), r.id); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -297,7 +290,7 @@ func (db *DB) SaveMediaItem(item *models.MediaItem) error {
 		INSERT OR REPLACE INTO media_items 
 		(path, name, type, size, mime_type, thumbnail_url, duration, width, height, path_hash, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, item.Path, item.Name, item.Type, item.Size, item.MimeType, item.ThumbnailURL, item.Duration, item.Width, item.Height, PathHash(item.Path))
+	`, item.Path, item.Name, item.Type, item.Size, item.MimeType, item.ThumbnailURL, item.Duration, item.Width, item.Height, config.CacheKey(item.Path))
 
 	if err != nil {
 		return err

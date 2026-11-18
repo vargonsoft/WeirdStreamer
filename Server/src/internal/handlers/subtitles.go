@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/weirdstreamer/server/internal/config"
-	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/metadata"
 	"github.com/weirdstreamer/server/internal/subtitles"
@@ -31,7 +30,7 @@ func addExternalSubtitles(c *media.Codecs, tracks []subtitles.Track) {
 	for _, t := range tracks {
 		c.Subtitles = append(c.Subtitles, media.SubtitleCodec{Index: len(c.Subtitles), Codec: t.Codec,
 			Language: t.Language, Title: t.Title, Forced: t.Forced, Text: true, External: t.Source,
-			HearingImpaired: t.HearingImpaired, Key: "file:" + database.PathHash(t.Path)[:16]})
+			HearingImpaired: t.HearingImpaired, Key: "file:" + config.CacheKey(t.Path)[:16]})
 	}
 }
 

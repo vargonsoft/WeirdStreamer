@@ -201,8 +201,9 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   (`decodeMediaPath` / `filePath`, which also check the user's group), which refuses anything else:
   a disk path, or one that climbs out of its library. Text made for people (ffmpeg's arguments on
   the Streams page, a download's error) goes through `withoutDiskPath`. A new endpoint must do the
-  same. Thumbnail and trickplay names and subtitle keys stay hashes of the disk path, so a server
-  moved with its folders keeps them. Clients treat `path` as a name to hand back, and store it
+  same. Cache names (thumbnails, trickplay, ASS tracks, downloaded subtitles, subtitle keys) are
+  `config.CacheKey`: the SHA-256 of the library's ID and the path inside it, so moving a library's
+  folder keeps them. Clients treat `path` as a name to hand back, and store it
   (downloads' `sourcePath`, offline progress, remembered track choices).
 - **Streaming:** `GET /api/media/stream?path=<base64 client path>`. Query options:
   - `transcode=1` forces an ffmpeg transcode: libx264 ultrafast, AAC 192k, fragmented MP4,

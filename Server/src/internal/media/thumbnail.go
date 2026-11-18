@@ -18,7 +18,6 @@ import (
 
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/weirdstreamer/server/internal/config"
-	"github.com/weirdstreamer/server/internal/database"
 )
 
 // ThumbnailGenerator handles on-demand thumbnail generation with caching
@@ -51,7 +50,7 @@ func (tg *ThumbnailGenerator) Forget(filePath string) {
 
 // GenerateThumbnailHash creates a unique hash for a file path
 func GenerateThumbnailHash(filePath string) string {
-	return database.PathHash(filePath)
+	return config.CacheKey(filePath)
 }
 
 // GetThumbnailPath returns the full path and URL path for a thumbnail

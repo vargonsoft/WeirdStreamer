@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/config"
 )
 
 // A transcode's output goes through chunks on disk instead of straight to the client, so a stream
@@ -62,7 +62,7 @@ func SetTranscodeCacheDir(dir string) error {
 // has their own: what's kept and how far ffmpeg runs follow one player's position, and two viewers
 // of a file can be anywhere in it.
 func spoolName(viewer, filePath string, args []string) string {
-	return database.PathHash(viewer + "\x00" + filePath + "\x00" + strings.Join(args, "\x00"))
+	return config.TextHash(viewer + "\x00" + config.CacheKey(filePath) + "\x00" + strings.Join(args, "\x00"))
 }
 
 // attach finds the transcode to serve offset from, starting one for offset 0 when there's none to

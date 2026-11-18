@@ -3,8 +3,6 @@
 package subtitles
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/weirdstreamer/server/internal/config"
 )
 
 // Track is a subtitle file for a video.
@@ -137,8 +137,7 @@ type storedSubtitle struct {
 
 // storeDir is where a video's downloads go.
 func storeDir(root, videoPath string) string {
-	sum := sha256.Sum256([]byte(videoPath))
-	h := hex.EncodeToString(sum[:])
+	h := config.CacheKey(videoPath)
 	return filepath.Join(root, h[:2], h)
 }
 

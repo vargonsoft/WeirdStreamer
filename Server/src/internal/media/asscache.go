@@ -105,7 +105,7 @@ func CachedAss(path string, track int) string {
 	if assDir() == "" {
 		return ""
 	}
-	key := database.PathHash(path)
+	key := config.CacheKey(path)
 	assIndex.mu.Lock()
 	loadAssIndex()
 	e, ok := assIndex.entries[key]
@@ -326,7 +326,7 @@ func (j *AssJob) runOnce(ctx context.Context, failed map[string]bool) string {
 		if !j.InLibrary(p) || IgnoredMacFile(p) || IsDiscImage(p) || !hasData(p) {
 			continue
 		}
-		key := database.PathHash(p)
+		key := config.CacheKey(p)
 		keep[key] = true
 		total++
 		if e, ok := assIndex.entries[key]; failed[p] || assCurrent(p, e, ok) {

@@ -196,7 +196,7 @@ func TestServeThumbnailChecksLibraryAccess(t *testing.T) {
 	defer db.Close()
 
 	videoPath := filepath.Join(private, "b.mp4")
-	hash := database.PathHash(videoPath)
+	hash := config.CacheKey(videoPath)
 	thumbPath, thumbURL := media.GetThumbnailPath(thumbDir, hash, ".jpg")
 	os.MkdirAll(filepath.Dir(thumbPath), 0755)
 	os.WriteFile(thumbPath, []byte("jpeg"), 0644)
