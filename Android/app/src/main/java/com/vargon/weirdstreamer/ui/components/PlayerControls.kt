@@ -159,7 +159,8 @@ fun toolbarButtons(isSmbSource: Boolean, isDisc: Boolean, hasAudioChoice: Boolea
 // The button beside id in the toolbar (step -1 left, +1 right), staying at the ends.
 fun toolbarStep(buttons: List<Int>, id: Int, step: Int): Int {
     val at = buttons.indexOf(id).takeIf { it >= 0 } ?: return buttons.first()
-    return buttons[(at + step).coerceIn(0, buttons.lastIndex)]
+    // Wraps: left of the first button is the last, right of the last is the first.
+    return buttons[Math.floorMod(at + step, buttons.size)]
 }
 
 @Composable
