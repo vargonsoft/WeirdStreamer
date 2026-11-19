@@ -92,6 +92,78 @@ server doesn't know stay as you wrote them.
 
 `config.yml` holds secrets and is git-ignored.
 
+## Behind a reverse proxy (nginx)
+
+The server can face the internet itself, but it also works behind a reverse proxy such as nginx
+that holds the public certificate. The proxy must say who the client is and how it connected,
+and must not get in the way of long video streams.
+
+**Trust the proxy.** Put the proxy's address (or network) in `server.trustedProxies`. The
+forwarding headers below are believed only from those addresses, since any client could send
+them. If the proxy runs on the same machine, that's `127.0.0.1`:
+
+```yaml
+server:
+  trustedProxies: ["127.0.0.1"]
+```
+
+**Headers the proxy must send:**
+
+| Header | nginx | What the server uses it for |
+|---|---|---|
+| `X-Forwarded-For` | `$proxy_add_x_forwarded_for` | The client's address, for the logs, sign-in limits and the Streams page. |
+| `X-Real-IP` | `$remote_addr` | The same, if `X-Forwarded-For` is missing. |
+| `X-Forwarded-Proto` | `$scheme` | Whether the client used HTTPS. The web UI's sign-in cookie is marked `Secure` only then. Without it, the cookie works over plain HTTP too. |
+| `Host` | `$host` | Not used by the server, but keep it for the logs. |
+
+The proxy must also pass these on unchanged, which nginx does by default:
+- `Authorization`: the apps' sign-in.
+- `Cookie`: the web UI's sign-in.
+- `X-WeirdStreamer-Web`: without it, the web UI's changes are refused.
+- `Range`: seeking and resuming.
+
+**Headers the proxy doesn't need to add.** Every response already has a Content-Security-Policy,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` and `X-Frame-Options: DENY`.
+If the proxy adds its own `Content-Security-Policy`, the browser applies both, and the web player
+breaks unless the proxy's allows what the server's does (WebAssembly, and `'unsafe-eval'` under
+`/vendor/jassub/`). `Strict-Transport-Security` is the proxy's to add, if you want it.
+
+**Streaming.** Turn off response buffering and allow long reads. A transcode is produced while it
+plays, and a paused video sends nothing for minutes. Don't turn on `proxy_cache` for the server.
+Nothing is uploaded (requests are limited to 8 MB), so `client_max_body_size` can stay at its default.
+
+An example, with the server on this machine on port 9000 with its own (possibly self-signed)
+certificate:
+
+```nginx
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name media.example.com;
+    ssl_certificate     /etc/letsencrypt/live/media.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/media.example.com/privkey.pem;
+
+    location / {
+        proxy_pass https://127.0.0.1:9000;   # http:// if the server runs without TLS
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_buffering off;          # send video as it comes
+        proxy_request_buffering off;
+        proxy_read_timeout 1h;        # paused and long-running streams
+        proxy_send_timeout 1h;
+    }
+}
+```
+
+`proxy_pass` to `https://` doesn't check the server's certificate by default (`proxy_ssl_verify off`),
+so a self-signed one works. If the proxy is the only way in, set `server.host` to `127.0.0.1` so the
+server can't be reached around it.
+
 ## Users and access
 
 Each user has one group, and sees a library only if that group is in the library's `groups`.

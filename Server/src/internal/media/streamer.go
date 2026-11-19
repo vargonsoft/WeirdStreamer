@@ -314,7 +314,7 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 	// Set headers for JPEG content
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.WriteHeader(http.StatusOK)
 
 	// Stream the file
