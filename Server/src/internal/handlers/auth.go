@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/weirdstreamer/server/internal/auth"
+	"github.com/weirdstreamer/server/internal/clientip"
 	"github.com/weirdstreamer/server/internal/logs"
 	"github.com/weirdstreamer/server/internal/models"
 )
@@ -60,9 +61,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  time.Unix(response.ExpiresAt, 0),
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   clientip.HTTPS(r),
 		SameSite: http.SameSiteStrictMode,
 	})
+	if req.Web {
+		response.Token = "" // only in the cookie: the page's scripts never see it
+	}
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -91,7 +95,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   clientip.HTTPS(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 	w.WriteHeader(http.StatusNoContent)
@@ -141,11 +145,16 @@ func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// webClientHeader marks the web UI's requests (js/api.js WEB_CLIENT_HEADER).
+const webClientHeader = "X-WeirdStreamer-Web"
+
 func tokenFromRequest(r *http.Request) string {
 	if parts := strings.SplitN(r.Header.Get("Authorization"), " ", 2); len(parts) == 2 && parts[0] == "Bearer" {
 		return parts[1]
 	}
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+	// The cookie (the web UI's) for reading, and for changes only with the web UI's header: other
+	// sites' pages can't add it (no other origin is allowed), so they can't use the cookie.
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Header.Get(webClientHeader) == "1" {
 		if cookie, err := r.Cookie(sessionCookieName); err == nil {
 			return cookie.Value
 		}

@@ -1,36 +1,39 @@
 // API Configuration
-console.log('api.js loaded');
 const API_BASE = window.location.origin;
-console.log('API_BASE:', API_BASE);
 
-// Bumped when the session format changed: logins now also set an HttpOnly session cookie, which
-// <img>, <video> and EventSource requests rely on, so older stored sessions must log in again.
-const TOKEN_KEY = 'auth_token_v2';
+// The web UI never sees its sign-in token: it's only in the HttpOnly session cookie, which every
+// request sends, so a script slipped into the page can't carry it off. Requests that change
+// something also send WEB_CLIENT_HEADER, which pages of other sites can't add (the server allows
+// no other origins), so they can't use the cookie. The signed-in user's details (no secret) are
+// kept in localStorage for the page.
+const WEB_CLIENT_HEADER = { 'X-WeirdStreamer-Web': '1' };
 localStorage.removeItem('auth_token');
+localStorage.removeItem('auth_token_v2');
 
 // API Client
 class MediaAPI {
     constructor() {
-        this.token = localStorage.getItem(TOKEN_KEY);
         this.eventSource = null;
         this.thumbnailCallbacks = [];
         this.metadataCallbacks = [];
-        console.log('MediaAPI initialized, token:', this.token ? 'exists' : 'null');
+    }
+
+    // Headers for requests made with fetch() outside request()
+    authHeaders() {
+        return { ...WEB_CLIENT_HEADER };
     }
 
     async request(endpoint, options = {}) {
         const headers = {
             'Content-Type': 'application/json',
             ...options.headers,
+            ...WEB_CLIENT_HEADER,
         };
-
-        if (this.token) {
-            headers['Authorization'] = `Bearer ${this.token}`;
-        }
 
         const response = await fetch(`${API_BASE}${endpoint}`, {
             ...options,
             headers,
+            credentials: 'same-origin',
         });
 
         if (response.status === 401) {
@@ -55,27 +58,17 @@ class MediaAPI {
     connectThumbnailUpdates() {
         // Close existing connection if any
         if (this.eventSource) {
-            console.log('[SSE] Closing existing connection before reconnecting');
             this.eventSource.close();
             this.eventSource = null;
         }
 
-        if (!this.token) {
-            console.error('[SSE] No auth token available');
-            return;
-        }
+        if (!this.isAuthenticated()) return;
 
         // EventSource can't set headers; it authenticates with the session cookie.
         const url = `${API_BASE}/api/media/thumbnail-updates`;
-        console.log('[SSE] Connecting to thumbnail updates...', url);
         this.eventSource = new EventSource(url);
 
-        this.eventSource.onopen = (event) => {
-            console.log('[SSE] Connection established', event);
-        };
-
         this.eventSource.onmessage = (event) => {
-            console.log('[SSE] Message received:', event.data);
             try {
                 const data = JSON.parse(event.data);
                 // Notify all registered callbacks
@@ -97,7 +90,6 @@ class MediaAPI {
 
         this.eventSource.onerror = (error) => {
             console.error('[SSE] Connection error', error);
-            console.log('[SSE] ReadyState:', this.eventSource?.readyState);
             if (this.eventSource) {
                 this.eventSource.close();
                 this.eventSource = null;
@@ -136,11 +128,10 @@ class MediaAPI {
     async login(username, password) {
         const data = await this.request('/api/auth/login', {
             method: 'POST',
-            body: JSON.stringify({ username, password }),
+            // web: the token goes only into the cookie, not the reply
+            body: JSON.stringify({ username, password, web: true }),
         });
 
-        this.token = data.token;
-        localStorage.setItem(TOKEN_KEY, data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         return data;
     }
@@ -148,15 +139,12 @@ class MediaAPI {
     logout() {
         // Ends the session on the server (so the token stops working) and clears the HttpOnly
         // session cookie, which scripts can't remove themselves
-        const headers = this.token ? { Authorization: `Bearer ${this.token}` } : {};
-        fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', headers }).catch(() => {});
-        this.token = null;
-        localStorage.removeItem(TOKEN_KEY);
+        fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', headers: WEB_CLIENT_HEADER, credentials: 'same-origin' }).catch(() => {});
         localStorage.removeItem('user');
     }
 
     isAuthenticated() {
-        return !!this.token;
+        return !!localStorage.getItem('user');
     }
 
     async listMedia(type = '') {
@@ -396,8 +384,7 @@ class MediaAPI {
     }
 
     async regenerateThumbnails(path) {
-        const query = path ? `?path=${encodeURIComponent(path)}` : '';
-        return this.request(`/api/media/regenerate-thumbnails${query}`, {
+        return this.request(`/api/media/regenerate-thumbnails?path=${encodeURIComponent(this.encodePath(path))}`, {
             method: 'POST',
         });
     }

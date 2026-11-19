@@ -77,7 +77,7 @@ func listFolder(path string) (*folderListing, error) {
 		}
 		if isDir {
 			listing.Folders = append(listing.Folders, name)
-		} else if config.IsVideo(name) {
+		} else if config.IsVideo(filepath.Join(path, name)) {
 			listing.Videos++
 		}
 	}

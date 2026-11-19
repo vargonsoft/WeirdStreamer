@@ -1204,7 +1204,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     /** Whether a file is a video: as the server says (its config's formats), or on an SMB share by its extension. */
     fun isVideo(item: FileItem): Boolean = item.type?.let { it == "video" } ?: isVideo(item.path)
 
-    private fun isVideo(path: String): Boolean = getFileExtension(path) in VIDEO_EXTENSIONS
+    // On an SMB share only the name is checked (the server reads a .ts file's first bytes), so
+    // TypeScript's declaration files (.d.ts) are left out by name.
+    private fun isVideo(path: String): Boolean =
+        getFileExtension(path) in VIDEO_EXTENSIONS && !path.lowercase().endsWith(".d.ts")
 
     fun isPdf(path: String): Boolean {
         val ext = getFileExtension(path)

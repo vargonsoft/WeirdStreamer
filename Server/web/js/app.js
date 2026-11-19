@@ -1687,7 +1687,7 @@ async function loadPictureWindow(s) {
     const url = `${API_BASE}/api/media/subtitles?path=${encodeURIComponent(api.encodePath(player.item.path))}` +
         `&track=${s.index}&start=${from.toFixed(2)}&duration=${SUBTITLE_WINDOW}&format=sup`;
     try {
-        const headers = api.token ? { Authorization: `Bearer ${api.token}` } : {};
+        const headers = api.authHeaders();
         const res = await fetch(url, { signal: s.abort.signal, credentials: 'same-origin', headers });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const decoded = decodePgs(await res.arrayBuffer());
@@ -1756,7 +1756,7 @@ async function loadAssWindow(s) {
     const url = `${API_BASE}/api/media/subtitles?path=${encodeURIComponent(api.encodePath(player.item.path))}` +
         `&track=${s.index}&start=${from.toFixed(2)}&duration=${SUBTITLE_WINDOW}&format=ass`;
     try {
-        const headers = api.token ? { Authorization: `Bearer ${api.token}` } : {};
+        const headers = api.authHeaders();
         const res = await fetch(url, { signal: s.abort.signal, credentials: 'same-origin', headers });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = (await res.text()).replace(/\r/g, '');
@@ -1810,7 +1810,7 @@ function loadJassub() {
 let assFonts = { path: null, fonts: [] };
 async function videoFonts(p) {
     if (assFonts.path === p.item.path) return assFonts.fonts;
-    const headers = api.token ? { Authorization: `Bearer ${api.token}` } : {};
+    const headers = api.authHeaders();
     const path = encodeURIComponent(api.encodePath(p.item.path));
     const fonts = await Promise.all(((p.codecs && p.codecs.fonts) || []).map(async f => {
         try {
@@ -1869,7 +1869,7 @@ async function addCjkFonts(s, text) {
     fresh.forEach(ch => s.cjkSeen.add(ch));
     try {
         const headers = { 'Content-Type': 'application/json' };
-        if (api.token) headers.Authorization = `Bearer ${api.token}`;
+        Object.assign(headers, api.authHeaders());
         const res = await fetch(`${API_BASE}/api/media/subtitle-font`, {
             method: 'POST', signal: s.abort.signal, credentials: 'same-origin', headers,
             body: JSON.stringify({ text: fresh.join('') }),
@@ -1975,7 +1975,7 @@ function seekSubtitles(position) {
 }
 
 async function streamSubtitles(s, url) {
-    const headers = api.token ? { Authorization: `Bearer ${api.token}` } : {};
+    const headers = api.authHeaders();
     const res = await fetch(url, { signal: s.abort.signal, credentials: 'same-origin', headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const reader = res.body.getReader();

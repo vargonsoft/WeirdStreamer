@@ -88,3 +88,20 @@ func isTrusted(addr string) bool {
 	}
 	return false
 }
+
+// HTTPS reports whether the client reached the server over HTTPS: the connection's own, or a
+// trusted proxy's that says so (X-Forwarded-Proto: https, which nginx sets with
+// proxy_set_header X-Forwarded-Proto $scheme).
+func HTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if !isTrusted(Peer(r)) {
+		return false
+	}
+	proto := r.Header.Get("X-Forwarded-Proto")
+	if i := strings.IndexByte(proto, ','); i >= 0 {
+		proto = proto[:i] // the first proxy's: the client's own connection
+	}
+	return strings.EqualFold(strings.TrimSpace(proto), "https")
+}

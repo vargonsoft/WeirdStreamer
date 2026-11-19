@@ -117,15 +117,21 @@ for each TODO item are at the end of this file.
   and keeps comments, blank lines, order and unknown keys. `cli config init <template>` writes a new
   one from JSON values with the template's comments (`create-config.sh`). Scripts read it with PyYAML.
   Which files are videos, images or documents is the config's `supportedVideoFormats` (and image and
-  doc formats), through `config.MediaType` / `config.IsVideo`; MIME types are `media.MimeType`. The
+  doc formats), through `config.MediaType` / `config.IsVideo`; a `.ts`, `.m2ts` or `.mts` file counts
+  as a video only if it starts with MPEG-TS packets (`looksLikeTransportStream`, so TypeScript's `.d.ts`
+  files don't), when given a path rather than a bare name; MIME types are `media.MimeType`. The
   Android app takes the server's `type` for its files and keeps its own list only for SMB shares.
   Data is in the folders `config.yml` names (databases, thumbnails, trickplay, artwork, download
   encodes). Short-lived work files (HEIC photos converted to JPEG, a trickplay check frame) go in
   `media.tempPath` (default `tmp` beside the thumbnails folder, `media.TempDir`), never `/tmp`;
-  their names start `weirdstreamer-`, and startup removes only those.
+  their names start `weirdstreamer-`, and startup removes only those. The server's data is
+  readable by its account only: it runs with umask 077, and each start makes the databases and the
+  TLS key 0600 and its data folders 0700 (`cmd/server/private.go`; never a folder holding a library).
 - To deploy server code: `Server/scripts/restart-live.sh`. It checks for active streams, builds, stops
   the live server and waits for `live.sh` to start the new one (`--no-build` restarts the binary
-  as it is). It refuses if the server wasn't started by `live.sh`; then the user has to stop it
+  as it is). It reads the streams from `/local/streams`, which answers only this machine with the key
+  the server writes to `local.key` beside config.yml at each start (`X-Local-Key`; 0600, so a proxy
+  on this machine can't). It refuses if the server wasn't started by `live.sh`; then the user has to stop it
   and run `scripts/live.sh` in that tab.
 - Server tests: `cd Server/src && go vet ./internal/... ./cmd/... && go test ./internal/...`.
   Don't use `./...`: stray `main` files in `Server/src/` (`test_auth.go`, `test_login.go`) break it.
@@ -417,7 +423,13 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   a new password ends the user's others (`cli user change-password`: all of them); deleting a user ends all.
   Usernames are limited to an email address's characters (`database.ValidUsername`). The server
   won't start with a blank `auth.jwtSecret` or config.example.yml's placeholder, and `/api/config`
-  never sends the secret (Settings can't change it).
+  never sends the secret. Settings' save (`PUT /api/config`) changes only the fields its screens show
+  (`settingsUpdate` in `handlers/config.go`: server name, port and host, streaming switches, TMDB,
+  OpenSubtitles, language, libraries); the rest of what it's sent is ignored, and a new field Settings
+  shows must be added there. The web UI never sees its token: its sign-in sends `web: true`, so the
+  token goes only into the HttpOnly cookie (`Secure` over HTTPS, including behind a trusted proxy
+  that sends `X-Forwarded-Proto: https`), and its requests send `X-WeirdStreamer-Web: 1`, without
+  which the cookie works for GET only (other sites can't add the header).
 - **Server certificates (apps):** home servers often have self-signed certificates, so the apps
   trust a saved server's certificate whatever it is, but only that one: its SHA-256 is kept when
   the server is added (from the address check), or at the first connection of a server saved

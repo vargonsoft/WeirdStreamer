@@ -1,6 +1,7 @@
 package clientip
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 )
@@ -36,6 +37,33 @@ func TestOf(t *testing.T) {
 		}
 		if got := Peer(r); got != c.peer[:len(c.peer)-5] {
 			t.Errorf("%s: peer %s", c.name, got)
+		}
+	}
+}
+
+func TestHTTPS(t *testing.T) {
+	SetTrusted([]string{"192.168.94.54"})
+	defer SetTrusted(nil)
+	req := func(peer, proto string) *http.Request {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = peer + ":5000"
+		if proto != "" {
+			r.Header.Set("X-Forwarded-Proto", proto)
+		}
+		return r
+	}
+	for _, c := range []struct {
+		peer, proto string
+		want        bool
+	}{
+		{"192.168.94.54", "https", true},
+		{"192.168.94.54", "https, http", true},
+		{"192.168.94.54", "http", false},
+		{"192.168.94.54", "", false},
+		{"192.168.94.99", "https", false}, // not the proxy: the header is anyone's
+	} {
+		if got := HTTPS(req(c.peer, c.proto)); got != c.want {
+			t.Errorf("%s %q: %v", c.peer, c.proto, got)
 		}
 	}
 }

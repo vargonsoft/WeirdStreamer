@@ -72,6 +72,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	privateUmask()
 	// A stop signal (a restart) cancels ctx: the background jobs stop and the server shuts down.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -120,6 +121,10 @@ func main() {
 	}
 	if err := media.SetTempDir(config.GlobalConfig.Media.TempPath); err != nil {
 		log.Printf("Warning: could not prepare the temp folder %s: %v", config.GlobalConfig.Media.TempPath, err)
+	}
+	keepDataPrivate(config.GlobalConfig)
+	if err := handlers.WriteLocalKey(filepath.Join(filepath.Dir(configPath), "local.key")); err != nil {
+		log.Printf("Warning: could not write local.key (scripts/restart-live.sh can't see the streams): %v", err)
 	}
 
 	// Initialize database

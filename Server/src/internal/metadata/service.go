@@ -704,7 +704,7 @@ func (s *Service) syncLibrary(ctx context.Context, lib config.MediaPath) error {
 			}
 			return nil
 		}
-		if !d.IsDir() && config.IsVideo(d.Name()) {
+		if !d.IsDir() && config.IsVideo(path) {
 			filesByFolder[filepath.Dir(path)] = append(filesByFolder[filepath.Dir(path)], path)
 		}
 		return nil
@@ -1007,7 +1007,7 @@ func videosIn(folder string) ([]string, error) {
 	}
 	var videos []string
 	for _, e := range entries {
-		if !e.IsDir() && !skipEntry(e) && config.IsVideo(e.Name()) {
+		if !e.IsDir() && !skipEntry(e) && config.IsVideo(filepath.Join(folder, e.Name())) {
 			videos = append(videos, filepath.Join(folder, e.Name()))
 		}
 	}

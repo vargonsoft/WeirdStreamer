@@ -38,8 +38,10 @@ if ! started_by_live "$pid"; then
     exit 1
 fi
 
-streams=$(curl -sk https://127.0.0.1:9000/local/streams)
-active=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["active"])' <<<"$streams")
+# The server writes a new key beside config.yml at each start, readable by its account only.
+streams=$(curl -sk -H "X-Local-Key: $(cat local.key 2>/dev/null)" https://127.0.0.1:9000/local/streams)
+active=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["active"])' <<<"$streams" 2>/dev/null) ||
+    { echo "Can't read the live server's streams (/local/streams, with local.key)." >&2; exit 1; }
 if [ "$active" -gt 0 ] && [ "$force" = 0 ]; then
     echo "Not restarting: $active active stream(s):"
     python3 -c '

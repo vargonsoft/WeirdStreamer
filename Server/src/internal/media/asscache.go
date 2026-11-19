@@ -13,7 +13,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -32,11 +31,13 @@ import (
 
 // assEntry is what the cache knows of a video: its size and time on disk when it was read (a
 // change means reading it again) and its ASS/SSA tracks (indexes among its subtitle tracks;
-// none: a video without any).
+// none: a video without any). Failed is a file ffprobe or ffmpeg couldn't read (not a video, or a
+// broken one): it's tried again only when it changes.
 type assEntry struct {
 	Size    int64 `json:"size"`
 	ModTime int64 `json:"mtime"`
 	Tracks  []int `json:"tracks,omitempty"`
+	Failed  bool  `json:"failed,omitempty"`
 }
 
 var assIndex struct {
@@ -293,9 +294,8 @@ func (j *AssJob) Run(ctx context.Context) {
 	case <-j.wake:
 	case <-time.After(3 * time.Minute):
 	}
-	failed := map[string]bool{} // not tried again until a restart
 	for {
-		result := j.runOnce(ctx, failed)
+		result := j.runOnce(ctx)
 		if ctx.Err() != nil {
 			return
 		}
@@ -310,7 +310,7 @@ func (j *AssJob) Run(ctx context.Context) {
 	}
 }
 
-func (j *AssJob) runOnce(ctx context.Context, failed map[string]bool) string {
+func (j *AssJob) runOnce(ctx context.Context) string {
 	j.job.Begin(0)
 	paths, err := j.db.VideoPaths()
 	if err != nil {
@@ -329,7 +329,7 @@ func (j *AssJob) runOnce(ctx context.Context, failed map[string]bool) string {
 		key := config.CacheKey(p)
 		keep[key] = true
 		total++
-		if e, ok := assIndex.entries[key]; failed[p] || assCurrent(p, e, ok) {
+		if e, ok := assIndex.entries[key]; assCurrent(p, e, ok) {
 			continue
 		}
 		work = append(work, todo{p, key})
@@ -370,14 +370,18 @@ func (j *AssJob) runOnce(ctx context.Context, failed map[string]bool) string {
 			break
 		}
 		if err != nil || statErr != nil {
-			if err == nil {
-				err = statErr
-			}
-			if !errors.Is(err, os.ErrNotExist) {
-				log.Printf("ass: %s: %v", w.path, err)
-			}
-			failed[w.path] = true
 			skipped++
+			if statErr != nil || CheckReadable(w.path) != nil {
+				continue // gone, or the disk or share failed: looked at again on the next run
+			}
+			// The file reads, but isn't a video ffmpeg understands.
+			log.Printf("ass: %s: %v (not tried again until it changes)", w.path, err)
+			assIndex.mu.Lock()
+			for _, t := range assIndex.entries[w.key].Tracks {
+				os.Remove(assTrackFile(w.key, t))
+			}
+			assIndex.entries[w.key] = assEntry{Size: info.Size(), ModTime: info.ModTime().Unix(), Failed: true}
+			assIndex.mu.Unlock()
 			continue
 		}
 		assIndex.mu.Lock()

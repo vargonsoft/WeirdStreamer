@@ -107,6 +107,8 @@ type Directory struct {
 type LoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	// Web: the web UI's sign-in, whose token goes only into the HttpOnly session cookie
+	Web bool `json:"web,omitempty"`
 }
 
 type LoginResponse struct {

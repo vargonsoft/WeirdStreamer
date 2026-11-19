@@ -137,7 +137,7 @@ Everything under `/api` except login needs `Authorization: Bearer <token>` from
 - `/api/config` (and `/api/config/folders`, the folder picker), `/api/users`, `/api/admin/streams`:
   admin only.
 - `/thumbnails/`, `/trickplay/`, `/artwork/`: images.
-- `GET /health`, and `GET /local/streams` (active streams, from localhost only).
+- `GET /health`, and `GET /local/streams` (active streams, from localhost only, with the key the server writes to `local.key` beside its config.yml at each start as `X-Local-Key`).
 
 `src/api/openapi.yaml` is from an early version and doesn't cover most of this.
 

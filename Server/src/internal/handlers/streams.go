@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -170,9 +174,34 @@ func (h *MediaHandler) ListStreams(w http.ResponseWriter, r *http.Request) {
 
 // LocalStreamSummary says how many streams are active, without what is playing, to tools on the
 // server itself (checking before a restart). It answers only loopback connections.
+var localKey string
+
+// WriteLocalKey makes a new random key for the /local endpoints and writes it to path, readable by
+// the server's account only (scripts/restart-live.sh sends it as X-Local-Key).
+func WriteLocalKey(path string) error {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return err
+	}
+	key := hex.EncodeToString(b)
+	os.Remove(path) // a file someone else made, or with looser permissions, isn't reused
+	if err := os.WriteFile(path, []byte(key+"\n"), 0o600); err != nil {
+		return err
+	}
+	localKey = key
+	return nil
+}
+
+// LocalKeyMatches reports whether the request carries the /local endpoints' key.
+func LocalKeyMatches(r *http.Request) bool {
+	got := strings.TrimSpace(r.Header.Get("X-Local-Key"))
+	return localKey != "" && subtle.ConstantTimeCompare([]byte(got), []byte(localKey)) == 1
+}
+
 func (h *MediaHandler) LocalStreamSummary(w http.ResponseWriter, r *http.Request) {
-	// The connection's own address: a forwarded one could claim to be local.
-	if ip := net.ParseIP(clientip.Peer(r)); ip == nil || !ip.IsLoopback() {
+	// The connection's own address (a forwarded one could claim to be local), and the key only
+	// the server's account can read: a proxy on this machine makes every request local.
+	if ip := net.ParseIP(clientip.Peer(r)); ip == nil || !ip.IsLoopback() || !LocalKeyMatches(r) {
 		http.NotFound(w, r)
 		return
 	}

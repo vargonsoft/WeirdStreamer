@@ -381,7 +381,7 @@ class ServerRepository(
     override fun supportsThumbnailRegeneration(): Boolean = true
     override suspend fun regenerateThumbnails(path: String): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
-            val response = apiService.regenerateThumbnails(path)
+            val response = apiService.regenerateThumbnails(encode(path))
             if (response.isSuccessful) {
                 credentialManager.incrementThumbnailCacheVersion(serverUrl, path)
                 Result.success(true)

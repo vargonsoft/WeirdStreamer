@@ -465,7 +465,7 @@ func (h *MediaHandler) GetMediaMetadata(w http.ResponseWriter, r *http.Request) 
 // @Description Browse media directory structure
 // @Tags media
 // @Produce json
-// @Param path query string false "Directory path (relative to media root)"
+// @Param path query string true "Folder (base64 client path)"
 // @Success 200 {object} models.Directory
 // @Failure 500 {object} models.ErrorResponse
 // @Security BearerAuth
@@ -597,7 +597,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 
 			// Determine media type based on extension
 			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			mediaType := config.MediaType(ext)
+			mediaType := config.MediaType(entryPath)
 
 			// Only include supported media files
 			if mediaType == "" {
@@ -747,7 +747,7 @@ func (h *MediaHandler) scan() {
 // @Description Force regeneration of all thumbnails in the specified directory (admin only)
 // @Tags media
 // @Produce json
-// @Param path query string false "Directory path (relative to media root)"
+// @Param path query string true "Folder (base64 client path)"
 // @Success 200 {object} map[string]interface{}
 // @Failure 403 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
@@ -761,38 +761,13 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	relativePath := r.URL.Query().Get("path")
-
-	// Determine target directory
-	var targetPath string
-	if relativePath == "" {
-		// Regenerate all thumbnails
-		respondError(w, http.StatusBadRequest, "Path parameter required")
+	// A folder as every path is given: its client path in base64, checked like any other.
+	targetPath, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
+	if !ok {
 		return
 	}
-
-	pathParts := strings.Split(strings.Trim(relativePath, "/"), "/")
-
-	// Find which root this belongs to. Match only by the stable ID.
-	for _, mediaPath := range config.GlobalConfig.Media.Paths {
-		if mediaPath.ID != "" && mediaPath.ID == pathParts[0] {
-			if len(pathParts) > 1 {
-				targetPath = filepath.Join(mediaPath.Path, filepath.Join(pathParts[1:]...))
-			} else {
-				targetPath = mediaPath.Path
-			}
-			break
-		}
-	}
-
-	if targetPath == "" {
-		respondError(w, http.StatusNotFound, "Path not found")
-		return
-	}
-
-	// Validate path is within allowed media paths
-	if !h.isValidMediaPath(targetPath) {
-		respondError(w, http.StatusForbidden, "Access denied")
+	if info, err := os.Stat(targetPath); err != nil || !info.IsDir() {
+		respondError(w, http.StatusNotFound, "Folder not found")
 		return
 	}
 
@@ -812,7 +787,7 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 
 			entryPath := filepath.Join(targetPath, entry.Name())
 			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			mediaType := config.MediaType(ext)
+			mediaType := config.MediaType(entryPath)
 
 			if mediaType == "image" || mediaType == "video" {
 				// Delete existing thumbnail
@@ -844,12 +819,12 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 			}
 		}
 
-		log.Printf("Regenerated %d thumbnails for path: %s", count, relativePath)
+		log.Printf("Regenerated %d thumbnails in %s", count, targetPath)
 	}()
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "regeneration started",
-		"path":   relativePath,
+		"path":   clientPath(targetPath),
 	})
 }
 

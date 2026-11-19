@@ -106,31 +106,14 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var newConfig config.Config
-	if err := json.NewDecoder(r.Body).Decode(&newConfig); err != nil {
+	var update settingsUpdate
+	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
+	newConfig := update.applyTo(config.GlobalConfig)
 
-	// The JWT secret is never sent to clients, so it can't be changed here: it stays as it is.
-	newConfig.Auth.JWTSecret = config.GlobalConfig.Auth.JWTSecret
-
-	// A client that doesn't know about groups keeps them as they are.
-	if newConfig.Groups == nil {
-		newConfig.Groups = config.GlobalConfig.Groups
-	}
-	// Groups dropped here must have no users (the libraries are checked by Validate).
-	for _, g := range config.GlobalConfig.Groups {
-		if newConfig.HasGroup(g) {
-			continue
-		}
-		if users, err := h.db.UsersInGroup(g); err != nil || len(users) > 0 {
-			respondError(w, http.StatusConflict, groupInUse(g, users, nil))
-			return
-		}
-	}
-
-	if status, err := h.saveConfig(&newConfig); err != nil {
+	if status, err := h.saveConfig(newConfig); err != nil {
 		respondError(w, status, err.Error())
 		return
 	}
@@ -139,6 +122,56 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		"message": "Configuration updated successfully.",
 		"config":  adminConfig(),
 	})
+}
+
+// settingsUpdate is what Settings (web, phone, iPhone) may change in the config: the fields its
+// screens show. Everything else in a request (commands, data folders, secrets, groups, which
+// have their own endpoints) is ignored, and stays as config.yml has it. Clients send the whole
+// config they were given, with their changes.
+type settingsUpdate struct {
+	Server struct {
+		Name string `json:"name"`
+		Port int    `json:"port"`
+		Host string `json:"host"`
+	} `json:"server"`
+	Streaming struct {
+		EnableHTTP2             bool `json:"enableHTTP2"`
+		PauseJobsWhileStreaming bool `json:"pauseJobsWhileStreaming"`
+	} `json:"streaming"`
+	Metadata struct {
+		TMDBAccessToken     string `json:"tmdbAccessToken"`
+		OpenSubtitlesAPIKey string `json:"openSubtitlesApiKey"`
+		Language            string `json:"language"`
+	} `json:"metadata"`
+	Media struct {
+		Paths []struct {
+			Name                 string   `json:"name"`
+			Path                 string   `json:"path"`
+			ID                   string   `json:"id"`
+			Groups               []string `json:"groups"`
+			Type                 string   `json:"type"`
+			ContinueWatchingMode string   `json:"continueWatchingMode"`
+			ShowNewAdditions     string   `json:"showNewAdditions"`
+		} `json:"paths"`
+	} `json:"media"`
+}
+
+// applyTo is a copy of current with the update's fields.
+func (u settingsUpdate) applyTo(current *config.Config) *config.Config {
+	c := *current
+	c.Server.Name, c.Server.Port, c.Server.Host = u.Server.Name, u.Server.Port, u.Server.Host
+	c.Streaming.EnableHTTP2 = u.Streaming.EnableHTTP2
+	c.Streaming.PauseJobsWhileStreaming = u.Streaming.PauseJobsWhileStreaming
+	c.Metadata.TMDBAccessToken = u.Metadata.TMDBAccessToken
+	c.Metadata.OpenSubtitlesAPIKey = u.Metadata.OpenSubtitlesAPIKey
+	c.Metadata.Language = u.Metadata.Language
+	c.Groups = append([]string(nil), current.Groups...)
+	c.Media.Paths = make([]config.MediaPath, len(u.Media.Paths))
+	for i, p := range u.Media.Paths {
+		c.Media.Paths[i] = config.MediaPath{Name: p.Name, Path: p.Path, ID: p.ID, Groups: p.Groups, Type: p.Type,
+			ContinueWatchingMode: p.ContinueWatchingMode, ShowNewAdditions: p.ShowNewAdditions}
+	}
+	return &c
 }
 
 // saveConfig validates, saves and reloads a new configuration, returning the HTTP status for

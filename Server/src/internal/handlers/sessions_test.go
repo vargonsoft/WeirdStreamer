@@ -182,3 +182,67 @@ func TestStartupRefusesWeakJWTSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingsChangeOnlyTheirOwnFields(t *testing.T) {
+	movies, _ := setupConfig(t)
+	current := config.GlobalConfig
+	current.Media.SubsetCommand = "pyftsubset"
+	current.Media.ThumbnailPath = "/data/thumbs"
+	current.Groups = []string{"adults", "normal"}
+	body := `{"server":{"name":"Den","port":9000,"host":"0.0.0.0","certFile":"/etc/shadow"},
+		"auth":{"jwtSecret":"mine"},"groups":["everyone"],
+		"metadata":{"tmdbAccessToken":"tok","language":"de-DE"},
+		"media":{"subsetCommand":"/bin/sh","thumbnailPath":"/","paths":[{"name":"Films","path":"` + movies + `","id":"movies","groups":["normal"],"showNewAdditions":"on"}]}}`
+	var u settingsUpdate
+	if err := json.Unmarshal([]byte(body), &u); err != nil {
+		t.Fatal(err)
+	}
+	c := u.applyTo(current)
+	if c.Server.Name != "Den" || c.Metadata.TMDBAccessToken != "tok" || c.Metadata.Language != "de-DE" ||
+		len(c.Media.Paths) != 1 || c.Media.Paths[0].Name != "Films" || c.Media.Paths[0].ShowNewAdditions != "on" {
+		t.Errorf("Settings' own fields weren't applied: %+v", c)
+	}
+	if c.Media.SubsetCommand != "pyftsubset" || c.Media.ThumbnailPath != "/data/thumbs" || c.Server.CertFile != "" ||
+		c.Auth.JWTSecret != "test-secret" || len(c.Groups) != 2 {
+		t.Errorf("a field Settings doesn't show was changed: %+v", c)
+	}
+	if len(current.Media.Paths) != 2 {
+		t.Error("the current config was changed")
+	}
+}
+
+func TestWebSignInKeepsTheTokenInTheCookie(t *testing.T) {
+	h := newSessionHarness(t)
+	h.db.CreateUser("viewer", "pw", false, "normal")
+	rec := httptest.NewRecorder()
+	h.auth.Login(rec, httptest.NewRequest(http.MethodPost, "/api/auth/login",
+		strings.NewReader(`{"username":"viewer","password":"pw","web":true}`)))
+	var reply map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &reply)
+	if rec.Code != http.StatusOK || reply["token"] != "" {
+		t.Fatalf("status %d, token in the reply: %v", rec.Code, reply["token"])
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].Value == "" {
+		t.Fatalf("cookie: %+v", cookies)
+	}
+	call := func(method string, header bool) int {
+		req := httptest.NewRequest(method, "/api/x", nil)
+		req.AddCookie(cookies[0])
+		if header {
+			req.Header.Set(webClientHeader, "1")
+		}
+		rec := httptest.NewRecorder()
+		h.auth.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})).ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if got := call(http.MethodGet, false); got != http.StatusOK {
+		t.Errorf("GET with the cookie: %d", got)
+	}
+	if got := call(http.MethodPost, true); got != http.StatusOK {
+		t.Errorf("POST with the cookie and the web header: %d", got)
+	}
+	if got := call(http.MethodPost, false); got != http.StatusUnauthorized {
+		t.Errorf("POST with only the cookie (another site's form): %d, want 401", got)
+	}
+}
