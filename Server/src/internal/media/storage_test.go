@@ -62,7 +62,7 @@ func TestStorage(t *testing.T) {
 	if got := sizes()[trickplayStorage]; got != 170 {
 		t.Errorf("after a frame: %d, want 170", got)
 	}
-	removeGenerated(database.MediaRecord{Path: video})
+	removeGenerated(database.MediaRecord{Path: video}, nil)
 	if got := sizes()[trickplayStorage]; got != 0 {
 		t.Errorf("after removing the video's frames: %d, want 0", got)
 	}

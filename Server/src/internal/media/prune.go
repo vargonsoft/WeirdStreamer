@@ -140,8 +140,21 @@ func (p *Pruner) Prune(ctx context.Context, force bool) (int, error) {
 	if err := p.db.ForgetMedia(files); err != nil {
 		return 0, err
 	}
+	// A thumbnail or trickplay folder is named by the library and the path inside it, so a library
+	// whose folder moved has its old records gone and new ones using the same files: keep those.
+	forgotten := make(map[string]bool, len(gone))
 	for _, r := range gone {
-		removeGenerated(r)
+		forgotten[r.Path] = true
+	}
+	inUse := map[string]bool{}
+	for _, r := range records {
+		if !forgotten[r.Path] {
+			inUse[r.ThumbnailURL] = true
+			inUse[GenerateThumbnailHash(r.Path)] = true
+		}
+	}
+	for _, r := range gone {
+		removeGenerated(r, inUse)
 	}
 	return len(gone), nil
 }
@@ -163,16 +176,17 @@ func libraryIndex(libraries []config.MediaPath, path string) int {
 	return -1
 }
 
-// removeGenerated deletes a forgotten file's thumbnail and trickplay frames.
-func removeGenerated(r database.MediaRecord) {
-	if dir := config.GlobalConfig.Media.ThumbnailPath; dir != "" && strings.HasPrefix(r.ThumbnailURL, "/thumbnails/") {
+// removeGenerated deletes a forgotten file's thumbnail and trickplay frames, unless inUse names
+// them (another file's record still uses them).
+func removeGenerated(r database.MediaRecord, inUse map[string]bool) {
+	if dir := config.GlobalConfig.Media.ThumbnailPath; dir != "" && strings.HasPrefix(r.ThumbnailURL, "/thumbnails/") && !inUse[r.ThumbnailURL] {
 		rel := filepath.FromSlash(strings.TrimPrefix(r.ThumbnailURL, "/thumbnails/"))
 		if !strings.Contains(rel, "..") {
 			os.Remove(filepath.Join(dir, rel))
 		}
 	}
-	if dir := config.GlobalConfig.Media.TrickplayPath; dir != "" {
-		frames := filepath.Join(dir, GenerateThumbnailHash(r.Path))
+	if hash := GenerateThumbnailHash(r.Path); config.GlobalConfig.Media.TrickplayPath != "" && !inUse[hash] {
+		frames := filepath.Join(config.GlobalConfig.Media.TrickplayPath, hash)
 		size := dirSize(frames)
 		if os.RemoveAll(frames) == nil {
 			trickplayBytes.Add(-size) // the Jobs page's count of frames

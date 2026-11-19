@@ -80,6 +80,57 @@ func TestPruneForgetsWhatIsGone(t *testing.T) {
 	}
 }
 
+func TestPruneKeepsFilesOfAMovedLibrary(t *testing.T) {
+	dir := t.TempDir()
+	db, err := database.New(filepath.Join(dir, "users.db"), filepath.Join(dir, "media.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	oldRoot, newRoot := filepath.Join(dir, "old"), filepath.Join(dir, "new")
+	saved := config.GlobalConfig
+	defer func() { config.GlobalConfig = saved }()
+	config.GlobalConfig = &config.Config{Media: config.MediaConfig{
+		Paths:         []config.MediaPath{{Name: "Movies", Path: oldRoot, ID: "aaaaaaaa"}},
+		ThumbnailPath: filepath.Join(dir, "thumbs"),
+		TrickplayPath: filepath.Join(dir, "trickplay"),
+	}}
+	oldPath := filepath.Join(oldRoot, "Movie", "Movie.mkv")
+	hash := GenerateThumbnailHash(oldPath)
+	thumb, url := GetThumbnailPath(config.GlobalConfig.Media.ThumbnailPath, hash, ".jpg")
+	frames := filepath.Join(config.GlobalConfig.Media.TrickplayPath, hash)
+	for _, f := range []string{thumb, filepath.Join(frames, "frame-0.jpg")} {
+		os.MkdirAll(filepath.Dir(f), 0o755)
+		os.WriteFile(f, []byte("x"), 0o644)
+	}
+	save := func(path string) {
+		if err := db.SaveMediaItem(&models.MediaItem{Path: path, Name: "Movie.mkv", Type: "video", MimeType: "video/mp4", ThumbnailURL: url}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save(oldPath)
+
+	// The library's folder moves; a scan records the file at its new path.
+	newPath := filepath.Join(newRoot, "Movie", "Movie.mkv")
+	os.MkdirAll(filepath.Dir(newPath), 0o755)
+	os.WriteFile(newPath, []byte("x"), 0o644)
+	config.GlobalConfig.Media.Paths[0].Path = newRoot
+	if GenerateThumbnailHash(newPath) != hash {
+		t.Fatal("the moved file's thumbnail name changed")
+	}
+	save(newPath)
+
+	if n, err := NewPruner(db).Prune(context.Background(), false); err != nil || n != 1 {
+		t.Fatalf("forgot %d (%v), want the old path", n, err)
+	}
+	if _, err := os.Stat(thumb); err != nil {
+		t.Errorf("the thumbnail the new path uses was deleted: %v", err)
+	}
+	if _, err := os.Stat(frames); err != nil {
+		t.Errorf("the trickplay frames the new path uses were deleted: %v", err)
+	}
+}
+
 func TestPruneForgetsMacFiles(t *testing.T) {
 	for _, p := range []string{"/m/.DS_Store", "/m/._Movie.mkv", "/m/Movie (2013)/.AppleDouble/Movie (2013).avi"} {
 		if !IsMacFile(p) {
