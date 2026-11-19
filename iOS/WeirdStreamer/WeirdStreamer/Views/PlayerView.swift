@@ -606,6 +606,10 @@ struct PlayerView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            // The hidden system volume slider the swipe sets (it also keeps the volume pop-up away).
+            // At the bottom, under the picture: anywhere above it, this UIKit view took the touches
+            // meant for the controls, whatever SwiftUI's hit testing says.
+            VolumeControl().frame(width: 1, height: 1).opacity(0.01).allowsHitTesting(false)
             GeometryReader { geo in
                 let turned = rotation.truncatingRemainder(dividingBy: 180) != 0
                 let size = turned ? CGSize(width: geo.size.height, height: geo.size.width) : geo.size
@@ -677,7 +681,6 @@ struct PlayerView: View {
             if let swipeIndicator {
                 SwipeIndicatorView(indicator: swipeIndicator).allowsHitTesting(false)
             }
-            VolumeControl().frame(width: 1, height: 1).opacity(0.01).allowsHitTesting(false)
 
             if showControls, let menu = openMenu, let list = pickList(menu) {
                 PickListView(list: list, onPick: { i in
