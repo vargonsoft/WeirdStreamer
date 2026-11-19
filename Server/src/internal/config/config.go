@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -290,7 +291,7 @@ type MediaConfig struct {
 }
 
 type AuthConfig struct {
-	JWTSecret        string `json:"jwtSecret" yaml:"jwtSecret"`
+	JWTSecret        string `json:"jwtSecret,omitempty" yaml:"jwtSecret"`
 	TokenExpiryHours int    `json:"tokenExpiryHours" yaml:"tokenExpiryHours"`
 }
 
@@ -310,4 +311,19 @@ var loadedPath string
 // Path returns the file the current configuration was loaded from.
 func Path() string {
 	return loadedPath
+}
+
+// ExampleJWTSecret is config.example.yml's placeholder secret, which the server refuses.
+const ExampleJWTSecret = "change-this-to-a-random-secret-key"
+
+// CheckJWTSecret refuses a blank JWT secret or config.example.yml's placeholder: with either,
+// anyone could make sign-in tokens for any user.
+func (c *Config) CheckJWTSecret() error {
+	switch s := strings.TrimSpace(c.Auth.JWTSecret); {
+	case s == "":
+		return errors.New("auth.jwtSecret is blank")
+	case s == ExampleJWTSecret:
+		return errors.New("auth.jwtSecret is still config.example.yml's placeholder")
+	}
+	return nil
 }

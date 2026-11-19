@@ -98,6 +98,10 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "Username and password are required")
 		return
 	}
+	if !database.ValidUsername(req.Username) {
+		respondError(w, http.StatusBadRequest, database.ErrBadUsername.Error())
+		return
+	}
 	if err := checkUserGroup(req.Group); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -183,7 +187,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.DeleteUser(username); err != nil {
+	if err := h.db.DeleteUser(username); err != nil { // its sessions end with it
 		respondError(w, http.StatusInternalServerError, "Failed to delete user")
 		return
 	}
@@ -233,7 +237,7 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.UpdateUserPassword(user.Username, req.NewPassword); err != nil {
+	if err := h.db.UpdateUserPassword(user.Username, req.NewPassword, claims.ID); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to update password")
 		return
 	}

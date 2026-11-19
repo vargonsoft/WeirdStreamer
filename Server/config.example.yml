@@ -96,8 +96,9 @@ media:
   ignoreMacFiles: false
 
 auth:
-  # Signs the sign-in tokens: a long random string (create-config.sh makes one). Changing it
-  # signs everyone out.
+  # Signs the sign-in tokens: a long random string (create-config.sh and setup.sh make one;
+  # openssl rand -hex 32 also does). The server won't start with it blank or left as this
+  # placeholder. Changing it signs everyone out.
   jwtSecret: "change-this-to-a-random-secret-key"
   # How long a sign-in lasts
   tokenExpiryHours: 720

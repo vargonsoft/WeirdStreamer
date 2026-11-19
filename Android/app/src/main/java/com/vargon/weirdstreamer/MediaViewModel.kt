@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer
 
+import okhttp3.RequestBody.Companion.toRequestBody
 import com.vargon.weirdstreamer.repository.normalizedServerUrl
 import android.app.Application
 import android.content.Context
@@ -764,8 +765,10 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 e.printStackTrace()
                 if (currentSource == source) {
-                    errorMessage = e.localizedMessage ?: "Failed to load content"
-                    errorOffline = e is java.io.IOException
+                    val changed = generateSequence(e as Throwable) { it.cause }
+                        .filterIsInstance<com.vargon.weirdstreamer.api.CertificateChangedException>().firstOrNull()
+                    errorMessage = changed?.message ?: e.localizedMessage ?: "Failed to load content"
+                    errorOffline = changed == null && e is java.io.IOException
                 }
             } finally {
                 isLoading = false
@@ -910,7 +913,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             val name = withContext(Dispatchers.IO) {
                 runCatching {
                     val request = okhttp3.Request.Builder().url(address.trimEnd('/') + "/api/info").build()
-                    com.vargon.weirdstreamer.api.ApiClient.probeClient().newCall(request).execute().use { response ->
+                    com.vargon.weirdstreamer.api.ApiClient.quickClient().newCall(request).execute().use { response ->
                         if (response.isSuccessful) org.json.JSONObject(response.body?.string() ?: "").optString("name").trim() else null
                     }
                 }.getOrNull()
@@ -941,6 +944,14 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 else provider.normalizeAddress(address)
             if (clean.isBlank()) return@launch
             provider.addServer(clean)
+            if (provider.typeId == "SERVER") withContext(Dispatchers.IO) {
+                // Its certificate is kept now (the one its address check saw, else this request's),
+                // and a different one is refused from then on.
+                if (!com.vargon.weirdstreamer.api.ServerTrust.keepOnAdd(clean)) runCatching {
+                    val request = okhttp3.Request.Builder().url(clean.trimEnd('/') + "/api/info").build()
+                    com.vargon.weirdstreamer.api.ApiClient.quickClient().newCall(request).execute().close()
+                }
+            }
             lastServer = clean
             authStateRefreshTrigger++
         }
@@ -986,11 +997,31 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun signOutServerAccount(provider: SourceProvider, address: String, username: String) {
         if (provider.typeId == "SMB") credentialManager.signOutSmbAccount(address, username)
-        else credentialManager.signOutServerAccount(address, username)
+        else {
+            endSessions(address, listOfNotNull(credentialManager.tokenOf(address, username)))
+            credentialManager.signOutServerAccount(address, username)
+        }
         authStateRefreshTrigger++
     }
 
+    /** Tells a server these sign-ins are over, so their tokens stop working there (best effort: offline, they just expire). */
+    private fun endSessions(address: String, tokens: List<String>) {
+        if (tokens.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val client = com.vargon.weirdstreamer.api.ApiClient.quickClient()
+            for (token in tokens) runCatching {
+                val request = okhttp3.Request.Builder().url(address.trimEnd('/') + "/api/auth/logout")
+                    .header("Authorization", "Bearer $token")
+                    .post(ByteArray(0).toRequestBody()).build()
+                client.newCall(request).execute().close()
+            }
+        }
+    }
+
     fun removeServer(provider: SourceProvider, address: String) {
+        if (provider.typeId == "SERVER") {
+            endSessions(address, credentialManager.getServerAccounts(address).mapNotNull { credentialManager.tokenOf(address, it.username) })
+        }
         provider.removeServer(address)
         authStateRefreshTrigger++
         if (currentSource?.serverAddress == address && currentSource?.typeId == provider.typeId) {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"math"
@@ -65,11 +66,22 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, response)
 }
 
-// Logout clears the browser session cookie.
+// Logout ends the session of the token it's sent with (the Authorization header, or the browser's
+// cookie) and clears the cookie.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	// Only for the log: whose session the cookie held (tokenFromRequest skips cookies on a POST).
-	if cookie, err := r.Cookie(sessionCookieName); err == nil {
-		if claims, err := h.authService.ValidateToken(cookie.Value); err == nil {
+	token := ""
+	if parts := strings.SplitN(r.Header.Get("Authorization"), " ", 2); len(parts) == 2 && parts[0] == "Bearer" {
+		token = parts[1]
+	} else if cookie, err := r.Cookie(sessionCookieName); err == nil {
+		// Only ever ends the session: another site making a browser sign out can do no more.
+		token = cookie.Value
+	}
+	if token != "" {
+		if claims, err := h.authService.ValidateToken(token); err == nil {
+			if err := h.authService.EndSession(claims); err != nil {
+				respondError(w, http.StatusInternalServerError, "Failed to sign out")
+				return
+			}
 			logs.Auth("Signed out: %q from %s", claims.Username, clientIP(r))
 		}
 	}
@@ -113,8 +125,12 @@ func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 		user, err := h.authService.UserForClaims(claims)
 		if err != nil {
 			ip := clientIP(r)
-			logs.AuthOnce("user|"+ip+"|"+claims.Username, "Token refused from %s: user %q is gone", ip, claims.Username)
-			respondError(w, http.StatusUnauthorized, "Unknown user")
+			if errors.Is(err, auth.ErrSessionEnded) || errors.Is(err, sql.ErrNoRows) {
+				logs.AuthOnce("user|"+ip+"|"+claims.Username, "Token refused from %s: %q's session has ended", ip, claims.Username)
+				respondError(w, http.StatusUnauthorized, "Signed out")
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "Failed to check the sign-in")
 			return
 		}
 		logs.SetUser(r, user.Username)

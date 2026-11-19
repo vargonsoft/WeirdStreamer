@@ -103,13 +103,21 @@ func checkPassword(attempt *Attempt, user *models.User, password string) error {
 	return nil
 }
 
+// GenerateToken signs a user in: it starts a session and returns its token. The token names the
+// session (its ID) and the user; whether they're an admin is in it only for the apps' menus, and
+// the server reads it from the database on every request.
 func (s *Service) GenerateToken(user *models.User) (string, int64, error) {
 	expiresAt := time.Now().Add(time.Hour * time.Duration(config.GlobalConfig.Auth.TokenExpiryHours))
+	session, err := s.db.CreateSession(user.ID, expiresAt)
+	if err != nil {
+		return "", 0, err
+	}
 	claims := &Claims{
 		UserID:   user.ID,
 		Username: user.Username,
 		IsAdmin:  user.IsAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        session,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
@@ -124,11 +132,12 @@ func (s *Service) GenerateToken(user *models.User) (string, int64, error) {
 	return tokenString, expiresAt.Unix(), nil
 }
 
+// ValidateToken checks a token's signature and expiry (not its session: UserForClaims does).
 func (s *Service) ValidateToken(tokenString string) (*Claims, error) {
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		return []byte(config.GlobalConfig.Auth.JWTSecret), nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 
 	if err != nil {
 		return nil, err
@@ -141,8 +150,31 @@ func (s *Service) ValidateToken(tokenString string) (*Claims, error) {
 	return claims, nil
 }
 
-// UserForClaims loads the user a validated token belongs to, so deleted users lose access
-// and group changes apply without logging in again.
+// ErrSessionEnded refuses a token whose session was ended (signed out, password changed, user
+// deleted) or that names none.
+var ErrSessionEnded = errors.New("session ended")
+
+// UserForClaims loads the user a validated token belongs to, if its session is still on, and
+// brings the claims up to date from the database: a demoted admin, a deleted user or a group
+// change take effect at once.
 func (s *Service) UserForClaims(claims *Claims) (*models.User, error) {
-	return s.db.GetUserByUsername(claims.Username)
+	userID, ok, err := s.db.SessionUser(claims.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || userID != claims.UserID {
+		return nil, ErrSessionEnded
+	}
+	user, err := s.db.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	claims.Username = user.Username
+	claims.IsAdmin = user.IsAdmin
+	return user, nil
+}
+
+// EndSession signs a token's session out.
+func (s *Service) EndSession(claims *Claims) error {
+	return s.db.EndSession(claims.ID)
 }

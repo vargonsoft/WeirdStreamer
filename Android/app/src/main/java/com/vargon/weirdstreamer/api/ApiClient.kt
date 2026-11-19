@@ -7,12 +7,8 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import java.security.cert.X509Certificate
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 object ApiClient {
     
@@ -24,29 +20,19 @@ object ApiClient {
     // handshake for every folder.
     private val services = ConcurrentHashMap<String, ApiService>()
     
-    // WARNING: This trust manager accepts ALL certificates - use only for development/testing!
-    private val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-        override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-    })
-    
-    private fun getUnsafeOkHttpClient(baseClient: OkHttpClient.Builder): OkHttpClient.Builder {
-        return try {
-            val sslContext = SSLContext.getInstance("SSL")
-            sslContext.init(null, trustAllCerts, java.security.SecureRandom())
-            val sslSocketFactory = sslContext.socketFactory
-            
-            baseClient
-                .sslSocketFactory(sslSocketFactory, trustAllCerts[0] as X509TrustManager)
-                .hostnameVerifier { _, _ -> true }
-        } catch (e: Exception) {
-            throw RuntimeException(e)
-        }
-    }
-    
-    /** A short-timeout client with the API client's TLS settings, for probing a server address. */
-    fun probeClient(): OkHttpClient = getUnsafeOkHttpClient(
+    /**
+     * A short-timeout client for checking an address before it's saved: any certificate, which
+     * [ServerTrust.keepOnAdd] keeps when the server is added.
+     */
+    fun probeClient(): OkHttpClient = ServerTrust.probing(
+        OkHttpClient.Builder()
+            .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+            .followRedirects(false)
+    ).build()
+
+    /** A short-timeout client for saved servers (their name, updates), with [ServerTrust]'s rules. */
+    fun quickClient(): OkHttpClient = ServerTrust.secure(
         OkHttpClient.Builder()
             .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
@@ -58,7 +44,7 @@ object ApiClient {
      * [account] when given, else the account in use.
      */
     fun downloadClient(serverUrl: String, credentialManager: CredentialManager, account: String? = null): OkHttpClient =
-        getUnsafeOkHttpClient(
+        ServerTrust.secure(
             OkHttpClient.Builder()
                 .addInterceptor(AuthInterceptor(credentialManager, serverUrl, account))
                 .connectTimeout(30, TimeUnit.SECONDS)
@@ -88,9 +74,7 @@ object ApiClient {
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
         
-        // Apply unsafe SSL settings to accept self-signed certificates
-        // WARNING: Only for development! Remove for production builds
-        val okHttpClient = getUnsafeOkHttpClient(okHttpClientBuilder).build()
+        val okHttpClient = ServerTrust.secure(okHttpClientBuilder).build()
         
         val gson = GsonBuilder()
             .setLenient()

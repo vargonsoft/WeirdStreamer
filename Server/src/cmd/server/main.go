@@ -23,6 +23,7 @@ import (
 	"github.com/weirdstreamer/server/internal/logs"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/metadata"
+	"github.com/weirdstreamer/server/internal/tlscert"
 )
 
 // @title Weird Streamer API
@@ -83,6 +84,9 @@ func main() {
 
 	if err := config.Load(configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+	if err := config.GlobalConfig.CheckJWTSecret(); err != nil {
+		log.Fatalf("Refusing to start: %v. Set it in %s to a long random string, for example the output of: openssl rand -hex 32", err, configPath)
 	}
 	clientip.SetTrusted(config.GlobalConfig.Server.TrustedProxies)
 	// auth.log and access.log, beside live.sh's server-*.log
@@ -261,6 +265,7 @@ func main() {
 	api.HandleFunc("/config", configHandler.GetConfig).Methods("GET")
 	api.HandleFunc("/config", configHandler.UpdateConfig).Methods("PUT")
 	api.HandleFunc("/config/folders", configHandler.ListFolders).Methods("GET")
+	api.HandleFunc("/admin/certificate", configHandler.Certificate).Methods("GET")
 	api.HandleFunc("/groups", configHandler.GetAvailableGroups).Methods("GET")
 	api.HandleFunc("/groups", configHandler.CreateGroup).Methods("POST")
 	api.HandleFunc("/groups/{name}", configHandler.RenameGroup).Methods("PUT")
@@ -328,6 +333,12 @@ func main() {
 				err = srv.ListenAndServe()
 			} else {
 				log.Printf("Using HTTPS/HTTP2")
+				// Warned about in the log and Settings from 30 days before it expires
+				if notAfter, certErr := tlscert.NotAfter(certFile); certErr == nil {
+					tlscert.Watch(ctx, certFile, notAfter)
+				} else {
+					log.Printf("[TLS] Can't read %s's expiry: %v", certFile, certErr)
+				}
 				err = srv.ListenAndServeTLS(certFile, keyFile)
 			}
 		} else {

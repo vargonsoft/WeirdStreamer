@@ -408,7 +408,6 @@ async function handleLogin(e) {
     try {
         console.log('Attempting login for user:', username);
         const response = await api.login(username, password);
-        console.log('Login successful:', response);
         showMainScreen();
     } catch (error) {
         console.error('Login failed:', error);
@@ -2656,6 +2655,22 @@ async function openLibrarySettings() {
     document.getElementById('new-path-input').focus({ preventScroll: true });
 }
 
+// Admins see when the server's HTTPS certificate is about to expire or has (the server checks
+// daily), or when a newer one waits for a restart.
+async function showCertificateWarning(isAdmin) {
+    const box = document.getElementById('cert-warning');
+    box.hidden = true;
+    if (!isAdmin) return;
+    try {
+        const cert = await api.request('/api/admin/certificate');
+        if (cert.message) {
+            box.textContent = cert.message;
+            box.classList.toggle('cert-expired', cert.state === 'expired');
+            box.hidden = false;
+        }
+    } catch (e) { /* no warning */ }
+}
+
 async function showSettings(pushHistory = true) {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     // The account signed in (watch status is kept per account)
@@ -2683,6 +2698,8 @@ async function showSettings(pushHistory = true) {
         if (accountTabBtn) accountTabBtn.classList.add('active');
         document.getElementById('account-tab').classList.add('active');
     }
+
+    showCertificateWarning(user.is_admin);
 
     if (user.is_admin) {
         try {
@@ -3260,6 +3277,8 @@ async function loadUsers() {
         state.availableGroups = await api.getAvailableGroups();
         renderNewUserGroups();
 
+        // Names go in as text and the handlers as listeners: a username can hold ' and &, which
+        // an onclick="…('name')" attribute would run as script.
         usersList.innerHTML = users.map(user => {
             const isMe = user.username === currentUser.username;
             // Use the data from the server directly
@@ -3268,29 +3287,35 @@ async function loadUsers() {
             return `
                 <div class="user-item">
                     <div class="user-info">
-                        <strong>${user.username}</strong>
+                        <strong>${escapeHtml(user.username)}</strong>
                         ${user.is_admin ? '<span class="user-badge">ADMIN</span>' : ''}
                         ${isMe ? '<span class="user-badge user-badge-you">YOU</span>' : ''}
                         <div style="margin-top: 10px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                             <div style="display: flex; align-items: center; gap: 5px;">
                                 <span style="font-size: 12px; color: var(--muted-text);">Group: </span>
-                                <select onchange="updateUserGroup('${user.username}', this.value)" class="settings-input" style="width: auto; padding: 2px 5px; font-size: 12px;">
+                                <select data-user-action="group" class="settings-input" style="width: auto; padding: 2px 5px; font-size: 12px;">
                                     ${state.availableGroups.includes(user.group) ? '' : `<option value="" selected disabled>${escapeHtml(user.group || 'None')} (not a group)</option>`}
                                     ${state.availableGroups.map(g => `<option value="${escapeHtml(g)}" ${user.group === g ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('')}
                                 </select>
                             </div>
                             <div style="display: flex; align-items: center; gap: 5px;">
                                 <span style="font-size: 12px; color: var(--muted-text);">Admin: </span>
-                                <input type="checkbox" ${isAdminChecked} ${isMe ? 'disabled' : ''} onchange="updateUserAdmin('${user.username}', this.checked)">
+                                <input type="checkbox" data-user-action="admin" ${isAdminChecked} ${isMe ? 'disabled' : ''}>
                             </div>
                         </div>
                     </div>
                     ${!isMe ?
-                        `<button type="button" class="btn btn-danger" onclick="deleteUser('${user.username}')">${iconSvg('delete')}<span class="btn-label">Delete</span></button>` :
+                        `<button type="button" class="btn btn-danger" data-user-action="delete">${iconSvg('delete')}<span class="btn-label">Delete</span></button>` :
                         '<span style="color: var(--muted-text); font-style: italic; font-size: 12px;">Cannot delete yourself</span>'}
                 </div>
             `;
         }).join('');
+        usersList.querySelectorAll('.user-item').forEach((row, i) => {
+            const name = users[i].username;
+            row.querySelector('[data-user-action="group"]').addEventListener('change', e => updateUserGroup(name, e.target.value));
+            row.querySelector('[data-user-action="admin"]').addEventListener('change', e => updateUserAdmin(name, e.target.checked));
+            row.querySelector('[data-user-action="delete"]')?.addEventListener('click', () => deleteUser(name));
+        });
     } catch (error) {
         console.error('Failed to load users:', error);
     }

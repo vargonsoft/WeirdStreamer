@@ -100,6 +100,12 @@ final class HLSRelay: NSObject, URLSessionDataDelegate, @unchecked Sendable {
 
     // MARK: Reading the server's stream
 
+    // The server's certificate, as TrustPolicy says (its kept one).
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        TrustPolicy.shared.urlSession(session, didReceive: challenge, completionHandler: completionHandler)
+    }
+
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {

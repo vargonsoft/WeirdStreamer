@@ -227,7 +227,7 @@ func handleUserCommand(db *database.DB, args []string) {
 			os.Exit(1)
 		}
 
-		if err := db.UpdateUserPassword(username, string(password)); err != nil {
+		if err := db.UpdateUserPassword(username, string(password), ""); err != nil {
 			log.Fatalf("Failed to update password: %v", err)
 		}
 

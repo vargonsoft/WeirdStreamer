@@ -134,13 +134,11 @@ class MediaAPI {
     }
 
     async login(username, password) {
-        console.log('login() called with username:', username);
         const data = await this.request('/api/auth/login', {
             method: 'POST',
             body: JSON.stringify({ username, password }),
         });
 
-        console.log('Login response:', data);
         this.token = data.token;
         localStorage.setItem(TOKEN_KEY, data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
@@ -148,8 +146,10 @@ class MediaAPI {
     }
 
     logout() {
-        // Clears the HttpOnly session cookie, which scripts can't remove themselves
-        fetch(`${API_BASE}/api/auth/logout`, { method: 'POST' }).catch(() => {});
+        // Ends the session on the server (so the token stops working) and clears the HttpOnly
+        // session cookie, which scripts can't remove themselves
+        const headers = this.token ? { Authorization: `Bearer ${this.token}` } : {};
+        fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', headers }).catch(() => {});
         this.token = null;
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem('user');

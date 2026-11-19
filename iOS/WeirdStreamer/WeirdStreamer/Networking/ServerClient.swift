@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum ServerError: LocalizedError {
@@ -6,6 +7,7 @@ enum ServerError: LocalizedError {
     case unauthorized
     case decoding(String)
     case transport(String)
+    case certificateChanged(String)
 
     var errorDescription: String? {
         switch self {
@@ -14,37 +16,114 @@ enum ServerError: LocalizedError {
         case .unauthorized: return "Your sign-in has ended. Sign in again."
         case .decoding(let detail): return "Couldn't read the server's reply (\(detail))."
         case .transport(let detail): return "Couldn't reach the server (\(detail))."
+        case .certificateChanged(let host):
+            return "\(host)'s certificate has changed since it was added, so the app won't connect: someone may be "
+                + "posing as the server. If you replaced its certificate, remove the server and add it again."
         }
     }
 }
 
-/// Certificates: like the Android app (ApiClient), a server you add is trusted with whatever
-/// certificate it has, since home servers often use self-signed ones. Only hosts of saved
-/// servers (and the address probe) get this; anything else is checked as usual.
+/// Certificates, as on Android (ServerTrust): home servers often have self-signed certificates, so
+/// a saved server's is trusted as it is, but only that one. The certificate it shows when it's added
+/// (or, for a server saved before this, at its first connection) is kept by its SHA-256, and a
+/// different one is refused (ServerError.certificateChanged). Removing the server forgets it. Every
+/// other host is checked as usual. Keyed by host and port.
 final class TrustPolicy: NSObject, URLSessionDelegate, @unchecked Sendable {
     static let shared = TrustPolicy()
     private let lock = NSLock()
-    private var trustedHosts: Set<String> = []
-    var trustEverything = false
+    private var savedServers: Set<String> = [] // host:port of the servers clients were made for
+    private var seen: [String: String] = [:]   // what probes of addresses not saved yet were shown
+    private var changed: Set<String> = []      // servers whose certificate was refused
+    private static let pinsKey = "serverCertificates"
 
-    func trust(_ host: String) {
+    static func key(host: String, port: Int) -> String { "\(host.lowercased()):\(port)" }
+
+    static func key(of url: URL) -> String? {
+        guard url.scheme?.lowercased() == "https", let host = url.host else { return nil }
+        return key(host: host, port: url.port ?? 443)
+    }
+
+    private var pins: [String: String] {
+        UserDefaults.standard.dictionary(forKey: Self.pinsKey) as? [String: String] ?? [:]
+    }
+
+    private func setPin(_ fingerprint: String?, for key: String) {
+        var all = pins
+        all[key] = fingerprint
+        UserDefaults.standard.set(all, forKey: Self.pinsKey)
+    }
+
+    /// A saved server: its certificate is kept at its first connection if it has none kept yet.
+    func trust(_ url: URL) {
+        guard let key = Self.key(of: url) else { return }
         lock.lock(); defer { lock.unlock() }
-        trustedHosts.insert(host)
+        savedServers.insert(key)
+    }
+
+    /// What an address check was shown, for keepOnAdd.
+    func remember(_ key: String, _ fingerprint: String) {
+        lock.lock(); defer { lock.unlock() }
+        seen[key] = fingerprint
+    }
+
+    /// Keeps the certificate a newly added server showed when it was checked.
+    func keepOnAdd(_ address: String) {
+        guard let url = URL(string: address), let key = Self.key(of: url) else { return }
+        lock.lock(); defer { lock.unlock() }
+        savedServers.insert(key)
+        if pins[key] == nil, let fingerprint = seen.removeValue(forKey: key) { setPin(fingerprint, for: key) }
+    }
+
+    /// Forgets a removed server's certificate, so adding it again keeps the one it has then.
+    func forget(_ address: String) {
+        guard let url = URL(string: address), let key = Self.key(of: url) else { return }
+        lock.lock(); defer { lock.unlock() }
+        setPin(nil, for: key)
+        savedServers.remove(key)
+        changed.remove(key)
+    }
+
+    /// Whether a request to url failed because its server's certificate changed.
+    func certificateChanged(_ url: URL) -> Bool {
+        guard let key = Self.key(of: url) else { return false }
+        lock.lock(); defer { lock.unlock() }
+        return changed.contains(key)
+    }
+
+    static func fingerprint(_ trust: SecTrust) -> String? {
+        guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate], let leaf = chain.first else { return nil }
+        return SHA256.hash(data: SecCertificateCopyData(leaf) as Data).map { String(format: "%02x", $0) }.joined()
     }
 
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              let trust = challenge.protectionSpace.serverTrust else {
+        let space = challenge.protectionSpace
+        guard space.authenticationMethod == NSURLAuthenticationMethodServerTrust, let trust = space.serverTrust,
+              let fingerprint = Self.fingerprint(trust) else {
             completionHandler(.performDefaultHandling, nil)
             return
         }
-        lock.lock(); let trusted = trustEverything || trustedHosts.contains(challenge.protectionSpace.host); lock.unlock()
-        completionHandler(trusted ? .useCredential : .performDefaultHandling, trusted ? URLCredential(trust: trust) : nil)
+        let key = Self.key(host: space.host, port: space.port)
+        lock.lock()
+        var accept: Bool? // nil: checked as usual
+        if let pinned = pins[key] {
+            accept = pinned == fingerprint
+            if pinned == fingerprint { changed.remove(key) } else { changed.insert(key) }
+        } else if savedServers.contains(key) {
+            setPin(fingerprint, for: key) // first connection of a server saved before certificates were kept
+            accept = true
+        }
+        lock.unlock()
+        switch accept {
+        case true?: completionHandler(.useCredential, URLCredential(trust: trust))
+        case false?: completionHandler(.cancelAuthenticationChallenge, nil)
+        case nil: completionHandler(.performDefaultHandling, nil)
+        }
     }
 }
 
-/// The address probe's session: short timeouts, any certificate (it only reads /api/info).
+/// The address probe's session: short timeouts, any certificate (it only reads /api/info), which
+/// it remembers for TrustPolicy.keepOnAdd.
 private let probeSession: URLSession = {
     let config = URLSessionConfiguration.ephemeral
     config.timeoutIntervalForRequest = 8 // a phone network can be slow to connect
@@ -56,7 +135,11 @@ private let probeSession: URLSession = {
 private final class ProbeTrust: NSObject, URLSessionDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        if let trust = challenge.protectionSpace.serverTrust {
+        let space = challenge.protectionSpace
+        if let trust = space.serverTrust {
+            if let fingerprint = TrustPolicy.fingerprint(trust) {
+                TrustPolicy.shared.remember(TrustPolicy.key(host: space.host, port: space.port), fingerprint)
+            }
             completionHandler(.useCredential, URLCredential(trust: trust))
         } else {
             completionHandler(.performDefaultHandling, nil)
@@ -72,10 +155,10 @@ final class ServerClient: Sendable {
     let session: URLSession
 
     init(address: String, token: String?) throws {
-        guard let url = URL(string: address), let host = url.host else { throw ServerError.badAddress }
+        guard let url = URL(string: address), url.host != nil else { throw ServerError.badAddress }
         self.baseURL = url
         self.token = token
-        TrustPolicy.shared.trust(host)
+        TrustPolicy.shared.trust(url)
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         self.session = URLSession(configuration: config, delegate: TrustPolicy.shared, delegateQueue: nil)
@@ -208,6 +291,7 @@ final class ServerClient: Sendable {
         do {
             (data, response) = try await session.data(for: req)
         } catch {
+            if TrustPolicy.shared.certificateChanged(baseURL) { throw ServerError.certificateChanged(baseURL.host ?? "The server") }
             throw ServerError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else { throw ServerError.transport("no reply") }

@@ -2,6 +2,8 @@ package database
 
 import (
 	"database/sql"
+	"errors"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -79,6 +81,9 @@ func (db *DB) initSchema() error {
 
 	// Migration: add user_group column if it doesn't exist
 	_, _ = db.userConn.Exec("ALTER TABLE users ADD COLUMN user_group TEXT")
+	if err := db.initSessionSchema(); err != nil {
+		return err
+	}
 
 	if _, err := db.mediaConn.Exec(mediaSchema); err != nil {
 		return err
@@ -158,8 +163,28 @@ func (db *DB) Close() error {
 	return db.mediaConn.Close()
 }
 
+// ErrBadUsername refuses a username with characters an email address can't have.
+var ErrBadUsername = errors.New("a username can have only letters, digits and these: . @ ! # $ % & ' * + - / = ? ^ _ ` { | } ~ (at most 254)")
+
+// ValidUsername reports whether name uses only the characters of an email address (ASCII letters
+// and digits, and . @ ! # $ % & ' * + - / = ? ^ _ ` { | } ~), at most 254 of them.
+func ValidUsername(name string) bool {
+	if name == "" || len(name) > 254 {
+		return false
+	}
+	for _, c := range name {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune(".@!#$%&'*+-/=?^_`{|}~", c)) {
+			return false
+		}
+	}
+	return true
+}
+
 // User operations
 func (db *DB) CreateUser(username, password string, isAdmin bool, group string) (*models.User, error) {
+	if !ValidUsername(username) {
+		return nil, ErrBadUsername
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
@@ -267,21 +292,31 @@ func (db *DB) RenameGroup(from, to string) error {
 }
 
 func (db *DB) DeleteUser(username string) error {
-	if _, err := db.userConn.Exec("DELETE FROM playback WHERE user_id = (SELECT id FROM users WHERE username = ?)", username); err != nil {
-		return err
+	for _, q := range []string{"DELETE FROM playback WHERE user_id = (SELECT id FROM users WHERE username = ?)",
+		"DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = ?)"} {
+		if _, err := db.userConn.Exec(q, username); err != nil {
+			return err
+		}
 	}
 	_, err := db.userConn.Exec("DELETE FROM users WHERE username = ?", username)
 	return err
 }
 
-func (db *DB) UpdateUserPassword(username, newPassword string) error {
+// UpdateUserPassword sets a user's password and ends their sessions, except keepSession (the one
+// that changed it; "" ends them all).
+func (db *DB) UpdateUserPassword(username, newPassword, keepSession string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-
-	_, err = db.userConn.Exec("UPDATE users SET password_hash = ? WHERE username = ?", string(hash), username)
-	return err
+	user, err := db.GetUserByUsername(username)
+	if err != nil {
+		return err
+	}
+	if _, err = db.userConn.Exec("UPDATE users SET password_hash = ? WHERE id = ?", string(hash), user.ID); err != nil {
+		return err
+	}
+	return db.EndUserSessions(user.ID, keepSession)
 }
 
 // Media operations

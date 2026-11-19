@@ -275,8 +275,9 @@ class CredentialManager(context: Context) {
     fun removeApiServer(serverUrl: String) {
         val servers = getApiServers().toMutableSet()
         servers.remove(serverUrl)
-        sharedPreferences.edit().putStringSet("api_servers", servers).apply()
+        sharedPreferences.edit().putStringSet("api_servers", servers).commit()
         clearServerToken(serverUrl)
+        com.vargon.weirdstreamer.api.ServerTrust.forget(serverUrl)
     }
 
     fun getApiServers(): Set<String> {

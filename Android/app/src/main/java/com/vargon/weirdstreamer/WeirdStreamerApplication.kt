@@ -12,10 +12,6 @@ import coil.key.Keyer
 import coil.memory.MemoryCache
 import coil.request.Options
 import okhttp3.OkHttpClient
-import java.security.cert.X509Certificate
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 class SmbKeyer : Keyer<String> {
     override fun key(data: String, options: Options): String? {
@@ -49,6 +45,7 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
         com.vargon.weirdstreamer.downloads.DownloadStore.init(this)
         com.vargon.weirdstreamer.downloads.LocalProgress.init(this)
         val accounts = CredentialManager(this)
+        com.vargon.weirdstreamer.api.ServerTrust.init(this) { accounts.getApiServers() }
         com.vargon.weirdstreamer.downloads.LocalProgress.accountOf = { accounts.accountInUse(it) }
         com.vargon.weirdstreamer.downloads.DownloadStore.accountOf = { accounts.accountInUse(it) }
         // Downloads to finish, or finished ones due to save their subtitles, skip times and trickplay frames.
@@ -64,20 +61,8 @@ class WeirdStreamerApplication : Application(), ImageLoaderFactory {
         Log.d("WeirdStreamerApp", "Creating new ImageLoader")
         val credentialManager = CredentialManager(this)
         
-        // Create OkHttp client with SSL bypass and auth for server thumbnails
-        val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-        })
-        
-        val sslContext = SSLContext.getInstance("SSL")
-        sslContext.init(null, trustAllCerts, java.security.SecureRandom())
-        val sslSocketFactory = sslContext.socketFactory
-        
-        okHttpClient = OkHttpClient.Builder()
-            .sslSocketFactory(sslSocketFactory, trustAllCerts[0] as X509TrustManager)
-            .hostnameVerifier { _, _ -> true }
+        // Server thumbnails, artwork and streams need the auth header; certificates as ServerTrust says.
+        okHttpClient = com.vargon.weirdstreamer.api.ServerTrust.secure(OkHttpClient.Builder())
             .addInterceptor { chain ->
                 val request = chain.request()
                 val url = request.url.toString()

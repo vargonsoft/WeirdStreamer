@@ -54,8 +54,8 @@ object AppUpdater {
     }
 
     private val client: OkHttpClient by lazy {
-        // The API client's TLS settings; no read timeout for the APK itself.
-        ApiClient.probeClient().newBuilder()
+        // Saved servers' certificate rules (ServerTrust).
+        ApiClient.quickClient().newBuilder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .followRedirects(true)

@@ -11,6 +11,7 @@ import (
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/tlscert"
 )
 
 type ConfigHandler struct {
@@ -37,7 +38,7 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if claims.IsAdmin {
-		respondJSON(w, http.StatusOK, config.GlobalConfig)
+		respondJSON(w, http.StatusOK, adminConfig())
 		return
 	}
 
@@ -75,6 +76,27 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, publicConfig)
 }
 
+// adminConfig is the configuration as admins' Settings get it: all of it but the JWT secret, with
+// which anyone could make sign-in tokens (the TMDB token is there, for Settings to show and change).
+func adminConfig() config.Config {
+	c := *config.GlobalConfig
+	c.Auth.JWTSecret = ""
+	return c
+}
+
+// Certificate is the HTTPS certificate's expiry, for admins' Settings: GET /api/admin/certificate
+// ({"state": "none"} without HTTPS).
+func (h *ConfigHandler) Certificate(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	if s := tlscert.Current(); s != nil {
+		respondJSON(w, http.StatusOK, s)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"state": "none"})
+}
+
 // UpdateConfig updates the configuration (admin only)
 func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	// Check if user is admin
@@ -89,6 +111,9 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
+
+	// The JWT secret is never sent to clients, so it can't be changed here: it stays as it is.
+	newConfig.Auth.JWTSecret = config.GlobalConfig.Auth.JWTSecret
 
 	// A client that doesn't know about groups keeps them as they are.
 	if newConfig.Groups == nil {
@@ -112,7 +137,7 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Configuration updated successfully.",
-		"config":  config.GlobalConfig,
+		"config":  adminConfig(),
 	})
 }
 

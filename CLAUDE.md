@@ -108,7 +108,10 @@ for each TODO item are at the end of this file.
   Behind nginx, `server.trustedProxies` (addresses or networks) lets `X-Forwarded-For` / `X-Real-IP`
   name the client (`internal/clientip`) for the logs, sign-in limits and Streams page; from anyone
   else those headers are ignored.
-  Port 9000, HTTPS. Config is `Server/config.yml`
+  Port 9000, HTTPS. The certificate's expiry is checked at startup and daily (`internal/tlscert`):
+  from 30 days before, a `[TLS] Warning` in the log and a banner in admins' Settings
+  (`GET /api/admin/certificate`), an error once expired, and a note when certFile holds a newer one
+  than the server is using (a restart serves it). Config is `Server/config.yml`
   (git-ignored; `config.example.yml` explains every setting). The server saves it too (Settings, Jobs,
   `cli config add-path`) through `internal/config/file.go`, which changes only the values that changed
   and keeps comments, blank lines, order and unknown keys. `cli config init <template>` writes a new
@@ -406,6 +409,23 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   has no version number: `checkForNewWeb` compares its files' dates and sizes with those at page
   load, every 5 minutes and on returning to the tab, so saving a file in `Server/web` shows the
   banner in open pages. A click reloads.
+- **Sign-ins:** every sign-in (password or TV code) is a row in the users DB's `sessions` table
+  (`database/sessions.go`), named by its token's ID (`jti`). The middleware refuses a token whose
+  session is gone and reads the user, admin rights and group from the database on every request
+  (the token's `is_admin` is only for the apps' menus). Signing out (`POST /api/auth/logout` with
+  the token; the apps send it when an account is signed out or a server removed) ends that session;
+  a new password ends the user's others (`cli user change-password`: all of them); deleting a user ends all.
+  Usernames are limited to an email address's characters (`database.ValidUsername`). The server
+  won't start with a blank `auth.jwtSecret` or config.example.yml's placeholder, and `/api/config`
+  never sends the secret (Settings can't change it).
+- **Server certificates (apps):** home servers often have self-signed certificates, so the apps
+  trust a saved server's certificate whatever it is, but only that one: its SHA-256 is kept when
+  the server is added (from the address check), or at the first connection of a server saved
+  before, keyed by host and port, and a different one is refused with a message saying to remove
+  and re-add the server if the certificate was replaced. Removing the server forgets it. Other hosts
+  are checked as usual. Android: `api/ServerTrust.kt` (every OkHttp client goes through
+  `ServerTrust.secure`; only the address check uses `probing`). iPhone: `TrustPolicy` in
+  `ServerClient.swift` (also the HLS relay's and downloads' sessions).
 - **Progress and resume:** players report position every 5s, on pause and at the end. The
   server decides "watched" (the last 2 minutes of videos 20 minutes or longer; the end of shorter
   ones). `MediaViewModel.playVideo(path, fromStart)` sets `playbackStartMs`.

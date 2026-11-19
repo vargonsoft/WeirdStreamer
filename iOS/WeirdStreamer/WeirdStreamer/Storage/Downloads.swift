@@ -413,6 +413,12 @@ final class DownloadManager: NSObject {
 }
 
 extension DownloadManager: URLSessionDownloadDelegate {
+    // The server's certificate, as TrustPolicy says (its kept one).
+    nonisolated func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                                completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        TrustPolicy.shared.urlSession(session, didReceive: challenge, completionHandler: completionHandler)
+    }
+
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                                 totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         MainActor.assumeIsolated {

@@ -164,12 +164,18 @@ final class AppModel {
             reloadServers()
         }
         await refreshServerName(address)
+        // Its certificate is kept now (the one the address check saw), and a different one is refused.
+        TrustPolicy.shared.keepOnAdd(address)
         return nil
     }
 
     /// Removes a server from this phone, with its accounts' sign-ins and its queued progress.
     func removeServer(_ address: String) {
-        for account in accounts(of: address) { TokenStore.delete(address: address, username: account.username) }
+        for account in accounts(of: address) {
+            endSession(address, TokenStore.load(address: address, username: account.username)?.token)
+            TokenStore.delete(address: address, username: account.username)
+        }
+        TrustPolicy.shared.forget(address)
         deleteAll(SavedAccount.self, matching: #Predicate { $0.address == address })
         deleteAll(LocalProgress.self, matching: #Predicate { $0.address == address })
         deleteAll(SavedServer.self, matching: #Predicate { $0.address == address })
@@ -187,6 +193,12 @@ final class AppModel {
         }
     }
 
+    /// Tells a server a sign-in is over, so its token stops working there (best effort: offline, it just expires).
+    private func endSession(_ address: String, _ token: String?) {
+        guard let token, let client = try? ServerClient(address: address, token: token) else { return }
+        Task.detached { try? await client.execute("POST", "/api/auth/logout") }
+    }
+
     /// Signs another account in to a server, then opens it.
     func addAccount(_ address: String) {
         authRequest = AuthRequest(address: address, username: nil, title: "Add user")
@@ -194,6 +206,7 @@ final class AppModel {
 
     /// Signs an account out of this phone; it stays on the row, marked Signed out.
     func signOut(_ address: String, _ username: String) {
+        endSession(address, TokenStore.load(address: address, username: username)?.token)
         TokenStore.delete(address: address, username: username)
         settingsVersion += 1
     }
