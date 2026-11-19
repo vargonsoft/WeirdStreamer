@@ -268,9 +268,9 @@ final class PlaybackModel {
         let url = client.streamURL(for: request.path, query: query(start: start))
         let item: AVPlayerItem
         if mode.isOriginal {
-            // The file as it is, straight from the server (it answers byte ranges).
-            let headers = ["Authorization": "Bearer \(client.token ?? "")"]
-            item = AVPlayerItem(asset: AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers]))
+            // The file as it is, from the server in byte ranges (over HTTPS through the app, for
+            // its kept certificate: OriginalLoader).
+            item = AVPlayerItem(asset: OriginalLoader.asset(for: url, token: client.token))
         } else {
             // A transcode has no length: relayed as HLS from the app's own little server.
             do {

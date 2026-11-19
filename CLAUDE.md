@@ -426,7 +426,9 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   it's refused with a message saying to remove and re-add the server if the certificate was replaced. Removing the server forgets it. Other hosts
   are checked as usual. Android: `api/ServerTrust.kt` (every OkHttp client goes through
   `ServerTrust.secure`; only the address check uses `probing`). iPhone: `TrustPolicy` in
-  `ServerClient.swift` (also the HLS relay's and downloads' sessions).
+  `ServerClient.swift` (also the HLS relay's and downloads' sessions, and `OriginalLoader.swift`: AVPlayer
+  checks certificates itself, so an HTTPS original or Live Photo clip has a `wsoriginal://` URL
+  whose byte ranges the app fetches through TrustPolicy).
 - **Progress and resume:** players report position every 5s, on pause and at the end. The
   server decides "watched" (the last 2 minutes of videos 20 minutes or longer; the end of shorter
   ones). `MediaViewModel.playVideo(path, fromStart)` sets `playbackStartMs`.

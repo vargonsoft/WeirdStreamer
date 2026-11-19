@@ -125,11 +125,10 @@ A server you add is trusted with the certificate it has when it's added (home se
 self-signed ones), and only that one: its SHA-256 is kept (`TrustPolicy` in `ServerClient.swift`;
 a server saved before this keeps the one it shows at its next connection), and a different
 certificate is refused with a message to remove the server and add it again. That covers the app's
-own requests, transcodes (the relay's session) and downloads. An **original** file streams straight
-to AVPlayer, which checks the certificate itself: a self-signed server needs its certificate
-installed on the phone (Settings › General › About › Certificate Trust Settings), or plain HTTP.
-iOS refuses self-signed certificates valid for more than 825 days, or without the server's name in
-subjectAltName.
+own requests, transcodes (the relay's session), downloads, and originals and Live Photo clips:
+AVPlayer checks a certificate itself, so those are given a made-up `wsoriginal://` address and
+`OriginalLoader` fetches each byte range AVPlayer asks for through the app's session. Plain-HTTP
+servers need none of this, and nothing has to be installed on the phone.
 
 ## Not yet included
 

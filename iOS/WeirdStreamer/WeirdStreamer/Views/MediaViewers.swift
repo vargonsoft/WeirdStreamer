@@ -140,9 +140,8 @@ struct ZoomablePhoto: View {
         failed = image == nil
         if let live = entry.liveVideo {
             // An Apple Live Photo: its .MOV, streamed.
-            let headers = ["Authorization": "Bearer \(client.token ?? "")"]
-            clip = muted(AVPlayer(playerItem: AVPlayerItem(asset: AVURLAsset(url: client.streamURL(for: live),
-                                                                               options: ["AVURLAssetHTTPHeaderFieldsKey": headers]))))
+            clip = muted(AVPlayer(playerItem: AVPlayerItem(asset: OriginalLoader.asset(for: client.streamURL(for: live),
+                                                                                        token: client.token))))
         } else if let range = embedded {
             // A Samsung or Google motion photo: the MP4 after the picture.
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("weirdstreamer-motion-\(UUID().uuidString).mp4")
