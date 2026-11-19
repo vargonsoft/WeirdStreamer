@@ -242,6 +242,8 @@ final class AppModel {
         openTitle = nil
         continueItems = []
         newRows = []
+        thumbnailListener?.cancel()
+        thumbnailListener = nil
         reloadServers()
     }
 
@@ -264,7 +266,68 @@ final class AppModel {
             await flushPendingProgress()
         }
         DownloadManager.shared.run() // downloads waiting for this server and account
+        listenForThumbnails()
         loadPath("")
+    }
+
+    // MARK: Thumbnails
+
+    @ObservationIgnored private var thumbnailListener: Task<Void, Never>?
+    /// The ⋮ menu's Regenerate thumbnails was picked: its confirm dialog shows.
+    var confirmRegenerate = false
+
+    /// Whether ⋮ offers Regenerate thumbnails: in a folder of a server's library (not the
+    /// libraries themselves, Library view or a title page), for an administrator, as the server
+    /// allows it only for them.
+    var canRegenerateThumbnails: Bool {
+        !isSourceList && !isServerRoot && !isLibraryView && openTitle == nil && isAdmin
+    }
+
+    /// Makes the open folder's thumbnails again. The ones cached on the phone are dropped now;
+    /// each new one shows as the server reports it made (`listenForThumbnails`).
+    func regenerateThumbnails() {
+        guard let client, canRegenerateThumbnails else { return }
+        let folder = path
+        Task {
+            do {
+                try await client.regenerateThumbnails(folder)
+                for entry in entries where !entry.isDirectory {
+                    if let url = client.url(for: entry.thumbnailUrl) { ImageCache.shared.removeObject(forKey: url as NSURL) }
+                }
+            } catch {
+                handle(error)
+                if !isUnauthorized(error) { message = "Failed to regenerate thumbnails: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    /// Listens to the server's thumbnail-ready events while it's open (as Android's
+    /// ThumbnailUpdateListener): a file in the folder shown gets its new thumbnail, under an
+    /// address of its own so the old picture isn't taken from the cache. Reconnects after a
+    /// drop, waiting longer each time (1 s to 30 s).
+    private func listenForThumbnails() {
+        thumbnailListener?.cancel()
+        guard let client else { return }
+        thumbnailListener = Task { [weak self] in
+            var wait: Double = 1
+            while !Task.isCancelled {
+                do {
+                    for try await update in client.thumbnailUpdates() {
+                        wait = 1
+                        self?.thumbnailMade(update)
+                    }
+                } catch {}
+                guard !Task.isCancelled else { return }
+                try? await Task.sleep(for: .seconds(wait))
+                wait = min(wait * 2, 30)
+            }
+        }
+    }
+
+    private func thumbnailMade(_ update: ServerClient.ThumbnailUpdate) {
+        guard let i = entries.firstIndex(where: { $0.path == update.path }) else { return }
+        let separator = update.thumbnailURL.contains("?") ? "&" : "?"
+        entries[i].thumbnailUrl = update.thumbnailURL + separator + "t=\(Int(Date().timeIntervalSince1970 * 1000))"
     }
 
     // MARK: Folders

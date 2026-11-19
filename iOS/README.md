@@ -14,7 +14,11 @@ source with your own Apple developer account and install it on your device.
   Settings) under the wordmark and "Server · account"; Continue Watching and Recently Added on the
   server's front page and each library's own page; folder rows and tiles with thumbnails, size,
   length and time left; the A–Z strip; Resume or Play from start for a partly watched video; hold a
-  video for Play from start and Mark watched. A swipe in from the left edge goes back.
+  video for Play from start and Mark watched. A swipe in from the left edge goes back. In a folder,
+  an administrator's ⋮ also has Regenerate thumbnails (`POST /api/media/regenerate-thumbnails`,
+  after a confirmation): the server makes them in the background and reports each one on
+  `/api/media/thumbnail-updates`, which the app listens to while a server is open, so tiles change
+  as they're made.
 - **Library view:** posters with progress, Unmatched files, title pages (backdrop, poster, details,
   cast, files with Resume / Play / watched; seasons with their rings, watched buttons for a season
   and the whole show, Auto Skip, episode rows and their details).

@@ -27,6 +27,17 @@ struct RootView: View {
                 AuthDialog(request: request)
             } else if model.resumeChoice != nil {
                 ResumeDialog()
+            } else if model.confirmRegenerate {
+                PhoneDialog(title: "Regenerate thumbnails?", onDismiss: { model.confirmRegenerate = false }) {
+                    EmptyView()
+                } buttons: {
+                    Button("Cancel") { model.confirmRegenerate = false }.buttonStyle(PhoneSecondaryButtonStyle())
+                    Button("Regenerate") {
+                        model.confirmRegenerate = false
+                        model.regenerateThumbnails()
+                    }
+                    .buttonStyle(PhoneButtonStyle())
+                }
             }
         }
         .fullScreenCover(isPresented: $showSettings) {
@@ -171,7 +182,7 @@ struct BarButton: View {
     }
 }
 
-/// The ⋮ menu: Show (in folders), then Settings.
+/// The ⋮ menu: Show, Download this folder and Regenerate thumbnails (in folders), then Settings.
 struct OverflowMenu: View {
     @Environment(AppModel.self) private var model
     @Binding var showSettings: Bool
@@ -197,6 +208,9 @@ struct OverflowMenu: View {
             // Not among the libraries: that would be every library.
             if !model.isSourceList && !model.isLibraryView && !model.isServerRoot {
                 Button { showDownloadFolder = true } label: { Label("Download this folder", systemImage: "arrow.down.circle") }
+            }
+            if model.canRegenerateThumbnails {
+                Button { model.confirmRegenerate = true } label: { Label("Regenerate thumbnails", systemImage: "photo.on.rectangle.angled") }
             }
             Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
         } label: {

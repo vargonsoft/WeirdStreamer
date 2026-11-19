@@ -391,6 +391,62 @@ final class ServerClient: Sendable {
         return try await call("POST", "/api/auth/login", body: Body(username: username, password: password))
     }
 
+    /// Makes a folder's thumbnails again (admins only). The server answers at once and makes them
+    /// in the background; each one made arrives through `thumbnailUpdates()`.
+    func regenerateThumbnails(_ folder: String) async throws {
+        try await execute("POST", "/api/media/regenerate-thumbnails", query: [("path", Self.encodePath(folder))])
+    }
+
+    /// A thumbnail the server just made: the file's client path and the thumbnail's address.
+    struct ThumbnailUpdate: Decodable, Sendable {
+        let path: String
+        let thumbnailURL: String
+    }
+
+    /// The server's thumbnail-ready events (`/api/media/thumbnail-updates`, server-sent events) for
+    /// as long as the connection lasts. Named events (such as "metadata") carry other things and
+    /// are skipped. Its own session, with TrustPolicy: the API's gives up on a quiet minute.
+    func thumbnailUpdates() -> AsyncThrowingStream<ThumbnailUpdate, Error> {
+        let baseURL = baseURL, token = token
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                let config = URLSessionConfiguration.default
+                config.timeoutIntervalForRequest = 120 // the server sends a keepalive every 30 s
+                config.timeoutIntervalForResource = 7 * 24 * 3600
+                let session = URLSession(configuration: config, delegate: TrustPolicy.shared, delegateQueue: nil)
+                defer { session.invalidateAndCancel() }
+                do {
+                    var req = URLRequest(url: baseURL.appendingPathComponent("api/media/thumbnail-updates"))
+                    if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+                    req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    let (bytes, response) = try await session.bytes(for: req)
+                    guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                        throw ServerError.http(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: nil)
+                    }
+                    // `lines` leaves out the blank line that ends an event, so each event is taken
+                    // at its data line (the server writes one per event, after its name if any).
+                    var event = ""
+                    for try await line in bytes.lines {
+                        if line.hasPrefix("event:") {
+                            event = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
+                        } else if line.hasPrefix("data:") {
+                            let data = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                            if event.isEmpty || event == "message",
+                               let update = try? JSONDecoder().decode(ThumbnailUpdate.self, from: Data(data.utf8)) {
+                                continuation.yield(update)
+                            }
+                            event = ""
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     /// Fetches an image with the token (the server requires it), for AsyncImage-style views.
     func image(at url: URL) async throws -> Data {
         var req = URLRequest(url: url)
