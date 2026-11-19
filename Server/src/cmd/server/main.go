@@ -308,7 +308,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: logs.Access(limitBodies(r)),
+		Handler: logs.Access(noFraming(limitBodies(r))),
 		// A client that connects and never finishes its request's headers, or leaves a connection
 		// open doing nothing, doesn't hold it for good. (No limit on a response: streams are long.)
 		ReadHeaderTimeout: 20 * time.Second,
@@ -362,6 +362,17 @@ func shutdown(srv *http.Server, db *database.DB) {
 // maxRequestBody is the most a request may send. The largest the apps send (Settings, a phone's
 // progress played offline) are a few hundred KB; nothing is uploaded.
 const maxRequestBody = 8 << 20
+
+// noFraming tells browsers not to show any page of the server inside another site's frame, where
+// a hidden page could lead a signed-in user into clicks they didn't mean (clickjacking).
+// frame-ancestors is the current header; X-Frame-Options is for older browsers.
+func noFraming(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		w.Header().Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(w, r)
+	})
+}
 
 // limitBodies refuses request bodies past maxRequestBody, so no one (signing in needs no account)
 // can make the server hold an endless one in memory.
