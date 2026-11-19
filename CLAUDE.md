@@ -421,8 +421,9 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 - **Server certificates (apps):** home servers often have self-signed certificates, so the apps
   trust a saved server's certificate whatever it is, but only that one: its SHA-256 is kept when
   the server is added (from the address check), or at the first connection of a server saved
-  before, keyed by host and port, and a different one is refused with a message saying to remove
-  and re-add the server if the certificate was replaced. Removing the server forgets it. Other hosts
+  before, keyed by host and port. A different one is accepted (and kept instead) only if it passes
+  the usual check, a trusted authority for the server's name (a Let's Encrypt renewal); otherwise
+  it's refused with a message saying to remove and re-add the server if the certificate was replaced. Removing the server forgets it. Other hosts
   are checked as usual. Android: `api/ServerTrust.kt` (every OkHttp client goes through
   `ServerTrust.secure`; only the address check uses `probing`). iPhone: `TrustPolicy` in
   `ServerClient.swift` (also the HLS relay's and downloads' sessions).

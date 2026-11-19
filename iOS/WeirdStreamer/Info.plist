@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Your own WeirdStreamer server, usually on your home network, often with a self-signed
-	     certificate. Each saved server can allow its own certificate (Trust self-signed). -->
+	<!-- Your own WeirdStreamer server, usually on your home network, maybe over plain HTTP. A saved
+	     server's certificate (often self-signed) is kept and checked by TrustPolicy (ServerClient.swift). -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

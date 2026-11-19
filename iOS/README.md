@@ -121,12 +121,15 @@ The e2e server (`Server/e2e`, http://localhost:9100) has an `e2e_ios` account fo
 
 ## Certificates
 
-A server you add is trusted with whatever certificate it has (home servers
-often use self-signed ones), for the app's own requests and for transcodes (which go through the
-relay). An **original** file streams straight to AVPlayer, which checks the certificate itself: a
-self-signed server needs its certificate installed on the phone (Settings › General › About ›
-Certificate Trust Settings), or plain HTTP. iOS refuses self-signed certificates valid for more
-than 825 days.
+A server you add is trusted with the certificate it has when it's added (home servers often use
+self-signed ones), and only that one: its SHA-256 is kept (`TrustPolicy` in `ServerClient.swift`;
+a server saved before this keeps the one it shows at its next connection), and a different
+certificate is refused with a message to remove the server and add it again. That covers the app's
+own requests, transcodes (the relay's session) and downloads. An **original** file streams straight
+to AVPlayer, which checks the certificate itself: a self-signed server needs its certificate
+installed on the phone (Settings › General › About › Certificate Trust Settings), or plain HTTP.
+iOS refuses self-signed certificates valid for more than 825 days, or without the server's name in
+subjectAltName.
 
 ## Not yet included
 

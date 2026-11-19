@@ -19,7 +19,10 @@ import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509ExtendedTrustManager
 import javax.net.ssl.X509TrustManager
 
-/** A saved server answered with a certificate other than the one it had when it was added. */
+/**
+ * A saved server answered with a certificate other than the one it had when it was added, and the
+ * new one isn't a valid renewal (issued by a trusted authority for its name).
+ */
 class CertificateChangedException(host: String) : CertificateException(
     "$host's certificate has changed since it was added, so the app won't connect: someone may be " +
         "posing as the server. If you replaced its certificate, remove the server and add it again."
@@ -29,8 +32,10 @@ class CertificateChangedException(host: String) : CertificateException(
  * Which HTTPS certificates the app accepts. Home servers often have self-signed certificates, so a
  * saved WeirdStreamer server's is trusted as it is, but only that one: the certificate it shows
  * when it's added (or, for a server saved before this, at its first connection) is kept, by its
- * SHA-256, and a different one is refused ([CertificateChangedException]). Removing the server
- * forgets it. Every other host is checked as usual (a certificate authority and its name).
+ * SHA-256. A different one is accepted, and kept instead, only if it passes the usual check (a
+ * trusted authority, and the server's name): a renewal such as Let's Encrypt's every few months.
+ * Otherwise it's refused ([CertificateChangedException]), so a self-signed certificate can't change
+ * without removing the server, which forgets it. Every other host is checked as usual.
  * Keyed by host and port, as the connection names them.
  */
 object ServerTrust {
@@ -87,7 +92,14 @@ object ServerTrust {
             val fp = fingerprint(chain[0])
             val pinned = prefs.getString(key, null)
             when {
-                pinned != null -> if (pinned != fp) throw CertificateChangedException(host)
+                pinned != null -> if (pinned != fp) {
+                    // A renewal passes the usual check: a trusted authority, for this server's name
+                    // (the hostname verifier lets kept servers through, so the name is checked here).
+                    val renewed = runCatching { systemCheck() }.isSuccess &&
+                        okhttp3.internal.tls.OkHostnameVerifier.verify(host, chain[0])
+                    if (!renewed) throw CertificateChangedException(host)
+                    prefs.edit().putString(key, fp).commit()
+                }
                 isSavedServer(key) -> prefs.edit().putString(key, fp).commit() // first connection
                 else -> systemCheck()
             }

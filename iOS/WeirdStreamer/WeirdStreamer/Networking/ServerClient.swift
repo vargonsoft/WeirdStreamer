@@ -25,9 +25,11 @@ enum ServerError: LocalizedError {
 
 /// Certificates, as on Android (ServerTrust): home servers often have self-signed certificates, so
 /// a saved server's is trusted as it is, but only that one. The certificate it shows when it's added
-/// (or, for a server saved before this, at its first connection) is kept by its SHA-256, and a
-/// different one is refused (ServerError.certificateChanged). Removing the server forgets it. Every
-/// other host is checked as usual. Keyed by host and port.
+/// (or, for a server saved before this, at its first connection) is kept by its SHA-256. A different
+/// one is accepted, and kept instead, only if it passes the usual check (a trusted authority, for the
+/// server's name): a renewal such as Let's Encrypt's. Otherwise it's refused
+/// (ServerError.certificateChanged), so a self-signed one can't change without removing the server,
+/// which forgets it. Every other host is checked as usual. Keyed by host and port.
 final class TrustPolicy: NSObject, URLSessionDelegate, @unchecked Sendable {
     static let shared = TrustPolicy()
     private let lock = NSLock()
@@ -104,11 +106,17 @@ final class TrustPolicy: NSObject, URLSessionDelegate, @unchecked Sendable {
             return
         }
         let key = Self.key(host: space.host, port: space.port)
+        // A different certificate passes only as a renewal: the usual check (a trusted authority,
+        // for this host's name; the challenge's trust has the SSL policy for it). Done outside the
+        // lock, since it can take a moment.
+        let kept = pins[key]
+        let renewed = kept != nil && kept != fingerprint && SecTrustEvaluateWithError(trust, nil)
         lock.lock()
         var accept: Bool? // nil: checked as usual
         if let pinned = pins[key] {
-            accept = pinned == fingerprint
-            if pinned == fingerprint { changed.remove(key) } else { changed.insert(key) }
+            if renewed { setPin(fingerprint, for: key) }
+            accept = pinned == fingerprint || renewed
+            if accept == true { changed.remove(key) } else { changed.insert(key) }
         } else if savedServers.contains(key) {
             setPin(fingerprint, for: key) // first connection of a server saved before certificates were kept
             accept = true
