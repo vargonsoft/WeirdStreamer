@@ -378,7 +378,8 @@ class ServerRepository(
         } catch (e: Exception) { Result.failure(e) }
     }
 
-    override fun supportsThumbnailRegeneration(): Boolean = true
+    // Admins only: the server refuses everyone else
+    override fun supportsThumbnailRegeneration(): Boolean = signedInAs().second
     override suspend fun regenerateThumbnails(path: String): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val response = apiService.regenerateThumbnails(encode(path))
