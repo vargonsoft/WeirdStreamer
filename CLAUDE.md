@@ -108,6 +108,10 @@ for each TODO item are at the end of this file.
   Behind nginx, `server.trustedProxies` (addresses or networks) lets `X-Forwarded-For` / `X-Real-IP`
   name the client (`internal/clientip`) for the logs, sign-in limits and Streams page; from anyone
   else those headers are ignored.
+  Every response carries a Content-Security-Policy (`securityHeaders` in `cmd/server/main.go`): the
+  web UI runs only the server's own script files (no inline scripts or `on…=` attributes: attach
+  handlers in code), WebAssembly is allowed, and only `/vendor/jassub/` may evaluate code (its worker
+  needs `new Function`). Also nosniff, `Referrer-Policy: same-origin` and no framing.
   Port 9000, HTTPS. The certificate's expiry is checked at startup and daily (`internal/tlscert`):
   from 30 days before, a `[TLS] Warning` in the log and a banner in admins' Settings
   (`GET /api/admin/certificate`), an error once expired, and a note when certFile holds a newer one

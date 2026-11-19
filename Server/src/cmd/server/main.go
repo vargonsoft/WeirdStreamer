@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -318,7 +319,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: logs.Access(noFraming(limitBodies(r))),
+		Handler: logs.Access(securityHeaders(limitBodies(r))),
 		// A client that connects and never finishes its request's headers, or leaves a connection
 		// open doing nothing, doesn't hold it for good. (No limit on a response: streams are long.)
 		ReadHeaderTimeout: 20 * time.Second,
@@ -379,16 +380,38 @@ func shutdown(srv *http.Server, db *database.DB) {
 // progress played offline) are a few hundred KB; nothing is uploaded.
 const maxRequestBody = 8 << 20
 
-// noFraming tells browsers not to show any page of the server inside another site's frame, where
-// a hidden page could lead a signed-in user into clicks they didn't mean (clickjacking).
-// frame-ancestors is the current header; X-Frame-Options is for older browsers.
-func noFraming(next http.Handler) http.Handler {
+// securityHeaders sets the browser protections on every response: the content policy (below),
+// no framing by other sites, where a hidden page could lead a signed-in user into clicks they
+// didn't mean (clickjacking; X-Frame-Options is for older browsers), no guessing a file's type
+// from its contents (nosniff), and no page address sent to other sites.
+func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
-		w.Header().Set("X-Frame-Options", "DENY")
+		policy := contentPolicy
+		if strings.HasPrefix(r.URL.Path, "/vendor/jassub/") {
+			policy = jassubPolicy
+		}
+		h := w.Header()
+		h.Set("Content-Security-Policy", policy)
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
 		next.ServeHTTP(w, r)
 	})
 }
+
+// contentPolicy lets the web UI load and run only the server's own files: no inline or other
+// sites' scripts, so text slipped into a page can't run. Styles may be inline (the pages app.js
+// builds have style attributes); images and media may also be blob: and data: URLs. WebAssembly
+// (JASSUB's libass) is allowed, and no site may frame the pages.
+const contentPolicy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; " +
+	"font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; " +
+	"form-action 'self'; frame-ancestors 'none'"
+
+// jassubPolicy is for JASSUB's files: its worker (which follows its own script's policy) builds
+// functions with new Function (Emscripten's embind), so it may also evaluate code.
+const jassubPolicy = "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; " +
+	"object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 
 // limitBodies refuses request bodies past maxRequestBody, so no one (signing in needs no account)
 // can make the server hold an endless one in memory.
