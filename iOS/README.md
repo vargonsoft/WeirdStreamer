@@ -66,7 +66,7 @@ source with your own Apple developer account and install it on your device.
   server unreachable, its error has a Downloads button. Download ahead: two minutes
   into an episode, the next 3 to 5 (as many as download in about an hour at the speed downloads
   have come at), leaving 500 MB or 5% of the phone free; those before the episode playing go.
-- **Settings:** App (show hidden files, clear the image cache, backup, the saved servers with their
+- **Settings:** App (show hidden files, rewind 5 seconds when resuming, clear the image cache, backup, the saved servers with their
   users and Remove), Themes (all 21 themes, as a grid of tiles), Downloads, Account (change
   password), and for admins Server (groups, media paths, server settings, Scan media), Users,
   Streams and Jobs.

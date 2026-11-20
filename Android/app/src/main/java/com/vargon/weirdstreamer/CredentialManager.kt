@@ -122,6 +122,13 @@ class CredentialManager(context: Context) {
         return sharedPreferences.getBoolean("show_hidden_files", false)
     }
 
+    // Resuming a paused video goes back 5 seconds first (Settings, off by default)
+    fun setRewindOnResume(on: Boolean) {
+        sharedPreferences.edit().putBoolean("rewind_on_resume", on).apply()
+    }
+
+    fun getRewindOnResume(): Boolean = sharedPreferences.getBoolean("rewind_on_resume", false)
+
     fun saveLastPath(path: String) {
         sharedPreferences.edit().putString("last_path", path).apply()
     }

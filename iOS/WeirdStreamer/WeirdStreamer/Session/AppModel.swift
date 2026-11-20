@@ -393,6 +393,12 @@ final class AppModel {
         return setting("show_hidden_files") == "true"
     }
 
+    /// Resuming a paused video goes back 5 seconds first (Settings, off by default).
+    var rewindOnResume: Bool {
+        _ = settingsVersion
+        return setting("rewind_on_resume") == "true"
+    }
+
     /// The folder's entries, through the Show filter (folders always show) and without hidden
     /// files (names starting with a dot) unless Settings shows them.
     var filteredEntries: [FileEntry] {

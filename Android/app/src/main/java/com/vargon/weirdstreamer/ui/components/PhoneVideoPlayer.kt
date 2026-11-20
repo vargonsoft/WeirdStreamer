@@ -545,6 +545,27 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         }
     }
 
+    // Swipes' indicator (below), also shown by resume()
+    var swipeIndicator by remember { mutableStateOf<SwipeIndicator?>(null) }
+    var swipeReleased by remember { mutableIntStateOf(0) } // hides the indicator a moment after
+    var indicatorMs by remember { mutableLongStateOf(700L) } // that moment: longer for resume()'s
+
+    // Unpausing: with Settings' "Rewind 5 seconds when resuming", go back up to 5 seconds first,
+    // shown as a swipe back would be.
+    fun resume() {
+        if (viewModel.rewindOnResume && !exoPlayer.playWhenReady) { // paused, not just buffering
+            val at = if (!isSmbSource && enableTranscode) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
+            val back = minOf(RESUME_REWIND_S * 1000, at / 1000 * 1000)
+            if (back > 0) {
+                seekPlayer(at - back)
+                swipeIndicator = SwipeIndicator.Seek(seekGestureText(-back, at - back))
+                indicatorMs = 1500L
+                swipeReleased++
+            }
+        }
+        exoPlayer.play()
+    }
+
     // Skip Intro / Skip Credits (SkipSegments.kt): the intro to its end, the credits to the next video.
     val doSkip: (SkipPrompt, com.vargon.weirdstreamer.api.models.MediaSegments) -> Unit = { prompt, segments ->
         if (!prompt.credits) seekPlayer((prompt.segment.end * 1000).toLong())
@@ -592,7 +613,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     val inPip = viewModel.inPictureInPicture
     PhonePip.Track(activity, playing = isPlaying && !playbackFailed,
         aspect = (currentAspectRatio ?: videoAspectRatio).let { if ((rotation / 90f).toInt() % 2 != 0) 1f / it else it },
-        onPlayPause = { if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play() })
+        onPlayPause = { if (exoPlayer.isPlaying) exoPlayer.pause() else resume() })
 
     // The picture's transform (rotation, the aspect's stretch, pinch-zoom), for the video and the
     // ASS subtitles placed on it.
@@ -652,8 +673,6 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
 
     // Swipes (PhoneGestures.kt): sideways seeks, applied on release; up and down set the
     // brightness (left half) or the volume (right half) as the finger moves.
-    var swipeIndicator by remember { mutableStateOf<SwipeIndicator?>(null) }
-    var swipeReleased by remember { mutableIntStateOf(0) } // hides the indicator a moment after
     var swipeSeekFrom by remember { mutableLongStateOf(0L) }
     var swipeSeekDelta by remember { mutableFloatStateOf(0f) }
     var swipeLevel by remember { mutableFloatStateOf(0f) }
@@ -663,7 +682,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     // The player's brightness lasts while it's open; leaving it gives the system's back.
     DisposableEffect(activity) { onDispose { activity?.setPlayerBrightness(null) } }
     LaunchedEffect(swipeReleased) {
-        if (swipeReleased > 0) { delay(700); swipeIndicator = null }
+        if (swipeReleased > 0) { delay(indicatorMs); swipeIndicator = null; indicatorMs = 700L }
     }
 
     Box(
@@ -720,7 +739,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         val target = swipeSeekTarget()
                         if (!cancelled && duration > 0 && target != swipeSeekFrom) swipeSeek(target)
                         swipeIndicator = null
-                    } else swipeReleased++
+                    } else { indicatorMs = 700L; swipeReleased++ }
                 }
             )
             .clickable(
@@ -986,7 +1005,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         }
                         IconButton(onClick = { 
                             lastInteractionTime = System.currentTimeMillis()
-                            if (isPlaying) exoPlayer.pause() else exoPlayer.play() 
+                            if (isPlaying) exoPlayer.pause() else resume()
                         }) {
                             Icon(
                                 if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,

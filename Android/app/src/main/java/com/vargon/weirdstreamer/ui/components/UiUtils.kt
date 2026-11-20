@@ -206,3 +206,6 @@ fun usernameKeyboard(imeAction: androidx.compose.ui.text.input.ImeAction = andro
 fun secretKeyboard(imeAction: androidx.compose.ui.text.input.ImeAction = androidx.compose.ui.text.input.ImeAction.Default) =
     androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
         autoCorrectEnabled = false, imeAction = imeAction)
+
+// Settings' "Rewind 5 seconds when resuming": how far an unpause goes back first.
+const val RESUME_REWIND_S = 5L

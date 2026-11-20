@@ -445,6 +445,12 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   `ServerClient.swift` (also the HLS relay's and downloads' sessions, and `OriginalLoader.swift`: AVPlayer
   checks certificates itself, so an HTTPS original or Live Photo clip has a `wsoriginal://` URL
   whose byte ranges the app fetches through TrustPolicy).
+- **Rewind when resuming** (Settings, off by default; TV, phone, iPhone and web): unpausing goes back up
+  to 5 seconds first (`resume()` in `VideoPlayer.kt` and `PhoneVideoPlayer.kt`, `togglePlay(rewinding:)`
+  on the iPhone, `resumePlayback()` in `app.js`), shown as a manual skip back is: the TV's "-5", the
+  phone's and iPhone's swipe-seek indicator ("−0:05 / 12:29"), and the same text over the web player
+  (`showSeekIndicator`). Every unpause must go through it. The web keeps it per browser (Settings ›
+  My Account › Playback, `localStorage.rewindOnResume`).
 - **Progress and resume:** players report position every 5s, on pause and at the end. The
   server decides "watched" (the last 2 minutes of videos 20 minutes or longer; the end of shorter
   ones). `MediaViewModel.playVideo(path, fromStart)` sets `playbackStartMs`.

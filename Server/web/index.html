@@ -243,6 +243,11 @@
 
                 <div id="account-tab" class="settings-tab-content">
                     <p id="account-signed-in" class="account-signed-in"></p>
+                    <div class="settings-group">
+                        <h3>Playback</h3>
+                        <p class="settings-hint">Kept in this browser.</p>
+                        <label class="settings-check"><input type="checkbox" id="rewind-on-resume"> Rewind 5 seconds when resuming</label>
+                    </div>
                     <div class="settings-group app-download-group" hidden>
                         <h3>Android App</h3>
                         <p class="app-download-text">For Android phones and TVs. Download it on the device, then open it to install (allow installs from your browser if asked).</p>
@@ -282,6 +287,8 @@
                 <div id="player-pgs-box" class="player-pgs-box" hidden><canvas id="player-pgs"></canvas></div>
                 <!-- ASS/SSA subtitles: libass (JASSUB) draws into a canvas made here when they're on -->
                 <div id="player-ass-box" class="player-pgs-box" hidden></div>
+                <!-- A rewind when resuming: "−0:05 / 0:41", as the phone shows a seek -->
+                <div id="player-seek-indicator" class="player-seek-indicator" hidden></div>
                 <div id="player-failed" class="player-failed" hidden>Can't play this video<span id="player-failed-reason" class="player-failed-reason"></span></div>
                 <!-- Skip Intro / Skip Credits, over the picture's lower right -->
                 <button type="button" id="player-skip" class="btn player-skip" hidden></button>

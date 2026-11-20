@@ -361,12 +361,19 @@ final class PlaybackModel {
 
     // MARK: Controls
 
-    func togglePlay() {
+    /// Plays a paused video, or pauses. With `rewinding` (Settings' "Rewind 5 seconds when
+    /// resuming"), playing goes back up to 5 seconds first; returns how far, for the indicator.
+    @discardableResult
+    func togglePlay(rewinding: Bool = false) -> Double {
         if player.timeControlStatus == .paused {
+            let back = rewinding ? min(resumeRewindSeconds, position.rounded(.down)) : 0
+            if back > 0 { seek(to: position - back) }
             player.rate = speeds[speedIndex]
+            return back
         } else {
             player.pause()
             report(paused: true, ended: false)
+            return 0
         }
     }
 
@@ -831,6 +838,16 @@ struct PlayerView: View {
         }
     }
 
+    /// Resuming went back `back` seconds: shown as a swipe back would be, a moment longer.
+    private func showResumeRewind(_ back: Double) {
+        swipeIndicator = .seek(seekGestureText(delta: -back, target: playback.position))
+        swipeHide?.cancel()
+        swipeHide = Task {
+            try? await Task.sleep(for: .milliseconds(1500))
+            if !Task.isCancelled { swipeIndicator = nil }
+        }
+    }
+
     /// A panel opened from the controls (the Disc sheet): they stay up a while longer.
     private func holdControls() { lastInteraction = Date().addingTimeInterval(25) }
 
@@ -906,7 +923,8 @@ struct PlayerView: View {
                             playback.seek(to: playback.position - 10); touch()
                         }
                         PlayerIcon(system: playback.isPlaying ? "pause.fill" : "play.fill", label: "Play/Pause", size: 56) {
-                            playback.togglePlay(); touch()
+                            let back = playback.togglePlay(rewinding: model.rewindOnResume); touch()
+                            if back > 0 { showResumeRewind(back) }
                         }
                         PlayerIcon(system: "goforward.30", label: "+30s", size: 40) {
                             playback.seek(to: playback.position + 30); touch()
@@ -1316,6 +1334,9 @@ struct PlayerPanel<Content: View>: View {
 
 /// What a one-finger swipe on the player's picture does.
 enum PlayerSwipe { case seek, brightness, volume }
+
+/// Settings' "Rewind 5 seconds when resuming": how far resuming goes back first.
+let resumeRewindSeconds: Double = 5
 
 /// What a swipe shows while it lasts: the seek's text, or the brightness or volume level.
 enum SwipeIndicator: Equatable {

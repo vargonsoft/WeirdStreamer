@@ -113,6 +113,20 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
 
             item {
                 ListItem(
+                    headlineContent = { Text("Rewind 5 seconds when resuming") },
+                    supportingContent = { Text("Playing a paused video goes back 5 seconds first") },
+                    trailingContent = {
+                        Switch(
+                            checked = viewModel.rewindOnResume,
+                            onCheckedChange = { viewModel.updateRewindOnResume(it) }
+                        )
+                    },
+                    modifier = Modifier.clickable { viewModel.updateRewindOnResume(!viewModel.rewindOnResume) }
+                )
+            }
+
+            item {
+                ListItem(
                     headlineContent = { Text("Clear Thumbnail Cache") },
                     trailingContent = { Icon(Icons.Default.DeleteSweep, contentDescription = null) },
                     modifier = Modifier.clickable { viewModel.clearThumbnailCache(context) }

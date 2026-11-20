@@ -139,6 +139,11 @@ struct AppTab: View {
                                              set: { model.setSetting("show_hidden_files", $0 ? "true" : "false") }))
                         .labelsHidden()
                 }
+                SettingsRow(title: "Rewind 5 seconds when resuming") {
+                    Toggle("", isOn: Binding(get: { model.rewindOnResume },
+                                             set: { model.setSetting("rewind_on_resume", $0 ? "true" : "false") }))
+                        .labelsHidden()
+                }
                 Button {
                     ImageCache.shared.removeAllObjects()
                     URLCache.shared.removeAllCachedResponses()

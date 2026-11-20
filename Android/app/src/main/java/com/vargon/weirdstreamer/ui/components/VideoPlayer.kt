@@ -660,6 +660,17 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         if (showControlsAfter) updateInteraction()
     }
 
+    // Unpausing: with Settings' "Rewind 5 seconds when resuming", go back up to 5 seconds first,
+    // shown like a skip back.
+    fun resume() {
+        if (viewModel.rewindOnResume && !exoPlayer.playWhenReady) { // paused, not just buffering
+            val at = if (!isSmbSource && !currentTranscodeMode.isOriginal) exoPlayer.currentPosition + transcodeStartOffset else exoPlayer.currentPosition
+            val back = minOf(RESUME_REWIND_S, at / 1000).toInt()
+            if (back > 0) performSkip(-back, false)
+        }
+        exoPlayer.play(); isPaused = false
+    }
+
     fun seekToTrickplayTarget(target: Long) {
         if (!isSmbSource && !currentTranscodeMode.isOriginal) {
             restartStream(target)
@@ -734,10 +745,10 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     when (event.key) {
                         Key.MediaPlayPause -> {
                             updateInteraction()
-                            if (isPlaying) { exoPlayer.pause(); isPaused = true } else { exoPlayer.play(); isPaused = false }
+                            if (isPlaying) { exoPlayer.pause(); isPaused = true } else resume()
                             true
                         }
-                        Key.MediaPlay -> { updateInteraction(); if (!isPlaying) exoPlayer.play(); true }
+                        Key.MediaPlay -> { updateInteraction(); if (!isPlaying) resume(); true }
                         Key.MediaPause -> { updateInteraction(); if (isPlaying) { exoPlayer.pause(); isPaused = true }; true }
                         Key.MediaFastForward -> { performSkip(30, true); true }
                         Key.MediaRewind -> { performSkip(-30, true); true }
@@ -814,7 +825,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                                 true
                             } else {
                                 if (showControls) updateInteraction()
-                                if (isPlaying) { exoPlayer.pause(); isPaused = true } else { exoPlayer.play(); isPaused = false }
+                                if (isPlaying) { exoPlayer.pause(); isPaused = true } else resume()
                                 true
                             }
                             }

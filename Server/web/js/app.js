@@ -81,6 +81,7 @@ function init() {
     // Apply saved theme
     applyTheme();
     setupSubtitleStyle();
+    setupPlaybackSettings();
     
     if (api.isAuthenticated()) {
         showMainScreen();
@@ -2399,8 +2400,46 @@ function setIcon(id, name, label) {
 }
 
 function togglePlay() {
-    if (videoPlayer.paused) videoPlayer.play().catch(() => {});
+    if (videoPlayer.paused) resumePlayback();
     else videoPlayer.pause();
+}
+
+// Settings › My Account › Playback, "Rewind 5 seconds when resuming" (this browser's; off by
+// default): playing a paused video goes back up to 5 seconds first, as on the apps.
+const RESUME_REWIND_S = 5;
+
+function rewindOnResume() {
+    try { return localStorage.getItem('rewindOnResume') === 'true'; } catch (e) { return false; }
+}
+
+function setupPlaybackSettings() {
+    const box = document.getElementById('rewind-on-resume');
+    box.checked = rewindOnResume();
+    box.onchange = () => {
+        try { localStorage.setItem('rewindOnResume', String(box.checked)); } catch (e) { /* not kept */ }
+    };
+}
+
+function resumePlayback() {
+    if (rewindOnResume() && (player || disc) && !videoPlayer.ended) {
+        const at = playerPosition();
+        const back = Math.min(RESUME_REWIND_S, Math.floor(at));
+        if (back > 0) {
+            seekTo(at - back);
+            showSeekIndicator(-back, at - back);
+        }
+    }
+    videoPlayer.play().catch(() => {});
+}
+
+// A seek's "−0:05 / 0:41" over the picture for a moment: the jump, then where it lands.
+let seekIndicatorTimer = null;
+function showSeekIndicator(delta, target) {
+    const el = document.getElementById('player-seek-indicator');
+    el.textContent = `${delta < 0 ? '−' : '+'}${clock(Math.abs(delta))} / ${clock(target)}`;
+    el.hidden = false;
+    clearTimeout(seekIndicatorTimer);
+    seekIndicatorTimer = setTimeout(() => { el.hidden = true; }, 1500);
 }
 
 function updatePlayerButtons() {

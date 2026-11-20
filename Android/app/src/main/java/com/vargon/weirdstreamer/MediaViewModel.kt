@@ -146,6 +146,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var showHiddenFiles by mutableStateOf(credentialManager.getShowHiddenFiles())
+    var rewindOnResume by mutableStateOf(credentialManager.getRewindOnResume())
         private set
 
     var contentFilter by mutableStateOf(ContentFilter.ALL)
@@ -636,6 +637,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getSelection(parentPath: String): String? {
         return selectionMap[parentPath]
+    }
+
+    fun updateRewindOnResume(on: Boolean) {
+        rewindOnResume = on
+        credentialManager.setRewindOnResume(on)
     }
 
     fun updateShowHiddenFiles(show: Boolean) {

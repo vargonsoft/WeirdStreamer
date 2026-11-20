@@ -50,6 +50,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     val themesTabFocus = remember { FocusRequester() }
     val currentThemeFocus = remember { FocusRequester() }
     val hiddenFilesFocus = remember { FocusRequester() }
+    val rewindFocus = remember { FocusRequester() }
     val clearCacheFocus = remember { FocusRequester() }
     val updateFocus = remember { FocusRequester() }
     val subtitleStyleFocus = remember { FocusRequester() }
@@ -155,7 +156,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         .focusRequester(hiddenFilesFocus)
                         .focusProperties {
                             up = generalTabFocus
-                            down = clearCacheFocus
+                            down = rewindFocus
                         }
                 ) {
                     Row(
@@ -164,6 +165,42 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     ) {
                         Text("Show hidden files", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                         Switch(checked = viewModel.showHiddenFiles, onCheckedChange = null, colors = tvSwitchColors())
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Rewind on resume
+            item {
+                Surface(
+                    onClick = { viewModel.updateRewindOnResume(!viewModel.rewindOnResume) },
+                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        pressedContainerColor = Color.Transparent
+                    ),
+                    border = ClickableSurfaceDefaults.border(
+                        focusedBorder = Border(
+                            border = BorderStroke(2.dp, tvFocusBorderColor()),
+                            inset = 0.dp,
+                            shape = MaterialTheme.shapes.small
+                        )
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(rewindFocus)
+                        .focusProperties {
+                            up = hiddenFilesFocus
+                            down = clearCacheFocus
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Rewind 5 seconds when resuming", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Switch(checked = viewModel.rewindOnResume, onCheckedChange = null, colors = tvSwitchColors())
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -190,7 +227,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         .fillMaxWidth()
                         .focusRequester(clearCacheFocus)
                         .focusProperties {
-                            up = hiddenFilesFocus
+                            up = rewindFocus
                             down = subtitleStyleFocus
                         }
                 ) {
