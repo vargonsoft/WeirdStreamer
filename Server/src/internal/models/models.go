@@ -41,6 +41,8 @@ type Playback struct {
 	Duration  float64 `json:"duration,omitempty"`
 	Watched   bool    `json:"watched"`
 	UpdatedAt int64   `json:"updated_at"`
+	// On Continue Watching or taken off it (database.ContinueListed, ContinueRemoved; 0 neither)
+	ContinueState int `json:"-"`
 }
 
 // ItemMetadata is the TMDB summary attached to browse results. Image fields are server URLs.

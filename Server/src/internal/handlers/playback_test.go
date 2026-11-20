@@ -141,3 +141,76 @@ func TestPlaybackFinishedAtCredits(t *testing.T) {
 		t.Error("no credits detected: the two-minute rule applies")
 	}
 }
+
+// Continue Watching keeps a video it lists whatever position is reported later; a video only
+// opened (under minResumePosition) never goes on it, and one taken off it stays off.
+func TestContinueListing(t *testing.T) {
+	dir := t.TempDir()
+	db, err := database.New(filepath.Join(dir, "users.db"), filepath.Join(dir, "media.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	const user = 1
+	t0 := time.Now()
+	save := func(path string, pos float64, at int, finished bool) {
+		if err := db.SavePlayback(user, path, database.PlaybackUpdate{Position: pos, Duration: 3600, Finished: finished,
+			UpdatedAt: t0.Add(time.Duration(at) * time.Minute)}, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listed := func() map[string]bool {
+		paths, _, err := db.RecentPlayback(user, minResumePosition, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]bool{}
+		for _, p := range paths {
+			out[p] = true
+		}
+		return out
+	}
+	state := func(path string) int {
+		pb, err := db.UserPlayback(user)
+		if err != nil || pb[path] == nil {
+			t.Fatalf("no record for %s", path)
+		}
+		return pb[path].ContinueState
+	}
+
+	save("8838533a/opened.mp4", 4, 0, false) // only opened: not listed
+	save("8838533a/resumed.mp4", 300, 0, false)
+	save("8838533a/resumed.mp4", 3, 1, false) // listed, then left near the start
+	if l := listed(); l["8838533a/opened.mp4"] || !l["8838533a/resumed.mp4"] {
+		t.Fatalf("listed %v", l)
+	}
+	// Finishing takes it off (the next episode takes over); rewatching lists it again.
+	save("8838533a/resumed.mp4", 3590, 2, true)
+	if listed()["8838533a/resumed.mp4"] || state("8838533a/resumed.mp4") != 0 {
+		t.Fatal("finished video still listed")
+	}
+	save("8838533a/resumed.mp4", 60, 3, false)
+	save("8838533a/resumed.mp4", 2, 4, false)
+	if !listed()["8838533a/resumed.mp4"] {
+		t.Fatal("rewatched video not listed")
+	}
+	// Taken off the list: off until it's played past minResumePosition again.
+	if err := db.ClearPosition(user, "8838533a/resumed.mp4"); err != nil {
+		t.Fatal(err)
+	}
+	save("8838533a/resumed.mp4", 5, 5, false)
+	if listed()["8838533a/resumed.mp4"] || state("8838533a/resumed.mp4") != database.ContinueRemoved {
+		t.Fatal("removed video back on the list")
+	}
+	save("8838533a/resumed.mp4", 40, 6, false)
+	if !listed()["8838533a/resumed.mp4"] {
+		t.Fatal("video played again not listed")
+	}
+	// An up-next episode removed is marked so; one only opened isn't.
+	if err := db.ClearPosition(user, "8838533a/next.mp4"); err != nil {
+		t.Fatal(err)
+	}
+	if state("8838533a/next.mp4") != database.ContinueRemoved || state("8838533a/opened.mp4") != 0 {
+		t.Fatal("removal not told apart from opening")
+	}
+}

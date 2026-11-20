@@ -453,7 +453,10 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   My Account › Playback, `localStorage.rewindOnResume`).
 - **Progress and resume:** players report position every 5s, on pause and at the end. The
   server decides "watched" (the last 2 minutes of videos 20 minutes or longer; the end of shorter
-  ones). `MediaViewModel.playVideo(path, fromStart)` sets `playbackStartMs`.
+  ones). A video goes on Continue Watching once played 10 seconds in (`database.ListedPosition`)
+  and then stays at any position (the playback row's `continue_state`: listed), until it's finished or
+  removed; removing sets it to removed, which also keeps an up-next episode off. An up-next episode
+  only opened (under 10 s) is still up next. `MediaViewModel.playVideo(path, fromStart)` sets `playbackStartMs`.
 
 ## Notes on the TODO items
 

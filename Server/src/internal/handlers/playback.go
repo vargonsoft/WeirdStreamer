@@ -25,8 +25,8 @@ const (
 	// only when played to the end.
 	longVideo        = 20 * 60
 	creditsAllowance = 2 * 60
-	// Positions before this aren't worth resuming from.
-	minResumePosition = 10
+	// A video goes on Continue Watching from this far in (and then stays at any position).
+	minResumePosition = database.ListedPosition
 	continueLimit     = 30
 )
 
@@ -352,7 +352,8 @@ func (h *MediaHandler) ContinueWatching(w http.ResponseWriter, r *http.Request) 
 			break
 		}
 		p := pb[path]
-		finished := (p.Watched && p.Position < minResumePosition) || (p.Duration > 0 && playbackFinished(p.Position, p.Duration, h.creditsStart(path), false))
+		// (A watched video being watched again is listed: in progress, not finished.)
+		finished := (p.Watched && p.Position < minResumePosition && p.ContinueState != database.ContinueListed) || (p.Duration > 0 && playbackFinished(p.Position, p.Duration, h.creditsStart(path), false))
 		lib, found := libraryForPath(path)
 		// A library's own page asks for its list (only); the home screen blends all libraries.
 		if !found || !lib.OnContinueWatching(only != "") || (only != "" && lib.ID != only) || !h.canAccessLibrary(r, lib) {
@@ -378,11 +379,12 @@ func (h *MediaHandler) ContinueWatching(w http.ResponseWriter, r *http.Request) 
 				all = byDiskPath(all)
 			}
 			// The first episode after this one not watched yet (marking a season watched leaves
-			// its episodes in any order). One taken off the list since is left off.
+			// its episodes in any order). One taken off the list since is left off; one only
+			// opened since (under minResumePosition) is still up next.
 			next := ""
 			for _, candidate := range h.episodesAfter(r.Context(), lib, show, path) {
 				if np := all[candidate]; np == nil || !np.Watched {
-					if np == nil || np.UpdatedAt < p.UpdatedAt || np.Position >= minResumePosition {
+					if np == nil || np.UpdatedAt < p.UpdatedAt || np.ContinueState != database.ContinueRemoved {
 						next = candidate
 					}
 					break
