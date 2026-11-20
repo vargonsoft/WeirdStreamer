@@ -464,7 +464,13 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadContinueWatching() {
-        val repo = serverRepository ?: return
+        // SMB shares have neither row: not the last server's either.
+        val repo = serverRepository ?: run {
+            continueItems = emptyList()
+            newRows = emptyList()
+            continueReady = true
+            return
+        }
         // A library's own page (Library view, or its top folder) shows its own library's; the
         // server's front page shows every library's.
         val atLibraryRoot = repo.getParentPath(currentPath) == ""
@@ -968,6 +974,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         lastServer = address
         currentRepository = null // the account's own libraries, not the last account's
         continueItems = emptyList() // nor the last account's videos in progress
+        newRows = emptyList() // or recent additions
         selectionMap.clear() // a fresh start, on Continue Watching
         val ready = if (provider.typeId == "SMB") credentialManager.useSmbAccount(address, username)
             else credentialManager.useServerAccount(address, username)
