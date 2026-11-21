@@ -7,6 +7,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/models"
 )
 
 func TestPlaybackFinished(t *testing.T) {
@@ -212,5 +213,51 @@ func TestContinueListing(t *testing.T) {
 	}
 	if state("8838533a/next.mp4") != database.ContinueRemoved || state("8838533a/opened.mp4") != 0 {
 		t.Fatal("removal not told apart from opening")
+	}
+}
+
+// Credits found (or moved) after a viewing ended past their start make it watched; one that
+// ended before them stays in progress.
+func TestCreditsFoundLaterFinishViewing(t *testing.T) {
+	dir := t.TempDir()
+	db, err := database.New(filepath.Join(dir, "users.db"), filepath.Join(dir, "media.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	const film = "778c4d5a/Film/Film.mkv"
+	now := time.Now()
+	db.SavePlayback(1, film, database.PlaybackUpdate{Position: 6568, Duration: 6790, UpdatedAt: now}, false)
+	db.SavePlayback(2, film, database.PlaybackUpdate{Position: 3000, Duration: 6790, UpdatedAt: now}, false)
+	// First found as only the last seconds of black: nothing finished.
+	if err := db.SaveAnalysis(film, nil, &database.Span{Start: 6736, End: 6790}, 2); err != nil {
+		t.Fatal(err)
+	}
+	get := func(user int64) *models.Playback {
+		pb, err := db.UserPlayback(user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pb[film]
+	}
+	if p := get(1); p.Watched || p.Position != 6568 {
+		t.Fatalf("finished before the credits: %+v", p)
+	}
+	// Found again where they really start.
+	if err := db.SaveAnalysis(film, nil, &database.Span{Start: 6447, End: 6790}, 3); err != nil {
+		t.Fatal(err)
+	}
+	if p := get(1); !p.Watched || p.Position != 0 || p.ContinueState != 0 {
+		t.Fatalf("viewing past the credits not finished: %+v", p)
+	}
+	if p := get(2); p.Watched || p.Position != 3000 {
+		t.Fatalf("viewing before the credits changed: %+v", p)
+	}
+	// Credits marked by hand do the same.
+	if err := db.SetManualSegment(film, "credits", &database.Span{Start: 2900, End: 6790}); err != nil {
+		t.Fatal(err)
+	}
+	if p := get(2); !p.Watched {
+		t.Fatalf("manual credits didn't finish the viewing: %+v", p)
 	}
 }

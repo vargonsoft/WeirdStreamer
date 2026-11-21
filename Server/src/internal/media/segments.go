@@ -154,14 +154,14 @@ const (
 )
 
 // BlackCredits looks for credits on black in the last `span` seconds of a file: the start of the
-// stretch, reaching to near the end, where the picture is nearly all black (white text on black
-// still is). Two frames a second are looked at: a still black screen has few keyframes, so
+// stretch, reaching to near the end, where the picture is mostly black: at least 80% (a crawl of
+// white text on black is 85-90%, a title card on black more). Two frames a second are looked at: a still black screen has few keyframes, so
 // keyframes alone miss most of it.
 func BlackCredits(ctx context.Context, path string, duration, span float64) (*Segment, error) {
 	from := max(0, duration-span)
 	cmd := backgroundCommand(ctx, "ffmpeg", "-hide_banner", "-nostdin", "-skip_frame", "noref",
 		"-ss", fmt.Sprintf("%.3f", from), "-i", path, "-an", "-sn", "-map", "0:v:0",
-		"-vf", "fps=2,scale=320:-2,blackdetect=d=0:pic_th=0.90:pix_th=0.03", "-f", "null", "-")
+		"-vf", "fps=2,scale=320:-2,blackdetect=d=0:pic_th=0.80:pix_th=0.03", "-f", "null", "-")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

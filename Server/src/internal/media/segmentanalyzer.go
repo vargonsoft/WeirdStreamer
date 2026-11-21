@@ -17,10 +17,11 @@ import (
 
 // SegmentAnalysisVersion is stored with each video's segments; raising it has videos looked at
 // again (after the analysis improves). Videos a version from creditsRecheckFrom on looked at are
-// looked at again only when an episode or movie has no credits: version 2 finds shorter credits
-// on black.
+// looked at again only when an episode or movie has no credits, or credits found on black:
+// version 2 finds shorter credits on black, version 3 credits a little less black (a crawl of
+// white text, which only the last seconds of black were taken for).
 const (
-	SegmentAnalysisVersion = 2
+	SegmentAnalysisVersion = 3
 	creditsRecheckFrom     = 1
 )
 
@@ -136,7 +137,7 @@ func (a *SegmentAnalyzer) stale(path string, done database.Analysis) bool {
 		return true
 	}
 	kind, _ := a.LibraryKind(path)
-	return !done.Credits && (kind == "tv" || kind == "movie")
+	return (!done.Credits || done.CreditsSource == "black") && (kind == "tv" || kind == "movie")
 }
 
 // plural: "1 folder", "3 folders".

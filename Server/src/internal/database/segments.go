@@ -111,6 +111,28 @@ func (db *DB) SaveAnalysis(path string, intro, credits *Span, version int) error
 			credits_source = CASE WHEN segments.credits_source = 'manual' THEN 'manual' ELSE excluded.credits_source END,
 			analyzed = excluded.analyzed`,
 		path, is, ie, isrc, cs, ce, csrc, version)
+	if err != nil {
+		return err
+	}
+	return db.finishPastCredits(path)
+}
+
+// finishPastCredits marks a video watched for those whose viewing stopped at or after its credits
+// began, now that its credits are known (found later, or moved): watched means leaving after the
+// credits start, wherever they turn out to be.
+func (db *DB) finishPastCredits(path string) error {
+	var start sql.NullFloat64
+	if err := db.mediaConn.QueryRow(`SELECT credits_start FROM segments WHERE path = ?`, path).Scan(&start); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if !start.Valid || start.Float64 <= 0 {
+		return nil
+	}
+	_, err := db.userConn.Exec(`UPDATE playback SET position = 0, watched = 1, continue_state = 0
+		WHERE path = ? AND position > 0 AND position >= ?`, path, start.Float64)
 	return err
 }
 
@@ -131,20 +153,24 @@ func (db *DB) SetManualSegment(path, kind string, span *Span) error {
 		INSERT INTO segments (path, `+kind+`_start, `+kind+`_end, `+kind+`_source) VALUES (?, ?, ?, 'manual')
 		ON CONFLICT(path) DO UPDATE SET `+kind+`_start = excluded.`+kind+`_start, `+kind+`_end = excluded.`+kind+`_end, `+kind+`_source = 'manual'`,
 		path, span.Start, span.End)
-	return err
+	if err != nil || kind != "credits" {
+		return err
+	}
+	return db.finishPastCredits(path)
 }
 
-// Analysis is how far the analyzer got with a video: the version that last looked, and whether
-// the video has credits.
+// Analysis is how far the analyzer got with a video: the version that last looked, whether the
+// video has credits, and how they were found ("black", "chapters", "manual"…).
 type Analysis struct {
-	Version int
-	Credits bool
+	Version       int
+	Credits       bool
+	CreditsSource string
 }
 
 // AnalyzedVersions returns, for each video in the segments table (by client path), how far the
 // analyzer got.
 func (db *DB) AnalyzedVersions() (map[string]Analysis, error) {
-	rows, err := db.mediaConn.Query(`SELECT path, analyzed, credits_start IS NOT NULL FROM segments`)
+	rows, err := db.mediaConn.Query(`SELECT path, analyzed, credits_start IS NOT NULL, credits_source FROM segments`)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +179,7 @@ func (db *DB) AnalyzedVersions() (map[string]Analysis, error) {
 	for rows.Next() {
 		var path string
 		var a Analysis
-		if err := rows.Scan(&path, &a.Version, &a.Credits); err != nil {
+		if err := rows.Scan(&path, &a.Version, &a.Credits, &a.CreditsSource); err != nil {
 			return nil, err
 		}
 		out[path] = a
