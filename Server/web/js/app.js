@@ -700,7 +700,7 @@ function createDirectoryElement(dir) {
 function folderPreview(url, name) {
     const box = document.createElement('div');
     box.className = 'folder-preview';
-    box.innerHTML = iconSvg('folder').replace('<svg ', '<svg class="folder-preview-shape" preserveAspectRatio="none" ');
+    box.innerHTML = iconSvg('folder').replace('<svg ', '<svg class="folder-preview-shape" ');
     const img = document.createElement('img');
     img.className = 'folder-preview-image';
     img.src = api.getThumbnailUrl(url);

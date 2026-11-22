@@ -22,21 +22,25 @@ struct FolderShape: Shape {
     }
 }
 
-/// A folder icon with `url` (the server's pick: the folder's thumbnail.png, else a photo or video from
-/// inside it) in its front, as Android's FolderPreview and the web's folder cards.
+/// A folder's icon, square and as large as its frame allows, with `url` (the server's pick: the
+/// folder's thumbnail.png, else a photo or video from inside it) in its front; nil draws the plain
+/// folder at the same size. As Android's FolderPreview and the web's folder cards.
 struct FolderPreview: View {
-    let url: String
+    let url: String?
 
     var body: some View {
         GeometryReader { g in
             ZStack(alignment: .topLeading) {
                 FolderShape().fill(Palette.accent)
-                RemoteImage(relative: url)
-                    .frame(width: g.size.width * 0.72, height: g.size.height * 0.44)
-                    .clipShape(RoundedRectangle(cornerRadius: min(g.size.width, g.size.height) * 0.04))
-                    .offset(x: g.size.width * 0.14, y: g.size.height * 0.34)
+                if let url {
+                    RemoteImage(relative: url)
+                        .frame(width: g.size.width * 0.72, height: g.size.height * 0.44)
+                        .clipShape(RoundedRectangle(cornerRadius: min(g.size.width, g.size.height) * 0.04))
+                        .offset(x: g.size.width * 0.14, y: g.size.height * 0.34)
+                }
             }
         }
+        .aspectRatio(1, contentMode: .fit)
     }
 }
 

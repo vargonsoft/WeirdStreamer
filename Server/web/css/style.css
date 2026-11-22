@@ -2864,16 +2864,22 @@ header h1 {
     opacity: 0.85;
 }
 
+/* Folders, plain or with a picture, are the same square icon at the same size. */
 .folder-thumbnail .placeholder-icon {
     color: #f0b429; /* folders stay folder-coloured */
+    width: auto;
+    height: 88%;
+    aspect-ratio: 1;
+    max-width: none;
+    max-height: none;
+    opacity: 1;
 }
 
-/* A folder with a picture from inside it: the folder shape stretched over the card, the picture
-   in its front (the icon's body is x 2-22, y 6-20 of 24). */
+/* A folder with a picture from inside it in its front (the icon's body is x 2-22, y 6-20 of 24). */
 .folder-preview {
     position: relative;
-    width: 88%;
     height: 88%;
+    aspect-ratio: 1;
     color: #f0b429;
 }
 

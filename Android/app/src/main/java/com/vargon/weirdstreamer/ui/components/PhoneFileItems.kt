@@ -101,7 +101,7 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                 val folderThumbnail = if (item.isDirectory && !isParent) item.thumbnailUrl else null
                 val thumbnailUrl = if (item.isDirectory) null else item.thumbnailUrl ?: if (!isParent) item.path else null
 
-                if (folderThumbnail != null) {
+                if (item.isDirectory && !isParent) {
                     FolderPreview(folderThumbnail, getPhoneIconTint(Icons.Default.Folder), Modifier.fillMaxSize(), requestSize = 80)
                 } else if (!isImageLoaded) {
                     Icon(
@@ -195,8 +195,8 @@ fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: ()
                 val folderThumbnail = if (item.isDirectory && !isParent) item.thumbnailUrl else null
                 val thumbnailUrl = if (item.isDirectory) null else item.thumbnailUrl ?: if (!isParent) item.path else null
 
-                if (folderThumbnail != null) {
-                    FolderPreview(folderThumbnail, getPhoneIconTint(Icons.Default.Folder), Modifier.fillMaxSize(0.9f), requestSize = 200)
+                if (item.isDirectory && !isParent) {
+                    FolderPreview(folderThumbnail, getPhoneIconTint(Icons.Default.Folder), Modifier.fillMaxHeight(0.9f), requestSize = 200)
                 } else if (!isImageLoaded) {
                     val isLargeIcon = item.isDirectory || isParent
                     Icon(

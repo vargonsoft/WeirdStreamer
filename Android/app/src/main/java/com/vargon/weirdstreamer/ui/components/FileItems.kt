@@ -122,8 +122,8 @@ fun TileItem(
             // The icon sits under the thumbnail, which covers it once loaded; no load-state
             // bookkeeping (and no extra recomposition) needed.
             val isLargeIcon = icon == Icons.Default.Folder || icon == Icons.Default.Dns || icon == Icons.Default.SubdirectoryArrowLeft
-            if (folderThumbnail != null) {
-                FolderPreview(folderThumbnail, getIconTint(Icons.Default.Folder), Modifier.fillMaxHeight(0.92f).aspectRatio(1.35f))
+            if (icon == Icons.Default.Folder) {
+                FolderPreview(folderThumbnail, getIconTint(Icons.Default.Folder), Modifier.fillMaxHeight(0.92f))
             } else {
                 Icon(
                     icon,
@@ -237,7 +237,7 @@ fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modi
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-            if (item.isDirectory && !isParent && thumbnailUrl != null) {
+            if (item.isDirectory && !isParent) {
                 FolderPreview(thumbnailUrl, getIconTint(Icons.Default.Folder), Modifier.fillMaxSize(), requestSize = 96)
             } else {
                 Icon(

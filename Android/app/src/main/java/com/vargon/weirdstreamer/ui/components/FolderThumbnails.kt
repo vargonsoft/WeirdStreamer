@@ -2,6 +2,7 @@ package com.vargon.weirdstreamer.ui.components
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -26,19 +27,20 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 
 /**
- * A folder icon stretched over [modifier]'s box, with [url] (the server's pick: the folder's
- * thumbnail.png, else a photo or video from inside it) in its front. The icon's body is x 2-22 and
- * y 6-20 of its 24 units, so the picture sits in its lower part, as on the web.
+ * A folder's icon, square and as large as [modifier]'s box allows, with [url] (the server's pick:
+ * the folder's thumbnail.png, else a photo or video from inside it) in its front; null draws the
+ * plain folder at the same size. The icon's body is x 2-22 and y 6-20 of its 24 units, so the
+ * picture sits in its lower part, as on the web.
  */
 @Composable
-fun FolderPreview(url: String, tint: Color, modifier: Modifier = Modifier, requestSize: Int? = null) {
+fun FolderPreview(url: String?, tint: Color, modifier: Modifier = Modifier, requestSize: Int? = null) {
     val context = LocalContext.current
     val request = remember(url, requestSize) {
         ImageRequest.Builder(context).data(url).crossfade(false)
             .apply { requestSize?.let { size(it) } }
             .build()
     }
-    BoxWithConstraints(modifier) {
+    BoxWithConstraints(modifier.aspectRatio(1f)) {
         Image(
             rememberVectorPainter(Icons.Default.Folder),
             contentDescription = null,
@@ -46,7 +48,7 @@ fun FolderPreview(url: String, tint: Color, modifier: Modifier = Modifier, reque
             contentScale = ContentScale.FillBounds,
             colorFilter = ColorFilter.tint(tint)
         )
-        AsyncImage(
+        if (url != null) AsyncImage(
             model = request,
             contentDescription = null,
             contentScale = ContentScale.Crop,

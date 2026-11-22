@@ -57,12 +57,12 @@ struct FileRow: View {
         Button { open(model, item) } label: {
             HStack(spacing: 16) {
                 ZStack {
-                    if item.isDirectory, let preview = item.thumbnailUrl {
-                        FolderPreview(url: preview)
+                    if item.isDirectory {
+                        FolderPreview(url: item.thumbnailUrl)
                     } else {
-                        Image(systemName: item.isDirectory ? "folder.fill" : (item.isImage ? "photo" : (item.isPdf ? "doc.richtext" : "doc.text")))
+                        Image(systemName: item.isImage ? "photo" : (item.isPdf ? "doc.richtext" : "doc.text"))
                             .font(.system(size: 20))
-                            .foregroundStyle(item.isDirectory ? Palette.accent : Palette.text)
+                            .foregroundStyle(Palette.text)
                     }
                     if !item.isDirectory {
                         RemoteImage(relative: item.thumbnailUrl).frame(width: 40, height: 40)
@@ -105,12 +105,12 @@ struct FileTile: View {
         Button { open(model, item) } label: {
             VStack(spacing: 4) {
                 ZStack {
-                    if item.isDirectory, let preview = item.thumbnailUrl {
-                        FolderPreview(url: preview).padding(4)
+                    if item.isDirectory {
+                        FolderPreview(url: item.thumbnailUrl).padding(4)
                     } else {
-                        Image(systemName: item.isDirectory ? "folder.fill" : "doc.text")
-                            .font(.system(size: item.isDirectory ? 40 : 28))
-                            .foregroundStyle(item.isDirectory ? Palette.accent : Palette.text)
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 28))
+                            .foregroundStyle(Palette.text)
                     }
                     if !item.isDirectory {
                         RemoteImage(relative: item.thumbnailUrl).clipShape(RoundedRectangle(cornerRadius: 8))
