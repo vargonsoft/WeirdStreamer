@@ -62,7 +62,8 @@ fun HostTileItem(host: String, modifier: Modifier = Modifier, onClick: () -> Uni
 
 @Composable
 fun FileTileItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modifier,
-                 playback: com.vargon.weirdstreamer.api.models.Playback? = null, onClick: () -> Unit) {
+                 playback: com.vargon.weirdstreamer.api.models.Playback? = null, filmstrip: Boolean = false,
+                 onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
     val subtitle = remember(item.isDirectory, isParent, item.size, item.duration) {
         if (!item.isDirectory && !isParent) fileInfoText(item.size, item.duration) else null
@@ -78,7 +79,10 @@ fun FileTileItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Mod
         },
         modifier = modifier,
         onClick = onClick,
-        thumbnailUrl = thumbnailUrl,
+        // A folder's picture goes inside its icon.
+        thumbnailUrl = if (item.isDirectory) null else thumbnailUrl,
+        folderThumbnail = if (item.isDirectory && !isParent) thumbnailUrl else null,
+        filmstrip = filmstrip,
         rotateIcon = if (isParent) 90f else 0f,
         progress = playback?.fraction(item.duration) ?: 0f,
         watched = playback?.watched == true
@@ -92,6 +96,8 @@ fun TileItem(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     thumbnailUrl: String? = null,
+    folderThumbnail: String? = null,
+    filmstrip: Boolean = false,
     rotateIcon: Float = 0f,
     progress: Float = 0f,
     watched: Boolean = false,
@@ -116,15 +122,19 @@ fun TileItem(
             // The icon sits under the thumbnail, which covers it once loaded; no load-state
             // bookkeeping (and no extra recomposition) needed.
             val isLargeIcon = icon == Icons.Default.Folder || icon == Icons.Default.Dns || icon == Icons.Default.SubdirectoryArrowLeft
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize(if (isLargeIcon) 0.8f else 0.5f)
-                    .padding(if (isLargeIcon) 4.dp else 10.dp)
-                    .graphicsLayer(rotationZ = rotateIcon),
-                tint = getIconTint(icon)
-            )
+            if (folderThumbnail != null) {
+                FolderPreview(folderThumbnail, getIconTint(Icons.Default.Folder), Modifier.fillMaxHeight(0.92f).aspectRatio(1.35f))
+            } else {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize(if (isLargeIcon) 0.8f else 0.5f)
+                        .padding(if (isLargeIcon) 4.dp else 10.dp)
+                        .graphicsLayer(rotationZ = rotateIcon),
+                    tint = getIconTint(icon)
+                )
+            }
 
             if (thumbnailUrl != null) {
                 ThumbnailImage(
@@ -132,6 +142,7 @@ fun TileItem(
                     modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.small)
                 )
             }
+            if (filmstrip) Box(Modifier.matchParentSize().clip(MaterialTheme.shapes.small).filmstrip())
             WatchProgressOverlay(progress, watched, barHeight = 5.dp, badgeSize = 28.dp)
         }
         Spacer(modifier = Modifier.height(12.dp))
@@ -206,7 +217,8 @@ private fun MultiLineTileItemPreview() {
 
 @Composable
 fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modifier,
-                playback: com.vargon.weirdstreamer.api.models.Playback? = null, onClick: () -> Unit) {
+                playback: com.vargon.weirdstreamer.api.models.Playback? = null, filmstrip: Boolean = false,
+                onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
     val infoText = remember(item.isDirectory, isParent, item.size, item.duration) {
         if (!item.isDirectory && !isParent) fileInfoText(item.size, item.duration) else null
@@ -225,20 +237,25 @@ fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modi
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(32.dp)
-                    .graphicsLayer(rotationZ = if (isParent) 90f else 0f),
-                tint = getIconTint(icon)
-            )
-            if (thumbnailUrl != null) {
-                ThumbnailImage(
-                    url = thumbnailUrl,
-                    modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall)
+            if (item.isDirectory && !isParent && thumbnailUrl != null) {
+                FolderPreview(thumbnailUrl, getIconTint(Icons.Default.Folder), Modifier.fillMaxSize(), requestSize = 96)
+            } else {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .graphicsLayer(rotationZ = if (isParent) 90f else 0f),
+                    tint = getIconTint(icon)
                 )
+                if (thumbnailUrl != null) {
+                    ThumbnailImage(
+                        url = thumbnailUrl,
+                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall)
+                    )
+                }
             }
+            if (filmstrip) Box(Modifier.matchParentSize().clip(MaterialTheme.shapes.extraSmall).filmstrip())
             PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 16.dp)
         }
         Spacer(modifier = Modifier.width(16.dp))

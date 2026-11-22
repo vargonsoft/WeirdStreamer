@@ -406,6 +406,13 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   Terminal Green and Terminal Amber (phosphor on black, all text monospace: `ThemePalette.monospace`), dark themes built like
   Ember with the same colors on each (a `ThemePalette` and a `:root[data-theme=…]` block). Android also has
   Light and Auto Light/Dark (`AppTheme`). Themes are picked from a grid of tiles drawn in each theme's colors (its background, box, accent and button), applied and kept at once: the web's Settings, Themes tab (`renderThemePicker`, colors read from the theme's CSS block), and the Themes tab of the TV and phone Settings (`ThemeTiles.kt`: `TvThemePicker`, 3 rows of 7, and `PhoneThemePicker`). The TV's Settings has two tabs, General and Themes, beside its title.
+- **Folder pictures:** a folder without a TMDB poster shows a picture inside its folder icon (web
+  `folderPreview`, Android `FolderPreview` in `FolderThumbnails.kt`, iPhone `FolderPreview`): the
+  browse response's `thumbnail_url` on each folder (`folderImage`, `database.FolderPreview`): its own
+  `thumbnail.png` if the media database has it, else the thumbnail nearest the folder among the first 200
+  under it in path order (its own files before its subfolders'). A library (the root listing) shows
+  only the `thumbnail.png` directly in its folder. In folder views (only there) videos have filmstrip
+  edges, telling them from photos (`.filmstrip` on the web, `Modifier.filmstrip()`, `Filmstrip`).
 - **Recently Added:** `showNewAdditions` (`config.yml` or Settings) is `on`, `libraryOnly` or `off`
   (the default): the last 10 videos show under Continue Watching on the library's own Library and
   top folder pages ("Recently Added", `GET /api/library/new?lib=`), and with `on` also on the home

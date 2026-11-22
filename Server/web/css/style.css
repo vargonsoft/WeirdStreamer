@@ -2868,6 +2868,54 @@ header h1 {
     color: #f0b429; /* folders stay folder-coloured */
 }
 
+/* A folder with a picture from inside it: the folder shape stretched over the card, the picture
+   in its front (the icon's body is x 2-22, y 6-20 of 24). */
+.folder-preview {
+    position: relative;
+    width: 88%;
+    height: 88%;
+    color: #f0b429;
+}
+
+.folder-preview-shape {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.media-thumbnail img.folder-preview-image {
+    position: absolute;
+    left: 14%;
+    right: 14%;
+    top: 34%;
+    bottom: 22%;
+    width: 72%;
+    height: 44%;
+    object-fit: cover;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* Videos in a folder: sprocket strips down both edges, telling them from photos */
+.media-thumbnail.filmstrip::before,
+.media-thumbnail.filmstrip::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 14px;
+    z-index: 1;
+    pointer-events: none;
+    background-color: #111;
+    background-image: linear-gradient(to bottom, rgba(240, 236, 228, 0.85) 0 7px, transparent 7px 14px);
+    background-size: 6px 14px;
+    background-position: center 4px;
+    background-repeat: repeat-y;
+}
+
+.media-thumbnail.filmstrip::before { left: 0; }
+.media-thumbnail.filmstrip::after { right: 0; }
+
 /* Playback progress: a line along the bottom of a thumbnail or poster, a check once watched */
 .watch-progress {
     position: absolute;

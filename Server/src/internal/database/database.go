@@ -353,6 +353,25 @@ func (db *DB) GetMediaItem(path string) (*models.MediaItem, error) {
 	return item, nil
 }
 
+// FolderPreview gives the thumbnail of a photo or video under the folder dir (a disk path) to
+// show on it: of the first 200 with thumbnails in path order, the one nearest the folder (its own
+// files before its subfolders'), or "" when it has none yet.
+func (db *DB) FolderPreview(dir string) string {
+	dir = strings.TrimSuffix(dir, "/")
+	var url string
+	err := db.mediaConn.QueryRow(`
+		SELECT thumbnail_url FROM (
+			SELECT path, thumbnail_url FROM media_items
+			WHERE path > ? AND path < ? AND thumbnail_url != '' AND type IN ('image', 'video')
+			ORDER BY path LIMIT 200)
+		ORDER BY length(path) - length(replace(path, '/', '')), path LIMIT 1
+	`, dir+"/", dir+"0").Scan(&url) // '0' follows '/': the range is everything under dir
+	if err != nil {
+		return ""
+	}
+	return url
+}
+
 func (db *DB) GetMediaItemByID(id int64) (*models.MediaItem, error) {
 	item := &models.MediaItem{}
 	err := db.mediaConn.QueryRow(`

@@ -98,9 +98,12 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
         leadingContent = {
             Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                 var isImageLoaded by remember { mutableStateOf(false) }
-                val thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && !isParent) item.path else null
+                val folderThumbnail = if (item.isDirectory && !isParent) item.thumbnailUrl else null
+                val thumbnailUrl = if (item.isDirectory) null else item.thumbnailUrl ?: if (!isParent) item.path else null
 
-                if (!isImageLoaded) {
+                if (folderThumbnail != null) {
+                    FolderPreview(folderThumbnail, getPhoneIconTint(Icons.Default.Folder), Modifier.fillMaxSize(), requestSize = 80)
+                } else if (!isImageLoaded) {
                     Icon(
                         icon,
                         contentDescription = null,
@@ -125,6 +128,10 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                         },
                         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp))
                     )
+                }
+                // Videos have filmstrip edges, telling them from photos in the same folder.
+                if (!item.isDirectory && !isParent && viewModel.isVideo(item)) {
+                    Box(Modifier.matchParentSize().clip(RoundedCornerShape(4.dp)).filmstrip())
                 }
                 PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 14.dp)
                 // Long press: Play from start, and Mark watched (server videos).
@@ -185,9 +192,12 @@ fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: ()
         ) {
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 var isImageLoaded by remember { mutableStateOf(false) }
-                val thumbnailUrl = item.thumbnailUrl ?: if (!item.isDirectory && !isParent) item.path else null
+                val folderThumbnail = if (item.isDirectory && !isParent) item.thumbnailUrl else null
+                val thumbnailUrl = if (item.isDirectory) null else item.thumbnailUrl ?: if (!isParent) item.path else null
 
-                if (!isImageLoaded) {
+                if (folderThumbnail != null) {
+                    FolderPreview(folderThumbnail, getPhoneIconTint(Icons.Default.Folder), Modifier.fillMaxSize(0.9f), requestSize = 200)
+                } else if (!isImageLoaded) {
                     val isLargeIcon = item.isDirectory || isParent
                     Icon(
                         icon,
@@ -213,6 +223,9 @@ fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: ()
                         },
                         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
                     )
+                }
+                if (!item.isDirectory && !isParent && viewModel.isVideo(item)) {
+                    Box(Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)).filmstrip())
                 }
                 PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 18.dp)
             }

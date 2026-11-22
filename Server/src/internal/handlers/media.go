@@ -496,9 +496,10 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 					dirPath = filepath.Base(mediaPath.Path)
 				}
 				dirs = append(dirs, models.Directory{
-					Path:        dirPath,
-					Name:        displayName,
-					LibraryType: mediaPath.Type,
+					Path:         dirPath,
+					Name:         displayName,
+					LibraryType:  mediaPath.Type,
+					ThumbnailURL: h.folderImage(mediaPath.Path, true),
 				})
 			}
 		}
@@ -651,6 +652,14 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			h.meta.Annotate(targetLib, absTarget, dirs, items)
 		}
 	}
+	for i := range dirs {
+		if dirs[i].Metadata == nil || dirs[i].Metadata.Poster == "" {
+			dir := filepath.Join(targetPath, dirs[i].Name)
+			if dirs[i].ThumbnailURL = h.folderImage(dir, false); dirs[i].ThumbnailURL == "" {
+				dirs[i].ThumbnailURL = h.db.FolderPreview(dir)
+			}
+		}
+	}
 	annotateItems(items, h.requestPlayback(r))
 	clientItems(items)
 
@@ -663,6 +672,24 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+// folderImage gives the thumbnail of the thumbnail.png directly in dir (a disk path), the picture
+// chosen for the folder, or "" while there's none (it's queued if it's missing). look also checks
+// the disk for one the scan hasn't seen yet (a library's: subfolders aren't checked, one stat each).
+func (h *MediaHandler) folderImage(dir string, look bool) string {
+	path := filepath.Join(dir, "thumbnail.png")
+	if item, err := h.db.GetMediaItem(path); err == nil {
+		if item.ThumbnailURL == "" {
+			h.thumbnails.add(*item, false)
+		}
+		return item.ThumbnailURL
+	}
+	if info, err := os.Stat(path); look && err == nil && info.Mode().IsRegular() {
+		h.thumbnails.add(models.MediaItem{Path: path, Name: "thumbnail.png", Type: "image",
+			Size: info.Size(), MimeType: media.MimeType(".png")}, true)
+	}
+	return ""
 }
 
 // ScanMedia godoc

@@ -613,7 +613,8 @@ function renderMedia() {
     });
     
     state.mediaItems.forEach(item => {
-        const element = createMediaElement(item);
+        // Videos have filmstrip edges here, telling them from photos in the same folder.
+        const element = createMediaElement(item, { filmstrip: true });
         mediaGrid.appendChild(element);
     });
     // Folders' letters, then files' (the names as shown).
@@ -662,6 +663,8 @@ function createDirectoryElement(dir) {
             img.remove();
         };
         thumbnail.appendChild(img);
+    } else if (dir.thumbnail_url) {
+        thumbnail.appendChild(folderPreview(dir.thumbnail_url, dir.name));
     } else {
         thumbnail.innerHTML = placeholderIcon('folder');
     }
@@ -693,13 +696,28 @@ function createDirectoryElement(dir) {
 
 // [cornerButtons]: Fix and the watched/restart buttons over the thumbnail (a title page's files
 // have them in a row underneath instead).
-function createMediaElement(item, { cornerButtons = true } = {}) {
+// A folder icon with a photo or video from inside it (the server's pick) in its front.
+function folderPreview(url, name) {
+    const box = document.createElement('div');
+    box.className = 'folder-preview';
+    box.innerHTML = iconSvg('folder').replace('<svg ', '<svg class="folder-preview-shape" preserveAspectRatio="none" ');
+    const img = document.createElement('img');
+    img.className = 'folder-preview-image';
+    img.src = api.getThumbnailUrl(url);
+    img.alt = name;
+    img.onerror = () => box.outerHTML = placeholderIcon('folder');
+    box.appendChild(img);
+    return box;
+}
+
+function createMediaElement(item, { cornerButtons = true, filmstrip = false } = {}) {
     const div = document.createElement('div');
     div.className = 'media-item';
     div.onclick = () => handleMediaClick(item);
     
     const thumbnail = document.createElement('div');
     thumbnail.className = 'media-thumbnail';
+    if (filmstrip && item.type === 'video') thumbnail.classList.add('filmstrip');
     
     if (item.thumbnail_url) {
         const img = document.createElement('img');

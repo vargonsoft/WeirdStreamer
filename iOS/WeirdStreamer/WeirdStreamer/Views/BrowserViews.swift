@@ -57,13 +57,19 @@ struct FileRow: View {
         Button { open(model, item) } label: {
             HStack(spacing: 16) {
                 ZStack {
-                    Image(systemName: item.isDirectory ? "folder.fill" : (item.isImage ? "photo" : (item.isPdf ? "doc.richtext" : "doc.text")))
-                        .font(.system(size: 20))
-                        .foregroundStyle(item.isDirectory ? Palette.accent : Palette.text)
+                    if item.isDirectory, let preview = item.thumbnailUrl {
+                        FolderPreview(url: preview)
+                    } else {
+                        Image(systemName: item.isDirectory ? "folder.fill" : (item.isImage ? "photo" : (item.isPdf ? "doc.richtext" : "doc.text")))
+                            .font(.system(size: 20))
+                            .foregroundStyle(item.isDirectory ? Palette.accent : Palette.text)
+                    }
                     if !item.isDirectory {
                         RemoteImage(relative: item.thumbnailUrl).frame(width: 40, height: 40)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
+                    // Videos have filmstrip edges, telling them from photos in the same folder.
+                    if item.isVideo { Filmstrip().clipShape(RoundedRectangle(cornerRadius: 4)) }
                     WatchProgressOverlay(fraction: item.playback?.fraction(fallbackDuration: item.duration) ?? 0,
                                          watched: item.playback?.watched == true, barHeight: 3, badgeSize: 14)
                 }
@@ -99,12 +105,17 @@ struct FileTile: View {
         Button { open(model, item) } label: {
             VStack(spacing: 4) {
                 ZStack {
-                    Image(systemName: item.isDirectory ? "folder.fill" : "doc.text")
-                        .font(.system(size: item.isDirectory ? 40 : 28))
-                        .foregroundStyle(item.isDirectory ? Palette.accent : Palette.text)
+                    if item.isDirectory, let preview = item.thumbnailUrl {
+                        FolderPreview(url: preview).padding(4)
+                    } else {
+                        Image(systemName: item.isDirectory ? "folder.fill" : "doc.text")
+                            .font(.system(size: item.isDirectory ? 40 : 28))
+                            .foregroundStyle(item.isDirectory ? Palette.accent : Palette.text)
+                    }
                     if !item.isDirectory {
                         RemoteImage(relative: item.thumbnailUrl).clipShape(RoundedRectangle(cornerRadius: 8))
                     }
+                    if item.isVideo { Filmstrip().clipShape(RoundedRectangle(cornerRadius: 8)) }
                     WatchProgressOverlay(fraction: item.playback?.fraction(fallbackDuration: item.duration) ?? 0,
                                          watched: item.playback?.watched == true, barHeight: 3, badgeSize: 18)
                 }

@@ -146,7 +146,10 @@ data class Directory(
     @SerializedName("items") val items: List<MediaItem>? = null,
     @SerializedName("dirs") val dirs: List<Directory>? = null,
     // "movie" or "tv" for libraries with a type (on root entries and on browse responses)
-    @SerializedName("library_type") val libraryType: String? = null
+    @SerializedName("library_type") val libraryType: String? = null,
+    // A picture to show inside the folder's icon (folders without a poster): its thumbnail.png, else
+    // a photo's or video's from inside it
+    @SerializedName("thumbnail_url") val thumbnailUrl: String? = null
 )
 
 // Library view: a movie or TV library as titles instead of folders

@@ -366,7 +366,7 @@ final class AppModel {
                 } else if let type = directory.libraryType, let lib = currentLibraryId {
                     libraryTypes[lib] = type
                 }
-                entries = (directory.dirs ?? []).map { FileEntry(name: $0.name, path: $0.id, isDirectory: true) }
+                entries = (directory.dirs ?? []).map { FileEntry(name: $0.name, path: $0.id, isDirectory: true, thumbnailUrl: $0.thumbnailUrl) }
                     .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                     + (directory.items ?? []).map {
                         FileEntry(name: $0.name, path: $0.path, isDirectory: false, type: $0.type, size: $0.size ?? 0,

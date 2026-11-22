@@ -59,8 +59,11 @@ final class Directory: Decodable {
     let items: [MediaItem]?
     let dirs: [Directory]?
     let libraryType: String?
+    /// A picture for inside the folder's icon (folders without a poster): its thumbnail.png, else a
+    /// photo's or video's from inside it.
+    let thumbnailUrl: String?
 
-    enum CodingKeys: String, CodingKey { case id = "path", name, items, dirs, libraryType }
+    enum CodingKeys: String, CodingKey { case id = "path", name, items, dirs, libraryType, thumbnailUrl }
 }
 
 struct ContinueMetadata: Decodable, Hashable {

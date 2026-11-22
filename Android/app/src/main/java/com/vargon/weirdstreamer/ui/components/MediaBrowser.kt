@@ -635,10 +635,12 @@ private fun FileBrowserScreen(
         ) { item, modifier ->
             val thumbnailUrl = remember(item.path, item.thumbnailUrl) { viewModel.thumbnailSourceFor(item) }
             val playback = if (item.isDirectory) null else viewModel.playbackFor(item.path)
+            // Videos have filmstrip edges, telling them from photos in the same folder.
+            val filmstrip = !item.isDirectory && viewModel.isVideo(item)
             if (isGridView) {
-                FileTileItem(item, thumbnailUrl, modifier = modifier, playback = playback) { onItemClick(item) }
+                FileTileItem(item, thumbnailUrl, modifier = modifier, playback = playback, filmstrip = filmstrip) { onItemClick(item) }
             } else {
-                FileRowItem(item, thumbnailUrl, modifier = modifier, playback = playback) { onItemClick(item) }
+                FileRowItem(item, thumbnailUrl, modifier = modifier, playback = playback, filmstrip = filmstrip) { onItemClick(item) }
             }
         }
     }
