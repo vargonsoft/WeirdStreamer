@@ -76,6 +76,11 @@ struct ServerSettingsTab: View {
     @State private var host = ""
     @State private var http2 = false
     @State private var pauseJobs = false
+    // Hardware encoding: what the server found, and the choice ("" the CPU, else "id|device")
+    @State private var hardware: HardwareReport? = HardwareReport(checking: true, gpus: nil, encoders: nil, problems: nil)
+    @State private var hwEncoder = ""
+    @State private var hwDevice = ""
+    @State private var hwMax = "0"
     @State private var tmdbToken = ""
     @State private var openSubtitlesKey = ""
     @State private var language = ""
@@ -100,6 +105,7 @@ struct ServerSettingsTab: View {
             }
         }
         .task { await load() }
+        .task { await loadHardware() }
         .overlay { renameDialog }
         .overlay { removeDialog }
     }
@@ -107,6 +113,12 @@ struct ServerSettingsTab: View {
     private var form: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
+                SectionTitle(text: "Media paths")
+                ForEach($paths) { $p in libraryCard($p) }
+                PhoneTextField(label: "New path on the server", text: $newPath, placeholder: "/path/to/media")
+                OptionMenu(label: "Library type", options: libraryTypes, value: $newType)
+                Button { addPath() } label: { Label("Add path", systemImage: "plus") }.buttonStyle(PhoneSecondaryButtonStyle())
+
                 SectionTitle(text: "Groups")
                 Text("Each user is in one group, and each library lists the groups that can see it. New users start in the default group (the star makes another one the default). Changes here apply right away.")
                     .font(.caption).foregroundStyle(Palette.muted)
@@ -132,12 +144,6 @@ struct ServerSettingsTab: View {
                 }
                 MessageLine(message: groupMessage)
 
-                SectionTitle(text: "Media paths")
-                ForEach($paths) { $p in libraryCard($p) }
-                PhoneTextField(label: "New path on the server", text: $newPath, placeholder: "/path/to/media")
-                OptionMenu(label: "Library type", options: libraryTypes, value: $newType)
-                Button { addPath() } label: { Label("Add path", systemImage: "plus") }.buttonStyle(PhoneSecondaryButtonStyle())
-
                 SectionTitle(text: "Server")
                 PhoneTextField(label: "Name", text: $serverName, hint: "Shown in the apps' server lists")
                 HStack(spacing: 12) {
@@ -153,6 +159,7 @@ struct ServerSettingsTab: View {
                         Text("Finding intros and credits, trickplay frames, cleanup").font(.caption).foregroundStyle(Palette.muted)
                     }
                 }
+                hardwareSection
 
                 SectionTitle(text: "Metadata")
                 Text("TMDB is used for libraries with a Movies or TV Shows type.").font(.caption).foregroundStyle(Palette.muted)
@@ -258,7 +265,43 @@ struct ServerSettingsTab: View {
         }
     }
 
+    /// Hardware encoding: the server's GPUs, and the encoder and limit when one works.
+    @ViewBuilder private var hardwareSection: some View {
+        Text("Hardware encoding").font(.subheadline.weight(.semibold)).padding(.top, 8)
+        if let report = hardware {
+            Text(HardwareSettings.status(report)).font(.caption).foregroundStyle(Palette.muted)
+            if !report.checking, !(report.encoders ?? []).isEmpty {
+                let chosen = HardwareSettings.chosenKey(report, encoder: hwEncoder, device: hwDevice)
+                OptionMenu(label: "Encode transcodes on",
+                           options: HardwareSettings.choices(report, encoder: hwEncoder, device: hwDevice),
+                           value: Binding(get: { chosen }, set: { value in
+                               let parts = value.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+                               hwEncoder = parts.first ?? ""
+                               hwDevice = value.isEmpty ? "" : (parts.count > 1 ? parts[1] : "")
+                           }))
+                if !chosen.isEmpty {
+                    PhoneTextField(label: "Transcodes on the GPU at once", text: $hwMax, keyboard: .numberPad,
+                                   hint: "0: no limit; the rest use the CPU")
+                }
+                Text(HardwareSettings.note(report, chosen: chosen)).font(.caption).foregroundStyle(Palette.muted)
+            }
+        } else {
+            Text("Couldn't read the server's graphics hardware.").font(.caption).foregroundStyle(Palette.muted)
+        }
+    }
+
     // MARK: Actions
+
+    /// The server tries its GPUs' encoders at startup: asked again until that's done.
+    private func loadHardware() async {
+        guard let client = model.client else { return }
+        while true {
+            let report = try? await client.get("/api/admin/hardware") as HardwareReport
+            hardware = report
+            guard let report, report.checking else { return }
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
 
     private func load() async {
         guard let client = model.client else { return }
@@ -288,6 +331,9 @@ struct ServerSettingsTab: View {
         let streaming = c["streaming"] as? [String: Any]
         http2 = streaming?["enableHTTP2"] as? Bool ?? false
         pauseJobs = streaming?["pauseJobsWhileStreaming"] as? Bool ?? false
+        hwEncoder = streaming?["hardwareEncoder"] as? String ?? ""
+        hwDevice = streaming?["hardwareDevice"] as? String ?? ""
+        hwMax = "\(streaming?["hardwareMaxTranscodes"] as? Int ?? 0)"
         let metadata = c["metadata"] as? [String: Any]
         tmdbToken = metadata?["tmdbAccessToken"] as? String ?? ""
         openSubtitlesKey = metadata?["openSubtitlesApiKey"] as? String ?? ""
@@ -319,6 +365,11 @@ struct ServerSettingsTab: View {
         var streaming = c["streaming"] as? [String: Any] ?? [:]
         streaming["enableHTTP2"] = http2
         streaming["pauseJobsWhileStreaming"] = pauseJobs
+        if !(hardware?.encoders ?? []).isEmpty {
+            streaming["hardwareEncoder"] = hwEncoder
+            streaming["hardwareDevice"] = hwEncoder.isEmpty ? "" : hwDevice
+            streaming["hardwareMaxTranscodes"] = max(0, Int(hwMax.filter(\.isNumber)) ?? 0)
+        }
         c["streaming"] = streaming
         var metadata = c["metadata"] as? [String: Any] ?? [:]
         metadata["tmdbAccessToken"] = tmdbToken.trimmingCharacters(in: .whitespaces)

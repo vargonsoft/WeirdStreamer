@@ -2785,8 +2785,8 @@ async function showSettings(pushHistory = true) {
     if (usersTabBtn) usersTabBtn.style.display = user.is_admin ? 'block' : 'none';
     if (jobsTabBtn) jobsTabBtn.style.display = user.is_admin ? 'block' : 'none';
 
-    // Set active tab to 'account' if not admin
-    if (!user.is_admin) {
+    // Settings opens on My Account (openLibrarySettings then goes to Server & Media)
+    {
         document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
         const accountTabBtn = document.querySelector('.settings-tab[data-tab="account"]');
@@ -2808,6 +2808,7 @@ async function showSettings(pushHistory = true) {
             document.getElementById('server-host').value = config.server.host;
             document.getElementById('enable-http2').checked = config.streaming.enableHTTP2;
             document.getElementById('pause-jobs-streaming').checked = !!config.streaming.pauseJobsWhileStreaming;
+            showHardwareSettings(config.streaming);
             const metadata = config.metadata || {};
             document.getElementById('tmdb-token').value = metadata.tmdbAccessToken || '';
             document.getElementById('opensubtitles-key').value = metadata.openSubtitlesApiKey || '';
@@ -3325,6 +3326,63 @@ function handleRemovePath(index) {
     }
 }
 
+// Settings › Streaming › Hardware encoding: the server's GPUs and the encoders that passed its
+// test encode (GET /api/admin/hardware), and the choice among them. Checked again until the
+// server's startup test is done.
+async function showHardwareSettings(streaming) {
+    const status = document.getElementById('hardware-status');
+    const options = document.getElementById('hardware-options');
+    let report;
+    try {
+        report = await api.request('/api/admin/hardware');
+    } catch (e) {
+        status.textContent = "Couldn't read the server's graphics hardware.";
+        options.hidden = true;
+        return;
+    }
+    if (report.checking) {
+        status.textContent = "Checking the server's graphics hardware…";
+        options.hidden = true;
+        setTimeout(() => {
+            if (document.getElementById('settings-screen').classList.contains('active')) showHardwareSettings(streaming);
+        }, 2000);
+        return;
+    }
+    const gpus = report.gpus.map(g => g.name).join(', ');
+    const problems = (report.problems || []).map(p => `${p.encoder} on ${p.gpu}: ${p.reason}`);
+    if (!report.encoders.length) {
+        status.textContent = (gpus ? `Graphics: ${gpus}. None of it can encode with this server's ffmpeg, so ` :
+            'No graphics hardware was found, so ') + 'transcodes are encoded by the CPU (x264).' +
+            (problems.length ? ' ' + problems.join('. ') + '.' : '');
+        options.hidden = true;
+        return;
+    }
+    status.textContent = `Graphics: ${gpus}.` + (problems.length ? ` Not usable: ${problems.join('. ')}.` : '');
+    const select = document.getElementById('hardware-encoder');
+    select.innerHTML = '';
+    select.appendChild(new Option('The CPU (x264)', ''));
+    report.encoders.forEach(e => select.appendChild(new Option(`${e.name} on ${e.gpu}`, `${e.id}|${e.device || ''}`)));
+    const chosen = `${streaming.hardwareEncoder || ''}|${streaming.hardwareDevice || ''}`;
+    const match = report.encoders.find(e => e.id === streaming.hardwareEncoder && (e.id === 'nvenc' || (e.device || '') === (streaming.hardwareDevice || '')));
+    if (streaming.hardwareEncoder && !match) {
+        select.appendChild(new Option(`${streaming.hardwareEncoder} (not working on this server: the CPU encodes)`, chosen));
+    }
+    select.value = match ? `${match.id}|${match.device || ''}` : (streaming.hardwareEncoder ? chosen : '');
+    document.getElementById('hardware-max').value = streaming.hardwareMaxTranscodes || 0;
+    const note = document.getElementById('hardware-note');
+    const updateNote = () => {
+        const vendor = (report.encoders.find(e => `${e.id}|${e.device || ''}` === select.value) || {}).vendor;
+        note.textContent = !select.value ? 'Transcodes are encoded by the CPU.' :
+            'The GPU encodes the video; decoding, scaling and burned-in subtitles stay on the CPU. ' +
+            'A transcode the GPU fails to start is encoded by the CPU, as are those past the limit. ' +
+            (vendor === 'nvidia' ? "NVIDIA's GeForce cards also limit how many encodes run at once. " : '') +
+            'Downloads are still encoded by the CPU.';
+    };
+    select.onchange = updateNote;
+    updateNote();
+    options.hidden = false;
+}
+
 async function handleSaveSettings() {
     const messageEl = document.getElementById('settings-message');
     
@@ -3335,6 +3393,12 @@ async function handleSaveSettings() {
         state.currentConfig.server.host = document.getElementById('server-host').value;
         state.currentConfig.streaming.enableHTTP2 = document.getElementById('enable-http2').checked;
         state.currentConfig.streaming.pauseJobsWhileStreaming = document.getElementById('pause-jobs-streaming').checked;
+        if (!document.getElementById('hardware-options').hidden) {
+            const [encoder, device] = document.getElementById('hardware-encoder').value.split('|');
+            state.currentConfig.streaming.hardwareEncoder = encoder || '';
+            state.currentConfig.streaming.hardwareDevice = device || '';
+            state.currentConfig.streaming.hardwareMaxTranscodes = Math.max(0, parseInt(document.getElementById('hardware-max').value) || 0);
+        }
         state.currentConfig.metadata = {
             ...(state.currentConfig.metadata || {}),
             tmdbAccessToken: document.getElementById('tmdb-token').value.trim(),

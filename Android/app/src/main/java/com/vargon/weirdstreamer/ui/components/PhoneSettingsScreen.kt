@@ -55,15 +55,13 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
         // The server being browsed can be managed here, as in the web UI's Settings.
         val server = viewModel.connectedServer
         val isAdmin = remember(server?.address, authStateRefresh) { server?.signedInAs()?.second ?: false }
+        // This phone's and the account's tabs first, the server's (admins) after them.
         val tabs = buildList {
             add("App")
+            // Account and Downloads are the account's: there's none until a server's account is open.
+            if (server != null) addAll(listOf("Account", "Downloads"))
             add("Themes")
-            // Downloads are the account's: there's none until a server's account is open.
-            if (server != null) {
-                add("Downloads")
-                if (isAdmin) addAll(listOf("Server", "Users", "Streams", "Jobs"))
-                add("Account")
-            }
+            if (server != null && isAdmin) addAll(listOf("Server", "Users", "Streams", "Jobs"))
         }
         // In the view model: playing a download from its tab replaces this screen, and coming back
         // returns to the tab (by name, as the list changes with the server).
@@ -125,14 +123,6 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                 )
             }
 
-            item {
-                ListItem(
-                    headlineContent = { Text("Clear Thumbnail Cache") },
-                    trailingContent = { Icon(Icons.Default.DeleteSweep, contentDescription = null) },
-                    modifier = Modifier.clickable { viewModel.clearThumbnailCache(context) }
-                )
-            }
-
             // Subtitle style: Android's caption settings, or our own
             item {
                 var showSubtitleStyle by remember { mutableStateOf(false) }
@@ -143,6 +133,14 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                     modifier = Modifier.clickable { showSubtitleStyle = true }
                 )
                 if (showSubtitleStyle) PhoneSubtitleStyleDialog(onDismiss = { showSubtitleStyle = false })
+            }
+
+            item {
+                ListItem(
+                    headlineContent = { Text("Clear thumbnail cache") },
+                    trailingContent = { Icon(Icons.Default.DeleteSweep, contentDescription = null) },
+                    modifier = Modifier.clickable { viewModel.clearThumbnailCache(context) }
+                )
             }
 
             // App update, from the APK a server publishes

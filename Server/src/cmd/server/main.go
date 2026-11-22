@@ -111,6 +111,7 @@ func main() {
 	if config.GlobalConfig.Media.TranscodeCachePath == "" {
 		config.GlobalConfig.Media.TranscodeCachePath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "transcodes")
 	}
+	media.DetectHardware() // GPUs and their encoders, tried in the background for Settings
 	if err := media.SetTranscodeCacheDir(config.GlobalConfig.Media.TranscodeCachePath); err != nil {
 		log.Printf("Warning: could not prepare the transcode cache: %v", err)
 	}
@@ -272,6 +273,7 @@ func main() {
 	api.HandleFunc("/config", configHandler.UpdateConfig).Methods("PUT")
 	api.HandleFunc("/config/folders", configHandler.ListFolders).Methods("GET")
 	api.HandleFunc("/admin/certificate", configHandler.Certificate).Methods("GET")
+	api.HandleFunc("/admin/hardware", configHandler.Hardware).Methods("GET")
 	api.HandleFunc("/groups", configHandler.GetAvailableGroups).Methods("GET")
 	api.HandleFunc("/groups", configHandler.CreateGroup).Methods("POST")
 	api.HandleFunc("/groups/{name}", configHandler.RenameGroup).Methods("PUT")

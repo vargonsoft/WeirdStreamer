@@ -211,6 +211,11 @@ fun ServerSettingsTab(server: ServerRepository) {
     var host by remember { mutableStateOf("") }
     var http2 by remember { mutableStateOf(false) }
     var pauseJobs by remember { mutableStateOf(false) }
+    // Hardware encoding: what the server found, and the config's choice ("" the CPU, else "id|device")
+    var hardware by remember { mutableStateOf<com.vargon.weirdstreamer.api.models.HardwareReport?>(com.vargon.weirdstreamer.api.models.HardwareReport(checking = true)) }
+    var hwEncoder by remember { mutableStateOf("") }
+    var hwDevice by remember { mutableStateOf("") }
+    var hwMax by remember { mutableStateOf("0") }
     var tmdbToken by remember { mutableStateOf("") }
     var openSubtitlesKey by remember { mutableStateOf("") }
     var showSubtitlesKey by remember { mutableStateOf(false) }
@@ -253,6 +258,8 @@ fun ServerSettingsTab(server: ServerRepository) {
             http2 = it.get("enableHTTP2")?.asBoolean ?: false
             pauseJobs = it.get("pauseJobsWhileStreaming")?.asBoolean ?: false
         }
+        hwEncoder = HardwareSettings.encoderOf(c); hwDevice = HardwareSettings.deviceOf(c)
+        hwMax = HardwareSettings.maxOf(c).toString()
         c.getAsJsonObject("metadata")?.let {
             tmdbToken = it.get("tmdbAccessToken")?.asString ?: ""
             openSubtitlesKey = it.get("openSubtitlesApiKey")?.asString ?: ""
@@ -263,6 +270,16 @@ fun ServerSettingsTab(server: ServerRepository) {
     LaunchedEffect(server.address) {
         val (c, err) = attempt { server.api.getConfig() }
         if (c != null && err == null) adopt(c) else loadError = err
+    }
+    // The server tries its GPUs' encoders at startup: asked again until that's done.
+    LaunchedEffect(server.address) {
+        while (true) {
+            val report = runCatching { server.api.getHardware().body() }.getOrNull()
+            hardware = report
+            if (report == null) break
+            if (!report.checking) break
+            kotlinx.coroutines.delay(2000)
+        }
     }
 
     fun buildConfig(): JsonObject? {
@@ -290,6 +307,9 @@ fun ServerSettingsTab(server: ServerRepository) {
             addProperty("enableHTTP2", http2)
             addProperty("pauseJobsWhileStreaming", pauseJobs)
         }
+        if (hardware?.encoders?.isNotEmpty() == true) {
+            HardwareSettings.apply(c, HardwareSettings.key(hwEncoder, hwDevice), hwMax.toIntOrNull() ?: 0)
+        }
         val metadata = c.getAsJsonObject("metadata") ?: JsonObject().also { c.add("metadata", it) }
         metadata.addProperty("tmdbAccessToken", tmdbToken.trim())
         metadata.addProperty("openSubtitlesApiKey", openSubtitlesKey.trim())
@@ -302,55 +322,6 @@ fun ServerSettingsTab(server: ServerRepository) {
         loaded == null && loadError != null -> AdminOnly(loadError!!)
         loaded == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else -> LazyColumn(contentPadding = PaddingValues(16.dp)) {
-            item { SectionTitle("Groups") }
-            item {
-                Text("Each user is in one group, and each library lists the groups that can see it. " +
-                    "New users start in the default group (the star makes another one the default). Changes here apply right away.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            items(groupNames.toList(), key = { "group:$it" }) { g ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(g, style = MaterialTheme.typography.bodyLarge)
-                    if (g == groupNames.firstOrNull()) { // new users start in it
-                        Text("default", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (g != groupNames.firstOrNull()) {
-                        IconButton(onClick = {
-                            scope.launch {
-                                val (list, err) = attempt { server.api.makeDefaultGroup(g) }
-                                if (list != null && err == null) { applyGroups(list); groupMessage = "$g is the default group: new users start in it." to false }
-                                else groupMessage = (err ?: "Couldn't make $g the default") to true
-                            }
-                        }) { Icon(Icons.Default.StarBorder, contentDescription = "Make $g the default group") }
-                    }
-                    IconButton(onClick = { renaming = g }) { Icon(Icons.Default.Edit, contentDescription = "Rename $g") }
-                    IconButton(onClick = {
-                        scope.launch {
-                            val (list, err) = attempt { server.api.deleteGroup(g) }
-                            if (list != null && err == null) { applyGroups(list); groupMessage = "Removed $g." to false }
-                            else groupMessage = (err ?: "Couldn't remove $g") to true // still in use: says by whom
-                        }
-                    }) { Icon(Icons.Default.Delete, contentDescription = "Remove $g", tint = MaterialTheme.colorScheme.error) }
-                }
-            }
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(newGroupName, { newGroupName = it }, label = { Text("New group") }, singleLine = true,
-                        modifier = Modifier.weight(1f))
-                    OutlinedButton(shape = AppButtonShape, onClick = {
-                        val name = newGroupName.trim()
-                        if (name.isEmpty()) return@OutlinedButton
-                        scope.launch {
-                            val (list, err) = attempt { server.api.createGroup(JsonObject().apply { addProperty("name", name) }) }
-                            if (list != null && err == null) { applyGroups(list); newGroupName = ""; groupMessage = "Added $name." to false }
-                            else groupMessage = (err ?: "Couldn't add $name") to true
-                        }
-                    }) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Add") }
-                }
-            }
-            item { Message(groupMessage?.first, groupMessage?.second ?: false) }
             item { SectionTitle("Media paths") }
             itemsIndexed(paths, key = { i, p -> "$i:${p.source.get("id")?.asString}" }) { _, p ->
                 Card(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
@@ -420,6 +391,55 @@ fun ServerSettingsTab(server: ServerRepository) {
                     }
                 }
             }
+            item { SectionTitle("Groups") }
+            item {
+                Text("Each user is in one group, and each library lists the groups that can see it. " +
+                    "New users start in the default group (the star makes another one the default). Changes here apply right away.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(groupNames.toList(), key = { "group:$it" }) { g ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(g, style = MaterialTheme.typography.bodyLarge)
+                    if (g == groupNames.firstOrNull()) { // new users start in it
+                        Text("default", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (g != groupNames.firstOrNull()) {
+                        IconButton(onClick = {
+                            scope.launch {
+                                val (list, err) = attempt { server.api.makeDefaultGroup(g) }
+                                if (list != null && err == null) { applyGroups(list); groupMessage = "$g is the default group: new users start in it." to false }
+                                else groupMessage = (err ?: "Couldn't make $g the default") to true
+                            }
+                        }) { Icon(Icons.Default.StarBorder, contentDescription = "Make $g the default group") }
+                    }
+                    IconButton(onClick = { renaming = g }) { Icon(Icons.Default.Edit, contentDescription = "Rename $g") }
+                    IconButton(onClick = {
+                        scope.launch {
+                            val (list, err) = attempt { server.api.deleteGroup(g) }
+                            if (list != null && err == null) { applyGroups(list); groupMessage = "Removed $g." to false }
+                            else groupMessage = (err ?: "Couldn't remove $g") to true // still in use: says by whom
+                        }
+                    }) { Icon(Icons.Default.Delete, contentDescription = "Remove $g", tint = MaterialTheme.colorScheme.error) }
+                }
+            }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(newGroupName, { newGroupName = it }, label = { Text("New group") }, singleLine = true,
+                        modifier = Modifier.weight(1f))
+                    OutlinedButton(shape = AppButtonShape, onClick = {
+                        val name = newGroupName.trim()
+                        if (name.isEmpty()) return@OutlinedButton
+                        scope.launch {
+                            val (list, err) = attempt { server.api.createGroup(JsonObject().apply { addProperty("name", name) }) }
+                            if (list != null && err == null) { applyGroups(list); newGroupName = ""; groupMessage = "Added $name." to false }
+                            else groupMessage = (err ?: "Couldn't add $name") to true
+                        }
+                    }) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Add") }
+                }
+            }
+            item { Message(groupMessage?.first, groupMessage?.second ?: false) }
             item { SectionTitle("Server") }
             item {
                 OutlinedTextField(serverName, { serverName = it }, label = { Text("Name") }, singleLine = true,
@@ -444,6 +464,30 @@ fun ServerSettingsTab(server: ServerRepository) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked = pauseJobs, onCheckedChange = { pauseJobs = it })
+                }
+                Text("Hardware encoding", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
+                val report = hardware
+                if (report == null) {
+                    Text("Couldn't read the server's graphics hardware.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text(HardwareSettings.status(report), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!report.checking && !report.encoders.isNullOrEmpty()) {
+                        val chosen = HardwareSettings.chosenKey(report, hwEncoder, hwDevice)
+                        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LibraryOptionMenu("Encode transcodes on", HardwareSettings.choices(report, hwEncoder, hwDevice), chosen) {
+                                hwEncoder = it.substringBefore('|', ""); hwDevice = if (it.isEmpty()) "" else it.substringAfter('|', "")
+                            }
+                            if (chosen.isNotEmpty()) {
+                                OutlinedTextField(hwMax, { hwMax = it.filter(Char::isDigit) }, label = { Text("Transcodes on the GPU at once") },
+                                    supportingText = { Text("0: no limit; the rest use the CPU") }, singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                            }
+                            Text(HardwareSettings.note(report, chosen), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
             item { SectionTitle("Metadata") }
@@ -760,7 +804,9 @@ fun AccountTab(server: ServerRepository) {
             Text("${me ?: "Unknown"}${if (isAdmin) " (administrator)" else ""} on ${server.address}",
                 style = MaterialTheme.typography.bodyMedium)
         }
-        item { SectionTitle("Language") }
+        item { SectionTitle("Sign in on a TV") }
+        item { SignInOnTv(server) }
+        item { SectionTitle("Languages") }
         item { AccountLanguages(server) }
         item { SectionTitle("Change password") }
         item {
@@ -786,8 +832,6 @@ fun AccountTab(server: ServerRepository) {
                 }) { Text("Change password") }
             }
         }
-        item { SectionTitle("Sign in on a TV") }
-        item { SignInOnTv(server) }
     }
 }
 

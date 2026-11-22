@@ -511,7 +511,8 @@ func describeTranscode(args []string, startTime, bitrate, resolution, reason str
 			opt[args[i]] = args[i+1]
 		}
 	}
-	video := "H.264 (libx264, preset " + opt["-preset"]
+	info.encoder = "libx264, preset " + opt["-preset"]
+	video := "H.264 (" + info.encoder
 	if crf, ok := opt["-crf"]; ok {
 		video += ", CRF " + crf
 	}

@@ -208,8 +208,8 @@ Everything under `/api` except login needs `Authorization: Bearer <token>` from
 - `GET`/`PUT /api/account`: the signed-in user's audio and subtitle languages and whether subtitles start on; the codecs report's
   `preferred_audio` and `preferred_subtitle` are their tracks in a file.
 - `/api/media/match...`: the Fix dialog (TMDB search, posters, episode mapping).
-- `/api/config` (and `/api/config/folders`, the folder picker), `/api/users`, `/api/admin/streams`:
-  admin only.
+- `/api/config` (and `/api/config/folders`, the folder picker), `/api/users`, `/api/admin/streams`,
+  `/api/admin/hardware` (the GPUs and the transcode encoders that work on them): admin only.
 - `/thumbnails/`, `/trickplay/`, `/artwork/`: images.
 - `GET /health`, and `GET /local/streams` (active streams, from localhost only, with the key the server writes to `local.key` beside its config.yml at each start as `X-Local-Key`).
 

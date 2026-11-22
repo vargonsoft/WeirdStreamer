@@ -2875,6 +2875,18 @@ header h1 {
     opacity: 1;
 }
 
+/* Settings › Streaming: what graphics hardware the server has */
+.hardware-heading {
+    margin: 18px 0 6px;
+}
+
+.hardware-status {
+    font-size: 13px;
+    color: var(--muted-text);
+    margin: 6px 0;
+    line-height: 1.5;
+}
+
 /* A folder with a picture from inside it in its front (the icon's body is x 2-22, y 6-20 of 24). */
 .folder-preview {
     position: relative;

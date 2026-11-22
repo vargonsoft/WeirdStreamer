@@ -3,8 +3,8 @@ import SwiftData
 import UniformTypeIdentifiers
 
 /// Settings, as Android's PhoneSettingsScreen: a bar with Back, then tabs. App has the view
-/// options and the saved servers (with their users, and Remove); Themes picks the look; Account
-/// (with a server open) changes the password. The backup (servers, accounts, progress, view
+/// options and the saved servers (with their users, and Remove); Account (with a server open) signs
+/// a TV in, and has the languages and the password; Themes picks the look. The backup (servers, accounts, progress, view
 /// choices) is this app's own, for an iPhone without iCloud.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
@@ -17,10 +17,11 @@ struct SettingsView: View {
         _tab = State(initialValue: startTab)
     }
 
-    /// As Android: Downloads and Account with a server open; Server, Users, Streams and Jobs for administrators.
+    /// As Android: this phone's and the account's tabs first (Account and Downloads with a server
+    /// open), then the server's for administrators (Server, Users, Streams and Jobs).
     private var tabs: [String] {
         guard model.currentAddress != nil else { return ["App", "Themes"] }
-        return ["App", "Themes", "Downloads"] + (model.isAdmin ? ["Server", "Users", "Streams", "Jobs"] : []) + ["Account"]
+        return ["App", "Account", "Downloads", "Themes"] + (model.isAdmin ? ["Server", "Users", "Streams", "Jobs"] : [])
     }
 
     var body: some View {
@@ -301,7 +302,32 @@ struct AccountTab: View {
                     .font(.subheadline)
 
                 Divider().overlay(Palette.raised).padding(.vertical, 8)
-                Text("Language").font(.subheadline.weight(.medium)).foregroundStyle(Palette.accent)
+                Text("Sign in on a TV").font(.subheadline.weight(.medium)).foregroundStyle(Palette.accent)
+                Text("Enter the code the TV shows, and the TV signs in as \(model.currentAccount ?? "this account").")
+                    .font(.footnote).foregroundStyle(Palette.muted)
+                // PhoneTextField's look, with capitals: its own field turns autocapitalization off.
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("TV code").font(.caption).foregroundStyle(Palette.accent)
+                    TextField("Code on the TV", text: $tvCode)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .font(.body)
+                        .onChange(of: tvCode) { _, value in
+                            let limited = String(value.uppercased().prefix(8))
+                            if limited != value { tvCode = limited }
+                        }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .background(Palette.raised, in: UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4))
+                .overlay(alignment: .bottom) { Rectangle().fill(Palette.accent).frame(height: 1) }
+                if let tvMessage {
+                    Text(tvMessage.0).font(.footnote).foregroundStyle(tvMessage.1 ? Palette.error : Palette.muted)
+                }
+                Button("Sign in on the TV") { Task { await signInTV() } }
+                    .buttonStyle(PhoneButtonStyle())
+                    .disabled(pairing || tvCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                Divider().overlay(Palette.raised).padding(.vertical, 8)
+                Text("Languages").font(.subheadline.weight(.medium)).foregroundStyle(Palette.accent)
                 Text("Videos start with audio in this language when they have it, and with subtitles in this one if subtitles are shown by default. On every device.")
                     .font(.footnote).foregroundStyle(Palette.muted)
                 if let account {
@@ -332,31 +358,6 @@ struct AccountTab: View {
                     .buttonStyle(PhoneButtonStyle())
                     .disabled(working || current.isEmpty || password.isEmpty)
 
-                Divider().overlay(Palette.raised).padding(.vertical, 8)
-                Text("Sign in on a TV").font(.subheadline.weight(.medium)).foregroundStyle(Palette.accent)
-                Text("Enter the code the TV shows, and the TV signs in as \(model.currentAccount ?? "this account").")
-                    .font(.footnote).foregroundStyle(Palette.muted)
-                // PhoneTextField's look, with capitals: its own field turns autocapitalization off.
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("TV code").font(.caption).foregroundStyle(Palette.accent)
-                    TextField("Code on the TV", text: $tvCode)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .font(.body)
-                        .onChange(of: tvCode) { _, value in
-                            let limited = String(value.uppercased().prefix(8))
-                            if limited != value { tvCode = limited }
-                        }
-                }
-                .padding(.horizontal, 16).padding(.vertical, 8)
-                .background(Palette.raised, in: UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4))
-                .overlay(alignment: .bottom) { Rectangle().fill(Palette.accent).frame(height: 1) }
-                if let tvMessage {
-                    Text(tvMessage.0).font(.footnote).foregroundStyle(tvMessage.1 ? Palette.error : Palette.muted)
-                }
-                Button("Sign in on the TV") { Task { await signInTV() } }
-                    .buttonStyle(PhoneButtonStyle())
-                    .disabled(pairing || tvCode.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(16)
         }

@@ -206,3 +206,31 @@ func TestTranscodeOffset(t *testing.T) {
 		}
 	}
 }
+
+// A GPU transcode that fails before making anything runs again with the CPU's arguments.
+func TestHardwareFallback(t *testing.T) {
+	dir := useSpools(t)
+	t.Cleanup(func() { hardwareFailed.Store(0) })
+	s := newTranscodeSpool(filepath.Join(dir, "fallback"), "/m/a.mkv", nil)
+	s.gpu = true
+	if err := s.start([]string{"-c", "echo 'No capable devices found' >&2; exit 1"}, script(1000)); err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	var got bytes.Buffer
+	if err := s.streamFrom(context.Background(), &got, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got.Bytes(), expected(1000)) {
+		t.Errorf("got %d bytes, want the CPU's %d", got.Len(), len(expected(1000)))
+	}
+	s.mu.Lock()
+	gpu := s.gpu
+	s.mu.Unlock()
+	if gpu || hardwareFailed.Load() == 0 {
+		t.Errorf("gpu %v, failure noted %v", gpu, hardwareFailed.Load() != 0)
+	}
+	if transcodes.hardwareRoom() {
+		t.Error("the GPU is tried again right after it failed")
+	}
+}

@@ -85,6 +85,7 @@ type TranscodeInfo struct {
 	Stalled    bool      `json:"stalled"`     // ffmpeg is waiting for the client to read (paused, or far ahead)
 	StartedAt  time.Time `json:"started_at"`
 	lastChange time.Time
+	encoder    string // the encoder's part of Video ("libx264, preset ultrafast")
 }
 
 // StreamSession is a tracked stream; its methods are safe for concurrent use.
@@ -226,6 +227,20 @@ func (s *StreamSession) StartTranscode(info TranscodeInfo) {
 	defer s.t.mu.Unlock()
 	info.StartedAt, info.lastChange = s.t.now(), s.t.now()
 	s.info.Mode, s.info.Transcode = "transcode", &info
+}
+
+// SetVideoEncoder names the encoder the transcode's video really runs on in the Streams page's
+// description ("H.264 (NVIDIA NVENC, CRF 23)"), with the ffmpeg arguments it runs.
+func (s *StreamSession) SetVideoEncoder(label string, args []string) {
+	if s == nil {
+		return
+	}
+	s.t.mu.Lock()
+	defer s.t.mu.Unlock()
+	if t := s.info.Transcode; t != nil && t.encoder != "" {
+		t.Video = strings.Replace(t.Video, t.encoder, label, 1)
+		t.encoder, t.Args = label, args
+	}
 }
 
 var (

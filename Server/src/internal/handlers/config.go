@@ -11,6 +11,7 @@ import (
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/tlscert"
 )
 
@@ -97,6 +98,15 @@ func (h *ConfigHandler) Certificate(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"state": "none"})
 }
 
+// Hardware is the server's GPUs and the hardware encoders that passed their test encode, for
+// admins' Settings: GET /api/admin/hardware. Render nodes are device names, not library paths.
+func (h *ConfigHandler) Hardware(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	respondJSON(w, http.StatusOK, media.Hardware())
+}
+
 // UpdateConfig updates the configuration (admin only)
 func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	// Check if user is admin
@@ -135,8 +145,11 @@ type settingsUpdate struct {
 		Host string `json:"host"`
 	} `json:"server"`
 	Streaming struct {
-		EnableHTTP2             bool `json:"enableHTTP2"`
-		PauseJobsWhileStreaming bool `json:"pauseJobsWhileStreaming"`
+		EnableHTTP2             bool   `json:"enableHTTP2"`
+		PauseJobsWhileStreaming bool   `json:"pauseJobsWhileStreaming"`
+		HardwareEncoder         string `json:"hardwareEncoder"`
+		HardwareDevice          string `json:"hardwareDevice"`
+		HardwareMaxTranscodes   int    `json:"hardwareMaxTranscodes"`
 	} `json:"streaming"`
 	Metadata struct {
 		TMDBAccessToken     string `json:"tmdbAccessToken"`
@@ -162,6 +175,9 @@ func (u settingsUpdate) applyTo(current *config.Config) *config.Config {
 	c.Server.Name, c.Server.Port, c.Server.Host = u.Server.Name, u.Server.Port, u.Server.Host
 	c.Streaming.EnableHTTP2 = u.Streaming.EnableHTTP2
 	c.Streaming.PauseJobsWhileStreaming = u.Streaming.PauseJobsWhileStreaming
+	c.Streaming.HardwareEncoder = u.Streaming.HardwareEncoder
+	c.Streaming.HardwareDevice = u.Streaming.HardwareDevice
+	c.Streaming.HardwareMaxTranscodes = u.Streaming.HardwareMaxTranscodes
 	c.Metadata.TMDBAccessToken = u.Metadata.TMDBAccessToken
 	c.Metadata.OpenSubtitlesAPIKey = u.Metadata.OpenSubtitlesAPIKey
 	c.Metadata.Language = u.Metadata.Language

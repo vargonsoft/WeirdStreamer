@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
@@ -85,7 +86,15 @@ func (c *transcodeCache) attach(filePath string, args []string, offset int64, se
 	}
 	c.made++ // the same stream can be replayed while an older copy of it is still leaving
 	s := newTranscodeSpool(filepath.Join(c.dir, id+"-"+strconv.Itoa(c.made)), filePath, sess)
-	if err := s.start(args); err != nil {
+	// The video encoded on the GPU Settings chose, while it has room, with the CPU's arguments to
+	// fall back on. The name stays the CPU arguments', so reconnects find it either way.
+	run, fallback := args, []string(nil)
+	if hw, device, ok := hardwareChoice(); ok && encodesVideo(args) && c.hardwareRoom() {
+		run, fallback = hardwareArgs(args, hw, device), args
+		s.gpu = true
+		sess.SetVideoEncoder(encoderLabel(run), run)
+	}
+	if err := s.start(run, fallback); err != nil {
 		return nil, err
 	}
 	c.byID[id] = s
@@ -95,6 +104,46 @@ func (c *transcodeCache) attach(filePath string, args []string, offset int64, se
 		go c.reap()
 	}
 	return s, nil
+}
+
+// hardwareRoom reports whether another transcode may use the GPU: under
+// streaming.hardwareMaxTranscodes, and none failed to start on it in the last few minutes.
+func (c *transcodeCache) hardwareRoom() bool {
+	if since := time.Since(time.Unix(0, hardwareFailed.Load())); since < hardwareBackoff {
+		return false
+	}
+	limit := 0
+	if config.GlobalConfig != nil {
+		limit = config.GlobalConfig.Streaming.HardwareMaxTranscodes
+	}
+	if limit <= 0 {
+		return true
+	}
+	n := 0
+	for s := range c.spools {
+		s.mu.Lock()
+		if s.gpu && !s.done && !s.closed {
+			n++
+		}
+		s.mu.Unlock()
+	}
+	return n < limit
+}
+
+// hardwareFailed is when a transcode last failed to start on the GPU (UnixNano); for
+// hardwareBackoff after it, transcodes go straight to the CPU.
+var hardwareFailed atomic.Int64
+
+const hardwareBackoff = 5 * time.Minute
+
+// encodesVideo reports whether ffmpeg's arguments encode the video with x264 (not a copy).
+func encodesVideo(args []string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-c:v" && args[i+1] == "libx264" {
+			return true
+		}
+	}
+	return false
 }
 
 // reap closes the transcodes no client came back to.
@@ -139,6 +188,7 @@ type transcodeSpool struct {
 	closed  bool
 	sess    *StreamSession // the latest reader's, for ffmpeg's progress
 	watch   *stallWatch    // a disc's transcode: stops ffmpeg when it makes nothing (nil for files)
+	gpu     bool           // its video is encoded on the GPU
 }
 
 func newTranscodeSpool(prefix, filePath string, sess *StreamSession) *transcodeSpool {
@@ -180,10 +230,10 @@ func (s *transcodeSpool) idleSince(now time.Time) time.Duration {
 func (s *transcodeSpool) close() {
 	s.mu.Lock()
 	s.closed = true
-	first, size := s.first, s.size
+	first, size, cancel := s.first, s.size, s.cancel
 	s.changed.Broadcast()
 	s.mu.Unlock()
-	s.cancel()
+	cancel()
 	for n := first / spoolChunk; n <= size/spoolChunk; n++ {
 		os.Remove(s.chunk(n))
 	}
@@ -193,9 +243,13 @@ func (s *transcodeSpool) chunk(n int64) string {
 	return s.prefix + "." + strconv.FormatInt(n, 10)
 }
 
-func (s *transcodeSpool) start(args []string) error {
+// start runs ffmpeg with args. If it fails before making anything and there's a fallback (the
+// CPU's arguments for a GPU transcode), it runs again with that.
+func (s *transcodeSpool) start(args, fallback []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
+	s.mu.Lock()
 	s.cancel = cancel
+	s.mu.Unlock()
 	cmd := exec.CommandContext(ctx, transcodeCommand, args...)
 	stdout, stderr, err := transcodePipes(cmd)
 	if err != nil {
@@ -225,6 +279,28 @@ func (s *transcodeSpool) start(args []string) error {
 			err = ErrFFmpegStalled
 		}
 		s.mu.Lock()
+		retry := fallback != nil && err != nil && s.size == 0 && !s.closed && !shuttingDown.Load()
+		if retry {
+			s.gpu = false
+			sess := s.sess
+			s.mu.Unlock()
+			lines := <-tail
+			stdout.Close()
+			stderr.Close()
+			hardwareFailed.Store(time.Now().UnixNano())
+			log.Printf("[TRANSCODE] The GPU encoder failed (%v), so the CPU encodes instead for %s: %s", err, hardwareBackoff, s.filePath)
+			for _, line := range lines {
+				log.Printf("[TRANSCODE]   ffmpeg: %s", line)
+			}
+			sess.SetVideoEncoder("libx264 on the CPU: the GPU failed", fallback)
+			if err := s.start(fallback, nil); err != nil {
+				s.mu.Lock()
+				s.done, s.err = true, err
+				s.changed.Broadcast()
+				s.mu.Unlock()
+			}
+			return
+		}
 		s.done, s.err = true, err
 		closed, size := s.closed, s.size
 		s.changed.Broadcast()

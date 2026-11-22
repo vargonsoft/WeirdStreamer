@@ -313,6 +313,22 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   - `startPlaybackReports` sends progress to `POST /api/streams/progress`. Resume and
     "Play from start" go through `playVideo`'s `startAt`.
   - Icons come from `MATERIAL_ICONS`, `iconSvg(name)` and `decorateIconButtons`.
+- **Hardware encoding** (`media/hardware.go`): at startup (`DetectHardware`, in the background)
+  the server lists GPUs (DRM render nodes' PCI vendor and lspci name; `nvidia-smi` for NVIDIA's
+  names) and tries a short test encode with each fitting encoder ffmpeg has: NVENC for NVIDIA,
+  Quick Sync and VA-API for Intel, VA-API for AMD (each render node). `GET /api/admin/hardware`
+  reports the GPUs, the encoders that worked and why others didn't. Settings (web Server › Streaming,
+  phone and iPhone Server tab, TV Settings › Hardware encoding, admins only) shows that and, when
+  something works, the choice (`streaming.hardwareEncoder` nvenc/qsv/vaapi, `hardwareDevice` the
+  render node) and `hardwareMaxTranscodes` (0 no limit). Only streaming transcodes' video uses it
+  (files and discs; downloads are still x264, see TODO): `hardwareArgs` turns the CPU's ffmpeg
+  arguments into the encoder's (x264's CRF as `-cq`/`-global_quality`/`-qp`; VA-API uploads frames
+  with `format=nv12,hwupload` after the CPU's filters), so decoding, scaling, burned-in subtitles and
+  10-bit to 8-bit stay on the CPU. In the transcode cache (`attach`) a new transcode goes to the GPU
+  while under the limit; its spool keeps the CPU arguments' name and runs them instead if ffmpeg
+  fails before making anything (then the GPU is skipped for 5 minutes, `hardwareFailed`). The Streams
+  page names the encoder used (`SetVideoEncoder`). Tested with NVENC (GTX 1060) only; Quick Sync and
+  VA-API are untested on real hardware.
 - **Resumable transcodes** (`media/transcache.go`): browsers drop and reopen media connections
   with `Range: bytes=N-`, and ffmpeg can't seek its output, so every transcode goes through
   64 MB chunks in `media.transcodeCachePath` (default `transcodes` beside the thumbnails folder).
@@ -405,7 +421,7 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   (Harbor Lights, Moss and Rose, Desert Bloom, Arctic Berry, Copper Sea, Neon Arcade), and
   Terminal Green and Terminal Amber (phosphor on black, all text monospace: `ThemePalette.monospace`), dark themes built like
   Ember with the same colors on each (a `ThemePalette` and a `:root[data-theme=…]` block). Android also has
-  Light and Auto Light/Dark (`AppTheme`). Themes are picked from a grid of tiles drawn in each theme's colors (its background, box, accent and button), applied and kept at once: the web's Settings, Themes tab (`renderThemePicker`, colors read from the theme's CSS block), and the Themes tab of the TV and phone Settings (`ThemeTiles.kt`: `TvThemePicker`, 3 rows of 7, and `PhoneThemePicker`). The TV's Settings has two tabs, General and Themes, beside its title.
+  Light and Auto Light/Dark (`AppTheme`). Themes are picked from a grid of tiles drawn in each theme's colors (its background, box, accent and button), applied and kept at once: the web's Settings, Themes tab (`renderThemePicker`, colors read from the theme's CSS block), and the Themes tab of the TV and phone Settings (`ThemeTiles.kt`: `TvThemePicker`, 3 rows of 7, and `PhoneThemePicker`). The TV's Settings has tabs beside its title (`SettingsScreen.kt`, rows drawn by `TvSettingsRow`): General (this TV's options and the app update), Account (with a server open: Languages, Sign in on a TV), Sources (saved servers and shares), Server (an admin's account: Hardware encoding) and Themes.
 - **Folder pictures:** a folder without a TMDB poster shows a picture inside its folder icon (web
   `folderPreview`, Android `FolderPreview` in `FolderThumbnails.kt`, iPhone `FolderPreview`): the
   browse response's `thumbnail_url` on each folder (`folderImage`, `database.FolderPreview`): its own
@@ -489,3 +505,32 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 
 ## Notes on the TODO items
 
+
+### More server platforms (feasibility, 2026-11-22)
+
+Checked by type-checking the server for each target and reading `release.sh` (which builds
+`linux-$(go env GOARCH)` only, with CGO for `mattn/go-sqlite3`). Nothing was built or run on them.
+
+- **Linux arm64:** the code compiles unchanged; `setup.sh`, systemd and the scripts work as they are.
+  Only the build needs an ARM C toolchain for SQLite (none on the build machine). About an hour or
+  two, mostly packaging.
+- **macOS (amd64 and arm64):** the code compiles unchanged. Needs building on a Mac (or a macOS CI
+  runner). `setup.sh service` is systemd: needs a launchd plist, or the step skipped. Homebrew's
+  ffmpeg lacks the DVD reader, chromaprint and libass: ship or point to `scripts/build-ffmpeg.sh`'s.
+  The disk-busy check (`media/disks.go`, `/sys/dev/block`) is Linux-only and already falls back to
+  nothing. About half a day.
+- **Windows x64:** doesn't compile yet: `media/shutdown.go` (`syscall.Kill`, SIGTERM/SIGKILL to
+  ffmpeg) and `media/disks.go` (`syscall.Stat_t`, `unix.Major`) need Windows versions. The bigger
+  risk is paths: client paths, `config.LibraryOf`, `diskPath` and the prefix checks assume `/`
+  separators; drive letters and backslashes need careful work and testing, since that code is the
+  access boundary. The bash scripts (`setup.sh`, `live.sh`, `restart-live.sh`) need PowerShell or
+  `cli` replacements and a service install. `private_other.go` does nothing on Windows (data and the
+  TLS key aren't locked down; would need ACLs). The gyan.dev "full" ffmpeg builds probably have
+  libass, chromaprint and dvdvideo (unverified). SMB/NFS shares, file locking and long paths are
+  untested. A couple of days, and it needs a Windows machine to test.
+- **Building:** either switch to pure-Go SQLite (`modernc.org/sqlite`; no C toolchains, every target
+  cross-compiles from the build machine and `release.sh` loops over them; benchmark the media DB
+  first, it's slower than the C one), or keep CGO and build natively (GitHub Actions matrix, or
+  `zig cc` for Linux arm64 and Windows; macOS still needs a Mac runner).
+- Only Linux can be tested on the build machine: Mac and Windows packages need the user's testing or
+  CI runs there.

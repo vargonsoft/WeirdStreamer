@@ -127,6 +127,9 @@ interface ApiService {
     @PUT("/api/config")
     suspend fun updateConfig(@Body config: JsonObject): Response<JsonObject>
 
+    @GET("/api/admin/hardware")
+    suspend fun getHardware(): Response<com.vargon.weirdstreamer.api.models.HardwareReport>
+
     @GET("/api/groups")
     suspend fun getGroups(): Response<List<String>>
 

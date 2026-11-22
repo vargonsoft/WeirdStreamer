@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 )
@@ -221,6 +222,12 @@ func (c *Config) Validate() error {
 	} else if r*f > MaxTrickplayProduct {
 		return fmt.Errorf("runners times frames per runner can't exceed %d (about %d GB of memory)", MaxTrickplayProduct, MaxTrickplayProduct*110/1000)
 	}
+	if e := c.Streaming.HardwareEncoder; e != "" && !slices.Contains(HardwareEncoders, e) {
+		return fmt.Errorf("streaming.hardwareEncoder must be empty or one of %s", strings.Join(HardwareEncoders, ", "))
+	}
+	if c.Streaming.HardwareMaxTranscodes < 0 {
+		return fmt.Errorf("streaming.hardwareMaxTranscodes can't be negative")
+	}
 	// Groups: each a valid name, none twice (in any case)
 	groups := c.Groups
 	c.Groups = nil
@@ -301,7 +308,18 @@ type StreamingConfig struct {
 	// Background jobs (intros and credits, trickplay, cleanup) wait while anyone is streaming,
 	// whatever the machine's load: a failsafe
 	PauseJobsWhileStreaming bool `json:"pauseJobsWhileStreaming,omitempty" yaml:"pauseJobsWhileStreaming"`
+	// The graphics hardware that encodes streaming transcodes' video: "" (the CPU, x264), "nvenc"
+	// (NVIDIA), "qsv" (Intel Quick Sync) or "vaapi" (VA-API: AMD or Intel). Settings offers what
+	// the server found working (media.Hardware).
+	HardwareEncoder string `json:"hardwareEncoder,omitempty" yaml:"hardwareEncoder"`
+	// The device for qsv and vaapi: a render node such as /dev/dri/renderD128
+	HardwareDevice string `json:"hardwareDevice,omitempty" yaml:"hardwareDevice"`
+	// At most this many transcodes on the hardware at once (0: no limit); the rest use the CPU
+	HardwareMaxTranscodes int `json:"hardwareMaxTranscodes,omitempty" yaml:"hardwareMaxTranscodes"`
 }
+
+// HardwareEncoders are the streaming.hardwareEncoder values ("" is the CPU).
+var HardwareEncoders = []string{"nvenc", "qsv", "vaapi"}
 
 var GlobalConfig *Config
 

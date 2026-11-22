@@ -22,3 +22,16 @@ Requests saved for later, newest last.
       embedded fonts, on originals and transcodes alike, and files beside the video too. The
       "Styled subtitles" job copies the tracks out after scans, so a start or jump shows lines
       already on screen. Phone downloads keep them styled offline.
+
+## Transcoding
+
+- [ ] **GPU encoding for downloads.** Streaming transcodes can use the GPU (Settings › Streaming ›
+      Hardware encoding); download encodes (Compatibility and Compressed) still use x264 on the
+      CPU. Compatibility aims for full quality (CRF 18), where older NVENC falls short of x264 at the
+      same size: maybe a setting, or GPU for Compressed only.
+
+## Platforms
+
+- [ ] **Server packages for more platforms:** Linux arm64, macOS (Intel and Apple Silicon) and
+      Windows x64, beside today's Linux amd64. Feasibility is in CLAUDE.md's notes ("More
+      server platforms").

@@ -79,27 +79,17 @@
                 <p id="cert-warning" class="cert-warning" role="alert" hidden></p>
                 
                 <div class="settings-tabs">
-                    <button class="settings-tab active" data-tab="server">Server & Media</button>
-                    <button class="settings-tab" data-tab="users">User Management</button>
-                    <button class="settings-tab" data-tab="jobs">Jobs</button>
-                    <button class="settings-tab" data-tab="account">My Account</button>
+                    <!-- The account's and this browser's tabs first, the server's (admins) after them -->
+                    <button class="settings-tab active" data-tab="account">My Account</button>
                     <button class="settings-tab" data-tab="subtitles">Subtitles</button>
                     <button class="settings-tab" data-tab="themes">Themes</button>
+                    <button class="settings-tab" data-tab="server">Server & Media</button>
+                    <button class="settings-tab" data-tab="users">Users</button>
+                    <button class="settings-tab" data-tab="jobs">Jobs</button>
                 </div>
 
                 <!-- Server & Media Tab -->
-                <div id="server-tab" class="settings-tab-content active">
-                    <div class="settings-group">
-                        <h3>Groups</h3>
-                        <p class="settings-hint">Each user is in one group, and each library lists the groups that can see it. New users start in the default group, the first in config.yml's groups (Make default moves one there). Changes here apply right away.</p>
-                        <div id="groups-list" class="groups-list"></div>
-                        <div class="groups-add">
-                            <input type="text" id="new-group-input" placeholder="New group name" class="settings-input">
-                            <button type="button" id="add-group-btn" class="btn" data-icon="personAdd"><span class="btn-label">Add Group</span></button>
-                        </div>
-                        <p id="groups-message" class="groups-message"></p>
-                    </div>
-
+                <div id="server-tab" class="settings-tab-content">
                     <div class="settings-group">
                         <h3>Media Paths</h3>
                         <p id="no-libraries-hint" class="settings-hint" hidden>No libraries yet. Add a folder of media below (each one is a library), choose which groups can see it, then Save Settings.</p>
@@ -117,6 +107,17 @@
                     </div>
 
                     <div class="settings-group">
+                        <h3>Groups</h3>
+                        <p class="settings-hint">Each user is in one group, and each library lists the groups that can see it. New users start in the default group, the first in config.yml's groups (Make default moves one there). Changes here apply right away.</p>
+                        <div id="groups-list" class="groups-list"></div>
+                        <div class="groups-add">
+                            <input type="text" id="new-group-input" placeholder="New group name" class="settings-input">
+                            <button type="button" id="add-group-btn" class="btn" data-icon="personAdd"><span class="btn-label">Add Group</span></button>
+                        </div>
+                        <p id="groups-message" class="groups-message"></p>
+                    </div>
+
+                    <div class="settings-group">
                         <h3>Server Settings</h3>
                         <label>Name: <input type="text" id="server-name" class="settings-input" style="width: 250px;" placeholder="Shown in the apps' server lists"></label><br><br>
                         <label>Port: <input type="number" id="server-port" class="settings-input" style="width: 100px;"></label><br><br>
@@ -127,6 +128,13 @@
                         <h3>Streaming Settings</h3>
                         <label><input type="checkbox" id="enable-http2"> Enable HTTP/2</label><br><br>
                         <label title="Finding intros and credits, making trickplay frames and cleaning up run while the server has room to spare; this also has them wait whenever anyone is streaming."><input type="checkbox" id="pause-jobs-streaming"> Pause background jobs while anyone is streaming</label>
+                        <h4 class="hardware-heading">Hardware encoding</h4>
+                        <p id="hardware-status" class="hardware-status">Checking the server's graphics hardware…</p>
+                        <div id="hardware-options" hidden>
+                            <label>Encode transcodes on: <select id="hardware-encoder" class="settings-input"></select></label><br><br>
+                            <label>At most <input type="number" id="hardware-max" class="settings-input" min="0" style="width: 70px;"> transcodes on the GPU at once (0: no limit)</label>
+                            <p id="hardware-note" class="hardware-status"></p>
+                        </div>
                     </div>
 
                     <div class="settings-group">
@@ -241,10 +249,18 @@
                     </div>
                 </div>
 
-                <div id="account-tab" class="settings-tab-content">
+                <div id="account-tab" class="settings-tab-content active">
                     <p id="account-signed-in" class="account-signed-in"></p>
                     <div class="settings-group">
-                        <h3>Language</h3>
+                        <h3>Sign in on a TV</h3>
+                        <p class="settings-hint">Enter the code a TV shows on its sign-in screen, and the TV signs in as you.</p>
+                        <input type="text" id="tv-pairing-code" placeholder="Code on the TV" class="settings-input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" style="margin-bottom: 10px;"><br>
+                        <button id="tv-pairing-btn" class="btn" data-icon="tv"><span class="btn-label">Sign in on the TV</span></button>
+                        <p id="tv-pairing-message" style="margin-top: 10px; font-weight: bold;"></p>
+                    </div>
+
+                    <div class="settings-group">
+                        <h3>Languages</h3>
                         <p class="settings-hint">Videos start with audio in this language when they have it, and with subtitles in this one if subtitles are shown by default. For your account, on every device.</p>
                         <label class="account-language">Audio <select id="account-audio-language"><option value="">File default</option></select></label>
                         <label class="account-language">Subtitles <select id="account-subtitle-language"><option value="">File default</option></select></label>
@@ -268,13 +284,6 @@
                         <input type="password" id="confirm-user-password" placeholder="Confirm Password" class="settings-input" style="margin-bottom: 10px;"><br>
                         <button id="change-password-btn" class="btn" data-icon="key"><span class="btn-label">Change Password</span></button>
                         <p id="account-message" style="margin-top: 10px; font-weight: bold;"></p>
-                    </div>
-
-                    <div class="settings-group">
-                        <h3>Sign in on a TV</h3>
-                        <input type="text" id="tv-pairing-code" placeholder="Code on the TV" class="settings-input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" style="margin-bottom: 10px;"><br>
-                        <button id="tv-pairing-btn" class="btn" data-icon="tv"><span class="btn-label">Sign in on the TV</span></button>
-                        <p id="tv-pairing-message" style="margin-top: 10px; font-weight: bold;"></p>
                     </div>
 
                     <p id="server-version" class="account-signed-in"></p>

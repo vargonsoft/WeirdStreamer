@@ -615,3 +615,31 @@ data class SubtitleQuota(
     @SerializedName("remaining") val remaining: Int = 0,
     @SerializedName("reset") val reset: String? = null,
 )
+
+// The server's graphics hardware for transcodes (admins' Settings): GET /api/admin/hardware
+data class HardwareGpu(
+    @SerializedName("name") val name: String,
+    @SerializedName("vendor") val vendor: String,
+    @SerializedName("device") val device: String? = null
+)
+
+data class HardwareEncoder(
+    @SerializedName("id") val id: String, // streaming.hardwareEncoder: nvenc, qsv, vaapi
+    @SerializedName("device") val device: String? = null, // streaming.hardwareDevice
+    @SerializedName("name") val name: String,
+    @SerializedName("gpu") val gpu: String,
+    @SerializedName("vendor") val vendor: String
+)
+
+data class HardwareProblem(
+    @SerializedName("gpu") val gpu: String,
+    @SerializedName("encoder") val encoder: String,
+    @SerializedName("reason") val reason: String
+)
+
+data class HardwareReport(
+    @SerializedName("checking") val checking: Boolean,
+    @SerializedName("gpus") val gpus: List<HardwareGpu>? = null,
+    @SerializedName("encoders") val encoders: List<HardwareEncoder>? = null,
+    @SerializedName("problems") val problems: List<HardwareProblem>? = null
+)
