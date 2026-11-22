@@ -474,7 +474,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   last 2 minutes of videos 20 minutes or longer, the end of shorter ones. Credits found or moved
   later (the analyzer, or marked by hand) finish the viewings that stopped past their start
   (`finishPastCredits`). Credits on black are a stretch at least 80% black (`BlackCredits`: a white
-  crawl on black is 85-90%) reaching to near the end. A video goes on Continue Watching once played 10 seconds in (`database.ListedPosition`)
+  crawl on black is 85-90%) reaching to near the end. An episode's credits found by fingerprint give way to credits on black that start later (music the
+  episodes share can come minutes before the credits). A video goes on Continue Watching once played 10 seconds in (`database.ListedPosition`)
   and then stays at any position (the playback row's `continue_state`: listed), until it's finished or
   removed; removing sets it to removed, which also keeps an up-next episode off. An up-next episode
   only opened (under 10 s) is still up next. `MediaViewModel.playVideo(path, fromStart)` sets `playbackStartMs`.

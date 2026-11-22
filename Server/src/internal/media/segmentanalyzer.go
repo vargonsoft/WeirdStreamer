@@ -17,11 +17,12 @@ import (
 
 // SegmentAnalysisVersion is stored with each video's segments; raising it has videos looked at
 // again (after the analysis improves). Videos a version from creditsRecheckFrom on looked at are
-// looked at again only when an episode or movie has no credits, or credits found on black:
-// version 2 finds shorter credits on black, version 3 credits a little less black (a crawl of
-// white text, which only the last seconds of black were taken for).
+// looked at again only when an episode or movie has no credits, or credits found on black or by
+// fingerprint: version 2 finds shorter credits on black, version 3 credits a little less black (a
+// crawl of white text, which only the last seconds of black were taken for), version 4 credits on
+// black after an episode's fingerprint match (music the episodes share before their credits).
 const (
-	SegmentAnalysisVersion = 3
+	SegmentAnalysisVersion = 4
 	creditsRecheckFrom     = 1
 )
 
@@ -137,7 +138,7 @@ func (a *SegmentAnalyzer) stale(path string, done database.Analysis) bool {
 		return true
 	}
 	kind, _ := a.LibraryKind(path)
-	return (!done.Credits || done.CreditsSource == "black") && (kind == "tv" || kind == "movie")
+	return (!done.Credits || done.CreditsSource == "black" || done.CreditsSource == "fingerprint") && (kind == "tv" || kind == "movie")
 }
 
 // plural: "1 folder", "3 folders".
@@ -310,10 +311,15 @@ func (a *SegmentAnalyzer) analyzeDir(ctx context.Context, paths []string) {
 		}
 	}
 
-	// Credits still not found: rolling credits on black near the end (movies and episodes).
+	// Credits still not found: rolling credits on black near the end (movies and episodes). An
+	// episode's fingerprint match is checked too: music the episodes share can come minutes before
+	// the credits (a recurring cue, a song over the last scene), and credits on black that start
+	// later are the ones (For All Mankind: a 16-second cue 3½ minutes before its crawl). Starting
+	// them late only shows Skip Credits late; starting them early skips the episode's end.
 	if kind == "tv" || kind == "movie" {
 		for _, v := range videos {
-			if v.credits != nil || v.duration <= 0 {
+			fromFingerprint := v.credits != nil && v.credits.Source == "fingerprint"
+			if v.credits != nil && !fromFingerprint || v.duration <= 0 {
 				continue
 			}
 			if !a.waitIdle(ctx, v.path) {
@@ -323,7 +329,8 @@ func (a *SegmentAnalyzer) analyzeDir(ctx context.Context, paths []string) {
 			if kind == "movie" {
 				look = min(v.duration*0.2, 900)
 			}
-			if seg, err := BlackCredits(ctx, v.path, v.duration, look); err == nil {
+			if seg, err := BlackCredits(ctx, v.path, v.duration, look); err == nil && seg != nil &&
+				(!fromFingerprint || seg.Start > v.credits.Start) {
 				v.credits = span(seg, "black")
 			}
 		}
