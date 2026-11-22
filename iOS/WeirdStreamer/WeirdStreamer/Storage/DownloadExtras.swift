@@ -113,7 +113,7 @@ enum DownloadExtras {
                                       chosen: Int, client: ServerClient) async throws {
         let languages = Set(deviceSubtitleLanguages().compactMap { Locale(identifier: $0).language.languageCode?.identifier(.alpha3) })
         let wanted = tracks.filter { t in
-            (t.isText || t.isPGS) &&
+            (t.isText || t.drawnAsPGS) &&
                 (t.forced == true || t.external != nil || (t.language ?? "").isEmpty || t.language == "und" ||
                     languages.contains(t.language ?? "") || languages.contains(bibliographic(t.language ?? "")) || t.index == chosen)
         }

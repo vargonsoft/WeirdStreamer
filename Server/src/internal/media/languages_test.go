@@ -30,7 +30,8 @@ func TestPreferredTracks(t *testing.T) {
 		{"no subtitles in the language", dub, "", "de", true, -1, -1},
 		{"a language, subtitles off", dub, "", "fr", false, -1, -1},
 		{"subtitles on, the file's default language", dub, "", "", true, -1, 2},
-		{"DVD subtitles aren't drawn", &Codecs{Subtitles: []SubtitleCodec{{Index: 0, Language: "eng", Codec: "dvd_subtitle"}}}, "", "en", true, -1, -1},
+		{"DVD subtitles are drawn too", &Codecs{Subtitles: []SubtitleCodec{{Index: 0, Language: "eng", Codec: "dvd_subtitle"}}}, "", "en", true, -1, 0},
+		{"other picture subtitles aren't", &Codecs{Subtitles: []SubtitleCodec{{Index: 0, Language: "eng", Codec: "dvb_subtitle"}}}, "", "en", true, -1, -1},
 		{"PGS are", &Codecs{Subtitles: []SubtitleCodec{{Index: 0, Language: "eng", Codec: "hdmv_pgs_subtitle"}}}, "", "en", true, -1, 0},
 	}
 	for _, c := range cases {

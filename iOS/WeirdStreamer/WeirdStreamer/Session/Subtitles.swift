@@ -6,7 +6,8 @@ import CoreGraphics
 // video's own tracks, then files beside it and downloads from OpenSubtitles. Text tracks come from
 // the server as WebVTT two minutes at a time and are drawn over the video, so they show whatever
 // the stream is (a transcode has none of its own). PGS tracks come the same way, as pictures to
-// decode here; other picture tracks (DVD) can only be burned into a transcode (`burnIn`).
+// decode here, and so do DVD tracks (the server makes them PGS); other picture tracks (DVB, XSUB)
+// can only be burned into a transcode (`burnIn`).
 
 /// Whether a character is one the server's CJK subset must hold (the ranges of cjkfont.go's IsCJK).
 func isCjkScalar(_ v: UInt32) -> Bool {
@@ -140,7 +141,7 @@ final class ServerSubtitles {
 
     /// The picture track to burn into the stream (subtitle=N), or -1.
     var burnIn: Int {
-        guard let t = selectedTrack, !t.isText, !t.isPGS else { return -1 }
+        guard let t = selectedTrack, !t.isText, !t.drawnAsPGS else { return -1 }
         return t.index
     }
 
@@ -183,7 +184,7 @@ final class ServerSubtitles {
 
     /// Loads the cues around `playerMs`, and the next window before it's needed.
     func keepAhead(_ playerMs: Int64) async {
-        guard let track = selectedTrack, track.isText || track.isPGS else { return }
+        guard let track = selectedTrack, track.isText || track.drawnAsPGS else { return }
         let positionMs = playerMs - Int64(offsetMs)
         let outside = positionMs < fromMs || positionMs > untilMs
         if !outside && positionMs < untilMs - Self.aheadMs { return }
@@ -196,7 +197,7 @@ final class ServerSubtitles {
                   let body = try? Data(contentsOf: saved.url) else { return }
             if saved.styled {
                 addAssWindow(String(decoding: body, as: UTF8.self))
-            } else if track.isPGS {
+            } else if track.drawnAsPGS {
                 let all = await Task.detached { decodePgs(body) }.value
                 guard gen == generation else { return }
                 pictures = all
@@ -215,9 +216,9 @@ final class ServerSubtitles {
         var query = [("path", encodedPath), ("track", String(track.index)),
                      ("start", String(format: "%.3f", Double(start) / 1000)),
                      ("duration", String(format: "%.3f", Double(Self.windowMs) / 1000))]
-        if track.isPGS { query.append(("format", "sup")) }
+        if track.drawnAsPGS { query.append(("format", "sup")) }
         guard let body = try? await client.data("/api/media/subtitles", query: query), gen == generation else { return }
-        if track.isPGS {
+        if track.drawnAsPGS {
             let window = await Task.detached { decodePgs(body) }.value
             guard gen == generation else { return }
             if outside {
@@ -291,7 +292,7 @@ final class ServerSubtitles {
 
     /// The PGS display set showing at `playerMs`.
     func pictureAt(_ playerMs: Int64) -> PgsSet? {
-        guard selectedTrack?.isPGS == true else { return nil }
+        guard selectedTrack?.drawnAsPGS == true else { return nil }
         return pictures.last { $0.startMs <= playerMs }
     }
 

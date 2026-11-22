@@ -55,8 +55,8 @@ data class SubtitleCue(val startMs: Long, val endMs: Long, val text: AnnotatedSt
  * video's own tracks, then files beside it and downloads from OpenSubtitles. Text tracks come
  * from the server as WebVTT, a couple of minutes at a time, and are drawn by [SubtitleOverlay], so
  * they show the same whatever the stream is (a transcode has none of its own). PGS tracks come the
- * same way, as pictures for [decodePgs]; other picture tracks (DVD) can only be burned into a
- * transcode ([burnIn]). A download played on the phone has its tracks saved beside it ([saved]):
+ * same way, as pictures for [decodePgs], and so do DVD tracks (the server makes them PGS); other
+ * picture tracks (DVB, XSUB) can only be burned into a transcode ([burnIn]). A download played on the phone has its tracks saved beside it ([saved]):
  * they're read from there, whole, with no server.
  */
 class ServerSubtitles(
@@ -84,7 +84,7 @@ class ServerSubtitles(
     /** The picture track to burn into the stream (subtitle=N), or -1. */
     val burnIn: Int get() = selectedTrack?.takeIf { !it.text && !it.drawn }?.index ?: -1
 
-    private val SubtitleTrack.drawn: Boolean get() = codec == "hdmv_pgs_subtitle"
+    private val SubtitleTrack.drawn: Boolean get() = drawnAsPgs(this)
 
     /**
      * Whether the selected track is ASS/SSA, which libass draws styled ([AssSubtitle]): a
@@ -608,3 +608,6 @@ fun subtitleOffsetText(ms: Int): String {
 /** The steps the timing moves by. */
 val SUBTITLE_STEPS = listOf(50, 250, 500, 1000)
 fun subtitleStepText(ms: Int) = if (ms >= 1000) "${ms / 1000} s" else if (ms == 500) "0.5 s" else "$ms ms"
+
+/** Picture subtitles drawn over the video from the server's .sup data: PGS, and DVD's, which the server sends as PGS. */
+fun drawnAsPgs(t: com.vargon.weirdstreamer.api.models.SubtitleTrack) = t.codec == "hdmv_pgs_subtitle" || t.codec == "dvd_subtitle"

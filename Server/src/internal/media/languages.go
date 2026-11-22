@@ -56,7 +56,7 @@ func NormalizeLanguage(tag string) string {
 // and subtitles in subtitleLang ("" for the file's default), with subtitles on or not, or -1 where
 // players should do as the file says (its default audio; subtitles off but for forced ones).
 //   - audio: a track in audioLang (the file's default among them, else the first);
-//   - subtitles, when on: a full track (not forced) in subtitleLang, or in any language for the
+//   - subtitles, when on: a full track (not forced; text, PGS or DVD) in subtitleLang, or in any language for the
 //     file's default; the file's default among them, else one not for the hard of hearing, else the
 //     first. Off, they start off as the file says.
 func PreferredTracks(c *Codecs, audioLang, subtitleLang string, subtitlesOn bool) (audio, subtitle int) {
@@ -87,7 +87,7 @@ func PreferredTracks(c *Codecs, audioLang, subtitleLang string, subtitlesOn bool
 		return 0
 	}
 	for i, s := range c.Subtitles {
-		if s.Forced || subtitleLang != "" && NormalizeLanguage(s.Language) != subtitleLang || !s.Text && s.Codec != "hdmv_pgs_subtitle" {
+		if s.Forced || subtitleLang != "" && NormalizeLanguage(s.Language) != subtitleLang || !s.Text && s.Codec != "hdmv_pgs_subtitle" && !IsDVDSubtitle(s.Codec) {
 			continue
 		}
 		if subtitle < 0 || rank(s) > rank(c.Subtitles[subtitle]) {

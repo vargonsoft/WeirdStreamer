@@ -21,7 +21,7 @@ enum DownloadLanguages {
     static let off = "off"
 
     /// Subtitles the player draws: text, and PGS pictures.
-    static func drawn(_ t: SubtitleTrack) -> Bool { t.isText || t.isPGS }
+    static func drawn(_ t: SubtitleTrack) -> Bool { t.isText || t.drawnAsPGS }
 
     /// The audio track (the server's index) in `language` in `c`, else the one playing would pick (-1: the default).
     static func audioTrack(_ c: CodecsInfo, _ language: String?) -> Int {

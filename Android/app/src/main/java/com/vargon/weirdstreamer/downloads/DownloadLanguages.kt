@@ -16,7 +16,7 @@ object DownloadLanguages {
     const val OFF = "off"
 
     /** Subtitles the players draw: text, and PGS pictures (DVD ones would need a transcode). */
-    fun drawn(t: SubtitleTrack) = t.text || t.codec == "hdmv_pgs_subtitle"
+    fun drawn(t: SubtitleTrack) = t.text || com.vargon.weirdstreamer.ui.components.drawnAsPgs(t)
 
     /** The audio track (the server's index) in [language] in [c], else the one playing would pick (-1: the default). */
     fun audioTrack(c: CodecsInfo, language: String?): Int {

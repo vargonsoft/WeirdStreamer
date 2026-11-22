@@ -30,6 +30,22 @@ Requests saved for later, newest last.
       CPU. Compatibility aims for full quality (CRF 18), where older NVENC falls short of x264 at the
       same size: maybe a setting, or GPU for Compressed only.
 
+## DVD discs
+
+- [ ] **Send a disc image's DVD subtitles beside the stream instead of burning them in.** Files'
+      DVD subtitles already go to the players as PGS (`media/dvdsub.go`); discs (.iso) still burn
+      theirs into the transcode. Notes from weighing it:
+  - The hard part: a disc title can be several chained parts, trimmed and joined, with angles, so
+    the server would have to pull the subtitle track out for exactly that timeline
+    (`DiscTranscodeArgs`' segments and trims) and keep it in sync. Discs are always transcoded
+    anyway, so burn-in costs them nothing extra.
+  - The palette is in the disc's IFO tables (per program chain), not in an .idx header: ffmpeg's
+    dvdvideo demuxer gives it as the stream's extradata.
+  - Lost by drawing instead of burning in: the iPhone's picture-in-picture and AirPlay show only the
+    video, so drawn subtitles disappear there (as text and PGS already do); burned-in ones show.
+  - Gained: switching subtitles without restarting the stream, forced-only lines (DVD marks them one
+    by one), and subtitles in downloads of a disc's titles if those ever exist.
+
 ## Platforms
 
 - [ ] **Server packages for more platforms:** Linux arm64, macOS (Intel and Apple Silicon) and

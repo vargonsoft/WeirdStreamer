@@ -309,7 +309,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             ?: throw IllegalStateException("The server couldn't read the file's subtitles")
         val languages = deviceSubtitleLanguages().mapNotNull { runCatching { Locale(it).isO3Language }.getOrNull() }.toSet()
         val wanted = info.subtitles.orEmpty().filter { t ->
-            (t.text || t.codec == "hdmv_pgs_subtitle") &&
+            (t.text || com.vargon.weirdstreamer.ui.components.drawnAsPgs(t)) &&
                 (t.forced || t.external != null || t.language.isNullOrEmpty() || t.language == "und" || t.language in languages ||
                     t.index == item.subtitleTrack)
         }

@@ -66,7 +66,7 @@ for each TODO item are at the end of this file.
     `keep_audio`, the rest H.264 CRF 18 and stereo AAC; nothing to convert makes it an original)
     or Compressed. A download belongs to the account it was made in (`DownloadItem.account`): only
     that account sees and plays it, and the worker downloads it with that account's token (older
-    ones have none, and every account sees them). Each download also saves its subtitle tracks (text as WebVTT, ASS/SSA whole as .ass with the video's fonts, PGS as .sup; the
+    ones have none, and every account sees them). Each download also saves its subtitle tracks (text as WebVTT, ASS/SSA whole as .ass with the video's fonts, PGS and DVD as .sup; the
     phone's languages, forced ones and files beside the video) in `subtitles/<id>/`, which
     `ServerSubtitles.forDownload` reads offline (a file's by its `key`, the video's own by index), its intro and credits (`segments/<id>.json`, which `segmentsFor` reads for a `file://` path; offline, Skip Credits goes on to the next downloaded episode) and its trickplay frames (`trickplay/<id>/`, from `GET /api/media/trickplay?path=`). The worker saves them again every 12 hours and when a subtitle is downloaded for the video (`DownloadStore.needsExtras`, `extrasChanged`); older downloads get them on its next run.
     A video that's downloaded, opened from the server (a folder, a title page, Continue Watching), asks
@@ -274,7 +274,12 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     draws it over the video, as `PgsSubtitles.kt` and `SubtitleOverlay` do on Android, so it needs
     no transcode. Pictures decode only when shown (a film's worth would take hundreds of MB). PGS
     draws for the disc's 16:9 frame: it's centered on the video at the video's scale, not
-    stretched to a cropped video. DVD subtitles are still burned in with `subtitle=N`.
+    stretched to a cropped video. A file's DVD subtitles (`dvd_subtitle`, VobSub) come the same way: for
+    `format=sup` the server decodes their subpictures and writes them as PGS (`media/dvdsub.go`,
+    `DVDSubtitlesAsPGS`: packets from ffprobe, the palette and canvas from the track's .idx header,
+    pictures widened to square pixels by the video's sample aspect, a clearing set at each end), so
+    every player draws them with its PGS code and downloads save them as .sup. Disc images (.iso)
+    still burn theirs in (`subtitle=N`; see TODO), as do the rare other picture formats (DVB, XSUB).
   - ASS/SSA tracks and files (codec `ass` or `ssa`) are drawn styled by libass: JASSUB 1.8.8, vendored in
     `Server/web/vendor/jassub` (loaded on first use). `format=ass` gives each 2-minute window as a
     whole script (header, styles and its Dialogue lines, at the file's times); `loadAssWindow` keeps
@@ -483,7 +488,7 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   Settings › My Account, phone and iPhone Settings › Account, the TV's Settings › Languages,
   `TvLanguagesDialog`): the codecs report carries `preferred_audio` and `preferred_subtitle`
   (`media.PreferredTracks`, -1 for the file's default): an audio track in the audio language, and,
-  with subtitles on, full subtitles (not forced; PGS counts, DVD doesn't) in the subtitle language, or
+  with subtitles on, full subtitles (not forced; PGS and DVD count) in the subtitle language, or
   the file's own pick for File default. Every player starts with those unless the video has a
   remembered choice; a language the video lacks plays as before (subtitles off but forced ones).
   Downloads (phone and iPhone) ask for audio and subtitle languages when the files have a choice

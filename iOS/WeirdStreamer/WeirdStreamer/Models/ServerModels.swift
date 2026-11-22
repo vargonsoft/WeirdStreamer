@@ -305,7 +305,9 @@ struct SubtitleTrack: Codable, Hashable {
     var offsetMs: Int?
 
     var isText: Bool { text == true }
-    var isPGS: Bool { codec == "hdmv_pgs_subtitle" }
+    /// Picture subtitles drawn over the video from the server's .sup data: PGS, and DVD's, which the
+    /// server sends as PGS.
+    var drawnAsPGS: Bool { codec == "hdmv_pgs_subtitle" || codec == "dvd_subtitle" }
     /// ASS/SSA (tracks and .ass/.ssa files): drawn styled by libass.
     var isStyled: Bool { codec == "ass" || codec == "ssa" }
 }

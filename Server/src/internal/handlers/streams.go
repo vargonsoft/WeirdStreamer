@@ -252,7 +252,7 @@ func (h *MediaHandler) GetDisc(w http.ResponseWriter, r *http.Request) {
 // GetSubtitles streams a text subtitle track of a file as WebVTT (GET /api/media/subtitles?
 // path=<base64 path>&track=<index among its subtitles>&start=<s>&duration=<s>). Cue times count
 // from start; without a duration the cues go to the end of the file. format=sup gives a PGS track's
-// raw pictures, format=ass an ASS/SSA track (or file) as an ASS script, header and all.
+// raw pictures (a DVD track's as PGS), format=ass an ASS/SSA track (or file) as an ASS script, header and all.
 func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
 	if !ok {
@@ -300,6 +300,10 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("format") == "sup" { // a PGS track, for the players to draw
+		if codecs != nil && media.IsDVDSubtitle(codecs.Subtitles[track].Codec) {
+			media.ServeDVDSubtitles(w, r, path, track, start, duration) // made PGS, drawn the same
+			return
+		}
 		media.ServePictureSubtitles(w, r, path, track, start, duration)
 		return
 	}

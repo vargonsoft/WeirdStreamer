@@ -1019,12 +1019,13 @@ function audioNeedsConverting(p) {
     return !!track && (track !== defaultAudioTrack(p.codecs) || !browserPlaysAudio(track));
 }
 
-// Picture subtitles the player draws itself, from the server's .sup data (see pgs.js).
+// Picture subtitles the player draws itself, from the server's .sup data (see pgs.js): PGS, and
+// DVD's, which the server sends as PGS.
 function drawsPictureSubtitles(sub) {
-    return sub.codec === 'hdmv_pgs_subtitle';
+    return sub.codec === 'hdmv_pgs_subtitle' || sub.codec === 'dvd_subtitle';
 }
 
-// Other picture subtitles (DVD) can only be burned into a transcode.
+// Other picture subtitles (DVB, XSUB) can only be burned into a transcode.
 function burnsInSubtitles(p) {
     const sub = subtitleTrack(p);
     return !!sub && !sub.text && !drawsPictureSubtitles(sub);
