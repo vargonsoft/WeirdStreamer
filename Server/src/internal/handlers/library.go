@@ -182,6 +182,15 @@ func (h *MediaHandler) newAdditions(r *http.Request, libs []config.MediaPath) ([
 	if len(items) > newAdditionsLimit {
 		items = items[:newAdditionsLimit]
 	}
+	// Ones without a thumbnail yet get one in the background, as browsing their folder would make;
+	// pages showing them are told when it's ready.
+	for _, item := range items {
+		if item.ThumbnailURL == "" {
+			if stored, err := h.db.GetMediaItem(item.Path); err == nil { // as stored, without the titles added
+				h.thumbnails.add(*stored, false)
+			}
+		}
+	}
 	return items, nil
 }
 
