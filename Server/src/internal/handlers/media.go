@@ -967,8 +967,11 @@ func (h *MediaHandler) makeThumbnail(job thumbnailJob) {
 	} else {
 		item.ThumbnailURL = h.scanner.GenerateVideoThumbnail(item.Path)
 	}
-	if job.probe {
-		// Its length and size, for a file new to the database
+	if job.probe || item.Type == "video" && item.Duration <= 0 {
+		// Its length and size, for a file new to the database, or a video whose length wasn't read
+		// (it couldn't be read when it was scanned, and the scan doesn't look at it again; the
+		// trickplay job fills it in too, later). This also keeps a length trickplay saved meanwhile
+		// from being written over with the 0 this item was queued with.
 		if probed, err := h.scanner.GetFileMetadata(item.Path); err == nil {
 			item.Duration, item.Width, item.Height = probed.Duration, probed.Width, probed.Height
 		}
