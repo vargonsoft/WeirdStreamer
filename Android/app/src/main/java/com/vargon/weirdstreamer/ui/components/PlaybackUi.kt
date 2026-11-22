@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -257,6 +259,35 @@ private fun PhoneContinueCard(viewModel: MediaViewModel, item: ContinueItem) {
 fun continueImage(viewModel: MediaViewModel, item: ContinueItem): String? =
     viewModel.serverUrl(item.metadata?.still) ?: viewModel.serverUrl(item.metadata?.backdrop)
         ?: viewModel.serverUrl(item.thumbnailUrl)
+
+/** A video that has been downloaded: play the download, or stream it from the server. */
+@Composable
+fun PhoneSourceDialog(viewModel: MediaViewModel) {
+    val choice = viewModel.sourceChoice ?: return
+    val name = viewModel.getFileItemForPath(choice.path)?.name ?: choice.path.substringAfterLast('/')
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { viewModel.chooseSource(null) },
+        title = { Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("This video is downloaded on this phone.", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+                PhoneButton(onClick = { viewModel.chooseSource(true) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(androidx.compose.material.icons.Icons.Default.DownloadDone, contentDescription = null)
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                    Text("Play the download")
+                }
+                PhoneSecondaryButton(onClick = { viewModel.chooseSource(false) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(androidx.compose.material.icons.Icons.Default.Cloud, contentDescription = null)
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                    Text("Stream from the server")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { PhoneSecondaryButton(onClick = { viewModel.chooseSource(null) }) { Text("Cancel") } }
+    )
+}
 
 /** Phone folder view: Resume or Play from start, for a partly watched video. */
 @Composable

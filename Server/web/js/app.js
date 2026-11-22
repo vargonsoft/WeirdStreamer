@@ -1312,7 +1312,10 @@ function restoreTracks(p) {
     try { saved = JSON.parse(localStorage.getItem('tracks:' + p.item.path) || 'null'); } catch (e) { /* none */ }
     const codecs = p.codecs;
     if (saved && saved.audio >= 0 && saved.audio < codecs.audio.length) p.audio = saved.audio;
+    // Else the track in the account's audio language, if the file has one (the server picks it).
+    else if (codecs.preferred_audio >= 0) p.audio = codecs.preferred_audio;
     if (saved && saved.subtitle < codecs.subtitles.length) p.subtitle = saved.subtitle;
+    else if (codecs.preferred_subtitle >= 0) p.subtitle = codecs.preferred_subtitle;
     else {
         // Off unless the file has forced subtitles (translations of foreign-language lines).
         const forced = codecs.subtitles.find(s => s.forced && s.text);
@@ -2420,6 +2423,40 @@ function setupPlaybackSettings() {
     };
 }
 
+// Settings › My Account › Language: the account's languages for audio and for subtitles, and
+// whether subtitles start on (kept on the server, for every device). The server picks the tracks
+// they mean (the codecs report's preferred_audio and preferred_subtitle); "File default" is as the
+// file says.
+async function setupLanguageSetting() {
+    const audio = document.getElementById('account-audio-language');
+    const subtitle = document.getElementById('account-subtitle-language');
+    const on = document.getElementById('account-subtitles-on');
+    let account;
+    try { account = await api.getAccount(); } catch (e) { return; }
+    let names = null;
+    try { names = new Intl.DisplayNames([navigator.language], { type: 'language' }); } catch (e) { /* codes */ }
+    const name = code => (names && names.of(code)) || code;
+    const options = account.languages.map(code => [code, name(code)]).sort((a, b) => a[1].localeCompare(b[1]));
+    for (const select of [audio, subtitle]) {
+        select.replaceChildren(select.options[0]);
+        options.forEach(([code, label]) => select.add(new Option(label, code)));
+    }
+    audio.value = account.audio_language || '';
+    subtitle.value = account.subtitle_language || '';
+    on.checked = !!account.subtitles_on;
+    audio.onchange = subtitle.onchange = on.onchange = async () => {
+        const next = { audio_language: audio.value, subtitle_language: subtitle.value, subtitles_on: on.checked };
+        try { await api.setLanguages(next); } catch (e) {
+            alert('Could not save the setting: ' + e.message);
+            audio.value = account.audio_language || '';
+            subtitle.value = account.subtitle_language || '';
+            on.checked = !!account.subtitles_on;
+            return;
+        }
+        Object.assign(account, next);
+    };
+}
+
 function resumePlayback() {
     if (rewindOnResume() && (player || disc) && !videoPlayer.ended) {
         const at = playerPosition();
@@ -2716,6 +2753,7 @@ async function showSettings(pushHistory = true) {
     document.getElementById('account-signed-in').textContent =
         user.username ? `Signed in as ${user.username}${user.is_admin ? ' (admin)' : ''}` : '';
     // The server's version (from /api/info, which is public), at the foot of My Account
+    setupLanguageSetting();
     fetch('/api/info', { cache: 'no-cache' }).then(r => r.json()).then(info => {
         document.getElementById('server-version').textContent = info.version ? `WeirdStreamer server ${info.version}` : '';
     }).catch(() => {});

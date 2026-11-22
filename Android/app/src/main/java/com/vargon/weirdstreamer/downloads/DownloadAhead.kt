@@ -47,7 +47,8 @@ object DownloadAhead {
 
         val upcoming = repo.upcoming(sourcePath, MAX_EPISODES).filter { it.size > 0 } // an empty file won't download
         if (upcoming.isEmpty()) return 0
-        // The quality of the show's episodes downloaded by hand, else Compatibility: full quality, playable here.
+        // The quality and languages of the show's episodes downloaded by hand, else Compatibility (full
+        // quality, playable here) in the languages playing would pick.
         val like = DownloadStore.mine(DownloadStore.items.value).lastOrNull { d ->
             !d.ahead && d.serverAddress == server && d.episode != null && d.episode?.show == showOf(current.showTitle)
         }
@@ -67,6 +68,8 @@ object DownloadAhead {
                 sizePct = sizePct,
                 scale = like?.scale ?: 100,
                 compat = like?.compat ?: true,
+                audioLanguage = like?.audioLanguage,
+                subtitleLanguage = like?.subtitleLanguage,
                 bytesTotal = e.size,
                 ahead = true
             )

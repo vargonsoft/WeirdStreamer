@@ -24,13 +24,13 @@ func TestDownloadEncode(t *testing.T) {
 	st, _ := os.Stat(src)
 
 	m := NewDownloadManager(filepath.Join(dir, "jobs"))
-	if _, err := m.Create(1, src, 100, 100, true, true); err == nil {
+	if _, err := m.Create(1, src, 100, 100, true, true, -1); err == nil {
 		t.Error("an original download of a plain file was accepted as a job")
 	}
-	if _, err := m.Create(1, src, 33, 100, false, false); err == nil {
+	if _, err := m.Create(1, src, 33, 100, false, false, -1); err == nil {
 		t.Error("an unknown size was accepted")
 	}
-	job, err := m.Create(1, src, 25, 50, false, false)
+	job, err := m.Create(1, src, 25, 50, false, false, -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,16 +86,16 @@ func TestDownloadKeepsVideo(t *testing.T) {
 		t.Fatalf("make clip: %v %s", err, out)
 	}
 	m := NewDownloadManager(filepath.Join(dir, "jobs"))
-	if _, err := m.Create(1, src, 50, 100, true, false); err == nil {
+	if _, err := m.Create(1, src, 50, 100, true, false, -1); err == nil {
 		t.Error("a compressed copy that keeps the video was accepted")
 	}
-	remux, err := m.Create(1, src, 100, 100, true, true)
+	remux, err := m.Create(1, src, 100, 100, true, true, -1)
 	if err != nil {
 		t.Errorf("keeping the video and audio of an MKV (a copy into MP4) was refused: %v", err)
 	} else {
 		m.Delete(1, remux.ID)
 	}
-	job, err := m.Create(1, src, 100, 100, true, false)
+	job, err := m.Create(1, src, 100, 100, true, false, -1)
 	if err != nil {
 		t.Fatal(err)
 	}

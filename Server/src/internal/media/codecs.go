@@ -21,6 +21,10 @@ type Codecs struct {
 	// Fonts embedded in the file (Matroska attachments), which its ASS/SSA tracks may name: the
 	// players' ASS renderers fetch them with GET /api/media/font.
 	Fonts []FontAttachment `json:"fonts"`
+	// The tracks to start with for the account's languages (PreferredTracks; -1: the file's default).
+	// Only GET /api/media/codecs fills them in.
+	PreferredAudio    int `json:"preferred_audio"`
+	PreferredSubtitle int `json:"preferred_subtitle"`
 }
 
 // FontAttachment is a font embedded in a video: Index is its place among the file's attachments

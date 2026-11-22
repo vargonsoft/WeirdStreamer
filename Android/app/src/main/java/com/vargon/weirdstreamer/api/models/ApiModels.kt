@@ -203,7 +203,9 @@ data class CreateDownloadRequest(
     @SerializedName("scale") val scale: Int,
     // Compatibility: kept as they are (what this device plays); the rest is encoded
     @SerializedName("keep_video") val keepVideo: Boolean = false,
-    @SerializedName("keep_audio") val keepAudio: Boolean = false
+    @SerializedName("keep_audio") val keepAudio: Boolean = false,
+    // The audio track to keep (among the file's), -1 its default
+    @SerializedName("audio") val audio: Int = -1
 )
 
 /** A server-side encode for a compressed download. */
@@ -496,6 +498,17 @@ data class CodecsInfo(
     @SerializedName("subtitles") val subtitles: List<SubtitleTrack>? = null,
     // Fonts embedded in the video, which its ASS/SSA tracks name (GET /api/media/font)
     @SerializedName("fonts") val fonts: List<FontAttachment>? = null,
+    // The tracks to start with for the account's languages (the server's indexes; -1: the file's default)
+    @SerializedName("preferred_audio") val preferredAudio: Int = -1,
+    @SerializedName("preferred_subtitle") val preferredSubtitle: Int = -1,
+)
+
+/** GET/PUT /api/account: the account's languages for audio and subtitles ("" for the file's default), and the codes to choose from. */
+data class AccountSettings(
+    @SerializedName("audio_language") val audioLanguage: String = "",
+    @SerializedName("subtitle_language") val subtitleLanguage: String = "",
+    @SerializedName("subtitles_on") val subtitlesOn: Boolean = false, // subtitles start on, in subtitleLanguage
+    @SerializedName("languages") val languages: List<String>? = null,
 )
 
 /** POST /api/media/subtitle-font: the text whose CJK characters need a font. */

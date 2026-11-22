@@ -6,6 +6,7 @@ import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.api.models.MediaSegments
 import com.vargon.weirdstreamer.api.models.AutoSkipRequest
 import com.vargon.weirdstreamer.api.models.CodecsInfo
+import com.vargon.weirdstreamer.api.models.AccountSettings
 import com.vargon.weirdstreamer.api.models.SeekPoint
 import com.vargon.weirdstreamer.api.models.SubtitleSearch
 import com.vargon.weirdstreamer.api.models.SubtitleDownload
@@ -154,6 +155,12 @@ interface ApiService {
 
     @DELETE("/api/users")
     suspend fun deleteUser(@Query("username") username: String): Response<JsonObject>
+
+    @GET("/api/account")
+    suspend fun getAccount(): Response<AccountSettings>
+
+    @PUT("/api/account")
+    suspend fun setAccount(@Body settings: AccountSettings): Response<Unit>
 
     @POST("/api/users/change-password")
     suspend fun changePassword(@Body request: ChangePasswordRequest): Response<JsonObject>

@@ -41,7 +41,16 @@ data class DownloadItem(
     // When its subtitles, skip times and trickplay frames were last saved from the server (0: never)
     val extrasAt: Long = 0,
     // Downloaded ahead of the episode being watched (DownloadAhead), removed once watched past
-    val ahead: Boolean = false
+    val ahead: Boolean = false,
+    // The languages chosen in the download dialog (two-letter codes; subtitles also "off"), null for
+    // what playing would pick (DownloadLanguages); and the tracks they were in the file when it was
+    // downloaded (the server's indexes, -1 its default / none): the audio an original plays (of
+    // audioTracks), the subtitles shown.
+    val audioLanguage: String? = null,
+    val subtitleLanguage: String? = null,
+    val audioTrack: Int? = null,
+    val audioTracks: Int? = null,
+    val subtitleTrack: Int? = null
 ) {
     enum class State { QUEUED, PREPARING, DOWNLOADING, DONE, FAILED }
 
@@ -180,6 +189,14 @@ object DownloadStore {
     var downloadAhead: Boolean
         get() = prefs.getBoolean("download_ahead", false)
         set(value) { prefs.edit().putBoolean("download_ahead", value).apply() }
+
+    /** The audio and subtitle languages last chosen in the download dialog, when changed there: the next one starts with them. */
+    var lastAudioLanguage: String?
+        get() = prefs.getString("audio_language", null)
+        set(value) { prefs.edit().putString("audio_language", value).apply() }
+    var lastSubtitleLanguage: String?
+        get() = prefs.getString("subtitle_language", null)
+        set(value) { prefs.edit().putString("subtitle_language", value).apply() }
 
     /** How fast downloads arrive here, in bytes a second (0: not known yet), averaged over the last ones. */
     val speed: Double get() = prefs.getFloat("speed", 0f).toDouble()

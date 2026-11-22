@@ -59,7 +59,10 @@ data class SubtitleCue(val startMs: Long, val endMs: Long, val text: AnnotatedSt
  * transcode ([burnIn]). A download played on the phone has its tracks saved beside it ([saved]):
  * they're read from there, whole, with no server.
  */
-class ServerSubtitles(private val api: ApiService?, private val encodedPath: String, private val saved: java.io.File? = null) {
+class ServerSubtitles(
+    private val api: ApiService?, private val encodedPath: String, private val saved: java.io.File? = null,
+    private val savedPreferred: Int = -1, // a download's: the track chosen for it (the server's index), -1 none
+) {
     /** Whether the server is there: for searching and downloading more, and saving timing. */
     val online: Boolean get() = api != null
 
@@ -68,6 +71,11 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
     var selected by mutableIntStateOf(-1)
         private set
     var loaded by mutableStateOf(false)
+        private set
+
+    /** The track to start with when none was chosen for the video: the one in the account's subtitle language (the
+     *  server's pick), or a download's chosen one; -1 none. A place in [tracks]. */
+    var preferred by mutableIntStateOf(-1)
         private set
 
     val labels: List<String> get() = serverSubtitleLabels(tracks)
@@ -185,13 +193,15 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
     private var generation = 0 // a new choice drops cues still arriving for the old one
 
     suspend fun load() {
+        var want = savedPreferred
         val got = withContext(Dispatchers.IO) {
             if (saved != null) runCatching {
                 com.google.gson.Gson().fromJson(java.io.File(saved, "tracks.json").readText(), Array<SubtitleTrack>::class.java).toList()
             }.getOrNull()
-            else runCatching { api?.getCodecs(encodedPath)?.body() }.getOrNull()?.also { fonts = it.fonts.orEmpty() }?.subtitles
+            else runCatching { api?.getCodecs(encodedPath)?.body() }.getOrNull()
+                ?.also { fonts = it.fonts.orEmpty(); want = it.preferredSubtitle }?.subtitles
         }
-        got?.let { tracks = it }
+        got?.let { tracks = it; preferred = if (want < 0) -1 else it.indexOfFirst { t -> t.index == want } }
         loaded = true
     }
 
@@ -395,7 +405,7 @@ class ServerSubtitles(private val api: ApiService?, private val encodedPath: Str
         fun forDownload(path: String): ServerSubtitles? {
             val item = com.vargon.weirdstreamer.downloads.DownloadStore.ofLocalPath(path) ?: return null
             val dir = com.vargon.weirdstreamer.downloads.DownloadStore.subtitleDir(item)
-            return if (java.io.File(dir, "tracks.json").exists()) ServerSubtitles(null, "", dir) else null
+            return if (java.io.File(dir, "tracks.json").exists()) ServerSubtitles(null, "", dir, item.subtitleTrack ?: -1) else null
         }
 
         /** The API of the server a stream URL comes from, and the video's encoded path; null for other sources. */
@@ -470,6 +480,18 @@ private fun styledCue(text: String): AnnotatedString = buildAnnotatedString {
 private val bibliographic = mapOf("fre" to "fra", "ger" to "deu", "chi" to "zho", "dut" to "nld", "cze" to "ces",
     "gre" to "ell", "per" to "fas", "rum" to "ron", "slo" to "slk", "ice" to "isl", "may" to "msa", "baq" to "eus",
     "arm" to "hye", "geo" to "kat", "mac" to "mkd", "alb" to "sqi", "bur" to "mya", "tib" to "bod", "wel" to "cym")
+
+private val twoLetter by lazy {
+    Locale.getISOLanguages().associateBy { runCatching { Locale(it).isO3Language }.getOrDefault(it) }
+}
+
+/** A track's language tag (eng, fre, en, pt-BR) as a two-letter code ("en", "fr"), as the
+ *  account's language is kept; null when it's unknown (und, empty). */
+fun languageCode(tag: String?): String? {
+    val c = tag?.trim()?.lowercase()?.substringBefore('-')?.substringBefore('_')?.takeIf { it.isNotEmpty() && it != "und" } ?: return null
+    if (c.length == 2) return c
+    return twoLetter[bibliographic[c] ?: c] ?: c
+}
 
 /** A language code (eng, fre, en…) as a name in this device's language: "English", "French". */
 fun languageName(code: String?): String? {

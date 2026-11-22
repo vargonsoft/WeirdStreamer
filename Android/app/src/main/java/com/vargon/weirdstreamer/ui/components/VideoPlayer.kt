@@ -331,7 +331,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     LaunchedEffect(path) {
         val c = choice ?: return@LaunchedEffect
         c.load()
-        val saved = AudioMemory.get(context, subtitleVideo)?.let { AudioMemory.resolve(it, audioLabels(c.audioTracks)) } ?: -1
+        val saved = AudioMemory.get(context, subtitleVideo)?.let { AudioMemory.resolve(it, audioLabels(c.audioTracks)) } ?: c.preferredTrack
         when {
             tooBigToDecode -> chooseTranscode(1, startAtMs, track = saved)
             saved < 0 -> {}
@@ -432,7 +432,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
         subs.load()
         val labels = subs.labels
         val index = SubtitleMemory.get(context, subtitleVideo)?.let { SubtitleMemory.resolve(it, labels) }
-            ?: subs.tracks.indexOfFirst { it.forced && it.text }
+            ?: subs.preferred.takeIf { it >= 0 } ?: subs.tracks.indexOfFirst { it.forced && it.text }
         if (index >= 0) chooseServerSubtitle(index, if (playbackPosition > 0) playbackPosition else startAtMs)
     }
 

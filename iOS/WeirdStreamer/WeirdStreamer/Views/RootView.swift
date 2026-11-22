@@ -27,6 +27,8 @@ struct RootView: View {
                 AuthDialog(request: request)
             } else if model.resumeChoice != nil {
                 ResumeDialog()
+            } else if model.sourceChoice != nil {
+                SourceDialog()
             } else if model.confirmRegenerate {
                 PhoneDialog(title: "Regenerate thumbnails?", onDismiss: { model.confirmRegenerate = false }) {
                     EmptyView()

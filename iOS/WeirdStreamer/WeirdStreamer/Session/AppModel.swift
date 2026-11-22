@@ -586,17 +586,47 @@ final class AppModel {
         play(entry.path, name: entry.name, from: 0)
     }
 
-    func playContinue(_ item: ContinueItem) {
-        play(item.path, name: item.metadata?.playerTitle ?? item.name, from: resumeSeconds(item.path, item.playback))
+    /// A Continue Watching entry, or (with `ask` false, going on by itself) the show's next episode.
+    func playContinue(_ item: ContinueItem, ask: Bool = true) {
+        play(item.path, name: item.metadata?.playerTitle ?? item.name, from: resumeSeconds(item.path, item.playback), ask: ask)
     }
 
     func playLibraryFile(_ file: LibraryFile, title: String? = nil, fromStart: Bool = false) {
         play(file.path, name: title ?? file.name, from: fromStart ? 0 : resumeSeconds(file.path, file.playback))
     }
 
-    private func play(_ path: String, name: String, from start: Double) {
+    /// A server video that's also downloaded on this phone: play the download or stream it? (Android's sourceChoice)
+    struct SourceChoice {
+        let path: String
+        let name: String
+        let start: Double
+        let file: URL
+    }
+    var sourceChoice: SourceChoice?
+
+    /// Plays a server video, first asking whether to play its download instead when it has one
+    /// (not when going on to the next episode by itself: `ask` false streams, as the last one did).
+    private func play(_ path: String, name: String, from start: Double, ask: Bool = true) {
+        if ask, let d = DownloadManager.shared.find(path), d.isDone, let file = d.localURL,
+           FileManager.default.fileExists(atPath: file.path) {
+            sourceChoice = SourceChoice(path: path, name: name, start: start, file: file)
+            return
+        }
+        startPlaying(path, name: name, from: start, file: nil)
+    }
+
+    /// Answers the source choice: the download (true), the server (false), or (nil) cancel.
+    func chooseSource(download: Bool?) {
+        guard let c = sourceChoice else { return }
+        sourceChoice = nil
+        guard let download else { return }
+        startPlaying(c.path, name: c.name, from: c.start, file: download ? c.file : nil)
+    }
+
+    private func startPlaying(_ path: String, name: String, from start: Double, file: URL?) {
         lastPlayedFile = path
-        playing = PlayRequest(path: path, title: name, startAt: start, libraryId: String(path.prefix(while: { $0 != "/" })))
+        playing = PlayRequest(path: path, title: name, startAt: start, libraryId: String(path.prefix(while: { $0 != "/" })),
+                              localFile: file)
     }
 
     /// Where to resume, in seconds: the newest of the server's position and the phone's.

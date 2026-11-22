@@ -36,6 +36,15 @@ final class Download {
     var duration: Double
     var ahead: Bool             // downloaded ahead of the episode being watched
     var extrasAt: Date? = nil   // when its subtitles, skip times and trickplay were last saved in full
+    // The languages chosen in the download sheet (two-letter codes; subtitles also "off"), nil for what
+    // playing would pick (DownloadLanguages); and the tracks they were in the file when it was
+    // downloaded (the server's indexes, -1 its default / none): the audio an original plays (of
+    // audioTracks), the subtitles shown.
+    var audioLanguage: String? = nil
+    var subtitleLanguage: String? = nil
+    var audioTrack: Int? = nil
+    var audioTracks: Int? = nil
+    var subtitleTrack: Int? = nil
 
     init(address: String, account: String, sourcePath: String, name: String, title: String?, thumbnailUrl: String?,
          sizePct: Int, scale: Int, compat: Bool, size: Int64, ahead: Bool = false) {
@@ -89,9 +98,10 @@ struct OfflinePlayback {
     let plays: Bool
     let problem: String?
 
-    static func of(_ codecs: CodecsInfo, path: String) -> OfflinePlayback {
+    /// `audioTrack`: the audio track it's downloaded with (the server's index), -1 the default.
+    static func of(_ codecs: CodecsInfo, path: String, audioTrack: Int = -1) -> OfflinePlayback {
         let v = codecs.video?.codec?.lowercased()
-        let a = (codecs.audio?.first { $0.default == true } ?? codecs.audio?.first)?.codec?.lowercased()
+        let a = (codecs.audio?.first { $0.index == audioTrack } ?? codecs.audio?.first { $0.default == true } ?? codecs.audio?.first)?.codec?.lowercased()
         let video = v == nil || ["h264", "hevc", "mpeg4"].contains(v!)
         let audio = a == nil || ["aac", "mp3", "ac3", "eac3", "alac", "flac"].contains(a!)
         let container = ["mp4", "m4v", "mov"].contains((path as NSString).pathExtension.lowercased())
@@ -124,6 +134,15 @@ final class DownloadManager: NSObject {
     var wifiOnly: Bool {
         get { _ = version; return model?.setting("downloads_wifi_only") != "false" }
         set { model?.setSetting("downloads_wifi_only", newValue ? "true" : "false"); makeSession(); bump() }
+    }
+    /// The audio and subtitle languages last chosen in the download sheet, when changed there: the next one starts with them.
+    var lastAudioLanguage: String? {
+        get { model?.setting("downloads_audio_language").flatMap { $0.isEmpty ? nil : $0 } }
+        set { model?.setSetting("downloads_audio_language", newValue ?? "") }
+    }
+    var lastSubtitleLanguage: String? {
+        get { model?.setting("downloads_subtitle_language").flatMap { $0.isEmpty ? nil : $0 } }
+        set { model?.setSetting("downloads_subtitle_language", newValue ?? "") }
     }
     var downloadAhead: Bool {
         get { _ = version; return model?.setting("downloads_ahead") == "true" }
@@ -175,11 +194,14 @@ final class DownloadManager: NSObject {
     }
 
     func add(_ requests: [(path: String, name: String, title: String?, thumb: String?, size: Int64)],
-             sizePct: Int, scale: Int, compat: Bool, ahead: Bool = false) {
+             sizePct: Int, scale: Int, compat: Bool, ahead: Bool = false, audioLanguage: String? = nil, subtitleLanguage: String? = nil) {
         guard let model, let address = model.currentAddress, let account = model.currentAccount else { return }
         for r in requests where find(r.path) == nil {
-            model.context.insert(Download(address: address, account: account, sourcePath: r.path, name: r.name, title: r.title,
-                                          thumbnailUrl: r.thumb, sizePct: sizePct, scale: scale, compat: compat, size: r.size, ahead: ahead))
+            let d = Download(address: address, account: account, sourcePath: r.path, name: r.name, title: r.title,
+                             thumbnailUrl: r.thumb, sizePct: sizePct, scale: scale, compat: compat, size: r.size, ahead: ahead)
+            d.audioLanguage = audioLanguage
+            d.subtitleLanguage = subtitleLanguage
+            model.context.insert(d)
         }
         save()
         run()
@@ -236,8 +258,17 @@ final class DownloadManager: NSObject {
         let options: Options? = try? await client.get("/api/downloads/options", query: [("path", encoded)])
         if let o = options { d.duration = o.duration ?? 0; if o.size ?? 0 > 0, d.isOriginal { d.bytesTotal = o.size! } }
         var keep: OfflinePlayback?
-        if d.compat, let codecs: CodecsInfo = try? await client.get("/api/media/codecs", query: [("path", encoded)]) {
-            keep = OfflinePlayback.of(codecs, path: d.sourcePath)
+        let codecs: CodecsInfo? = try? await client.get("/api/media/codecs", query: [("path", encoded)])
+        // The tracks in the languages chosen (or those playing would pick), in the file as it is now.
+        let audioTrack = codecs.map { DownloadLanguages.audioTrack($0, d.audioLanguage) } ?? -1
+        if let codecs {
+            d.audioTrack = audioTrack
+            d.audioTracks = codecs.audio?.count ?? 0
+            d.subtitleTrack = DownloadLanguages.subtitleTrack(codecs, d.subtitleLanguage)
+            save()
+        }
+        if d.compat, let codecs {
+            keep = OfflinePlayback.of(codecs, path: d.sourcePath, audioTrack: audioTrack)
             if keep?.plays == true { d.compat = false } // nothing to convert: the original
         }
         let url: URL
@@ -247,13 +278,13 @@ final class DownloadManager: NSObject {
             url = client.streamURL(for: d.sourcePath)
         } else {
             // The server encodes the copy first ("Preparing on the server").
-            struct Create: Encodable { let path: String; let size_pct: Int; let scale: Int; let keep_video: Bool; let keep_audio: Bool }
+            struct Create: Encodable { let path: String; let size_pct: Int; let scale: Int; let keep_video: Bool; let keep_audio: Bool; let audio: Int }
             struct Job: Decodable { let id: String; let status: String?; let progress: Double?; let error: String?; let width: Int?; let height: Int? }
             while true {
                 guard all().contains(where: { $0.id == d.id }) else { return } // removed meanwhile
                 if d.jobId == nil {
                     let job: Job = try await client.call("POST", "/api/downloads", body: Create(
-                        path: encoded, size_pct: d.sizePct, scale: d.scale, keep_video: keep?.video == true, keep_audio: keep?.audio == true))
+                        path: encoded, size_pct: d.sizePct, scale: d.scale, keep_video: keep?.video == true, keep_audio: keep?.audio == true, audio: audioTrack))
                     d.jobId = job.id
                     save()
                 }
@@ -335,7 +366,8 @@ final class DownloadManager: NSObject {
             wanted.append((path: e.path, name: e.name, title: e.metadata?.playerTitle,
                            thumb: e.thumbnailUrl ?? e.metadata?.still, size: e.size ?? 0))
         }
-        add(wanted, sizePct: sizePct, scale: like?.scale ?? 100, compat: like?.compat ?? true, ahead: true)
+        add(wanted, sizePct: sizePct, scale: like?.scale ?? 100, compat: like?.compat ?? true, ahead: true,
+            audioLanguage: like?.audioLanguage, subtitleLanguage: like?.subtitleLanguage)
     }
 
     /// The show's episodes downloaded ahead that come before the one being watched have been
@@ -363,7 +395,8 @@ final class DownloadManager: NSObject {
             for d in due {
                 let id = d.id
                 do {
-                    let complete = try await DownloadExtras.save(id: id, sourcePath: d.sourcePath, thumbnail: d.thumbnailUrl, client: client) {
+                    let complete = try await DownloadExtras.save(id: id, sourcePath: d.sourcePath, thumbnail: d.thumbnailUrl,
+                                                                        subtitleTrack: d.subtitleTrack ?? -1, client: client) {
                         await MainActor.run { self.all().contains { $0.id == id } }
                     }
                     guard all().contains(where: { $0.id == id }) else { continue }

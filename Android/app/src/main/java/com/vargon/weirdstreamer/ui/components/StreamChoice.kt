@@ -148,6 +148,9 @@ class StreamChoice(private val api: ApiService, private val encodedPath: String)
         runCatching { api.getCodecs(encodedPath).body() }.getOrNull()
     }?.also { codecs = it; audioTracks = it.audio.orEmpty() }
 
+    /** The audio track in the account's audio language, if the file has one (the server's pick), else -1. */
+    val preferredTrack: Int get() = codecs?.preferredAudio ?: -1
+
     /** Asks the server for the file's tracks (once). */
     suspend fun load() { codecs() }
 

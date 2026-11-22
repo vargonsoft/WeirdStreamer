@@ -284,6 +284,8 @@ func main() {
 	api.HandleFunc("/users", userHandler.UpdateUser).Methods("PUT")
 	api.HandleFunc("/users", userHandler.DeleteUser).Methods("DELETE")
 	api.HandleFunc("/users/change-password", userHandler.ChangePassword).Methods("POST")
+	api.HandleFunc("/account", userHandler.GetAccount).Methods("GET")
+	api.HandleFunc("/account", userHandler.UpdateAccount).Methods("PUT")
 
 	// Thumbnails and trickplay frames require login and are checked against the file's library
 	thumbs := r.PathPrefix("/thumbnails").Subrouter()

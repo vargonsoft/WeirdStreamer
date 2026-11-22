@@ -11,7 +11,7 @@ import java.util.Locale
 
 /**
  * Whether this device plays a file as it is, offline: a download has no server to transcode it.
- * The video needs a decoder for its codec, its bit depth and its size; the default audio track a
+ * The video needs a decoder for its codec, its bit depth and its size; its audio track (the default, or the one chosen) a
  * decoder (or an output that takes it as it is).
  */
 class OfflinePlayback(val video: Boolean, val audio: Boolean, private val videoName: String?, private val audioName: String?) {
@@ -42,8 +42,9 @@ class OfflinePlayback(val video: Boolean, val audio: Boolean, private val videoN
             MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { !it.isEncoder }
         }
 
-        fun of(context: Context, codecs: CodecsInfo, width: Int, height: Int): OfflinePlayback {
-            val track = codecs.audio?.let { list -> list.firstOrNull { it.isDefault } ?: list.firstOrNull() }
+        /** [audioTrack]: the audio track it's downloaded with (the server's index), -1 the default. */
+        fun of(context: Context, codecs: CodecsInfo, width: Int, height: Int, audioTrack: Int = -1): OfflinePlayback {
+            val track = codecs.audio?.let { list -> list.firstOrNull { it.index == audioTrack } ?: list.firstOrNull { it.isDefault } ?: list.firstOrNull() }
             val video = codecs.video
             return OfflinePlayback(
                 video = video == null || playsVideo(video, width, height),

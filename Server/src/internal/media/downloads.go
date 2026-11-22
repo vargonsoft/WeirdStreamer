@@ -44,6 +44,7 @@ type DownloadJob struct {
 	// Kept as they are instead of encoded (full size and resolution only): what the device plays.
 	KeepVideo bool    `json:"keep_video,omitempty"`
 	KeepAudio bool    `json:"keep_audio,omitempty"`
+	Audio     int     `json:"audio"`  // the audio track kept (among the file's), -1 its default
 	Status    string  `json:"status"` // queued, encoding, ready, failed
 	Progress  float64 `json:"progress"`
 	Error     string  `json:"error,omitempty"`
@@ -125,8 +126,9 @@ func Source(path string) (*DownloadSource, error) {
 }
 
 // Create queues an encode of path for owner: at sizePct of its size and scale of its resolution,
-// keeping the video or audio as they are where keepVideo or keepAudio say (full quality only).
-func (m *DownloadManager) Create(owner int64, path string, sizePct, scale int, keepVideo, keepAudio bool) (*DownloadJob, error) {
+// keeping the video or audio as they are where keepVideo or keepAudio say (full quality only), with
+// the audio track audio (among the file's; -1 its default).
+func (m *DownloadManager) Create(owner int64, path string, sizePct, scale int, keepVideo, keepAudio bool, audio int) (*DownloadJob, error) {
 	if !contains(append([]int{100}, DownloadSizes...), sizePct) || !contains(DownloadScales, scale) {
 		return nil, errors.New("unknown quality")
 	}
@@ -160,7 +162,7 @@ func (m *DownloadManager) Create(owner int64, path string, sizePct, scale int, k
 	}
 	id := newID()
 	job := &DownloadJob{ID: id, Owner: owner, Path: path, SizePct: sizePct, Scale: scale, KeepVideo: keepVideo,
-		KeepAudio: keepAudio, Status: "queued", Duration: src.Duration, file: filepath.Join(m.dir, id+".mp4")}
+		KeepAudio: keepAudio, Audio: audio, Status: "queued", Duration: src.Duration, file: filepath.Join(m.dir, id+".mp4")}
 	m.jobs[id] = job
 	m.mu.Unlock()
 	m.queue <- job
@@ -308,11 +310,15 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 		if err != nil {
 			return err
 		}
-		args = []string{"-i", job.Path, "-map", "0:v:0", "-map", fmt.Sprintf("0:a:%d?", codecs.DefaultAudio())}
+		track := job.Audio
+		if track < 0 || track >= len(codecs.Audio) {
+			track = codecs.DefaultAudio()
+		}
+		args = []string{"-i", job.Path, "-map", "0:v:0", "-map", fmt.Sprintf("0:a:%d?", track)}
 		if height > 0 {
 			args = append(args, "-vf", fmt.Sprintf("scale=-2:%d", height))
 		}
-		if len(codecs.Audio) > 0 && !mp4Audio(codecs.Audio[codecs.DefaultAudio()].Codec) {
+		if len(codecs.Audio) > 0 && !mp4Audio(codecs.Audio[track].Codec) {
 			keepAudio = false // DTS, TrueHD…: MP4 can't carry it
 		}
 		hevc = codecs.Video != nil && codecs.Video.Codec == "hevc"

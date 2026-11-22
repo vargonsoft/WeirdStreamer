@@ -291,12 +291,37 @@ struct AccountTab: View {
     @State private var tvCode = ""
     @State private var tvMessage: (String, Bool)?
     @State private var pairing = false
+    @State private var account: AccountSettings?
+    @State private var languageMessage: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("\(model.currentAccount ?? "Unknown")\(model.isAdmin ? " (administrator)" : "") on \(model.currentAddress ?? "")")
                     .font(.subheadline)
+
+                Divider().overlay(Palette.raised).padding(.vertical, 8)
+                Text("Language").font(.subheadline.weight(.medium)).foregroundStyle(Palette.accent)
+                Text("Videos start with audio in this language when they have it, and with subtitles in this one if subtitles are shown by default. On every device.")
+                    .font(.footnote).foregroundStyle(Palette.muted)
+                if let account {
+                    languageMenu("Audio", account.audioLanguage) { code in
+                        var next = account; next.audioLanguage = code; Task { await setLanguages(next) }
+                    }
+                    languageMenu("Subtitles", account.subtitleLanguage) { code in
+                        var next = account; next.subtitleLanguage = code; Task { await setLanguages(next) }
+                    }
+                    Toggle("Show subtitles by default", isOn: Binding(get: { account.subtitlesOn }, set: { on in
+                        var next = account; next.subtitlesOn = on; Task { await setLanguages(next) }
+                    }))
+                    .tint(Palette.accent)
+                }
+                if let languageMessage {
+                    Text(languageMessage).font(.footnote).foregroundStyle(Palette.error)
+                }
+
+                Divider().overlay(Palette.raised).padding(.vertical, 8)
+                Text("Change password").font(.subheadline.weight(.medium)).foregroundStyle(Palette.accent)
                 PhoneTextField(label: "Current password", text: $current, secure: true)
                 PhoneTextField(label: "New password", text: $password, secure: true)
                 PhoneTextField(label: "Confirm password", text: $confirm, secure: true)
@@ -334,6 +359,45 @@ struct AccountTab: View {
                     .disabled(pairing || tvCode.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(16)
+        }
+        .task { await loadAccount() }
+    }
+
+    private func languageLabel(_ code: String) -> String { code.isEmpty ? "File default" : languageName(code) ?? code }
+
+    private func languageMenu(_ label: String, _ value: String, set: @escaping (String) -> Void) -> some View {
+        HStack {
+            Text(label).frame(width: 90, alignment: .leading)
+            Menu {
+                Picker(label, selection: Binding(get: { value }, set: set)) {
+                    Text("File default").tag("")
+                    ForEach((account?.languages ?? []).sorted { languageLabel($0) < languageLabel($1) }, id: \.self) { code in
+                        Text(languageLabel(code)).tag(code)
+                    }
+                }
+            } label: {
+                Text(languageLabel(value))
+            }
+            .buttonStyle(PhoneButtonStyle())
+        }
+    }
+
+    private func loadAccount() async {
+        guard let client = model.client else { return }
+        do { account = try await client.get("/api/account") } catch { languageMessage = error.localizedDescription }
+    }
+
+    /// The account's languages for audio and subtitles, kept on the server for every device.
+    private func setLanguages(_ next: AccountSettings) async {
+        guard let client = model.client else { return }
+        do {
+            try await client.send("PUT", "/api/account", body: AccountSettings(audioLanguage: next.audioLanguage, subtitleLanguage: next.subtitleLanguage,
+                                                                                subtitlesOn: next.subtitlesOn))
+            account = next
+            languageMessage = nil
+        } catch {
+            model.handle(error)
+            languageMessage = error.localizedDescription
         }
     }
 

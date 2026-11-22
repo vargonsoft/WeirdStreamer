@@ -11,6 +11,7 @@ import (
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/logs"
+	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/models"
 )
 
@@ -244,4 +245,38 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	logs.Auth("Password changed: %q, from %s", user.Username, clientIP(r))
 
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Password changed successfully"})
+}
+
+// GetAccount answers the signed-in user's own settings: GET /api/account gives {"audio_language",
+// "subtitle_language": the languages they prefer ("" for the file's default), "subtitles_on": whether
+// subtitles start on, "languages": the codes to choose from}.
+func (h *UserHandler) GetAccount(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	l := h.db.UserLanguages(claims.UserID)
+	respondJSON(w, http.StatusOK, map[string]any{"audio_language": l.Audio, "subtitle_language": l.Subtitle,
+		"subtitles_on": l.SubtitlesOn, "languages": media.Languages()})
+}
+
+// UpdateAccount changes the signed-in user's own settings: PUT /api/account {"audio_language",
+// "subtitle_language": a code, or "" for the file's default, "subtitles_on": bool}.
+func (h *UserHandler) UpdateAccount(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	var req database.Languages
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !media.ValidLanguage(req.Audio) || !media.ValidLanguage(req.Subtitle) {
+		respondError(w, http.StatusBadRequest, "Unknown language")
+		return
+	}
+	if err := h.db.SetUserLanguages(claims.UserID, req); err != nil {
+		respondError(w, http.StatusInternalServerError, "Couldn't save the setting")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

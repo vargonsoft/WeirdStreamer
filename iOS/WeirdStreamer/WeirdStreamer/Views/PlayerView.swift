@@ -116,7 +116,9 @@ final class PlaybackModel {
                     let subs = ServerSubtitles(client: model.client, path: request.path, downloadId: d.id)
                     subs.setTracks(saved)
                     let remembered = model.setting(subtitleMemoryKey(model)).flatMap { label in subs.labels.firstIndex(of: label) }
-                    subs.select(remembered ?? subs.tracks.firstIndex { $0.forced == true && $0.isText } ?? -1)
+                    // Else the one chosen when it was downloaded, else a forced text track.
+                    let chosen = (d.subtitleTrack ?? -1) < 0 ? nil : subs.tracks.firstIndex { $0.index == d.subtitleTrack }
+                    subs.select(remembered ?? chosen ?? subs.tracks.firstIndex { $0.forced == true && $0.isText } ?? -1)
                     subtitles = subs
                 }
                 trickplay = DownloadExtras.trickplay(d.id)
@@ -127,6 +129,14 @@ final class PlaybackModel {
             player.replaceCurrentItem(with: item)
             pendingSeek = request.startAt > 0 ? request.startAt : nil
             observe(item)
+            // A download kept whole plays the audio track it was downloaded with (its tracks are the server's, in order).
+            if let d = download, let track = d.audioTrack, track >= 0, let count = d.audioTracks, count > 1 {
+                Task {
+                    if let group = try? await item.asset.loadMediaSelectionGroup(for: .audible), group.options.count == count {
+                        item.select(group.options[track], in: group)
+                    }
+                }
+            }
             player.rate = speeds[speedIndex]
             return
         }
@@ -146,17 +156,21 @@ final class PlaybackModel {
         }
         codecs = try? await client.get("/api/media/codecs", query: [("path", encoded)])
         if let d = codecs?.duration, d > 0 { duration = d }
-        // Subtitles: the one chosen for this video before, else a forced text track, else off.
+        // Subtitles: the one chosen for this video before, else the one in the account's subtitle language (the
+        // server's pick), else a forced text track, else off.
         let subs = ServerSubtitles(client: client, path: request.path)
         subs.setTracks(codecs?.subtitles ?? [])
         subs.setFonts(codecs?.fonts ?? [])
         let remembered = model.setting(subtitleMemoryKey(model)).flatMap { label in subs.labels.firstIndex(of: label) }
-        subs.select(remembered ?? subs.tracks.firstIndex { $0.forced == true && $0.isText } ?? -1)
+        let preferred = (codecs?.preferredSubtitle ?? -1) < 0 ? nil : subs.tracks.firstIndex { $0.index == codecs?.preferredSubtitle }
+        subs.select(remembered ?? preferred ?? subs.tracks.firstIndex { $0.forced == true && $0.isText } ?? -1)
         subtitles = subs
-        // Audio: the track chosen for this video before, else the file's default.
+        // Audio: the track chosen for this video before, else the one in the account's audio language, else the file's default.
         audioTracks = codecs?.audio ?? []
         if let label = model.setting(audioMemoryKey(model)), let i = audioLabels(audioTracks).firstIndex(of: label) {
             audioTrack = audioTracks[i].index ?? i
+        } else if let p = codecs?.preferredAudio, p >= 0 {
+            audioTrack = p
         }
         // As Android: the original unless this phone can't play it, then Compatibility (Auto).
         modeIndex = originalPlays() ? 0 : 1
@@ -502,7 +516,7 @@ final class PlaybackModel {
             return true
         }
         if download == nil, let next = segments?.next {
-            model.playContinue(next)
+            model.playContinue(next, ask: false) // streamed, as this one was
             return true
         }
         return false

@@ -456,6 +456,16 @@ class MediaAPI {
         });
     }
 
+    // The account's own settings: {language, languages}.
+    async getAccount() {
+        return this.request('/api/account');
+    }
+
+    // {audio_language, subtitle_language, subtitles_on}
+    async setLanguages(languages) {
+        return this.request('/api/account', { method: 'PUT', body: JSON.stringify(languages) });
+    }
+
     async changePassword(oldPassword, newPassword) {
         return this.request('/api/users/change-password', {
             method: 'POST',

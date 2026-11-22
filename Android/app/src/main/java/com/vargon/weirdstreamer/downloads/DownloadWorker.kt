@@ -106,10 +106,18 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val options = api.downloadOptions(encodedPath).body()
         options?.let { o -> item = DownloadStore.update(item.id) { it.copy(durationSeconds = o.duration) } ?: return@withContext }
         val codecs = api.getCodecs(encodedPath).body()
+        // The tracks in the languages chosen (or those playing would pick), in the file as it is now.
+        val audioTrack = codecs?.let { DownloadLanguages.audioTrack(it, item.audioLanguage) } ?: -1
+        codecs?.let { c ->
+            item = DownloadStore.update(item.id) {
+                it.copy(audioTrack = audioTrack, audioTracks = c.audio.orEmpty().size,
+                    subtitleTrack = DownloadLanguages.subtitleTrack(c, item.subtitleLanguage))
+            } ?: return@withContext
+        }
         // Compatibility keeps what this phone plays; with nothing to convert, it's the original.
         var keep: OfflinePlayback? = null
         if (item.compat && !item.isDisc) {
-            keep = codecs?.let { OfflinePlayback.of(applicationContext, it, options?.width ?: 0, options?.height ?: 0) }
+            keep = codecs?.let { OfflinePlayback.of(applicationContext, it, options?.width ?: 0, options?.height ?: 0, audioTrack) }
             if (keep?.plays == true) item = DownloadStore.update(item.id) { it.copy(compat = false) } ?: return@withContext
         }
         val url: String
@@ -123,7 +131,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 if (!stillWanted(item.id)) { jobId?.let { runCatching { api.deleteDownload(it) } }; return@withContext }
                 if (jobId == null) {
                     val created = api.createDownload(CreateDownloadRequest(encodedPath, item.sizePct, item.scale,
-                        keepVideo = keep?.video == true, keepAudio = keep?.audio == true))
+                        keepVideo = keep?.video == true, keepAudio = keep?.audio == true, audio = audioTrack))
                     val job = created.body() ?: throw IllegalStateException(errorText(created.errorBody()?.string()) ?: "The server couldn't prepare the file")
                     jobId = job.id
                     item = DownloadStore.update(item.id) { it.copy(jobId = job.id) } ?: return@withContext
@@ -292,7 +300,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     /**
      * Saves [item]'s subtitle tracks beside it, for playing offline: the ones the players draw
      * (text, as WebVTT; ASS/SSA whole, styled, with the video's fonts; and PGS pictures), in this
-     * phone's languages, forced ones and files the server has beside the video. Each is read from
+     * phone's languages, the one chosen for it, forced ones and files the server has beside the video. Each is read from
      * the server whole, as it sends a window.
      */
     private suspend fun saveSubtitles(item: DownloadItem, known: CodecsInfo?) = withContext(Dispatchers.IO) {
@@ -302,7 +310,8 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val languages = deviceSubtitleLanguages().mapNotNull { runCatching { Locale(it).isO3Language }.getOrNull() }.toSet()
         val wanted = info.subtitles.orEmpty().filter { t ->
             (t.text || t.codec == "hdmv_pgs_subtitle") &&
-                (t.forced || t.external != null || t.language.isNullOrEmpty() || t.language == "und" || t.language in languages)
+                (t.forced || t.external != null || t.language.isNullOrEmpty() || t.language == "und" || t.language in languages ||
+                    t.index == item.subtitleTrack)
         }
         val dir = DownloadStore.subtitleDir(item).apply { mkdirs() }
         val http = ApiClient.downloadClient(item.serverAddress, credentials, item.account)

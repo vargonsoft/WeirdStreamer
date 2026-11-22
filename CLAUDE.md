@@ -69,6 +69,10 @@ for each TODO item are at the end of this file.
     ones have none, and every account sees them). Each download also saves its subtitle tracks (text as WebVTT, ASS/SSA whole as .ass with the video's fonts, PGS as .sup; the
     phone's languages, forced ones and files beside the video) in `subtitles/<id>/`, which
     `ServerSubtitles.forDownload` reads offline (a file's by its `key`, the video's own by index), its intro and credits (`segments/<id>.json`, which `segmentsFor` reads for a `file://` path; offline, Skip Credits goes on to the next downloaded episode) and its trickplay frames (`trickplay/<id>/`, from `GET /api/media/trickplay?path=`). The worker saves them again every 12 hours and when a subtitle is downloaded for the video (`DownloadStore.needsExtras`, `extrasChanged`); older downloads get them on its next run.
+    A video that's downloaded, opened from the server (a folder, a title page, Continue Watching), asks
+    whether to play the download or stream it (`sourceChoice` / `PhoneSourceDialog`; the iPhone's
+    `SourceDialog`); going on to the next episode by itself doesn't ask, and keeps to what the last one
+    played from.
     The server's front page shows the account's finished downloads from it as a Downloads row after Continue
     Watching and Recently Added, just above the libraries (`PhoneDownloadsRow`); when the server can't be reached (`errorOffline`: an
     IOException), the phone shows a banner with Retry and that row instead of the error (`PhoneOfflineScreen`).
@@ -451,6 +455,20 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   phone's and iPhone's swipe-seek indicator ("−0:05 / 12:29"), and the same text over the web player
   (`showSeekIndicator`). Every unpause must go through it. The web keeps it per browser (Settings ›
   My Account › Playback, `localStorage.rewindOnResume`).
+- **Languages** (account settings, kept on the server: `users.audio_language`, `subtitle_language`
+  ("" for File default, the default) and `subtitles_on` (off by default); `GET/PUT /api/account`; web
+  Settings › My Account, phone and iPhone Settings › Account, the TV's Settings › Languages,
+  `TvLanguagesDialog`): the codecs report carries `preferred_audio` and `preferred_subtitle`
+  (`media.PreferredTracks`, -1 for the file's default): an audio track in the audio language, and,
+  with subtitles on, full subtitles (not forced; PGS counts, DVD doesn't) in the subtitle language, or
+  the file's own pick for File default. Every player starts with those unless the video has a
+  remembered choice; a language the video lacks plays as before (subtitles off but forced ones).
+  Downloads (phone and iPhone) ask for audio and subtitle languages when the files have a choice
+  (`DownloadLanguages`), starting with the last ones changed in the dialog, else what playing would
+  pick. The item keeps the languages (Download ahead copies them from the show's hand downloads) and
+  the worker turns them into tracks: encoded copies keep that audio track (the job's `audio`), an
+  original keeps all and plays it (`audioTrack` of `audioTracks`), and the chosen subtitle track is
+  saved and shown offline (`subtitleTrack`).
 - **Progress and resume:** players report position every 5s, on pause and at the end. The
   server decides "watched": leaving at or after the credits start (the segments table's), else the
   last 2 minutes of videos 20 minutes or longer, the end of shorter ones. Credits found or moved

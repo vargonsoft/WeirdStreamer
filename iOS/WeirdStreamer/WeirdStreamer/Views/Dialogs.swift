@@ -162,6 +162,33 @@ struct AuthDialog: View {
     }
 }
 
+/// A video downloaded on this phone, picked from the server: play the download or stream it
+/// (Android's PhoneSourceDialog).
+struct SourceDialog: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let choice = model.sourceChoice {
+            PhoneDialog(title: choice.name, onDismiss: { model.chooseSource(download: nil) }) {
+                VStack(spacing: 4) {
+                    Text("This video is downloaded on this phone.").font(.subheadline).foregroundStyle(Palette.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 8)
+                    Button { model.chooseSource(download: true) } label: {
+                        Label("Play the download", systemImage: "checkmark.circle").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PhoneButtonStyle())
+                    Button { model.chooseSource(download: false) } label: {
+                        Label("Stream from the server", systemImage: "cloud").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PhoneSecondaryButtonStyle())
+                }
+            } buttons: {
+                Button("Cancel") { model.chooseSource(download: nil) }.buttonStyle(PhoneSecondaryButtonStyle())
+            }
+        }
+    }
+}
+
 /// A partly watched video picked in a folder: Resume, or Play from start (Android's PhoneResumeDialog).
 struct ResumeDialog: View {
     @Environment(AppModel.self) private var model

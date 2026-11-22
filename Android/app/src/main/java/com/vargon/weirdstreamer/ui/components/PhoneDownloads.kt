@@ -66,10 +66,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.vargon.weirdstreamer.MediaViewModel
+import com.vargon.weirdstreamer.api.models.CodecsInfo
 import com.vargon.weirdstreamer.api.models.DownloadOptions
 import com.vargon.weirdstreamer.api.models.LibraryFile
 import com.vargon.weirdstreamer.downloads.DownloadItem
 import com.vargon.weirdstreamer.downloads.DownloadAhead
+import com.vargon.weirdstreamer.downloads.DownloadLanguages
 import com.vargon.weirdstreamer.downloads.DownloadStore
 import com.vargon.weirdstreamer.downloads.DownloadWorker
 import com.vargon.weirdstreamer.repository.FileItem
@@ -212,23 +214,41 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
     var scale by remember { mutableIntStateOf(100) }
     // One file: its details for the estimate.
     var options by remember { mutableStateOf<DownloadOptions?>(null) }
-    // What this phone can't play as it is, by file (discs are converted anyway); null while checking.
-    var checks by remember { mutableStateOf<Map<String, com.vargon.weirdstreamer.downloads.OfflinePlayback>?>(null) }
+    // Each file's tracks and picture size (discs are converted anyway); null while checking.
+    var probed by remember { mutableStateOf<Map<String, Pair<CodecsInfo, DownloadOptions?>>?>(null) }
     LaunchedEffect(pending) {
         pending.singleOrNull()?.let { r ->
             options = server.downloadOptions(r.sourcePath)
         }
         val limit = kotlinx.coroutines.sync.Semaphore(4)
-        checks = kotlinx.coroutines.coroutineScope {
+        probed = kotlinx.coroutines.coroutineScope {
             pending.filter { !it.isDisc }.map { r ->
                 async {
                     limit.withPermit {
                         val codecs = server.codecs(r.sourcePath) ?: return@withPermit null
                         val size = if (pending.size == 1) options else server.downloadOptions(r.sourcePath)
-                        r.sourcePath to com.vargon.weirdstreamer.downloads.OfflinePlayback.of(context, codecs, size?.width ?: 0, size?.height ?: 0)
+                        r.sourcePath to (codecs to size)
                     }
                 }
             }.awaitAll().filterNotNull().toMap()
+        }
+    }
+    // The audio and subtitle languages to download with: offered when the files have a choice,
+    // starting with the last chosen (if changed then) or else what playing would pick.
+    val files = probed?.values?.map { it.first }.orEmpty()
+    val audioOptions = remember(probed) { DownloadLanguages.audioLanguages(files) }
+    val subtitleOptions = remember(probed) { DownloadLanguages.subtitleLanguages(files) }
+    var audioLanguage by remember(probed) { mutableStateOf(DownloadLanguages.startAudio(files, audioOptions)) }
+    var subtitleLanguage by remember(probed) { mutableStateOf(DownloadLanguages.startSubtitles(files, subtitleOptions)) }
+    var languagesChanged by remember { mutableStateOf(false) }
+    val askAudio = audioOptions.size > 1
+    val askSubtitles = subtitleOptions.isNotEmpty()
+    // What this phone can't play as it is, by file, with the audio chosen.
+    val checks = remember(probed, audioLanguage) {
+        probed?.mapValues { (_, p) ->
+            val (codecs, size) = p
+            com.vargon.weirdstreamer.downloads.OfflinePlayback.of(context, codecs, size?.width ?: 0, size?.height ?: 0,
+                DownloadLanguages.audioTrack(codecs, if (askAudio) audioLanguage else null))
         }
     }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -295,6 +315,27 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
                         }
                     }
                 }
+                if (askAudio) {
+                    Text("Audio", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        audioOptions.forEach { code ->
+                            val on = audioLanguage == code
+                            FilterChip(colors = phoneChipColors(), shape = AppButtonShape, selected = on, border = phoneChipBorder(on),
+                                onClick = { audioLanguage = code; languagesChanged = true }, label = { Text(languageName(code) ?: code) })
+                        }
+                    }
+                }
+                if (askSubtitles) {
+                    Text("Subtitles", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        (listOf(DownloadLanguages.OFF) + subtitleOptions).forEach { code ->
+                            val on = subtitleLanguage == code
+                            FilterChip(colors = phoneChipColors(), shape = AppButtonShape, selected = on, border = phoneChipBorder(on),
+                                onClick = { subtitleLanguage = code; languagesChanged = true },
+                                label = { Text(if (code == DownloadLanguages.OFF) "Off" else languageName(code) ?: code) })
+                        }
+                    }
+                }
                 val estimate = estimateText(pending, options, compressed, sizePct, scale, sizeKnown = mode != DownloadMode.COMPAT)
                 if (estimate.isNotEmpty()) {
                     Text(estimate, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
@@ -309,6 +350,11 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
         confirmButton = {
             if (pending.isNotEmpty()) {
                 PhoneButton(onClick = {
+                    // Changed here: the next download starts with these.
+                    if (languagesChanged) {
+                        if (askAudio) DownloadStore.lastAudioLanguage = audioLanguage
+                        if (askSubtitles) DownloadStore.lastSubtitleLanguage = subtitleLanguage
+                    }
                     DownloadStore.add(pending.map { r ->
                         DownloadItem(
                             serverAddress = server.address,
@@ -321,6 +367,8 @@ fun DownloadQualityDialog(viewModel: MediaViewModel, requests: List<DownloadRequ
                             scale = if (compressed) scale else 100,
                             isDisc = r.isDisc,
                             compat = mode == DownloadMode.COMPAT && !r.isDisc,
+                            audioLanguage = if (askAudio) audioLanguage else null,
+                            subtitleLanguage = if (askSubtitles) subtitleLanguage else null,
                             bytesTotal = r.size
                         )
                     })

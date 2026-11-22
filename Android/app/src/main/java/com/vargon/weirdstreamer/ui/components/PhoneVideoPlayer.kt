@@ -246,7 +246,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     LaunchedEffect(path) {
         val c = choice ?: return@LaunchedEffect
         c.load()
-        val saved = AudioMemory.get(context, subtitleVideo)?.let { AudioMemory.resolve(it, audioLabels(c.audioTracks)) } ?: -1
+        val saved = AudioMemory.get(context, subtitleVideo)?.let { AudioMemory.resolve(it, audioLabels(c.audioTracks)) } ?: c.preferredTrack
         when {
             tooBigToDecode -> chooseTranscode(1, track = saved)
             saved < 0 -> {}
@@ -280,7 +280,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
         val subs = serverSubs ?: return@LaunchedEffect
         subs.load()
         val index = SubtitleMemory.get(context, subtitleVideo)?.let { SubtitleMemory.resolve(it, subs.labels) }
-            ?: subs.tracks.indexOfFirst { it.forced && it.text }
+            ?: subs.preferred.takeIf { it >= 0 } ?: subs.tracks.indexOfFirst { it.forced && it.text }
         if (index >= 0) chooseServerSubtitle(index)
     }
     var rotation by remember { mutableFloatStateOf(0f) }
@@ -380,6 +380,15 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     // The original plays the chosen audio track itself, once the player has the file's tracks.
     var audioAppliedFor by remember { mutableStateOf<Pair<Any?, Int>?>(null) }
     fun applyOriginalAudio() {
+        if (isLocal) { // a download kept whole plays the audio track it was downloaded with
+            val d = com.vargon.weirdstreamer.downloads.DownloadStore.ofLocalPath(path) ?: return
+            val track = d.audioTrack ?: return
+            if (exoPlayer.currentTracks.groups.none { it.type == androidx.media3.common.C.TRACK_TYPE_AUDIO }) return
+            if (audioAppliedFor?.first == exoPlayer.currentMediaItem) return
+            audioAppliedFor = exoPlayer.currentMediaItem to track
+            selectAudioTrack(exoPlayer, track, d.audioTracks ?: 0) // a copy with one track: nothing to choose
+            return
+        }
         val c = choice ?: return
         if (enableTranscode || exoPlayer.currentTracks.groups.none { it.type == androidx.media3.common.C.TRACK_TYPE_AUDIO }) return
         val key = exoPlayer.currentMediaItem to c.audioTrack

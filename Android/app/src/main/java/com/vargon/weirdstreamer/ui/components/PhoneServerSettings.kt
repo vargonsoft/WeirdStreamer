@@ -59,8 +59,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -756,6 +760,8 @@ fun AccountTab(server: ServerRepository) {
             Text("${me ?: "Unknown"}${if (isAdmin) " (administrator)" else ""} on ${server.address}",
                 style = MaterialTheme.typography.bodyMedium)
         }
+        item { SectionTitle("Language") }
+        item { AccountLanguages(server) }
         item { SectionTitle("Change password") }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -782,6 +788,81 @@ fun AccountTab(server: ServerRepository) {
         }
         item { SectionTitle("Sign in on a TV") }
         item { SignInOnTv(server) }
+    }
+}
+
+/**
+ * The account's languages for audio and for subtitles, and whether subtitles start on, kept on the
+ * server for every device: videos start with tracks in them when they have them (the server picks the
+ * tracks). "File default" is as the file says.
+ */
+@Composable
+private fun AccountLanguages(server: ServerRepository) {
+    val scope = rememberCoroutineScope()
+    var account by remember(server.address) { mutableStateOf<com.vargon.weirdstreamer.api.models.AccountSettings?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var choosing by remember { mutableStateOf<Boolean?>(null) } // true: audio, false: subtitles
+    LaunchedEffect(server.address) {
+        val (got, err) = attempt { server.api.getAccount() }
+        account = got
+        message = err
+    }
+    fun nameOf(code: String) = if (code.isEmpty()) "File default" else languageName(code) ?: code
+    Column {
+        Text("Videos start with audio in this language when they have it, and with subtitles in this one if subtitles are shown by default. On every device.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val a = account
+        listOf(true to "Audio", false to "Subtitles").forEach { (audio, label) ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(96.dp))
+                OutlinedButton(onClick = { choosing = audio }, enabled = a != null, shape = AppButtonShape) {
+                    Text(a?.let { nameOf(if (audio) it.audioLanguage else it.subtitleLanguage) } ?: "Loading…")
+                }
+            }
+        }
+        fun save(next: com.vargon.weirdstreamer.api.models.AccountSettings) = scope.launch {
+            val (_, err) = attempt { server.api.setAccount(next.copy(languages = null)) }
+            if (err == null) account = next
+            message = err
+        }
+        if (a != null) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            .clickable { save(a.copy(subtitlesOn = !a.subtitlesOn)) }) {
+            Text("Show subtitles by default", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Switch(checked = a.subtitlesOn, onCheckedChange = { save(a.copy(subtitlesOn = it)) })
+        }
+        Message(message, true)
+    }
+    val a = account
+    val audio = choosing
+    if (audio != null && a != null) {
+        val current = if (audio) a.audioLanguage else a.subtitleLanguage
+        val options = listOf("") + a.languages.orEmpty().sortedBy { nameOf(it).lowercase() }
+        AlertDialog(
+            onDismissRequest = { choosing = null },
+            title = { Text(if (audio) "Audio language" else "Subtitle language") },
+            text = {
+                LazyColumn {
+                    items(options) { code ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()
+                            .selectable(selected = code == current, role = Role.RadioButton) {
+                                choosing = null
+                                val next = if (audio) a.copy(audioLanguage = code) else a.copy(subtitleLanguage = code)
+                                scope.launch {
+                                    val (_, err) = attempt { server.api.setAccount(next.copy(languages = null)) }
+                                    if (err == null) account = next
+                                    message = err
+                                }
+                            }.padding(vertical = 4.dp)) {
+                            RadioButton(selected = code == current, onClick = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(nameOf(code))
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { PhoneSecondaryButton(onClick = { choosing = null }) { Text("Cancel") } }
+        )
     }
 }
 

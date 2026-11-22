@@ -204,7 +204,9 @@ Everything under `/api` except login needs `Authorization: Bearer <token>` from
 - `GET /api/media/segments`, `/api/media/upcoming`, `/api/media/trickplay`: a video's intro and
   credits (and the next episode), the episodes after it (for the phone's Download ahead), and its
   seek-bar previews.
-- `/api/downloads...`: offline-download encodes.
+- `/api/downloads...`: offline-download encodes (`audio=` picks the audio track kept).
+- `GET`/`PUT /api/account`: the signed-in user's audio and subtitle languages and whether subtitles start on; the codecs report's
+  `preferred_audio` and `preferred_subtitle` are their tracks in a file.
 - `/api/media/match...`: the Fix dialog (TMDB search, posters, episode mapping).
 - `/api/config` (and `/api/config/folders`, the folder picker), `/api/users`, `/api/admin/streams`:
   admin only.

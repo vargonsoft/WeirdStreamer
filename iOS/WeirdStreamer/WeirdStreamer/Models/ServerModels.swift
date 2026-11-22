@@ -268,6 +268,17 @@ struct CodecsInfo: Decodable {
     let audio: [AudioTrackInfo]?
     let subtitles: [SubtitleTrack]?
     let fonts: [FontAttachment]?    // the video's embedded fonts, which its ASS tracks name
+    // The tracks to start with for the account's languages (the server's indexes; -1: the file's default)
+    let preferredAudio: Int?
+    let preferredSubtitle: Int?
+}
+
+/// GET/PUT /api/account: the account's languages for audio and subtitles ("" for the file's default), and the codes to choose from.
+struct AccountSettings: Codable {
+    var audioLanguage: String
+    var subtitleLanguage: String
+    var subtitlesOn: Bool           // subtitles start on, in subtitleLanguage
+    var languages: [String]?
 }
 
 /// A font embedded in the video (an MKV attachment): GET /api/media/font?path=&font=index.

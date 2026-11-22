@@ -3378,6 +3378,9 @@ body.has-az #main-screen .content { padding-right: 28px; }
 .subtitle-style-options select { min-width: 200px; }
 .subtitle-style-options.disabled { opacity: 0.55; }
 
+.account-language { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; max-width: 360px; }
+.account-language select { min-width: 200px; margin-left: auto; }
+
 .account-signed-in { margin-top: 20px; font-size: 15px; color: var(--muted-text); }
 
 /* A new web UI is on the server: a click loads it. Under the player, so a video isn't covered. */

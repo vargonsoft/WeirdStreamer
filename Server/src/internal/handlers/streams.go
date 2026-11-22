@@ -442,6 +442,12 @@ func (h *MediaHandler) GetCodecs(w http.ResponseWriter, r *http.Request) {
 	}
 	addExternalSubtitles(codecs, externalSubtitles(path))
 	h.addSubtitleOffsets(path, codecs)
+	if claims := auth.GetClaims(r.Context()); claims != nil {
+		l := h.db.UserLanguages(claims.UserID)
+		codecs.PreferredAudio, codecs.PreferredSubtitle = media.PreferredTracks(codecs, l.Audio, l.Subtitle, l.SubtitlesOn)
+	} else {
+		codecs.PreferredAudio, codecs.PreferredSubtitle = -1, -1
+	}
 	respondJSON(w, http.StatusOK, codecs)
 }
 

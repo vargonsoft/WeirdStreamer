@@ -89,7 +89,26 @@ struct DownloadQualitySheet: View {
     @State private var picked: Mode?
     @State private var sizePct = 50
     @State private var scale = 100
-    @State private var checks: [String: OfflinePlayback]?
+    // Each file's tracks (nil while checking), and the audio and subtitle languages to download with:
+    // offered when the files have a choice, starting with the last chosen (if changed then) or else
+    // what playing would pick.
+    @State private var probed: [String: CodecsInfo]?
+    @State private var audioOptions: [String] = []
+    @State private var subtitleOptions: [String] = []
+    @State private var audioLanguage: String?
+    @State private var subtitleLanguage = DownloadLanguages.off
+    @State private var languagesChanged = false
+
+    private var askAudio: Bool { audioOptions.count > 1 }
+    private var askSubtitles: Bool { !subtitleOptions.isEmpty }
+
+    /// What this phone can't play as it is, by file, with the audio chosen.
+    private var checks: [String: OfflinePlayback]? {
+        probed?.reduce(into: [:]) { out, entry in
+            out[entry.key] = OfflinePlayback.of(entry.value, path: entry.key,
+                                                audioTrack: DownloadLanguages.audioTrack(entry.value, askAudio ? audioLanguage : nil))
+        }
+    }
 
     private var pending: [DownloadRequest] { requests.filter { DownloadManager.shared.find($0.path) == nil } }
 
@@ -119,6 +138,19 @@ struct DownloadQualitySheet: View {
                             Text("Resolution").font(.subheadline.weight(.medium))
                             chips([(100, "Original"), (75, "75%"), (50, "50%")], value: $scale)
                         }
+                        if askAudio {
+                            Text("Audio").font(.subheadline.weight(.medium)).padding(.top, 8)
+                            languageChips(audioOptions.map { ($0, languageName($0) ?? $0) }, value: audioLanguage) {
+                                audioLanguage = $0; languagesChanged = true
+                            }
+                        }
+                        if askSubtitles {
+                            Text("Subtitles").font(.subheadline.weight(.medium)).padding(.top, 4)
+                            languageChips([(DownloadLanguages.off, "Off")] + subtitleOptions.map { ($0, languageName($0) ?? $0) },
+                                          value: subtitleLanguage) {
+                                subtitleLanguage = $0; languagesChanged = true
+                            }
+                        }
                         let total = pending.reduce(0) { $0 + $1.size }
                         if mode != .compat, total > 0 {
                             Text(mode == .compressed ? "About \(formatBytes(total * Int64(sizePct) / 100))" : formatBytes(total))
@@ -140,10 +172,17 @@ struct DownloadQualitySheet: View {
                 if !pending.isEmpty {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Download") {
+                            // Changed here: the next download starts with these.
+                            if languagesChanged {
+                                if askAudio { DownloadManager.shared.lastAudioLanguage = audioLanguage }
+                                if askSubtitles { DownloadManager.shared.lastSubtitleLanguage = subtitleLanguage }
+                            }
                             DownloadManager.shared.add(pending.map { (path: $0.path, name: $0.name, title: $0.title, thumb: $0.thumb, size: $0.size) },
                                                        sizePct: mode == .compressed ? sizePct : 100,
                                                        scale: mode == .compressed ? scale : 100,
-                                                       compat: mode == .compat)
+                                                       compat: mode == .compat,
+                                                       audioLanguage: askAudio ? audioLanguage : nil,
+                                                       subtitleLanguage: askSubtitles ? subtitleLanguage : nil)
                             dismiss()
                         }
                     }
@@ -155,13 +194,18 @@ struct DownloadQualitySheet: View {
         .themed()
         .task {
             guard let client = model.client else { return }
-            var found: [String: OfflinePlayback] = [:]
+            var found: [String: CodecsInfo] = [:]
             for r in pending {
                 if let codecs: CodecsInfo = try? await client.get("/api/media/codecs", query: [("path", ServerClient.encodePath(r.path))]) {
-                    found[r.path] = OfflinePlayback.of(codecs, path: r.path)
+                    found[r.path] = codecs
                 }
             }
-            checks = found
+            let files = pending.compactMap { found[$0.path] }
+            audioOptions = DownloadLanguages.audioLanguages(files)
+            subtitleOptions = DownloadLanguages.subtitleLanguages(files)
+            audioLanguage = DownloadLanguages.startAudio(files, audioOptions, last: DownloadManager.shared.lastAudioLanguage)
+            subtitleLanguage = DownloadLanguages.startSubtitles(files, subtitleOptions, last: DownloadManager.shared.lastSubtitleLanguage)
+            probed = found
         }
     }
 
@@ -190,6 +234,24 @@ struct DownloadQualitySheet: View {
                         .overlay(RoundedRectangle(cornerRadius: 5).stroke(value.wrappedValue == option.0 ? .clear : Palette.muted))
                 }
                 .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func languageChips(_ options: [(String, String)], value: String?, pick: @escaping (String) -> Void) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(options, id: \.0) { option in
+                    let on = value == option.0
+                    Button { pick(option.0) } label: {
+                        Text(option.1).font(.subheadline)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .foregroundStyle(on ? Palette.onAccent : Palette.text)
+                            .background(on ? Palette.accent : .clear, in: RoundedRectangle(cornerRadius: 5))
+                            .overlay(RoundedRectangle(cornerRadius: 5).stroke(on ? .clear : Palette.muted))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }

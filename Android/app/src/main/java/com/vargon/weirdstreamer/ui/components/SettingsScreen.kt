@@ -17,6 +17,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.runtime.*
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.Language
 import com.vargon.weirdstreamer.update.AppUpdater
 import com.vargon.weirdstreamer.update.UpdateState
 import androidx.compose.ui.Alignment
@@ -56,6 +57,19 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     val subtitleStyleFocus = remember { FocusRequester() }
     var showSubtitleStyle by remember { mutableStateOf(false) }
     if (showSubtitleStyle) TvSubtitleStyleDialog(onDismiss = { showSubtitleStyle = false })
+    // The account's languages (on the server), with a server open.
+    val languagesFocus = remember { FocusRequester() }
+    val languageServer = viewModel.connectedServer
+    var account by remember(languageServer?.address) { mutableStateOf<com.vargon.weirdstreamer.api.models.AccountSettings?>(null) }
+    var showLanguages by remember { mutableStateOf(false) }
+    LaunchedEffect(languageServer?.address) {
+        account = languageServer?.let { s -> runCatching { s.api.getAccount().body() }.getOrNull() }
+    }
+    val belowSubtitleStyle = if (languageServer != null) languagesFocus else updateFocus
+    val a = account
+    if (showLanguages && languageServer != null && a != null) {
+        TvLanguagesDialog(languageServer, a, onChanged = { account = it }, onDismiss = { showLanguages = false })
+    }
     // Remove asks first, naming the accounts that go with the server.
     var removeChoice by remember { mutableStateOf<Triple<SourceProvider, String, List<String>>?>(null) }
     removeChoice?.let { (provider, address, users) ->
@@ -259,7 +273,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(subtitleStyleFocus)
-                        .focusProperties { up = clearCacheFocus; down = updateFocus }
+                        .focusProperties { up = clearCacheFocus; down = belowSubtitleStyle }
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -274,6 +288,42 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
+                // Audio and subtitle languages: the account's, for every device
+                if (languageServer != null) {
+                    Surface(
+                        onClick = { if (account != null) showLanguages = true },
+                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+                        colors = ClickableSurfaceDefaults.colors(
+                            containerColor = Color.Transparent,
+                            focusedContainerColor = Color.Transparent,
+                            pressedContainerColor = Color.Transparent
+                        ),
+                        border = ClickableSurfaceDefaults.border(
+                            focusedBorder = Border(
+                                border = BorderStroke(2.dp, tvFocusBorderColor()),
+                                inset = 0.dp,
+                                shape = MaterialTheme.shapes.small
+                            )
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(languagesFocus)
+                            .focusProperties { up = subtitleStyleFocus; down = updateFocus }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Languages", style = MaterialTheme.typography.titleMedium)
+                                Text(accountLanguagesSummary(account), style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Icon(Icons.Default.Language, contentDescription = null)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
                 // App update, from the APK a server publishes
                 Surface(
                     onClick = { onUpdateRow(viewModel, context) },
@@ -293,7 +343,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(updateFocus)
-                        .focusProperties { up = subtitleStyleFocus }
+                        .focusProperties { up = if (languageServer != null) languagesFocus else subtitleStyleFocus }
                 ) {
                     val (title, detail) = updateLabels(AppUpdater.state)
                     Row(

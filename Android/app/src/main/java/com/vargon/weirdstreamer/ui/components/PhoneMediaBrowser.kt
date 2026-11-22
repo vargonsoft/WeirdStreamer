@@ -51,6 +51,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     var showRegenerateDialog by remember { mutableStateOf(false) }
     var showDownloadFolder by remember { mutableStateOf(false) }
     val currentSource = viewModel.currentSource
+    PhoneSourceDialog(viewModel) // download or stream, for a video downloaded here
 
     // Back closes a title page, then leaves Library view for the server's libraries, else goes up.
     BackHandler(enabled = currentSource != null) {

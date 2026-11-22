@@ -505,12 +505,12 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Plays a Continue Watching entry from where it stopped. */
-    fun playContinue(item: ContinueItem) {
+    /** Plays a Continue Watching entry (or the show's next episode) from where it stopped. */
+    fun playContinue(item: ContinueItem, ask: Boolean = true, fromDownload: Boolean = true) {
         val repo = serverRepository ?: return
         val file = repo.fileItemFor(item)
         playbackQueue = listOf(file)
-        playVideo(file.path)
+        playVideo(file.path, ask = ask, fromDownload = fromDownload)
     }
 
     fun removeFromContinue(item: ContinueItem) {
@@ -547,11 +547,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val videos = getVideosInCurrentFolder()
         val i = videos.indexOf(current)
         if (i != -1 && i < videos.size - 1) {
-            playVideo(videos[i + 1])
+            playVideo(videos[i + 1], ask = false, fromDownload = path.startsWith("file://"))
             return true
         }
         if (next != null) {
-            playContinue(next)
+            playContinue(next, ask = false, fromDownload = path.startsWith("file://"))
             return true
         }
         return false
@@ -1045,15 +1045,41 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     // The server file a local copy is playing in place of, to restore the selection afterwards
     private var localPlaybackOf: String? = null
 
+    /** A server video that has also been downloaded: play the download or stream it? (phone) */
+    data class SourceChoice(val path: String, val fromStart: Boolean, val local: String)
+    var sourceChoice by mutableStateOf<SourceChoice?>(null)
+        private set
+
     /**
-     * Plays a video, from its downloaded copy when there is one: from where the user stopped,
-     * or from the beginning with [fromStart].
+     * Plays a video from where the user stopped, or from the beginning with [fromStart]. When it
+     * has been downloaded, the user is asked whether to play the download or stream it from the
+     * server ([sourceChoice]); going on to the next video by itself doesn't ask (`ask = false`) but
+     * keeps to what the last one played from: the download if there is one ([fromDownload]).
      */
-    fun playVideo(path: String, fromStart: Boolean = false) {
+    fun playVideo(path: String, fromStart: Boolean = false, ask: Boolean = true, fromDownload: Boolean = true) {
+        val local = localCopyOf(path)
+        if (local != null && ask) {
+            sourceChoice = SourceChoice(path, fromStart, local)
+            return
+        }
+        startVideo(path, fromStart, local?.takeIf { fromDownload })
+    }
+
+    /** Answers [sourceChoice]: the download (true), the server (false), or (null) cancel. */
+    fun chooseSource(useDownload: Boolean?) {
+        val choice = sourceChoice ?: return
+        sourceChoice = null
+        if (useDownload == null) {
+            if (selectedVideoPath == null) playbackQueue = emptyList()
+            return
+        }
+        startVideo(choice.path, choice.fromStart, choice.local.takeIf { useDownload })
+    }
+
+    private fun startVideo(path: String, fromStart: Boolean, local: String?) {
         // A viewing begins here; going on to the next video keeps where it began.
         if (selectedVideoPath == null) startedInFolder = fileList.any { it.path == path } && playbackQueue.none { it.path == path }
         playbackStartMs = if (fromStart || path.startsWith("smb://")) 0L else (resumeSeconds(path) * 1000).toLong()
-        val local = localCopyOf(path)
         localPlaybackOf = if (local != null) path else null
         selectedVideoPath = local ?: path
     }
@@ -1080,7 +1106,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val videos = getVideosInCurrentFolder()
         val i = videos.indexOf(current)
         if (i != -1 && i < videos.size - 1) {
-            playVideo(videos[i + 1])
+            playVideo(videos[i + 1], ask = false, fromDownload = path.startsWith("file://"))
             return
         }
         val playing = selectedVideoPath
@@ -1088,7 +1114,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
             val next = runCatching { segmentsFor(current) }.getOrNull()?.next
             if (selectedVideoPath != playing) return@launch // left the player meanwhile
             when {
-                next != null -> playContinue(next)
+                next != null -> playContinue(next, ask = false, fromDownload = path.startsWith("file://"))
                 startedInFolder -> replay()
                 else -> close()
             }

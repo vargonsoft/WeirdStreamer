@@ -81,6 +81,9 @@ func (db *DB) initSchema() error {
 
 	// Migration: add user_group column if it doesn't exist
 	_, _ = db.userConn.Exec("ALTER TABLE users ADD COLUMN user_group TEXT")
+	_, _ = db.userConn.Exec("ALTER TABLE users ADD COLUMN audio_language TEXT NOT NULL DEFAULT ''")
+	_, _ = db.userConn.Exec("ALTER TABLE users ADD COLUMN subtitle_language TEXT NOT NULL DEFAULT ''")
+	_, _ = db.userConn.Exec("ALTER TABLE users ADD COLUMN subtitles_on INTEGER NOT NULL DEFAULT 0")
 	if err := db.initSessionSchema(); err != nil {
 		return err
 	}
@@ -417,5 +420,28 @@ func (db *DB) DeleteMediaItem(path string) error {
 	if err == nil {
 		_, err = db.mediaConn.Exec("DELETE FROM media_added WHERE path = ?", path)
 	}
+	return err
+}
+
+// Languages are a user's track choices: the languages they prefer for audio and for subtitles
+// (ISO 639-1 codes, "" for the file's default), and whether subtitles start on.
+type Languages struct {
+	Audio       string `json:"audio_language"`
+	Subtitle    string `json:"subtitle_language"`
+	SubtitlesOn bool   `json:"subtitles_on"`
+}
+
+// UserLanguages are the user's track choices.
+func (db *DB) UserLanguages(id int64) Languages {
+	var l Languages
+	_ = db.userConn.QueryRow("SELECT audio_language, subtitle_language, subtitles_on FROM users WHERE id = ?", id).
+		Scan(&l.Audio, &l.Subtitle, &l.SubtitlesOn)
+	return l
+}
+
+// SetUserLanguages keeps the user's track choices.
+func (db *DB) SetUserLanguages(id int64, l Languages) error {
+	_, err := db.userConn.Exec("UPDATE users SET audio_language = ?, subtitle_language = ?, subtitles_on = ? WHERE id = ?",
+		l.Audio, l.Subtitle, l.SubtitlesOn, id)
 	return err
 }

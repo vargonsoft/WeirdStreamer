@@ -244,6 +244,13 @@
                 <div id="account-tab" class="settings-tab-content">
                     <p id="account-signed-in" class="account-signed-in"></p>
                     <div class="settings-group">
+                        <h3>Language</h3>
+                        <p class="settings-hint">Videos start with audio in this language when they have it, and with subtitles in this one if subtitles are shown by default. For your account, on every device.</p>
+                        <label class="account-language">Audio <select id="account-audio-language"><option value="">File default</option></select></label>
+                        <label class="account-language">Subtitles <select id="account-subtitle-language"><option value="">File default</option></select></label>
+                        <label class="settings-check"><input type="checkbox" id="account-subtitles-on"> Show subtitles by default</label>
+                    </div>
+                    <div class="settings-group">
                         <h3>Playback</h3>
                         <p class="settings-hint">Kept in this browser.</p>
                         <label class="settings-check"><input type="checkbox" id="rewind-on-resume"> Rewind 5 seconds when resuming</label>

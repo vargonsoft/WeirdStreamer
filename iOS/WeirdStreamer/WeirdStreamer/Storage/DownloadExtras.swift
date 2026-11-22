@@ -71,7 +71,7 @@ enum DownloadExtras {
     /// Saves everything for a finished download. Each part goes on without the others; a network
     /// error (the server is away) is thrown, so the rest of that server's downloads wait too.
     /// Returns whether every part was saved.
-    static func save(id: String, sourcePath: String, thumbnail: String?, client: ServerClient,
+    static func save(id: String, sourcePath: String, thumbnail: String?, subtitleTrack: Int = -1, client: ServerClient,
                      stillWanted: @escaping () async -> Bool) async throws -> Bool {
         let dir = folder(id)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -88,7 +88,8 @@ enum DownloadExtras {
         }
         if let codecs {
             try await step {
-                try await saveSubtitles(id: id, encoded: encoded, tracks: codecs.subtitles ?? [], fonts: codecs.fonts ?? [], client: client)
+                try await saveSubtitles(id: id, encoded: encoded, tracks: codecs.subtitles ?? [], fonts: codecs.fonts ?? [],
+                                  chosen: subtitleTrack, client: client)
             }
         }
         try await step {
@@ -109,12 +110,12 @@ enum DownloadExtras {
     }
 
     private static func saveSubtitles(id: String, encoded: String, tracks: [SubtitleTrack], fonts: [FontAttachment],
-                                      client: ServerClient) async throws {
+                                      chosen: Int, client: ServerClient) async throws {
         let languages = Set(deviceSubtitleLanguages().compactMap { Locale(identifier: $0).language.languageCode?.identifier(.alpha3) })
         let wanted = tracks.filter { t in
             (t.isText || t.isPGS) &&
                 (t.forced == true || t.external != nil || (t.language ?? "").isEmpty || t.language == "und" ||
-                    languages.contains(t.language ?? "") || languages.contains(bibliographic(t.language ?? "")))
+                    languages.contains(t.language ?? "") || languages.contains(bibliographic(t.language ?? "")) || t.index == chosen)
         }
         let dir = subtitleFolder(id)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

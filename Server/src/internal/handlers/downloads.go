@@ -49,7 +49,8 @@ func downloadOwner(r *http.Request) int64 {
 }
 
 // CreateDownload starts an encode: {"path": base64, "size_pct": 90|75|50|25|100, "scale": 100|75|50,
-// "keep_video": bool, "keep_audio": bool} (keeping needs size_pct 100 and scale 100: Compatibility;
+// "keep_video": bool, "keep_audio": bool, "audio": the audio track to keep, among the file's (absent
+// or -1: its default)} (keeping needs size_pct 100 and scale 100: Compatibility;
 // keeping both copies a file that isn't MP4 into MP4, as for an iPhone)
 func (h *MediaHandler) CreateDownload(w http.ResponseWriter, r *http.Request) {
 	if h.downloads == nil {
@@ -62,6 +63,7 @@ func (h *MediaHandler) CreateDownload(w http.ResponseWriter, r *http.Request) {
 		Scale     int    `json:"scale"`
 		KeepVideo bool   `json:"keep_video"`
 		KeepAudio bool   `json:"keep_audio"`
+		Audio     *int   `json:"audio"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid request body")
@@ -71,7 +73,11 @@ func (h *MediaHandler) CreateDownload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	job, err := h.downloads.Create(downloadOwner(r), path, req.SizePct, req.Scale, req.KeepVideo, req.KeepAudio)
+	audio := -1
+	if req.Audio != nil {
+		audio = *req.Audio
+	}
+	job, err := h.downloads.Create(downloadOwner(r), path, req.SizePct, req.Scale, req.KeepVideo, req.KeepAudio, audio)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, withoutDiskPath(err.Error(), path))
 		return
