@@ -638,6 +638,20 @@ data class HardwareProblem(
     @SerializedName("reason") val reason: String
 )
 
+/** One backup in the server's backup folder (GET /api/admin/backups). */
+data class BackupInfo(
+    @SerializedName("name") val name: String = "",
+    @SerializedName("size") val size: Long = 0,
+    @SerializedName("created") val created: String = "", // RFC 3339
+)
+
+/** The server's backups, newest first, its folder (a disk path: admins only) and when the next is. */
+data class BackupList(
+    @SerializedName("folder") val folder: String = "",
+    @SerializedName("backups") val backups: List<BackupInfo>? = null,
+    @SerializedName("next") val next: String? = null, // RFC 3339; none when backups are off
+)
+
 data class HardwareReport(
     @SerializedName("checking") val checking: Boolean,
     @SerializedName("gpus") val gpus: List<HardwareGpu>? = null,

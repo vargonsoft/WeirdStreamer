@@ -54,6 +54,11 @@ func main() {
 	if err := config.Load(configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	// Before the databases are opened here: a restore replaces them.
+	if os.Args[1] == "backup" {
+		handleBackupCommand(os.Args[2:])
+		return
+	}
 	// Ensure database directory exists
 	userDBDir := filepath.Dir(config.GlobalConfig.Database.UserPath)
 	if err := os.MkdirAll(userDBDir, 0755); err != nil {
@@ -116,6 +121,10 @@ func printUsage() {
 	fmt.Println("  cli config list-paths                                  - List media directories")
 	fmt.Println("  cli config set-cjk-font <path>                         - Set media.cjkFontPath (\"\" for the default)")
 	fmt.Println("  cli config set-subset-command <command>                - Set media.subsetCommand (\"\" for the default)")
+	fmt.Println("  cli backup now                                         - Back up the databases and config.yml now")
+	fmt.Println("  cli backup list                                        - List the backups (database.backupPath)")
+	fmt.Println("  cli backup restore <file> [--with-config]              - Put a backup's databases back (the server")
+	fmt.Println("                                                           stopped); --with-config its config.yml too")
 }
 
 func handleUserCommand(db *database.DB, args []string) {

@@ -138,6 +138,26 @@
                     </div>
 
                     <div class="settings-group">
+                        <h3>Backups</h3>
+                        <p class="settings-hint">Both databases (accounts, watch progress, matches, marked intros and credits) and config.yml, one file each, readable by the server's account only. Restore one with <code>bin/cli backup restore</code>, with the server stopped.</p>
+                        <label>Back up <select id="backup-schedule" class="settings-input">
+                            <option value="daily">every day</option>
+                            <option value="weekly">every week</option>
+                            <option value="off">only when asked</option>
+                        </select></label>
+                        <span id="backup-when"><span id="backup-day-label"> on <select id="backup-day" class="settings-input">
+                            <option value="sunday">Sunday</option><option value="monday">Monday</option><option value="tuesday">Tuesday</option>
+                            <option value="wednesday">Wednesday</option><option value="thursday">Thursday</option><option value="friday">Friday</option>
+                            <option value="saturday">Saturday</option>
+                        </select></span> at <input type="time" id="backup-time" class="settings-input"></span><br><br>
+                        <label>Keep the newest <input type="number" id="backup-keep" class="settings-input" min="1" max="365" style="width: 70px;"> backups</label>
+                        <p id="backup-folder" class="hardware-status"></p>
+                        <button type="button" id="backup-now-btn" class="btn" data-icon="save"><span class="btn-label">Back up now</span></button>
+                        <span id="backup-message" class="backup-message"></span>
+                        <ul id="backup-list" class="backup-list"></ul>
+                    </div>
+
+                    <div class="settings-group">
                         <h3>Metadata</h3>
                         <p style="font-size: 13px; color: var(--muted-text); margin-bottom: 10px;">TMDB is used for libraries with a Movies or TV Shows type.</p>
                         <label>TMDB API Read Access Token:<br>

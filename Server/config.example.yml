@@ -38,6 +38,18 @@ server:
 database:
   userPath: ./var/data/users.db
   mediaPath: ./var/data/media.db
+  # Backups: both databases and this file, one .tar.gz each (readable by the server's account only:
+  # they hold the password hashes and the secrets). The folder (empty: "backups" beside a "data"
+  # folder holding the databases, ./var/backups here); point it at another disk or a share to keep them off
+  # this machine. Restore one with: bin/cli backup restore <file> (with the server stopped).
+  backupPath: ./var/backups
+  # When: off, daily or weekly, at this time of day (the server's), on this day for weekly ones.
+  # Settings (Server) changes these, and Back up now there makes one at once.
+  backupSchedule: daily
+  backupTime: "04:00"
+  backupDay: sunday
+  # How many are kept: the oldest go once there are more.
+  backupKeep: 7
 
 media:
   # The libraries. Each has a name, a folder and the groups that may see it, and the server gives

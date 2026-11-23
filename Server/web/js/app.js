@@ -2848,6 +2848,7 @@ async function showSettings(pushHistory = true) {
             document.getElementById('enable-http2').checked = config.streaming.enableHTTP2;
             document.getElementById('pause-jobs-streaming').checked = !!config.streaming.pauseJobsWhileStreaming;
             showHardwareSettings(config.streaming);
+            showBackupSettings(config.database || {});
             const metadata = config.metadata || {};
             document.getElementById('tmdb-token').value = metadata.tmdbAccessToken || '';
             document.getElementById('opensubtitles-key').value = metadata.openSubtitlesApiKey || '';
@@ -3365,6 +3366,65 @@ function handleRemovePath(index) {
     }
 }
 
+// Settings › Backups: the schedule (saved with the other settings), Back up now, and the backups
+// in the folder config.yml names (GET/POST /api/admin/backups).
+function showBackupSettings(database) {
+    const schedule = document.getElementById('backup-schedule');
+    schedule.value = database.backupSchedule || 'daily';
+    document.getElementById('backup-day').value = database.backupDay || 'sunday';
+    document.getElementById('backup-time').value = database.backupTime || '04:00';
+    document.getElementById('backup-keep').value = database.backupKeep || 7;
+    const updateWhen = () => {
+        document.getElementById('backup-when').hidden = schedule.value === 'off';
+        document.getElementById('backup-day-label').hidden = schedule.value !== 'weekly';
+    };
+    schedule.onchange = updateWhen;
+    updateWhen();
+    document.getElementById('backup-now-btn').onclick = backUpNow;
+    document.getElementById('backup-message').textContent = '';
+    loadBackupList();
+}
+
+async function loadBackupList() {
+    const folder = document.getElementById('backup-folder'), list = document.getElementById('backup-list');
+    let info;
+    try {
+        info = await api.request('/api/admin/backups');
+    } catch (e) {
+        folder.textContent = "Couldn't read the backups: " + e.message;
+        return;
+    }
+    const next = info.next ? ` The next one: ${new Date(info.next).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.` : '';
+    folder.textContent = `In ${info.folder} (config.yml's database.backupPath).${next}`;
+    list.innerHTML = '';
+    if (!info.backups.length) {
+        const li = document.createElement('li');
+        li.textContent = 'No backups yet.';
+        list.appendChild(li);
+    }
+    for (const b of info.backups) {
+        const li = document.createElement('li');
+        li.textContent = `${new Date(b.created).toLocaleString()} · ${formatSize(b.size)}`;
+        li.title = b.name;
+        list.appendChild(li);
+    }
+}
+
+async function backUpNow() {
+    const button = document.getElementById('backup-now-btn'), message = document.getElementById('backup-message');
+    button.disabled = true;
+    message.textContent = 'Backing up…';
+    try {
+        const made = await api.request('/api/admin/backups', { method: 'POST' });
+        message.textContent = `Made ${made.name} (${formatSize(made.size)}).`;
+    } catch (e) {
+        message.textContent = e.message;
+    } finally {
+        button.disabled = false;
+        loadBackupList();
+    }
+}
+
 // Settings › Streaming › Hardware encoding: the server's GPUs and the encoders that passed its
 // test encode (GET /api/admin/hardware), and the choice among them. Checked again until the
 // server's startup test is done.
@@ -3438,6 +3498,13 @@ async function handleSaveSettings() {
             state.currentConfig.streaming.hardwareDevice = device || '';
             state.currentConfig.streaming.hardwareMaxTranscodes = Math.max(0, parseInt(document.getElementById('hardware-max').value) || 0);
         }
+        state.currentConfig.database = {
+            ...(state.currentConfig.database || {}),
+            backupSchedule: document.getElementById('backup-schedule').value,
+            backupDay: document.getElementById('backup-day').value,
+            backupTime: document.getElementById('backup-time').value || '04:00',
+            backupKeep: Math.min(365, Math.max(1, parseInt(document.getElementById('backup-keep').value) || 7)),
+        };
         state.currentConfig.metadata = {
             ...(state.currentConfig.metadata || {}),
             tmdbAccessToken: document.getElementById('tmdb-token').value.trim(),
@@ -3453,6 +3520,7 @@ async function handleSaveSettings() {
         }
         messageEl.textContent = (result && result.message) ? result.message : 'Configuration updated.';
         updateHeaderServer(); // a new name
+        loadBackupList(); // the next backup, by the schedule saved
         messageEl.style.color = '#27ae60';
         
         setTimeout(() => {

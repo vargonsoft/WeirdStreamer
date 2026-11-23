@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/weirdstreamer/server/internal/auth"
+	"github.com/weirdstreamer/server/internal/backup"
 	"github.com/weirdstreamer/server/internal/clientip"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
@@ -179,7 +180,8 @@ func main() {
 	mediaHandler.StartAssCache(ctx)
 	// New files, found every hour (and on Scan Media).
 	go mediaHandler.StartScans(ctx)
-	go media.CountStorage() // the data folders' sizes, for Settings → Jobs
+	backup.Start(ctx, db, version) // on the schedule Settings sets
+	go media.CountStorage()        // the data folders' sizes, for Settings → Jobs
 	// When files arrived, for Recently Added: their time on disk (new ones are dated as they're saved).
 	go func() {
 		if err := db.DateMediaAdded(); err != nil {
@@ -275,6 +277,8 @@ func main() {
 	api.HandleFunc("/config/folders", configHandler.ListFolders).Methods("GET")
 	api.HandleFunc("/admin/certificate", configHandler.Certificate).Methods("GET")
 	api.HandleFunc("/admin/hardware", configHandler.Hardware).Methods("GET")
+	api.HandleFunc("/admin/backups", configHandler.Backups).Methods("GET")
+	api.HandleFunc("/admin/backups", configHandler.BackUpNow).Methods("POST")
 	api.HandleFunc("/groups", configHandler.GetAvailableGroups).Methods("GET")
 	api.HandleFunc("/groups", configHandler.CreateGroup).Methods("POST")
 	api.HandleFunc("/groups/{name}", configHandler.RenameGroup).Methods("PUT")

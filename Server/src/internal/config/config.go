@@ -3,9 +3,11 @@ package config
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 type Config struct {
@@ -118,6 +120,41 @@ func (s ServerConfig) TLSFiles() (certFile, keyFile string) {
 type DatabaseConfig struct {
 	UserPath  string `json:"userPath" yaml:"userPath"`
 	MediaPath string `json:"mediaPath" yaml:"mediaPath"`
+	// Backups of both databases and config.yml (internal/backup): the folder (default: BackupDir), when (off, daily or weekly; default daily), at what time
+	// ("04:00"), on what day for weekly ones (default sunday), and how many are kept (default 7).
+	BackupPath     string `json:"backupPath,omitempty" yaml:"backupPath"`
+	BackupSchedule string `json:"backupSchedule,omitempty" yaml:"backupSchedule"`
+	BackupTime     string `json:"backupTime,omitempty" yaml:"backupTime"`
+	BackupDay      string `json:"backupDay,omitempty" yaml:"backupDay"`
+	BackupKeep     int    `json:"backupKeep,omitempty" yaml:"backupKeep"`
+}
+
+// Backup defaults and limits.
+const (
+	DefaultBackupSchedule = "daily"
+	DefaultBackupTime     = "04:00"
+	DefaultBackupDay      = "sunday"
+	DefaultBackupKeep     = 7
+	MaxBackupKeep         = 365
+)
+
+// BackupSchedules are database.backupSchedule's values; BackupDays its days.
+var (
+	BackupSchedules = []string{"off", "daily", "weekly"}
+	BackupDays      = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
+)
+
+// BackupDir is where backups go: backupPath, else "backups" beside the users database's folder
+// when that's a data folder (./var/data/users.db: ./var/backups), else inside it.
+func (d DatabaseConfig) BackupDir() string {
+	if d.BackupPath != "" {
+		return d.BackupPath
+	}
+	dir := filepath.Dir(d.UserPath)
+	if filepath.Base(dir) == "data" {
+		return filepath.Join(filepath.Dir(dir), "backups")
+	}
+	return filepath.Join(dir, "backups")
 }
 
 type MediaPath struct {
@@ -211,6 +248,32 @@ func (c *Config) CheckGroupName(name string) error {
 // Validate checks values that can't be expressed by the file's structure alone.
 func (c *Config) Validate() error {
 	c.Server.Name = strings.TrimSpace(c.Server.Name)
+	d := &c.Database
+	d.BackupSchedule = strings.ToLower(strings.TrimSpace(d.BackupSchedule))
+	if d.BackupSchedule == "" {
+		d.BackupSchedule = DefaultBackupSchedule
+	}
+	if !slices.Contains(BackupSchedules, d.BackupSchedule) {
+		return fmt.Errorf("database.backupSchedule must be one of %s", strings.Join(BackupSchedules, ", "))
+	}
+	if d.BackupTime = strings.TrimSpace(d.BackupTime); d.BackupTime == "" {
+		d.BackupTime = DefaultBackupTime
+	}
+	if _, err := time.Parse("15:04", d.BackupTime); err != nil {
+		return fmt.Errorf("database.backupTime must be a time of day, as 04:00")
+	}
+	if d.BackupDay = strings.ToLower(strings.TrimSpace(d.BackupDay)); d.BackupDay == "" {
+		d.BackupDay = DefaultBackupDay
+	}
+	if !slices.Contains(BackupDays, d.BackupDay) {
+		return fmt.Errorf("database.backupDay must be a day of the week, as sunday")
+	}
+	if d.BackupKeep == 0 {
+		d.BackupKeep = DefaultBackupKeep
+	}
+	if d.BackupKeep < 1 || d.BackupKeep > MaxBackupKeep {
+		return fmt.Errorf("database.backupKeep must be 1 to %d", MaxBackupKeep)
+	}
 	if c.Jobs.TrickplayRunners == 0 {
 		c.Jobs.TrickplayRunners = DefaultTrickplayRunners
 	}

@@ -57,7 +57,10 @@ Where it finds Intel, AMD or NVIDIA graphics, it lists what hardware encoding ne
 set it up: on Debian and Ubuntu it installs the missing packages (Intel's media driver and Quick
 Sync runtime, Mesa's VA-API drivers, NVIDIA's encode library or a kernel module for the running
 kernel) and adds the user to the `video` and `render` groups. Elsewhere it says what to install.
-`./setup.sh gpu` does that step alone (`--check` only reports). `./setup.sh upgrade` installs the
+`./setup.sh gpu` does that step alone (`--check` only reports). Backups of the databases and
+config.yml are made on Settings' schedule (Server › Backups; nightly by default) into
+`database.backupPath`; `./setup.sh restore` (or `bin/cli backup restore <file>`, with the server
+stopped) puts one back. `./setup.sh upgrade` installs the
 latest GitHub release over the package (keeping config.yml, the data and the service, and the files
 it replaced in `.previous/`) and restarts the service; `--check` only says whether there's a newer one. AMD's needs are assumed (Mesa's
 VA-API), not tested on a card.

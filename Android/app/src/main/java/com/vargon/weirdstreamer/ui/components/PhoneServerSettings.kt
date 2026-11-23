@@ -216,6 +216,14 @@ fun ServerSettingsTab(server: ServerRepository) {
     var hwEncoder by remember { mutableStateOf("") }
     var hwDevice by remember { mutableStateOf("") }
     var hwMax by remember { mutableStateOf("0") }
+    // Backups: the schedule (saved with the rest), and the backups in the folder config.yml names
+    var backupSchedule by remember { mutableStateOf("daily") }
+    var backupDay by remember { mutableStateOf("sunday") }
+    var backupTime by remember { mutableStateOf("04:00") }
+    var backupKeep by remember { mutableStateOf("7") }
+    var backups by remember { mutableStateOf<com.vargon.weirdstreamer.api.models.BackupList?>(null) }
+    var backingUp by remember { mutableStateOf(false) }
+    var backupMessage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var tmdbToken by remember { mutableStateOf("") }
     var openSubtitlesKey by remember { mutableStateOf("") }
     var showSubtitlesKey by remember { mutableStateOf(false) }
@@ -260,6 +268,12 @@ fun ServerSettingsTab(server: ServerRepository) {
         }
         hwEncoder = HardwareSettings.encoderOf(c); hwDevice = HardwareSettings.deviceOf(c)
         hwMax = HardwareSettings.maxOf(c).toString()
+        c.getAsJsonObject("database")?.let {
+            backupSchedule = it.get("backupSchedule")?.asString?.ifEmpty { null } ?: "daily"
+            backupDay = it.get("backupDay")?.asString?.ifEmpty { null } ?: "sunday"
+            backupTime = it.get("backupTime")?.asString?.ifEmpty { null } ?: "04:00"
+            backupKeep = (it.get("backupKeep")?.asInt?.takeIf { k -> k > 0 } ?: 7).toString()
+        }
         c.getAsJsonObject("metadata")?.let {
             tmdbToken = it.get("tmdbAccessToken")?.asString ?: ""
             openSubtitlesKey = it.get("openSubtitlesApiKey")?.asString ?: ""
@@ -271,6 +285,10 @@ fun ServerSettingsTab(server: ServerRepository) {
         val (c, err) = attempt { server.api.getConfig() }
         if (c != null && err == null) adopt(c) else loadError = err
     }
+    suspend fun loadBackups() {
+        backups = runCatching { server.api.getBackups().body() }.getOrNull()
+    }
+    LaunchedEffect(server.address) { loadBackups() }
     // The server tries its GPUs' encoders at startup: asked again until that's done.
     LaunchedEffect(server.address) {
         while (true) {
@@ -310,6 +328,11 @@ fun ServerSettingsTab(server: ServerRepository) {
         if (hardware?.encoders?.isNotEmpty() == true) {
             HardwareSettings.apply(c, HardwareSettings.key(hwEncoder, hwDevice), hwMax.toIntOrNull() ?: 0)
         }
+        val database = c.getAsJsonObject("database") ?: JsonObject().also { c.add("database", it) }
+        database.addProperty("backupSchedule", backupSchedule)
+        database.addProperty("backupDay", backupDay)
+        database.addProperty("backupTime", BackupSettings.time(backupTime))
+        database.addProperty("backupKeep", (backupKeep.toIntOrNull() ?: 7).coerceIn(1, 365))
         val metadata = c.getAsJsonObject("metadata") ?: JsonObject().also { c.add("metadata", it) }
         metadata.addProperty("tmdbAccessToken", tmdbToken.trim())
         metadata.addProperty("openSubtitlesApiKey", openSubtitlesKey.trim())
@@ -490,6 +513,48 @@ fun ServerSettingsTab(server: ServerRepository) {
                     }
                 }
             }
+            item { SectionTitle("Backups") }
+            item {
+                Text("Both databases (accounts, watch progress, matches, marked intros and credits) and config.yml. " +
+                    "Restore one with bin/cli backup restore, with the server stopped.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LibraryOptionMenu("Back up", BackupSettings.schedules, backupSchedule) { backupSchedule = it }
+                    if (backupSchedule == "weekly") {
+                        LibraryOptionMenu("On", BackupSettings.days, backupDay) { backupDay = it }
+                    }
+                    if (backupSchedule != "off") {
+                        OutlinedTextField(backupTime, { backupTime = it.filter { ch -> ch.isDigit() || ch == ':' }.take(5) },
+                            label = { Text("At (24-hour, the server's time)") }, placeholder = { Text("04:00") }, singleLine = true,
+                            isError = !BackupSettings.validTime(backupTime),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                    }
+                    OutlinedTextField(backupKeep, { backupKeep = it.filter(Char::isDigit).take(3) }, label = { Text("Backups kept") },
+                        supportingText = { Text("The newest; the oldest go") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                }
+                val list = backups
+                Text(if (list == null) "Couldn't read the backups." else BackupSettings.where(list),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp))
+                Message(backupMessage?.first, backupMessage?.second ?: false)
+                PhoneSecondaryButton(onClick = {
+                    backingUp = true
+                    backupMessage = null
+                    scope.launch {
+                        val (made, err) = attempt { server.api.backUpNow() }
+                        backingUp = false
+                        backupMessage = if (err != null) err to true else "Made ${made?.name} (${formatBytes(made?.size ?: 0)})." to false
+                        loadBackups()
+                    }
+                }, enabled = !backingUp, modifier = Modifier.padding(top = 4.dp)) {
+                    ButtonLabel(if (backingUp) "Backing up…" else "Back up now")
+                }
+                list?.backups.orEmpty().forEach { b ->
+                    Text("${BackupSettings.date(b.created)} · ${formatBytes(b.size)}", style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp))
+                }
+            }
             item { SectionTitle("Metadata") }
             item {
                 Text("TMDB is used for libraries with a Movies or TV Shows type.", style = MaterialTheme.typography.bodySmall,
@@ -540,6 +605,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                             } else {
                                 result?.getAsJsonObject("config")?.let { adopt(it) }
                                 message = (result?.get("message")?.asString ?: "Settings saved.") to false
+                                loadBackups() // the next backup, by the schedule saved
                             }
                         }
                     }) {

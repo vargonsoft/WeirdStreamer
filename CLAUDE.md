@@ -516,6 +516,21 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   Android and iPhone apply to the folder's icon. A library (the root listing) shows
   only the `thumbnail.png` directly in its folder. In folder views (only there) videos have filmstrip
   edges, telling them from photos (`.filmstrip` on the web, `Modifier.filmstrip()`, `Filmstrip`).
+- **Backups** (`internal/backup`): one `weirdstreamer-backup-<time>.tar.gz` holds `users.db` and
+  `media.db` (consistent copies made while the server runs: `database.CopyTo`, SQLite's `VACUUM
+  INTO`), `config.yml` and `manifest.json` (version, time), owner-only (password hashes, secrets).
+  Where is config.yml's `database.backupPath` (Settings shows it, never changes it, as with the other
+  data folders; default `BackupDir`: `backups` beside a `data` folder holding the databases, else
+  inside their folder). When is `backupSchedule` (off, daily, weekly; default daily), `backupTime`
+  (04:00), `backupDay` (weekly's; sunday), and `backupKeep` (7) are kept, the oldest pruned; Settings
+  (web Server tab, phone and iPhone Server tab) changes these, and its Back up now is `POST
+  /api/admin/backups` (`GET` lists them, with the folder and the next time). The schedule runs as the
+  Backups job (the Jobs page, Run now): the next time after the newest backup, or with none after
+  the server started; two in one second get `-2`. `cli backup now | list | restore <file>
+  [--with-config]` (restore refuses while a server answers on the config's port; the files it
+  replaces go to `before-restore-<time>/` beside the users database). `setup.sh restore` picks one,
+  stopping and restarting the service around it, and `setup.sh upgrade` backs up first. The backup
+  folder is on the Jobs page's storage list.
 - **Recently Added:** `showNewAdditions` (`config.yml` or Settings) is `on`, `libraryOnly` or `off`
   (the default): the last 10 videos show under Continue Watching on the library's own Library and
   top folder pages ("Recently Added", `GET /api/library/new?lib=`), and with `on` also on the home

@@ -9,7 +9,10 @@
 #   ./setup.sh remove-service   stop and remove the service
 #   ./setup.sh gpu [--check]    set up the graphics card for hardware encoding (--check: only report)
 #   ./setup.sh upgrade [--check] install the latest release from GitHub over this one (--check: only
-#                               say whether there's a newer one)
+#                               say whether there's a newer one); it backs up the databases first
+#   ./setup.sh restore [FILE] [--with-config]
+#                               put a backup's databases back (asks which; --with-config its
+#                               config.yml too), stopping and restarting the service around it
 #
 # Without the service, run the server with ./bin/server from this folder.
 set -euo pipefail
@@ -485,6 +488,10 @@ upgrade() {
         fi
     fi
 
+    # The databases and config first, in case the new version isn't wanted after all.
+    echo "== Backing up the databases"
+    ./bin/cli backup now || echo "No backup made (this version's cli can't); installing anyway."
+
     echo "== Installing $latest"
     rm -rf "$dir/.previous" && mkdir -p "$dir/.previous"
     local f
@@ -513,6 +520,46 @@ service_installed() {
     else [ -f "$unit_file" ] && grep -q "^ExecStart=\"$dir/bin/server\"" "$unit_file"; fi
 }
 
+# Puts a backup back (cli backup restore), with the server stopped: a service of this folder is
+# stopped first (asking) and started again after.
+restore() {
+    local file="" with_config="" arg
+    for arg in "$@"; do
+        case $arg in --with-config) with_config=--with-config ;; *) file=$arg ;; esac
+    done
+    if [ -z "$file" ]; then
+        local list
+        list=$(./bin/cli backup list) || { echo "$list" >&2; return 1; }
+        echo "$list"
+        local names=() name # (no mapfile: macOS's bash 3.2)
+        while read -r name; do names+=("$name"); done < <(sed -n 's/^  \(weirdstreamer-backup-[^ ]*\).*/\1/p' <<<"$list")
+        [ ${#names[@]} -gt 0 ] || return 1
+        local i
+        for i in "${!names[@]}"; do echo "  $((i + 1)): ${names[$i]}"; done
+        local pick
+        pick=$(ask "Which one (1 is the newest)?" 1)
+        [[ "$pick" =~ ^[0-9]+$ ]] && [ "$pick" -ge 1 ] && [ "$pick" -le ${#names[@]} ] ||
+            { echo "No backup $pick." >&2; return 1; }
+        file=${names[$((pick - 1))]}
+    fi
+    ask_yes "Put $file back${with_config:+ (with its config.yml)}? The databases now are kept aside." n || return 0
+    local was_running=0
+    if service_installed; then
+        ask_yes "The service runs the server: stop it for the restore, and start it again after (asks for sudo)?" y || return 0
+        was_running=1
+        if [ "$mac" = 1 ]; then as_root launchctl bootout "system/$label" 2>/dev/null || true
+        else as_root systemctl stop "$service"; fi
+    fi
+    local ok=0
+    ./bin/cli backup restore "$file" $with_config || ok=1
+    if [ "$was_running" = 1 ]; then
+        echo "== Starting the server again"
+        if [ "$mac" = 1 ]; then as_root launchctl bootstrap system "$plist_file"
+        else as_root systemctl start "$service"; fi
+    fi
+    return $ok
+}
+
 restart_service() {
     echo "== Restarting the server (asks for sudo)"
     if [ "$mac" = 1 ]; then as_root launchctl kickstart -k "system/$label"
@@ -523,6 +570,7 @@ restart_service() {
 case "${1:-}" in
     service) install_service; exit ;;
     upgrade) if [ "${2:-}" = --check ]; then upgrade check; else upgrade; fi; exit ;;
+    restore) shift; restore "$@"; exit ;;
     gpu) if [ "${2:-}" = --check ]; then gpu_setup check; else gpu_setup; fi; exit ;;
     remove-service) remove_service; exit ;;
     "") ;;

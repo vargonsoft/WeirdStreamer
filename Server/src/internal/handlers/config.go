@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/weirdstreamer/server/internal/auth"
+	"github.com/weirdstreamer/server/internal/backup"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/media"
@@ -86,6 +87,37 @@ func adminConfig() config.Config {
 	return c
 }
 
+// Backups lists the backups and when the next is, for admins' Settings: GET /api/admin/backups.
+// The folder is a disk path, as library folders are in admins' Settings.
+func (h *ConfigHandler) Backups(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	dir := backup.Dir()
+	list := backup.List(dir)
+	if list == nil {
+		list = []backup.Info{}
+	}
+	out := map[string]any{"folder": dir, "backups": list}
+	if next := backup.NextTime(); !next.IsZero() {
+		out["next"] = next
+	}
+	respondJSON(w, http.StatusOK, out)
+}
+
+// BackUpNow makes a backup at once (Settings' Back up now): POST /api/admin/backups.
+func (h *ConfigHandler) BackUpNow(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	info, err := backup.RunNow()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "The backup failed: "+err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, info)
+}
+
 // Certificate is the HTTPS certificate's expiry, for admins' Settings: GET /api/admin/certificate
 // ({"state": "none"} without HTTPS).
 func (h *ConfigHandler) Certificate(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +161,7 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		respondError(w, status, err.Error())
 		return
 	}
+	backup.Changed() // the schedule may have changed
 	if s := config.GlobalConfig.Streaming; s.HardwareEncoder != before.HardwareEncoder ||
 		s.HardwareDevice != before.HardwareDevice || s.HardwareMaxTranscodes != before.HardwareMaxTranscodes {
 		log.Printf("[HARDWARE] Changed by %s: %s", claims.Username, media.HardwareSetting())
@@ -157,6 +190,12 @@ type settingsUpdate struct {
 		HardwareDevice          string `json:"hardwareDevice"`
 		HardwareMaxTranscodes   int    `json:"hardwareMaxTranscodes"`
 	} `json:"streaming"`
+	Database struct { // the backups' schedule (the folders stay as config.yml has them)
+		BackupSchedule string `json:"backupSchedule"`
+		BackupTime     string `json:"backupTime"`
+		BackupDay      string `json:"backupDay"`
+		BackupKeep     int    `json:"backupKeep"`
+	} `json:"database"`
 	Metadata struct {
 		TMDBAccessToken     string `json:"tmdbAccessToken"`
 		OpenSubtitlesAPIKey string `json:"openSubtitlesApiKey"`
@@ -184,6 +223,10 @@ func (u settingsUpdate) applyTo(current *config.Config) *config.Config {
 	c.Streaming.HardwareEncoder = u.Streaming.HardwareEncoder
 	c.Streaming.HardwareDevice = u.Streaming.HardwareDevice
 	c.Streaming.HardwareMaxTranscodes = u.Streaming.HardwareMaxTranscodes
+	c.Database.BackupSchedule = u.Database.BackupSchedule
+	c.Database.BackupTime = u.Database.BackupTime
+	c.Database.BackupDay = u.Database.BackupDay
+	c.Database.BackupKeep = u.Database.BackupKeep
 	c.Metadata.TMDBAccessToken = u.Metadata.TMDBAccessToken
 	c.Metadata.OpenSubtitlesAPIKey = u.Metadata.OpenSubtitlesAPIKey
 	c.Metadata.Language = u.Metadata.Language

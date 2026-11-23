@@ -81,6 +81,15 @@ struct APIContractTests {
         #expect(a.languages == ["en", "fr"])
     }
 
+    @Test func backupList() throws {
+        // As the server writes it: Go's times have nanoseconds.
+        let list = try decode(BackupList.self, #"{"folder":"/srv/ws/var/backups","next":"2026-11-24T04:00:00-05:00","backups":[{"name":"weirdstreamer-backup-20261123-184226.tar.gz","size":212664,"created":"2026-11-23T18:42:26.123456789-05:00"}]}"#)
+        #expect(list.backups?.first?.size == 212664)
+        #expect(BackupSettings.date(list.backups?.first?.created ?? "") != nil)
+        #expect(BackupSettings.whereText(list).hasPrefix("In /srv/ws/var/backups. The next one: "))
+        #expect(BackupSettings.time("4:00") == "04:00" && BackupSettings.time("25:00") == "04:00" && !BackupSettings.validTime("4:0"))
+    }
+
     @Test func hardwareReportWithNothingFound() throws {
         // The server sends null for empty lists (gpus and encoders aren't omitempty).
         let r = try decode(HardwareReport.self, #"{"checking":false,"gpus":null,"encoders":null}"#)

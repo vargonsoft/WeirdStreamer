@@ -2873,6 +2873,18 @@ header h1 {
 }
 
 /* Settings › Streaming: what graphics hardware the server has */
+.backup-list {
+    margin: 10px 0 0;
+    padding-left: 20px;
+    color: var(--muted-text);
+    font-size: 13px;
+}
+
+.backup-message {
+    margin-left: 10px;
+    font-size: 13px;
+}
+
 .hardware-heading {
     margin: 18px 0 6px;
 }

@@ -135,6 +135,14 @@ interface ApiService {
     @GET("/api/admin/hardware")
     suspend fun getHardware(): Response<com.vargon.weirdstreamer.api.models.HardwareReport>
 
+    /** The backups (database.backupPath) and when the next is; admins only. */
+    @GET("/api/admin/backups")
+    suspend fun getBackups(): Response<com.vargon.weirdstreamer.api.models.BackupList>
+
+    /** Makes a backup now (Settings' Back up now): the new one. */
+    @POST("/api/admin/backups")
+    suspend fun backUpNow(): Response<com.vargon.weirdstreamer.api.models.BackupInfo>
+
     @GET("/api/groups")
     suspend fun getGroups(): Response<List<String>>
 

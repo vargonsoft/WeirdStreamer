@@ -81,6 +81,14 @@ struct ServerSettingsTab: View {
     @State private var hwEncoder = ""
     @State private var hwDevice = ""
     @State private var hwMax = "0"
+    // Backups: the schedule (saved with the rest), and the backups in the folder config.yml names
+    @State private var backupSchedule = "daily"
+    @State private var backupDay = "sunday"
+    @State private var backupTime = "04:00"
+    @State private var backupKeep = "7"
+    @State private var backups: BackupList?
+    @State private var backingUp = false
+    @State private var backupMessage: (String, Bool)?
     @State private var tmdbToken = ""
     @State private var openSubtitlesKey = ""
     @State private var language = ""
@@ -106,6 +114,7 @@ struct ServerSettingsTab: View {
         }
         .task { await load() }
         .task { await loadHardware() }
+        .task { await loadBackups() }
         .overlay { renameDialog }
         .overlay { removeDialog }
     }
@@ -160,6 +169,7 @@ struct ServerSettingsTab: View {
                     }
                 }
                 hardwareSection
+                backupSection
 
                 SectionTitle(text: "Metadata")
                 Text("TMDB is used for libraries with a Movies or TV Shows type.").font(.caption).foregroundStyle(Palette.muted)
@@ -290,7 +300,53 @@ struct ServerSettingsTab: View {
         }
     }
 
+    /// Backups: the schedule, Back up now, and the backups made.
+    @ViewBuilder private var backupSection: some View {
+        SectionTitle(text: "Backups")
+        Text("Both databases (accounts, watch progress, matches, marked intros and credits) and config.yml. Restore one with bin/cli backup restore, with the server stopped.")
+            .font(.caption).foregroundStyle(Palette.muted)
+        OptionMenu(label: "Back up", options: BackupSettings.schedules, value: $backupSchedule)
+        if backupSchedule == "weekly" {
+            OptionMenu(label: "On", options: BackupSettings.days, value: $backupDay)
+        }
+        if backupSchedule != "off" {
+            PhoneTextField(label: "At (24-hour, the server's time)", text: $backupTime, placeholder: "04:00", keyboard: .numbersAndPunctuation,
+                           hint: BackupSettings.validTime(backupTime) ? nil : "A time of day, as 04:00")
+        }
+        PhoneTextField(label: "Backups kept", text: $backupKeep, keyboard: .numberPad, hint: "The newest; the oldest go")
+        Text(backups.map(BackupSettings.whereText) ?? "Couldn't read the backups.").font(.caption).foregroundStyle(Palette.muted)
+        if let backupMessage {
+            Text(backupMessage.0).font(.caption).foregroundStyle(backupMessage.1 ? Palette.error : Palette.accent)
+        }
+        Button { Task { await backUpNow() } } label: { Text(backingUp ? "Backing up…" : "Back up now") }
+            .buttonStyle(PhoneSecondaryButtonStyle()).disabled(backingUp)
+        ForEach(backups?.backups ?? [], id: \.name) { b in
+            Text("\(BackupSettings.date(b.created ?? "") ?? b.name) · \(formatBytes(b.size))").font(.caption)
+        }
+    }
+
     // MARK: Actions
+
+    private func loadBackups() async {
+        guard let client = model.client else { return }
+        backups = try? await client.get("/api/admin/backups") as BackupList
+    }
+
+    private func backUpNow() async {
+        guard let client = model.client else { return }
+        backingUp = true
+        backupMessage = nil
+        do {
+            let made = try await client.json("POST", "/api/admin/backups") as? [String: Any]
+            let size = (made?["size"] as? NSNumber)?.int64Value
+            backupMessage = ("Made \(made?["name"] as? String ?? "a backup") (\(formatBytes(size))).", false)
+        } catch {
+            model.handle(error)
+            backupMessage = (errorText(error), true)
+        }
+        backingUp = false
+        await loadBackups()
+    }
 
     /// The server tries its GPUs' encoders at startup: asked again until that's done.
     private func loadHardware() async {
@@ -334,6 +390,11 @@ struct ServerSettingsTab: View {
         hwEncoder = streaming?["hardwareEncoder"] as? String ?? ""
         hwDevice = streaming?["hardwareDevice"] as? String ?? ""
         hwMax = "\(streaming?["hardwareMaxTranscodes"] as? Int ?? 0)"
+        let database = c["database"] as? [String: Any]
+        backupSchedule = (database?["backupSchedule"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "daily"
+        backupDay = (database?["backupDay"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "sunday"
+        backupTime = (database?["backupTime"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "04:00"
+        backupKeep = "\((database?["backupKeep"] as? Int).flatMap { $0 > 0 ? $0 : nil } ?? 7)"
         let metadata = c["metadata"] as? [String: Any]
         tmdbToken = metadata?["tmdbAccessToken"] as? String ?? ""
         openSubtitlesKey = metadata?["openSubtitlesApiKey"] as? String ?? ""
@@ -371,6 +432,12 @@ struct ServerSettingsTab: View {
             streaming["hardwareMaxTranscodes"] = max(0, Int(hwMax.filter(\.isNumber)) ?? 0)
         }
         c["streaming"] = streaming
+        var database = c["database"] as? [String: Any] ?? [:]
+        database["backupSchedule"] = backupSchedule
+        database["backupDay"] = backupDay
+        database["backupTime"] = BackupSettings.time(backupTime)
+        database["backupKeep"] = min(365, max(1, Int(backupKeep.filter(\.isNumber)) ?? 7))
+        c["database"] = database
         var metadata = c["metadata"] as? [String: Any] ?? [:]
         metadata["tmdbAccessToken"] = tmdbToken.trimmingCharacters(in: .whitespaces)
         metadata["openSubtitlesApiKey"] = openSubtitlesKey.trimmingCharacters(in: .whitespaces)
@@ -387,6 +454,7 @@ struct ServerSettingsTab: View {
             let reply = try await client.json("PUT", "/api/config", body: body) as? [String: Any]
             if let c = reply?["config"] as? [String: Any] { adopt(c) }
             message = (reply?["message"] as? String ?? "Settings saved.", false)
+            await loadBackups() // the next backup, by the schedule saved
         } catch {
             model.handle(error)
             message = (errorText(error), true)

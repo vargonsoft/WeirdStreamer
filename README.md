@@ -110,6 +110,11 @@ Sign in as the admin: Settings opens where you add your libraries (Browse… pic
 the server) and, for movie and TV libraries, a TMDB API token. Every setting is explained in
 `config.example.yml`.
 
+The server backs up its databases (accounts, watch progress, matches, marked intros and credits)
+and `config.yml` every night at 4:00 into `var/backups`, keeping the newest 7: Settings (Server ›
+Backups) changes when and how many, and has Back up now; `config.yml`'s `database.backupPath` moves
+the folder (another disk or a share keeps them off the machine). `./setup.sh restore` puts one back.
+
 To upgrade later, run `./setup.sh upgrade` in that folder: it downloads the latest release, checks it,
 installs it over this one (your `config.yml`, data and service stay; the files it replaced are kept in
 `.previous`) and restarts the service. `./setup.sh upgrade --check` only says whether there's a newer one.
