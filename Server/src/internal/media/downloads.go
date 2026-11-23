@@ -56,6 +56,7 @@ type DownloadJob struct {
 	file    string
 	readyAt time.Time
 	cancel  context.CancelFunc
+	encoder string // what encoded the video, for the log ("" when it was copied)
 }
 
 // DownloadSource describes what a file would download as.
@@ -261,9 +262,16 @@ func (m *DownloadManager) work() {
 func (j *DownloadJob) describe() string {
 	if j.SizePct == 100 && j.Scale == 100 {
 		kept := map[bool]string{true: "kept", false: "encoded"}
-		return "full quality, video " + kept[j.KeepVideo] + ", audio " + kept[j.KeepAudio]
+		return "full quality, video " + kept[j.KeepVideo] + ", audio " + kept[j.KeepAudio] + j.encodedBy()
 	}
-	return fmt.Sprintf("%d%% size, %d%% resolution", j.SizePct, j.Scale)
+	return fmt.Sprintf("%d%% size, %d%% resolution", j.SizePct, j.Scale) + j.encodedBy()
+}
+
+func (j *DownloadJob) encodedBy() string {
+	if j.encoder == "" {
+		return ""
+	}
+	return ", video by " + j.encoder
 }
 
 // mp4Audio reports whether an audio codec can be copied into MP4 as it is.
@@ -357,6 +365,37 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 	if src.MainTitleUncertain {
 		log.Printf("[DOWNLOAD] %s: a title that can't be read may be longer than the one downloaded as the main title", filepath.Base(job.Path))
 	}
+	// The video encoded on the GPU Settings chose while it has room (streams and downloads share
+	// streaming.hardwareMaxTranscodes), else x264. A GPU encode that fails runs again on the CPU.
+	if !encodesVideo(args) {
+		return m.ffmpeg(ctx, job, src, args, part)
+	}
+	hw, device, ok := hardwareForDownload()
+	if !ok {
+		job.encoder = "libx264"
+		return m.ffmpeg(ctx, job, src, args, part)
+	}
+	gpuArgs := hardwareArgs(args, hw, device)
+	job.encoder = encoderLabel(gpuArgs)
+	err = m.ffmpeg(ctx, job, src, gpuArgs, part)
+	downloadsOnGPU.Add(-1)
+	if err == nil || ctx.Err() != nil || errors.Is(err, ErrFFmpegStalled) {
+		return err
+	}
+	m.mu.Lock()
+	started := job.Progress > 0
+	job.Progress = 0
+	m.mu.Unlock()
+	if !started { // the GPU couldn't encode at all: streams and downloads skip it for a while
+		hardwareFailed.Store(time.Now().UnixNano())
+	}
+	log.Printf("[DOWNLOAD] The GPU encoder failed for %s, so the CPU encodes it: %v", filepath.Base(job.Path), err)
+	job.encoder = "libx264, after the GPU failed"
+	return m.ffmpeg(ctx, job, src, args, part)
+}
+
+// ffmpeg runs a download's encode with args, writing part, and renames it to the job's file.
+func (m *DownloadManager) ffmpeg(ctx context.Context, job *DownloadJob, src *DownloadSource, args []string, part string) error {
 	run, stop := context.WithCancel(ctx)
 	defer stop()
 	var watch *stallWatch

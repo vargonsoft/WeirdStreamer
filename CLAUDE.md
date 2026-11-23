@@ -331,15 +331,25 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   reports the GPUs, the encoders that worked and why others didn't. Settings (web Server › Streaming,
   phone and iPhone Server tab, TV Settings › Hardware encoding, admins only) shows that and, when
   something works, the choice (`streaming.hardwareEncoder` nvenc/qsv/vaapi, `hardwareDevice` the
-  render node) and `hardwareMaxTranscodes` (0 no limit). Only streaming transcodes' video uses it
-  (files and discs; downloads are still x264, see TODO): `hardwareArgs` turns the CPU's ffmpeg
-  arguments into the encoder's (x264's CRF as `-cq`/`-global_quality`/`-qp`; VA-API uploads frames
-  with `format=nv12,hwupload` after the CPU's filters), so decoding, scaling, burned-in subtitles and
-  10-bit to 8-bit stay on the CPU. In the transcode cache (`attach`) a new transcode goes to the GPU
-  while under the limit; its spool keeps the CPU arguments' name and runs them instead if ffmpeg
-  fails before making anything (then the GPU is skipped for 5 minutes, `hardwareFailed`). The Streams
-  page names the encoder used (`SetVideoEncoder`). Tested with NVENC (GTX 1060) only; Quick Sync and
-  VA-API are untested on real hardware.
+  render node) and `hardwareMaxTranscodes` (0 no limit, streams and downloads together). Streaming
+  transcodes (files and discs) and download encodes use it: `hardwareArgs` turns the CPU's ffmpeg
+  arguments into the encoder's (VA-API uploads frames with `format=nv12,hwupload` after the CPU's
+  filters), so decoding, scaling, burned-in subtitles and 10-bit to 8-bit stay on the CPU. x264's
+  CRF becomes `-cq`/`-global_quality`/`-qp` plus `qualityOffset` (NVENC +5, Quick Sync +1, VA-API
+  +2: the same size and look as x264 veryfast; 1:1 made files 1.3 to 2 times the size). In the
+  transcode cache (`attach`) a new transcode goes to the GPU while under the limit; its spool keeps
+  the CPU arguments' name and runs them instead if ffmpeg fails before making anything (then the GPU
+  is skipped for 5 minutes, `hardwareFailed`). The Streams page names the encoder used
+  (`SetVideoEncoder`). A download (`DownloadManager.encode`) takes the GPU while there's room
+  (`hardwareForDownload`, counted in `downloadsOnGPU`), else x264; one the GPU fails is encoded again
+  by the CPU. The log's `Ready` line names the encoder.
+  Measured in 2026-11 on Tears of Steel 1080p (GTX 1060 and RTX 4070 Ti SUPER on i7-14700Ks,
+  Meteor Lake through a VM's passthrough): at the same size every GPU matched x264 veryfast, by
+  SSIM and by eye, in both download modes; the slower presets (NVENC p7, two-pass, x264 medium)
+  gained nothing worth their time. On the 14700K the GPU is no faster than x264 but uses a ninth of
+  the CPU; on a Core Ultra 5 125U it's 2.7 times faster at a seventh of the CPU. Quick Sync needs
+  Intel's GPU runtime (Ubuntu's `libmfx-gen1.2`), and the server's account the `video` and
+  `render` groups. Streaming on Quick Sync and VA-API is still untested on real hardware.
 - **Resumable transcodes** (`media/transcache.go`): browsers drop and reopen media connections
   with `Range: bytes=N-`, and ffmpeg can't seek its output, so every transcode goes through
   64 MB chunks in `media.transcodeCachePath` (default `transcodes` beside the thumbnails folder).

@@ -106,8 +106,9 @@ func (c *transcodeCache) attach(filePath string, args []string, offset int64, se
 	return s, nil
 }
 
-// hardwareRoom reports whether another transcode may use the GPU: under
-// streaming.hardwareMaxTranscodes, and none failed to start on it in the last few minutes.
+// hardwareRoom reports whether another transcode or download may use the GPU: under
+// streaming.hardwareMaxTranscodes (streams and downloads together), and none failed to start on it
+// in the last few minutes. The caller holds c.mu.
 func (c *transcodeCache) hardwareRoom() bool {
 	if since := time.Since(time.Unix(0, hardwareFailed.Load())); since < hardwareBackoff {
 		return false
@@ -119,7 +120,7 @@ func (c *transcodeCache) hardwareRoom() bool {
 	if limit <= 0 {
 		return true
 	}
-	n := 0
+	n := int(downloadsOnGPU.Load())
 	for s := range c.spools {
 		s.mu.Lock()
 		if s.gpu && !s.done && !s.closed {

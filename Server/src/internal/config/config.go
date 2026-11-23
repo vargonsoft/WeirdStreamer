@@ -308,13 +308,14 @@ type StreamingConfig struct {
 	// Background jobs (intros and credits, trickplay, cleanup) wait while anyone is streaming,
 	// whatever the machine's load: a failsafe
 	PauseJobsWhileStreaming bool `json:"pauseJobsWhileStreaming,omitempty" yaml:"pauseJobsWhileStreaming"`
-	// The graphics hardware that encodes streaming transcodes' video: "" (the CPU, x264), "nvenc"
+	// The graphics hardware that encodes the video of transcodes and downloads: "" (the CPU, x264), "nvenc"
 	// (NVIDIA), "qsv" (Intel Quick Sync) or "vaapi" (VA-API: AMD or Intel). Settings offers what
 	// the server found working (media.Hardware).
 	HardwareEncoder string `json:"hardwareEncoder,omitempty" yaml:"hardwareEncoder"`
 	// The device for qsv and vaapi: a render node such as /dev/dri/renderD128
 	HardwareDevice string `json:"hardwareDevice,omitempty" yaml:"hardwareDevice"`
-	// At most this many transcodes on the hardware at once (0: no limit); the rest use the CPU
+	// At most this many transcodes and downloads on the hardware at once (0: no limit); the rest
+	// use the CPU
 	HardwareMaxTranscodes int `json:"hardwareMaxTranscodes,omitempty" yaml:"hardwareMaxTranscodes"`
 }
 

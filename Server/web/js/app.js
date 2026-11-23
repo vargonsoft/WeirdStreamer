@@ -3376,11 +3376,11 @@ async function showHardwareSettings(streaming) {
     const note = document.getElementById('hardware-note');
     const updateNote = () => {
         const vendor = (report.encoders.find(e => `${e.id}|${e.device || ''}` === select.value) || {}).vendor;
-        note.textContent = !select.value ? 'Transcodes are encoded by the CPU.' :
+        note.textContent = !select.value ? 'Transcodes and downloads are encoded by the CPU.' :
             'The GPU encodes the video; decoding, scaling and burned-in subtitles stay on the CPU. ' +
             'A transcode the GPU fails to start is encoded by the CPU, as are those past the limit. ' +
             (vendor === 'nvidia' ? "NVIDIA's GeForce cards also limit how many encodes run at once. " : '') +
-            'Downloads are still encoded by the CPU.';
+            'Downloads are encoded the same way and count toward the limit.';
     };
     select.onchange = updateNote;
     updateNote();

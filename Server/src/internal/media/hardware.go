@@ -8,14 +8,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
 )
 
-// Graphics hardware for streaming transcodes. At startup the server looks for GPUs and tries a
+// Graphics hardware for streaming transcodes and downloads. At startup the server looks for GPUs and tries a
 // short test encode with each encoder ffmpeg has for them; Settings offers those that worked
 // (streaming.hardwareEncoder). The GPU only encodes: decoding and filters (scaling, burned-in
 // subtitles, 10-bit to 8-bit) stay on the CPU, so every source the CPU transcodes works the same.
@@ -258,7 +260,7 @@ func testEncode(id, device string) error {
 	return fmt.Errorf("the test encode failed: %s", reason)
 }
 
-// hardwareChoice is the hardware encoder streaming transcodes use now: the one Settings chose, if
+// hardwareChoice is the hardware encoder transcodes and downloads use now: the one Settings chose, if
 // the test found it working.
 func hardwareChoice() (id, device string, ok bool) {
 	if config.GlobalConfig == nil {
@@ -346,17 +348,47 @@ func encoderCodecArgs(id string, bitrate bool) []string {
 	return []string{"-c:v", "libx264", "-preset", "ultrafast"}
 }
 
+// qualityOffset is what each encoder adds to x264's CRF for the same size and look as x264
+// veryfast: measured on Tears of Steel (1080p) at CRF 18 in 2026-11, NVENC on an RTX 4070 Ti SUPER
+// (+5; a GTX 1060 needed +6), VA-API and Quick Sync on Meteor Lake. Taken 1:1, the GPU's files
+// came out 1.3 to 2 times the size.
+var qualityOffset = map[string]int{"nvenc": 5, "qsv": 1, "vaapi": 2}
+
 // encoderQualityArgs is x264's -crf (constant quality) in id's terms.
 func encoderQualityArgs(id, crf string) []string {
+	q := crf
+	if n, err := strconv.Atoi(crf); err == nil {
+		q = strconv.Itoa(min(n+qualityOffset[id], 51))
+	}
 	switch id {
 	case "nvenc":
-		return []string{"-cq", crf, "-b:v", "0"}
+		return []string{"-cq", q, "-b:v", "0"}
 	case "qsv":
-		return []string{"-global_quality", crf}
+		return []string{"-global_quality", q}
 	case "vaapi":
-		return []string{"-qp", crf}
+		return []string{"-qp", q}
 	}
 	return []string{"-crf", crf}
+}
+
+// downloadsOnGPU counts the download encodes running on the GPU, which count toward
+// streaming.hardwareMaxTranscodes with the streams.
+var downloadsOnGPU atomic.Int32
+
+// hardwareForDownload is the GPU encoder for a download's video when Settings chose one and it has
+// room, counting the download in downloadsOnGPU: the caller subtracts it when the encode ends.
+func hardwareForDownload() (id, device string, ok bool) {
+	id, device, ok = hardwareChoice()
+	if !ok {
+		return "", "", false
+	}
+	transcodes.mu.Lock()
+	defer transcodes.mu.Unlock()
+	if !transcodes.hardwareRoom() {
+		return "", "", false
+	}
+	downloadsOnGPU.Add(1)
+	return id, device, true
 }
 
 // encoderLabel names the encoder in ffmpeg's arguments, for the Streams page.

@@ -25,10 +25,10 @@ Requests saved for later, newest last.
 
 ## Transcoding
 
-- [ ] **GPU encoding for downloads.** Streaming transcodes can use the GPU (Settings › Streaming ›
-      Hardware encoding); download encodes (Compatibility and Compressed) still use x264 on the
-      CPU. Compatibility aims for full quality (CRF 18), where older NVENC falls short of x264 at the
-      same size: maybe a setting, or GPU for Compressed only.
+- [x] **GPU encoding for downloads.** Download encodes (Compatibility and Compressed) use the GPU
+      Settings chose, sharing its limit with streams, and x264 when it's full or fails. Measured
+      first: at the same size the GPUs matched x264 in both modes, once x264's CRF was translated
+      per encoder (which also fixed streaming transcodes' bitrates).
 
 ## DVD discs
 

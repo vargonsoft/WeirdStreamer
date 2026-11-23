@@ -51,11 +51,11 @@ enum HardwareSettings {
     }
 
     static func note(_ r: HardwareReport, chosen: String) -> String {
-        if chosen.isEmpty { return "Transcodes are encoded by the CPU." }
+        if chosen.isEmpty { return "Transcodes and downloads are encoded by the CPU." }
         let vendor = (r.encoders ?? []).first(where: { key($0) == chosen })?.vendor
         return "The GPU encodes the video; decoding, scaling and burned-in subtitles stay on the CPU. " +
             "A transcode the GPU fails to start is encoded by the CPU, as are those past the limit. " +
             (vendor == "nvidia" ? "NVIDIA's GeForce cards also limit how many encodes run at once. " : "") +
-            "Downloads are still encoded by the CPU."
+            "Downloads are encoded the same way and count toward the limit."
     }
 }

@@ -47,12 +47,12 @@ object HardwareSettings {
 
     /** What the chosen key means for transcodes. */
     fun note(report: HardwareReport, chosen: String): String {
-        if (chosen.isEmpty()) return "Transcodes are encoded by the CPU."
+        if (chosen.isEmpty()) return "Transcodes and downloads are encoded by the CPU."
         val vendor = report.encoders.orEmpty().firstOrNull { key(it) == chosen }?.vendor
         return "The GPU encodes the video; decoding, scaling and burned-in subtitles stay on the CPU. " +
             "A transcode the GPU fails to start is encoded by the CPU, as are those past the limit. " +
             (if (vendor == "nvidia") "NVIDIA's GeForce cards also limit how many encodes run at once. " else "") +
-            "Downloads are still encoded by the CPU."
+            "Downloads are encoded the same way and count toward the limit."
     }
 
     /** The limit as shown: "No limit" for 0. */
