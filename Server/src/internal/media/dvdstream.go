@@ -7,16 +7,16 @@ import (
 	"strings"
 )
 
-// DiscOptions picks what to play from a disc image; from the stream URL's query.
+// DiscOptions picks what to play from a disc image; from the stream URL's query. Its subtitles go
+// beside the stream (dvddiscsub.go), drawn by the players.
 type DiscOptions struct {
-	Title    int  // 0: the main title
-	Angle    int  // from 1
-	Audio    int  // audio track index, from 0
-	Subtitle int  // subtitle track index burned into the picture; -1 for none
-	Stereo   bool // downmix the audio (channels=2)
+	Title  int  // 0: the main title
+	Angle  int  // from 1
+	Audio  int  // audio track index, from 0
+	Stereo bool // downmix the audio (channels=2)
 }
 
-// ParseDiscOptions reads title, angle, audio and subtitle from a stream request's query.
+// ParseDiscOptions reads title, angle and audio from a stream request's query.
 func ParseDiscOptions(r *http.Request) DiscOptions {
 	q := r.URL.Query()
 	num := func(key string, def int) int {
@@ -25,15 +25,14 @@ func ParseDiscOptions(r *http.Request) DiscOptions {
 		}
 		return def
 	}
-	return DiscOptions{Title: num("title", 0), Angle: num("angle", 1), Audio: num("audio", 0), Subtitle: num("subtitle", -1),
-		Stereo: StereoRequested(r)}
+	return DiscOptions{Title: num("title", 0), Angle: num("angle", 1), Audio: num("audio", 0), Stereo: StereoRequested(r)}
 }
 
 // discBaseBitrate is what percentage bitrates ("80%") are taken of: about a DVD's video bitrate.
 const discBaseBitrate = 5_000_000
 
 // serveDisc transcodes a title of a DVD image: its PGC chain joined into one stream, from
-// startTime seconds, with the chosen angle and audio track and subtitles burned in.
+// startTime seconds, with the chosen angle and audio track.
 func (s *Streamer) serveDisc(w http.ResponseWriter, r *http.Request, filePath, startTime, bitrate, resolution string, sess *StreamSession) error {
 	// A request doesn't wait out a long probe (ErrDiscReading); DiscTranscodeArgs then finds it read.
 	if _, err := LoadDiscWithin(filePath, DiscRequestWait); err != nil {
@@ -64,10 +63,6 @@ func DiscTranscodeArgs(filePath string, opt DiscOptions, startTime, bitrate, res
 	if len(t.Audio) > 0 {
 		audio = min(max(opt.Audio, 0), len(t.Audio)-1)
 	}
-	subtitle := opt.Subtitle
-	if subtitle >= len(t.Subtitles) {
-		subtitle = -1
-	}
 	angle := min(max(opt.Angle, 1), max(t.Angles, 1))
 
 	first, offset := t.SegmentAt(start)
@@ -82,12 +77,7 @@ func DiscTranscodeArgs(filePath string, opt DiscOptions, startTime, bitrate, res
 		input, trim := t.InputArgs(filePath, i, angle, seek)
 		args = append(args, input...)
 
-		video := fmt.Sprintf("[%d:v:0]", n)
-		if subtitle >= 0 {
-			video += fmt.Sprintf("[%d:s:%d]overlay", n, subtitle)
-		} else {
-			video += "null"
-		}
+		video := fmt.Sprintf("[%d:v:0]null", n)
 		if trim > 0 {
 			video += fmt.Sprintf(",trim=start=%.3f,setpts=PTS-STARTPTS", trim)
 		}
@@ -161,9 +151,6 @@ func DiscTranscodeArgs(filePath string, opt DiscOptions, startTime, bitrate, res
 	desc.Audio = "AAC 192 kb/s stereo"
 	if audio >= 0 {
 		desc.Audio += fmt.Sprintf(" (track %d: %s)", audio+1, describeTrack(t.Audio[audio]))
-	}
-	if subtitle >= 0 {
-		desc.Video += fmt.Sprintf(" + subtitles track %d (%s) burned in", subtitle+1, describeTrack(t.Subtitles[subtitle]))
 	}
 	desc.Start = start
 	return args, desc, nil

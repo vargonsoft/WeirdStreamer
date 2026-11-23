@@ -146,6 +146,7 @@ final class PlaybackModel {
             // A disc: its titles, then the main one transcoded (a disc can't play as it is).
             disc = try? await client.get("/api/media/disc", query: [("path", encoded)])
             if let t = disc?.title(0) { duration = t.duration }
+            subtitles = ServerSubtitles(client: client, path: request.path) // the title's tracks (useDisc)
             modeIndex = 1
             await open(at: request.startAt)
             if let info: TrickplayInfo = try? await client.get("/api/media/trickplay", query: [("path", encoded)]) {
@@ -231,7 +232,7 @@ final class PlaybackModel {
             if let b = mode.bitrate { parts.append("bitrate=\(b)") }
             if let r = mode.resolution { parts.append("resolution=\(r)") }
             parts.append(mode.safe ? "audiocodec=aac&channels=2" : "audiocodec=aac")
-            parts.append("title=\(discTitle)&angle=\(discAngle)&audio=\(discAudio)&subtitle=\(discSubtitle)")
+            parts.append("title=\(discTitle)&angle=\(discAngle)&audio=\(discAudio)") // subtitles drawn over it
             if start > 0 { parts.append("start=" + String(format: "%.2f", start)) }
             copiesVideo = false
             return parts.joined(separator: "&")
@@ -279,6 +280,12 @@ final class PlaybackModel {
         }
         offset = mode.isOriginal ? 0 : begins
         position = start
+        if isDisc, let t = disc?.title(discTitle) {
+            // A disc's subtitles go with its stream: read as it reads the disc, from where it starts.
+            subtitles?.useDisc(t, angle: discAngle, from: start, audio: discAudio)
+        } else {
+            subtitles?.useForcedLanguage(playingAudio()?.language) // a DVD track's forced lines, with none chosen
+        }
         let url = client.streamURL(for: request.path, query: query(start: start))
         let item: AVPlayerItem
         if mode.isOriginal {
@@ -532,6 +539,7 @@ final class PlaybackModel {
         discAngle = 1
         discAudio = 0
         discSubtitle = -1
+        subtitles?.select(-1)
         duration = t.duration
         applyDiscTrickplay()
         Task { await open(at: 0) }
@@ -539,7 +547,8 @@ final class PlaybackModel {
 
     func chooseDiscAngle(_ angle: Int) { discAngle = angle; restartDisc() }
     func chooseDiscAudio(_ index: Int) { discAudio = index; restartDisc() }
-    func chooseDiscSubtitle(_ index: Int) { discSubtitle = index; restartDisc() }
+    /// Drawn over the stream: no restart.
+    func chooseDiscSubtitle(_ index: Int) { discSubtitle = index; subtitles?.select(index) }
 
     private func restartDisc() {
         let at = position
@@ -919,7 +928,7 @@ struct PlayerView: View {
                     if playback.audioTracks.count > 1 {
                         menuButton(.audio, icon: "waveform", tint: .white, label: "Audio")
                     }
-                    if let subtitles = playback.subtitles {
+                    if let subtitles = playback.subtitles, !playback.isDisc { // a disc's are in its sheet
                         menuButton(.subtitles, icon: "captions.bubble",
                                    tint: subtitles.selected >= 0 ? .green : .white, label: "Subtitles")
                     }

@@ -265,8 +265,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   - `auto-transcode=0` turns off the server's extension-based auto-transcode (`needsTranscoding`
     in `streamer.go`: `.mkv`, `.avi`, `.wmv` and similar). The web UI always sends it, so the
     browser gets originals unless the user presses "Transcode to MP4".
-  - Discs (`.iso`) are always transcoded, per title (`title`, `angle`, `audio`, `subtitle`
-    params).
+  - Discs (`.iso`) are always transcoded, per title (`title`, `angle`, `audio` params); their
+    subtitles come beside the stream (below).
 - **Web player** (`app.js`): `playVideo(item, forceTranscode, startAt)` plays in the
   `<video id="video-player">` of `#player-modal`, with the player's own controls
   (`#player-controls`, `setupPlayerControls`; the native `controls` are off). Discs (`playDisc`)
@@ -304,8 +304,21 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     `format=sup` the server decodes their subpictures and writes them as PGS (`media/dvdsub.go`,
     `DVDSubtitlesAsPGS`: packets from ffprobe, the palette and canvas from the track's .idx header,
     pictures widened to square pixels by the video's sample aspect, a clearing set at each end), so
-    every player draws them with its PGS code and downloads save them as .sup. Disc images (.iso)
-    still burn theirs in (`subtitle=N`; see TODO), as do the rare other picture formats (DVB, XSUB).
+    every player draws them with its PGS code and downloads save them as .sup. Only the rare other
+    picture formats (DVB, XSUB) are burned in (`subtitle=N`). `forced=1` gives only a DVD track's
+    lines marked forced: with no track chosen, every player loads those of the DVD track in the
+    playing audio's language (files' and discs', `forcedLinesTrack` on the web, `forcedTrack` in
+    the apps' ServerSubtitles).
+  - A disc image's subtitles come the same way (`media/dvddiscsub.go`; `format=sup` with `title=`,
+    `angle=` and `from=`, where the player's stream started), drawn over the transcode, so choosing
+    them doesn't restart it. The demuxer lands a seek near its target and labels what follows as the
+    target (the stream started at 3000 s may show 3002 s as 3000 s, up to 15 s off), and the labels
+    depend only on the target: so a reader per stream start (`discReaderFor`) seeks where the stream
+    did and reads on, every track at once, about 160 times faster than playback, and the windows
+    wait for it. A title of chained program chains or read from a later chapter isn't sought (the
+    transcode trims), so its reader reads from the start in the title's own time. The palette is the
+    demuxer's `.idx` extradata; the canvas and pixel shape the title's. An open interval with
+    `-show_data` (`3000%`) makes ffprobe read nothing, so it's given an end.
   - ASS/SSA tracks and files (codec `ass` or `ssa`) are drawn styled by libass: JASSUB 1.8.8, vendored in
     `Server/web/vendor/jassub` (loaded on first use). `format=ass` gives each 2-minute window as a
     whole script (header, styles and its Dialogue lines, at the file's times); `loadAssWindow` keeps

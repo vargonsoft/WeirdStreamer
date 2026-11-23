@@ -63,7 +63,11 @@ func encodeSPU(pic *spuPicture, stop float64) []byte {
 	x2, y2 := pic.x+pic.w-1, pic.y+pic.h-1
 	b.Write([]byte{0x05, byte(pic.x >> 4), byte(pic.x<<4) | byte(x2>>8), byte(x2), byte(pic.y >> 4), byte(pic.y<<4) | byte(y2>>8), byte(y2)})
 	b.Write([]byte{0x06, 0, 4, byte((4 + len(top)) >> 8), byte(4 + len(top))})
-	b.Write([]byte{0x01, 0xff})
+	start := byte(0x01) // start display; 0x00 starts it as forced
+	if pic.forced {
+		start = 0x00
+	}
+	b.Write([]byte{start, 0xff})
 	date := int(math.Round(stop * 90000 / 1024))
 	b.Write([]byte{byte(date >> 8), byte(date), byte(second >> 8), byte(second), 0x02, 0xff})
 	out := b.Bytes()

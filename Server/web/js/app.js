@@ -1253,8 +1253,12 @@ function seekTo(t) {
     if (duration) t = Math.min(t, Math.max(duration - 1, 0));
     t = Math.max(0, t);
     if (disc && disc.info) {
-        if (inBuffer(t - disc.offset)) videoPlayer.currentTime = t - disc.offset;
-        else loadDiscStream(t);
+        if (inBuffer(t - disc.offset)) {
+            videoPlayer.currentTime = t - disc.offset;
+            seekSubtitles(t);
+        } else {
+            loadDiscStream(t);
+        }
         return;
     }
     if (!player) return;
@@ -1672,18 +1676,35 @@ function stopSubtitles() {
     showCutoutCues();
 }
 
-// Starts the chosen text subtitles from position (seconds into the file), or turns them off.
+// A DVD track's forced lines (foreign dialogue meant to show with subtitles off), when subtitles
+// are off: from the DVD track in the language of the audio playing. tracks are the file's or the
+// disc title's subtitles; null when none matches.
+function forcedLinesTrack(tracks, audio) {
+    const language = audio && audio.language;
+    return (language && tracks.find(s => (s.codec === 'dvd_subtitle') && s.language === language)) || null;
+}
+
+// Starts the chosen subtitles from position (seconds into the file or disc title), or with
+// subtitles off a DVD track's forced lines.
 function restartSubtitles(position) {
     stopSubtitles();
-    const p = player, sub = p && subtitleTrack(p);
-    if (sub && drawsPictureSubtitles(sub)) {
-        const from = Math.max(0, position - 10);
-        subs = { track: subtitleTextTrack(), index: sub.index, sets: [], shown: undefined, from, until: from,
-                 loading: false, abort: new AbortController() };
-        loadPictureWindow(subs);
-        requestAnimationFrame(() => showPictureSubtitles(subs));
+    if (disc && disc.info) {
+        // A disc title's subtitles are DVD pictures, drawn as a file's: the server reads them as
+        // the stream reads the disc (from where it started, disc.offset).
+        const t = discTitle();
+        let sub = t.subtitles[disc.subtitle] || null, forced = false;
+        if (!sub) { sub = forcedLinesTrack(t.subtitles, t.audio[disc.audio]); forced = !!sub; }
+        if (sub) startPictureSubtitles(sub, position, forced);
         return;
     }
+    const p = player;
+    let sub = p && subtitleTrack(p), forced = false;
+    if (p && !sub && p.codecs) { sub = forcedLinesTrack(p.codecs.subtitles, audioTrack(p)); forced = !!sub; }
+    if (sub && drawsPictureSubtitles(sub)) {
+        startPictureSubtitles(sub, position, forced);
+        return;
+    }
+    if (forced) return;
     if (sub && drawsAssSubtitles(sub)) {
         const from = Math.max(0, position - 10);
         subs = { ass: true, index: sub.index, header: '', format: '', lines: [], seen: new Set(),
@@ -1704,14 +1725,26 @@ function restartSubtitles(position) {
     loadSubtitleWindow(subs);
 }
 
+function startPictureSubtitles(sub, position, forced) {
+    const from = Math.max(0, position - 10);
+    subs = { track: subtitleTextTrack(), index: sub.index, forced, sets: [], shown: undefined, from, until: from,
+             loading: false, abort: new AbortController() };
+    loadPictureWindow(subs);
+    requestAnimationFrame(() => showPictureSubtitles(subs));
+}
+
 // A window of a PGS track, merged into what's loaded: the windows overlap a little where a seek
 // lands early. Sets far behind are dropped.
 async function loadPictureWindow(s) {
     const from = s.until;
     s.until = from + SUBTITLE_WINDOW;
     s.loading = true;
-    const url = `${API_BASE}/api/media/subtitles?path=${encodeURIComponent(api.encodePath(player.item.path))}` +
+    const item = disc && disc.info ? disc.item : player.item;
+    let url = `${API_BASE}/api/media/subtitles?path=${encodeURIComponent(api.encodePath(item.path))}` +
         `&track=${s.index}&start=${from.toFixed(2)}&duration=${SUBTITLE_WINDOW}&format=sup`;
+    // A disc's: its title, angle, and where its stream started, whose times the server matches.
+    if (disc && disc.info) url += `&title=${discTitle().number}&angle=${disc.angle}&from=${disc.offset.toFixed(2)}`;
+    if (s.forced) url += '&forced=1';
     try {
         const headers = api.authHeaders();
         const res = await fetch(url, { signal: s.abort.signal, credentials: 'same-origin', headers });
@@ -2090,7 +2123,8 @@ function playerPosition() {
 
 // ---------------------------------------------------------------------------------------------
 // DVD disc images: always transcoded by the server, which plays one title of the disc at a time.
-// Choosing a title, chapter, angle or track restarts the stream at the right place.
+// Choosing a title, chapter, angle or audio track restarts the stream at the right place; the
+// subtitles are drawn over it (restartSubtitles), so choosing them doesn't.
 
 let disc = null; // { item, info, title, angle, audio, subtitle, offset, fromFolder }
 
@@ -2240,9 +2274,10 @@ function loadDiscStream(start) {
     const t = discTitle();
     disc.offset = Math.max(0, Math.min(start, Math.max(t.duration - 1, 0)));
     let url = api.getStreamUrl(disc.item.path, true) +
-        `&title=${t.number}&angle=${disc.angle}&audio=${disc.audio}&subtitle=${disc.subtitle}`;
+        `&title=${t.number}&angle=${disc.angle}&audio=${disc.audio}`;
     if (disc.offset > 0) url += `&start=${disc.offset.toFixed(2)}`;
     attachStream(url, disc.item);
+    restartSubtitles(disc.offset); // read as this stream reads the disc, from where it starts
     updatePlayerPosition();
 }
 
@@ -2649,7 +2684,7 @@ function setupPlayerControls() {
             return;
         }
         const s = Number(value);
-        if (disc && disc.info) { disc.subtitle = s; loadDiscStream(playerPosition()); return; }
+        if (disc && disc.info) { disc.subtitle = s; restartSubtitles(playerPosition()); return; }
         changeFileStream(p => {
             p.subtitle = s;
             chooseCompatibility(p);

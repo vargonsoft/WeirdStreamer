@@ -19,15 +19,17 @@ import (
 // reads the track's packets with ffprobe, decodes each subpicture (its run-length lines, four colors
 // from the track's palette and their transparency) and writes it as a PGS display set, with one
 // that clears it at its end. DVD pixels are rarely square (720×480 shown 16:9), so the pictures are
-// widened to square pixels, as the video is shown. Disc images (.iso) still burn theirs in.
+// widened to square pixels, as the video is shown. Disc images' tracks are read the same way
+// (dvddiscsub.go). forced=1 keeps only the lines the track marks forced (foreign dialogue meant to
+// show with subtitles off).
 
 // IsDVDSubtitle reports whether a subtitle codec is DVD's pictures.
 func IsDVDSubtitle(codec string) bool { return codec == "dvd_subtitle" }
 
 // ServeDVDSubtitles writes a DVD subtitle track (track among the file's subtitles) from start to
-// start+duration (0: to the end) as a PGS .sup stream.
-func ServeDVDSubtitles(w http.ResponseWriter, r *http.Request, filePath string, track int, start, duration float64) error {
-	sup, err := DVDSubtitlesAsPGS(r.Context(), filePath, track, start, duration)
+// start+duration (0: to the end) as a PGS .sup stream; forcedOnly keeps only the forced lines.
+func ServeDVDSubtitles(w http.ResponseWriter, r *http.Request, filePath string, track int, start, duration float64, forcedOnly bool) error {
+	sup, err := DVDSubtitlesAsPGS(r.Context(), filePath, track, start, duration, forcedOnly)
 	if err != nil {
 		http.Error(w, "Could not read the subtitles", http.StatusUnprocessableEntity)
 		return err
@@ -39,7 +41,7 @@ func ServeDVDSubtitles(w http.ResponseWriter, r *http.Request, filePath string, 
 
 // DVDSubtitlesAsPGS reads a DVD subtitle track's subpictures that start in the window and writes
 // them as PGS display sets.
-func DVDSubtitlesAsPGS(ctx context.Context, filePath string, track int, start, duration float64) ([]byte, error) {
+func DVDSubtitlesAsPGS(ctx context.Context, filePath string, track int, start, duration float64, forcedOnly bool) ([]byte, error) {
 	look, err := probeDVDSubtitle(ctx, filePath, track)
 	if err != nil {
 		return nil, err
@@ -48,12 +50,21 @@ func DVDSubtitlesAsPGS(ctx context.Context, filePath string, track int, start, d
 	if err != nil {
 		return nil, err
 	}
+	return pgsFromPackets(packets, look, start, duration, forcedOnly), nil
+}
+
+// pgsFromPackets decodes DVD subpicture packets (times in the player's timeline) and writes those
+// that start in the window as PGS display sets, each followed by one that clears it.
+func pgsFromPackets(packets []dvdPacket, look *dvdLook, start, duration float64, forcedOnly bool) []byte {
 	var out bytes.Buffer
 	n := 0
 	for i, p := range packets {
 		pic, err := decodeSPU(p.data)
 		if err != nil || pic.w <= 0 || pic.h <= 0 {
 			continue // a damaged subpicture: the others still show
+		}
+		if forcedOnly && !pic.forced {
+			continue
 		}
 		begin := p.time + pic.startDelay
 		end := p.time + pic.stopDelay
@@ -74,7 +85,7 @@ func DVDSubtitlesAsPGS(ctx context.Context, filePath string, track int, start, d
 		writePGS(&out, pic, look, begin, end, n)
 		n += 2
 	}
-	return out.Bytes(), nil
+	return out.Bytes()
 }
 
 // dvdLook is what a track's pictures are drawn with: its palette (16 RGB colors), the canvas the

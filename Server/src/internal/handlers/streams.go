@@ -252,7 +252,9 @@ func (h *MediaHandler) GetDisc(w http.ResponseWriter, r *http.Request) {
 // GetSubtitles streams a text subtitle track of a file as WebVTT (GET /api/media/subtitles?
 // path=<base64 path>&track=<index among its subtitles>&start=<s>&duration=<s>). Cue times count
 // from start; without a duration the cues go to the end of the file. format=sup gives a PGS track's
-// raw pictures (a DVD track's as PGS), format=ass an ASS/SSA track (or file) as an ASS script, header and all.
+// raw pictures (a DVD track's as PGS; forced=1 only its forced lines), format=ass an ASS/SSA track
+// (or file) as an ASS script, header and all. A disc image's subtitles come as PGS too, for its
+// title= (and angle=), in the timeline of the stream that started at from= (its start=).
 func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	path, ok := h.decodeMediaPath(w, r, r.URL.Query().Get("path"))
 	if !ok {
@@ -266,6 +268,26 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	start, _ := strconv.ParseFloat(r.URL.Query().Get("start"), 64)
 	duration, _ := strconv.ParseFloat(r.URL.Query().Get("duration"), 64)
 	start, duration = max(start, 0), max(duration, 0)
+	forcedOnly := r.URL.Query().Get("forced") == "1" // DVD tracks: only the lines marked forced
+	if media.IsDiscImage(path) {
+		// A disc title's track (title=, 0 the main one; angle=; from=, where the stream started), as
+		// PGS: format=sup only.
+		if r.URL.Query().Get("format") != "sup" {
+			respondError(w, http.StatusBadRequest, "A disc's subtitles are pictures: format=sup")
+			return
+		}
+		if _, err := media.LoadDiscWithin(path, media.DiscRequestWait); respondDiscBusy(w, err) {
+			return
+		}
+		q := r.URL.Query()
+		title, _ := strconv.Atoi(q.Get("title"))
+		angle, _ := strconv.Atoi(q.Get("angle"))
+		from, _ := strconv.ParseFloat(q.Get("from"), 64) // where the player's stream started
+		if err := media.ServeDiscSubtitles(w, r, path, title, angle, track, from, start, duration, forcedOnly); err != nil && r.Context().Err() == nil {
+			log.Printf("[DISC] Subtitles of %s (title %d, track %d) failed: %v", path, title, track, err)
+		}
+		return
+	}
 	// Tracks past the video's own are its subtitle files, in the codecs report's order.
 	own := 0
 	codecs, err := media.ProbeCodecs(path)
@@ -301,7 +323,7 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Query().Get("format") == "sup" { // a PGS track, for the players to draw
 		if codecs != nil && media.IsDVDSubtitle(codecs.Subtitles[track].Codec) {
-			media.ServeDVDSubtitles(w, r, path, track, start, duration) // made PGS, drawn the same
+			media.ServeDVDSubtitles(w, r, path, track, start, duration, forcedOnly) // made PGS, drawn the same
 			return
 		}
 		media.ServePictureSubtitles(w, r, path, track, start, duration)

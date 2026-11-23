@@ -6,6 +6,27 @@ import Testing
 @MainActor
 struct SubtitleTests {
 
+    // MARK: Disc subtitles
+
+    @Test func discForcedLines() throws {
+        let title = try JSONDecoder().decode(DiscTitle.self, from: Data("""
+        {"number":1,"duration":6000,"audio":[{"index":0,"language":"eng","codec":"ac3"},{"index":1,"language":"fre","codec":"ac3"}],
+         "subtitles":[{"index":0,"language":"fre","codec":"dvd_subtitle"},{"index":1,"language":"eng","codec":"dvd_subtitle"}]}
+        """.utf8))
+        let subs = ServerSubtitles(client: nil, path: "01c6653f/Film/Film.iso")
+        subs.useDisc(title, angle: 1, from: 3000, audio: 0)
+        // None chosen: the forced lines of the track in the audio's language.
+        #expect(subs.tracks.count == 2 && subs.selected == -1)
+        #expect(subs.forcedTrack?.index == 1)
+        subs.useDisc(title, angle: 1, from: 3000, audio: 1)
+        #expect(subs.forcedTrack?.index == 0)
+        // A chosen track shows whole: no forced lines then, and a new stream keeps the choice.
+        subs.select(1)
+        #expect(subs.forcedTrack == nil)
+        subs.useDisc(title, angle: 1, from: 4500, audio: 1)
+        #expect(subs.selected == 1)
+    }
+
     // MARK: WebVTT
 
     @Test func webVttCues() throws {

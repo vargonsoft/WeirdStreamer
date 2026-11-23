@@ -87,7 +87,12 @@ var DiscRequestWait = 20 * time.Second
 
 // ffprobeOutput runs ffprobe for at most discProbeTimeout, and no longer than ctx allows.
 func ffprobeOutput(ctx context.Context, args ...string) ([]byte, error) {
-	call, cancel := context.WithTimeout(ctx, discProbeTimeout)
+	return ffprobeOutputWithin(ctx, discProbeTimeout, args...)
+}
+
+// ffprobeOutputWithin runs ffprobe for at most timeout, and no longer than ctx allows.
+func ffprobeOutputWithin(ctx context.Context, timeout time.Duration, args ...string) ([]byte, error) {
+	call, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(call, "ffprobe", args...)
 	// Once killed, don't wait on its output for longer than this (a child it started could keep

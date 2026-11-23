@@ -131,7 +131,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     var discSubtitle by remember { mutableIntStateOf(-1) }
     var showDiscSheet by remember { mutableStateOf(false) }
     var discRestartAt by remember { mutableStateOf<Long?>(null) } // a new title starts at 0, not where the last was
-    val discQuery = if (isDisc) "&title=$discTitle&angle=$discAngle&audio=$discAudio&subtitle=$discSubtitle" else ""
+    val discQuery = if (isDisc) "&title=$discTitle&angle=$discAngle&audio=$discAudio" else ""
 
     var showControls by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
@@ -198,13 +198,14 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     var fullDuration by remember { mutableLongStateOf(0L) }
 
     // Subtitles from the server, as on the TV and the web: the video's own tracks, then files
-    // beside it and downloads, drawn over the video whatever the stream. A picture track is burned
-    // into a transcode. A download on this phone has the tracks saved with it; SMB files and discs have none.
+    // beside it and downloads, drawn over the video whatever the stream. A picture track other than
+    // PGS or DVD is burned into a transcode. A disc's are its title's DVD tracks, drawn the same
+    // (chosen in the disc sheet). A download on this phone has the tracks saved with it; SMB files have none.
     val serverSubs = remember(path) {
         when {
             isLocal -> ServerSubtitles.forDownload(path)
-            isSmbSource || isDisc -> null
-            else -> ServerSubtitles.forStream(path)
+            isSmbSource -> null
+            else -> ServerSubtitles.forStream(path, forDisc = isDisc)
         }
     }
     val burnIn = serverSubs?.burnIn ?: -1
@@ -278,10 +279,22 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     }
     LaunchedEffect(serverSubs) {
         val subs = serverSubs ?: return@LaunchedEffect
+        if (isDisc) return@LaunchedEffect // a disc's tracks come with its title (below)
         subs.load()
         val index = SubtitleMemory.get(context, subtitleVideo)?.let { SubtitleMemory.resolve(it, subs.labels) }
             ?: subs.preferred.takeIf { it >= 0 } ?: subs.tracks.indexOfFirst { it.forced && it.text }
         if (index >= 0) chooseServerSubtitle(index)
+    }
+    // A disc's subtitles go with its stream: the title's tracks, read as the stream reads the disc
+    // from where it started; with none chosen, the forced lines of the audio's language.
+    LaunchedEffect(discInfo, discTitle, discAngle, discAudio, transcodeStartOffset) {
+        val title = discInfo?.title(discTitle) ?: return@LaunchedEffect
+        serverSubs?.useDisc(title, discAngle, transcodeStartOffset, discAudio)
+    }
+    // A file's DVD track's forced lines, with none chosen: the one in the audio's language.
+    LaunchedEffect(choice?.audioTracks, choice?.shownTrack) {
+        val c = choice ?: return@LaunchedEffect
+        serverSubs?.useForcedLanguage(c.audioTracks.firstOrNull { it.index == c.shownTrack }?.language)
     }
     var rotation by remember { mutableFloatStateOf(0f) }
     
@@ -935,8 +948,8 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                         }
                     }
 
-                    // Subtitles: the server's tracks, and searching OpenSubtitles through it
-                    serverSubs?.let { subs ->
+                    // Subtitles: the server's tracks, and searching OpenSubtitles through it (a disc's are in its sheet)
+                    serverSubs?.takeIf { !isDisc }?.let { subs ->
                         Box {
                             IconButton(onClick = {
                                 lastInteractionTime = System.currentTimeMillis()
@@ -1296,13 +1309,14 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     discInfo?.title(n)?.let { fullDuration = (it.duration * 1000).toLong(); duration = fullDuration }
                     discRestartAt = 0L
                     discAngle = 1; discAudio = 0; discSubtitle = -1
+                    serverSubs?.select(-1)
                     discTitle = n
                 }
             },
             onChapter = { ms -> showDiscSheet = false; seekPlayer(ms) },
             onAngle = { a -> showDiscSheet = false; discAngle = a },
             onAudio = { a -> showDiscSheet = false; discAudio = a },
-            onSubtitle = { sub -> showDiscSheet = false; discSubtitle = sub }
+            onSubtitle = { sub -> showDiscSheet = false; discSubtitle = sub; serverSubs?.select(sub) } // drawn: no restart
         )
     }
 

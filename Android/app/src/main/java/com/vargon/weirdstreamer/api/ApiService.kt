@@ -100,7 +100,12 @@ interface ApiService {
     @GET("/api/media/subtitles")
     suspend fun getSubtitles(@Query("path") path: String, @Query("track") track: Int,
                              @Query("start") start: Double, @Query("duration") duration: Double,
-                             @Query("format") format: String? = null): Response<ResponseBody>
+                             @Query("format") format: String? = null,
+                             // A disc's: its title and angle, and where its stream started (the stream's start=)
+                             @Query("title") title: Int? = null, @Query("angle") angle: Int? = null,
+                             @Query("from") from: String? = null,
+                             // 1: a DVD track's forced lines only
+                             @Query("forced") forced: Int? = null): Response<ResponseBody>
 
     /** A font embedded in a video, for its ASS/SSA tracks: font is its index from the codecs report. */
     @GET("/api/media/font")

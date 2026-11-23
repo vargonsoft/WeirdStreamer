@@ -302,7 +302,7 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 		if height > 0 {
 			res = strconv.Itoa(height)
 		}
-		full, _, err := DiscTranscodeArgs(job.Path, DiscOptions{Angle: 1, Subtitle: -1}, "", "", res)
+		full, _, err := DiscTranscodeArgs(job.Path, DiscOptions{Angle: 1}, "", "", res)
 		if err != nil {
 			return err
 		}

@@ -32,19 +32,18 @@ Requests saved for later, newest last.
 
 ## DVD discs
 
-- [ ] **Send a disc image's DVD subtitles beside the stream instead of burning them in.** Files'
-      DVD subtitles already go to the players as PGS (`media/dvdsub.go`); discs (.iso) still burn
-      theirs into the transcode. Notes from weighing it:
-  - The hard part: a disc title can be several chained parts, trimmed and joined, with angles, so
-    the server would have to pull the subtitle track out for exactly that timeline
-    (`DiscTranscodeArgs`' segments and trims) and keep it in sync. Discs are always transcoded
-    anyway, so burn-in costs them nothing extra.
-  - The palette is in the disc's IFO tables (per program chain), not in an .idx header: ffmpeg's
-    dvdvideo demuxer gives it as the stream's extradata.
-  - Lost by drawing instead of burning in: the iPhone's picture-in-picture and AirPlay show only the
-    video, so drawn subtitles disappear there (as text and PGS already do); burned-in ones show.
-  - Gained: switching subtitles without restarting the stream, forced-only lines (DVD marks them one
-    by one), and subtitles in downloads of a disc's titles if those ever exist.
+- [x] **Send a disc image's DVD subtitles beside the stream instead of burning them in.** Every
+      player draws them as PGS over the transcode (`media/dvddiscsub.go`), switching without a
+      restart, and with subtitles off shows a DVD track's forced lines (files' too). Drawn
+      subtitles don't show in the iPhone's picture-in-picture or AirPlay, as for files.
+- [ ] **Disc seeks land up to 15 s from where they say.** ffmpeg's dvdvideo demuxer lands a seek
+      near its target and labels what follows as the target, so a disc stream started at 3000 s can
+      show 3002 s (on the sample disc, between 2 and 14 s off). The subtitles follow the same labels
+      (see CLAUDE.md), but the clock, chapter jumps and resume points are off by as much. Ideas:
+      seek to the chapter before and trim (accurate, but decodes up to a chapter's length), or read
+      the landing's true time from the disc's navigation packets.
+- [ ] **Subtitles in downloads of a disc's titles.** A disc download (its main title as MP4) saves
+      no subtitle tracks yet; the server now reads them (`DiscSubtitlesAsPGS` with from 0).
 
 ## Platforms
 

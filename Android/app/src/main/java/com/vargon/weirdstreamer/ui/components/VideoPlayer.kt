@@ -76,12 +76,13 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     var discAudio by remember { mutableIntStateOf(0) }
     var discSubtitle by remember { mutableIntStateOf(-1) }
     var showDiscDialog by remember { mutableStateOf(false) }
-    val discQuery = if (isDisc) "&title=$discTitle&angle=$discAngle&audio=$discAudio&subtitle=$discSubtitle" else ""
+    val discQuery = if (isDisc) "&title=$discTitle&angle=$discAngle&audio=$discAudio" else ""
 
     // Subtitles from the server, as on the web: the video's own tracks, then files beside it and
-    // downloads, drawn over the video whatever the stream (SubtitleOverlay). A picture track is
-    // burned into a transcode. SMB files and discs keep the player's own tracks.
-    val serverSubs = remember(path) { if (isSmbSource || isDisc) null else ServerSubtitles.forStream(path) }
+    // downloads, drawn over the video whatever the stream (SubtitleOverlay). A picture track other
+    // than PGS or DVD is burned into a transcode. A disc's are its title's DVD tracks, drawn the
+    // same (chosen in the disc dialog). SMB files keep the player's own tracks.
+    val serverSubs = remember(path) { if (isSmbSource) null else ServerSubtitles.forStream(path, forDisc = isDisc) }
     val burnIn = serverSubs?.burnIn ?: -1
     // Stereo audio in transcodes, once a surround one has failed to decode (AudioFallback)
     var stereoAudio by remember(path) { mutableStateOf(AudioFallback.stereo) }
@@ -429,11 +430,24 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     // subtitles, as the web player does).
     LaunchedEffect(serverSubs) {
         val subs = serverSubs ?: return@LaunchedEffect
+        if (isDisc) return@LaunchedEffect // a disc's tracks come with its title (below)
         subs.load()
         val labels = subs.labels
         val index = SubtitleMemory.get(context, subtitleVideo)?.let { SubtitleMemory.resolve(it, labels) }
             ?: subs.preferred.takeIf { it >= 0 } ?: subs.tracks.indexOfFirst { it.forced && it.text }
         if (index >= 0) chooseServerSubtitle(index, if (playbackPosition > 0) playbackPosition else startAtMs)
+    }
+
+    // A disc's subtitles go with its stream: the title's tracks, read as the stream reads the disc
+    // from where it started; with none chosen, the forced lines of the audio's language.
+    LaunchedEffect(discInfo, discTitle, discAngle, discAudio, transcodeStartOffset) {
+        val title = discInfo?.title(discTitle) ?: return@LaunchedEffect
+        serverSubs?.useDisc(title, discAngle, transcodeStartOffset, discAudio)
+    }
+    // A file's DVD track's forced lines, with none chosen: the one in the audio's language.
+    LaunchedEffect(choice?.audioTracks, choice?.shownTrack) {
+        val c = choice ?: return@LaunchedEffect
+        serverSubs?.useForcedLanguage(c.audioTracks.firstOrNull { it.index == c.shownTrack }?.language)
     }
 
     var duration by remember { mutableLongStateOf(0L) }
@@ -996,21 +1010,27 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
                     transcodeStartOffset = 0
                     discInfo?.title(n)?.let { fullDuration = (it.duration * 1000).toLong(); duration = fullDuration }
                     discAngle = 1; discAudio = 0; discSubtitle = -1
+                    serverSubs?.select(-1)
                     discTitle = n
                 }
             },
             onChapter = { ms -> showDiscDialog = false; seekToTrickplayTarget(ms) },
             onAngle = { a -> showDiscDialog = false; if (a != discAngle) { transcodeStartOffset = playbackPosition; discAngle = a } },
             onAudio = { a -> showDiscDialog = false; if (a != discAudio) { transcodeStartOffset = playbackPosition; discAudio = a } },
-            onSubtitle = { s -> showDiscDialog = false; if (s != discSubtitle) { transcodeStartOffset = playbackPosition; discSubtitle = s } },
+            // Drawn over the stream: no restart
+            onSubtitle = { s -> showDiscDialog = false; if (s != discSubtitle) { discSubtitle = s; serverSubs?.select(s) } },
             onDismiss = { showDiscDialog = false }
         )
         val subtitleLabels = serverSubs?.labels ?: availableSubtitles
         SubtitleDialog(show = showSubtitleDialog, availableSubtitles = subtitleLabels,
             selectedSubtitleIndex = serverSubs?.selected ?: selectedSubtitleIndex, onDismiss = { showSubtitleDialog = false }, onSubtitleSelected = {
-            if (serverSubs != null) chooseServerSubtitle(it) else selectSubtitleTrack(it)
+            when {
+                isDisc -> { discSubtitle = it; serverSubs?.select(it) } // as in the disc dialog
+                serverSubs != null -> chooseServerSubtitle(it)
+                else -> selectSubtitleTrack(it)
+            }
             if (!isDisc) SubtitleMemory.set(context, subtitleVideo, it, subtitleLabels.getOrNull(it))
-        }, onDownloadRequested = if (serverSubs == null) null else ({ showSubtitleDialog = false; showDownloadDialog = true; searchSubtitlesOnline() }),
+        }, onDownloadRequested = if (serverSubs == null || isDisc) null else ({ showSubtitleDialog = false; showDownloadDialog = true; searchSubtitlesOnline() }),
             timing = serverSubs?.takeIf { it.selectedTrack?.text == true }?.let { subtitleOffsetText(it.offsetMs) },
             onTiming = { showSubtitleDialog = false; showTimingDialog = true })
         SubtitleTimingDialog(show = showTimingDialog && serverSubs != null, offsetMs = serverSubs?.offsetMs ?: 0,

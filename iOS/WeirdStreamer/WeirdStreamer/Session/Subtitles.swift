@@ -79,6 +79,50 @@ final class ServerSubtitles {
     private static let windowMs: Int64 = 120_000
     private static let aheadMs: Int64 = 40_000
 
+    /// A disc's stream: its title and angle, and where it started (the stream's start=, seconds).
+    /// The server reads the title's subtitles as that stream reads the disc, whose times can be
+    /// seconds off the disc's own after a seek, so the windows go with the stream: a new one starts them over.
+    private struct DiscStream: Equatable { let title: Int; let angle: Int; let from: Double }
+    @ObservationIgnored private var discStream: DiscStream?
+    /// With no track chosen, a DVD track's forced lines show: the one in this language (the audio playing's).
+    @ObservationIgnored private var forcedLanguage: String?
+
+    /// The DVD track whose forced lines show while no track is chosen, if one is in the audio's
+    /// language (not for downloads, whose tracks are saved whole).
+    var forcedTrack: SubtitleTrack? {
+        guard selectedTrack == nil, downloadId == nil, let language = forcedLanguage else { return nil }
+        return tracks.first { $0.codec == "dvd_subtitle" && $0.language == language }
+    }
+
+    /// A disc title's tracks, for its stream from `from` seconds with `audio` playing (whose
+    /// language's forced lines show with none chosen).
+    func useDisc(_ title: DiscTitle, angle: Int, from: Double, audio: Int) {
+        let stream = DiscStream(title: title.number, angle: angle, from: from)
+        let discTracks = (title.subtitles ?? []).map { SubtitleTrack(index: $0.index, codec: $0.codec, language: $0.language) }
+        let language = (title.audio ?? []).indices.contains(audio) ? title.audio?[audio].language : nil
+        if stream == discStream && discTracks == tracks && language == forcedLanguage { return }
+        if discTracks != tracks { tracks = discTracks; selected = -1 }
+        loaded = true
+        discStream = stream
+        forcedLanguage = language
+        resetWindows()
+    }
+
+    /// The language of the audio playing, for the forced lines of a DVD track when none is chosen.
+    func useForcedLanguage(_ language: String?) {
+        guard language != forcedLanguage else { return }
+        forcedLanguage = language
+        if selectedTrack == nil { resetWindows() }
+    }
+
+    private func resetWindows() {
+        cues = []
+        pictures = []
+        fromMs = 0
+        untilMs = 0
+        generation += 1
+    }
+
     init(client: ServerClient?, path: String, downloadId: String? = nil) {
         self.client = client
         self.downloadId = downloadId
@@ -184,7 +228,8 @@ final class ServerSubtitles {
 
     /// Loads the cues around `playerMs`, and the next window before it's needed.
     func keepAhead(_ playerMs: Int64) async {
-        guard let track = selectedTrack, track.isText || track.drawnAsPGS else { return }
+        guard let track = selectedTrack ?? forcedTrack, track.isText || track.drawnAsPGS else { return }
+        let forced = selectedTrack == nil
         let positionMs = playerMs - Int64(offsetMs)
         let outside = positionMs < fromMs || positionMs > untilMs
         if !outside && positionMs < untilMs - Self.aheadMs { return }
@@ -217,6 +262,10 @@ final class ServerSubtitles {
                      ("start", String(format: "%.3f", Double(start) / 1000)),
                      ("duration", String(format: "%.3f", Double(Self.windowMs) / 1000))]
         if track.drawnAsPGS { query.append(("format", "sup")) }
+        if let disc = discStream {
+            query += [("title", String(disc.title)), ("angle", String(disc.angle)), ("from", String(format: "%.2f", disc.from))]
+        }
+        if forced { query.append(("forced", "1")) }
         guard let body = try? await client.data("/api/media/subtitles", query: query), gen == generation else { return }
         if track.drawnAsPGS {
             let window = await Task.detached { decodePgs(body) }.value
@@ -292,7 +341,7 @@ final class ServerSubtitles {
 
     /// The PGS display set showing at `playerMs`.
     func pictureAt(_ playerMs: Int64) -> PgsSet? {
-        guard selectedTrack?.drawnAsPGS == true else { return nil }
+        guard (selectedTrack ?? forcedTrack)?.drawnAsPGS == true else { return nil }
         return pictures.last { $0.startMs <= playerMs }
     }
 

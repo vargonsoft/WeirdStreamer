@@ -62,7 +62,23 @@ data class SubtitleCue(val startMs: Long, val endMs: Long, val text: AnnotatedSt
 class ServerSubtitles(
     private val api: ApiService?, private val encodedPath: String, private val saved: java.io.File? = null,
     private val savedPreferred: Int = -1, // a download's: the track chosen for it (the server's index), -1 none
+    private val forDisc: Boolean = false, // a disc image's: its tracks come from the title ([useDisc])
 ) {
+    /**
+     * A disc's stream: its title and angle, and where it started (the stream's start=, ms). The
+     * server reads the title's subtitles as that stream reads the disc, whose times can be seconds
+     * off the disc's own after a seek, so the windows go with the stream: a new one starts them over.
+     */
+    private data class DiscStream(val title: Int, val angle: Int, val fromMs: Long)
+    private var discStream: DiscStream? = null
+
+    /** With no track chosen, a DVD track's forced lines show: the one in this language (the audio playing's). */
+    private var forcedLanguage: String? = null
+
+    /** The DVD track whose forced lines show while no track is chosen, if one is in the audio's language. */
+    private val forcedTrack: SubtitleTrack? get() =
+        if (selected >= 0) null else forcedLanguage?.let { lang -> tracks.firstOrNull { it.codec == "dvd_subtitle" && it.language == lang } }
+
     /** Whether the server is there: for searching and downloading more, and saving timing. */
     val online: Boolean get() = api != null
 
@@ -192,7 +208,37 @@ class ServerSubtitles(
     private var untilMs = 0L
     private var generation = 0 // a new choice drops cues still arriving for the old one
 
+    /** A disc title's tracks, for its stream from [fromMs] with [audio] playing (whose language's forced lines show with none chosen). */
+    fun useDisc(title: com.vargon.weirdstreamer.api.models.DiscTitle, angle: Int, fromMs: Long, audio: Int) {
+        val stream = DiscStream(title.number, angle, fromMs)
+        val discTracks = title.subtitles.map { SubtitleTrack(index = it.index, codec = it.codec, language = it.language) }
+        val language = title.audio.getOrNull(audio)?.language
+        if (stream == discStream && discTracks == tracks && language == forcedLanguage) return
+        if (discTracks != tracks) selected = -1
+        tracks = discTracks
+        discStream = stream
+        forcedLanguage = language
+        loaded = true
+        resetWindows()
+    }
+
+    /** The language of the audio playing, for the forced lines of a DVD track when none is chosen. */
+    fun useForcedLanguage(language: String?) {
+        if (language == forcedLanguage) return
+        forcedLanguage = language
+        if (selected < 0) resetWindows()
+    }
+
+    private fun resetWindows() {
+        cues = emptyList()
+        pictures = emptyList()
+        fromMs = 0
+        untilMs = 0
+        generation++
+    }
+
     suspend fun load() {
+        if (forDisc) { loaded = true; return } // the player gives a disc's tracks (useDisc)
         var want = savedPreferred
         val got = withContext(Dispatchers.IO) {
             if (saved != null) runCatching {
@@ -259,8 +305,8 @@ class ServerSubtitles(
         saved?.let { loadSaved(it); return }
         val api = api ?: return
         val positionMs = playerMs - offsetMs // in the subtitles' own time
-        selectedTrack?.takeIf { it.drawn }?.let { track ->
-            keepPicturesAhead(track, positionMs)
+        (selectedTrack?.takeIf { it.drawn } ?: forcedTrack)?.let { track ->
+            keepPicturesAhead(track, positionMs, forced = selectedTrack == null)
             return
         }
         selectedTrack?.takeIf { isStyled(it) }?.let { track ->
@@ -321,7 +367,7 @@ class ServerSubtitles(
         untilMs = start + WINDOW_MS
     }
 
-    private suspend fun keepPicturesAhead(track: SubtitleTrack, positionMs: Long) {
+    private suspend fun keepPicturesAhead(track: SubtitleTrack, positionMs: Long, forced: Boolean) {
         val api = api ?: return
         val outside = positionMs < fromMs || positionMs > untilMs
         if (!outside && positionMs < untilMs - AHEAD_MS) return
@@ -329,7 +375,10 @@ class ServerSubtitles(
         val gen = generation
         val window = withContext(Dispatchers.IO) {
             runCatching {
-                api.getSubtitles(encodedPath, track.index, start / 1000.0, WINDOW_MS / 1000.0, "sup").body()?.bytes()
+                val disc = discStream
+                api.getSubtitles(encodedPath, track.index, start / 1000.0, WINDOW_MS / 1000.0, "sup",
+                    title = disc?.title, angle = disc?.angle, from = disc?.let { StreamChoice.streamStart(it.fromMs) },
+                    forced = if (forced) 1 else null).body()?.bytes()
             }.getOrNull()?.let { decodePgs(it) }
         } ?: return
         if (gen != generation) return
@@ -396,9 +445,9 @@ class ServerSubtitles(
         private const val AHEAD_MS = 40_000L
 
         /** For a stream URL from the server (…/api/media/stream?path=…): null for other sources. */
-        fun forStream(streamUrl: String): ServerSubtitles? {
+        fun forStream(streamUrl: String, forDisc: Boolean = false): ServerSubtitles? {
             val (api, encoded) = streamApi(streamUrl) ?: return null
-            return ServerSubtitles(api, encoded)
+            return ServerSubtitles(api, encoded, forDisc = forDisc)
         }
 
         /** For a download playing from this phone (a file:// URL): its saved tracks, if it has any. */
