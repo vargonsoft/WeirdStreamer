@@ -393,7 +393,8 @@ struct AccountTab: View {
         guard let client = model.client else { return }
         do {
             try await client.send("PUT", "/api/account", body: AccountSettings(audioLanguage: next.audioLanguage, subtitleLanguage: next.subtitleLanguage,
-                                                                                subtitlesOn: next.subtitlesOn))
+                                                                                subtitlesOn: next.subtitlesOn),
+                                  snakeCase: true)
             account = next
             languageMessage = nil
         } catch {

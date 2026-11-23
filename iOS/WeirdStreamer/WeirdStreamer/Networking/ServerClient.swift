@@ -323,8 +323,11 @@ final class ServerClient: Sendable {
         _ = try await perform(try request(method, path, query: query))
     }
 
-    func send<B: Encodable>(_ method: String, _ path: String, body: B) async throws {
-        let data = try JSONEncoder().encode(body)
+    /// `snakeCase`: the body's keys as the server names them (audioLanguage as audio_language).
+    func send<B: Encodable>(_ method: String, _ path: String, body: B, snakeCase: Bool = false) async throws {
+        let encoder = JSONEncoder()
+        if snakeCase { encoder.keyEncodingStrategy = .convertToSnakeCase }
+        let data = try encoder.encode(body)
         _ = try await perform(try request(method, path, body: data))
     }
 
