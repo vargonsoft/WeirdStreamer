@@ -90,7 +90,7 @@ struct DownloadTests {
     @Test func hardwareEncoderChoices() throws {
         let r = try ServerClient.decode(HardwareReport.self, from: Data("""
         {"checking":false,"gpus":[{"name":"GTX 1060","vendor":"nvidia"}],
-         "encoders":[{"id":"nvenc","name":"NVENC","gpu":"GTX 1060","vendor":"nvidia"}]}
+         "encoders":[{"id":"nvenc","name":"NVENC","gpu":"GTX 1060","vendor":"nvidia","sessions":8}]}
         """.utf8))
         // NVENC has no device: a device left in the config doesn't make it another choice.
         #expect(HardwareSettings.chosenKey(r, encoder: "nvenc", device: "/dev/dri/renderD128") == "nvenc|")
@@ -98,8 +98,9 @@ struct DownloadTests {
         let choices = HardwareSettings.choices(r, encoder: "vaapi", device: "/dev/dri/renderD128")
         #expect(choices.map(\.0) == ["", "nvenc|", "vaapi|/dev/dri/renderD128"])
         #expect(choices.last?.1.contains("not working") == true)
-        #expect(HardwareSettings.note(r, chosen: "nvenc|").contains("GeForce"))
-        #expect(HardwareSettings.note(r, chosen: "") == "Transcodes are encoded by the CPU.")
+        #expect(r.encoders?.first?.sessions == 8)
+        #expect(HardwareSettings.note(r, chosen: "nvenc|").contains("allows 8 encodes at once"))
+        #expect(HardwareSettings.note(r, chosen: "") == "Transcodes and downloads are encoded by the CPU.")
 
         let none = HardwareReport(checking: false, gpus: nil, encoders: nil, problems: nil)
         #expect(HardwareSettings.status(none) == "No graphics hardware was found, so transcodes are encoded by the CPU (x264).")

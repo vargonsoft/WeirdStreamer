@@ -40,6 +40,9 @@ type HardwareEncoder struct {
 	Name   string `json:"name"`             // "NVENC", "Quick Sync", "VA-API"
 	GPU    string `json:"gpu"`              // the GPU's name
 	Vendor string `json:"vendor"`
+	// Sessions is how many encodes the driver let run at once at startup (NVENC: GeForce drivers
+	// allow 8 or 12, depending on the version); 0 when it showed no limit.
+	Sessions int `json:"sessions,omitempty"`
 }
 
 // HardwareProblem is a GPU an encoder was tried on that didn't work, and why, for Settings.
@@ -105,7 +108,11 @@ func logHardware(r HardwareReport) {
 		log.Printf("[HARDWARE] ffmpeg %s", r.FFmpeg)
 	}
 	for _, e := range r.Encoders {
-		log.Printf("[HARDWARE] %s on %s works", e.Name, e.GPU)
+		if e.Sessions > 0 {
+			log.Printf("[HARDWARE] %s on %s works, %d encodes at once (the driver's limit)", e.Name, e.GPU, e.Sessions)
+		} else {
+			log.Printf("[HARDWARE] %s on %s works", e.Name, e.GPU)
+		}
 	}
 	for _, p := range r.Problems {
 		log.Printf("[HARDWARE] %s on %s doesn't work: %s", p.Encoder, p.GPU, p.Reason)
@@ -159,8 +166,11 @@ func HardwareSetting() string {
 		}
 	}
 	limit := "no limit"
-	if s.HardwareMaxTranscodes > 0 {
-		limit = fmt.Sprintf("at most %d at once, the rest on the CPU", s.HardwareMaxTranscodes)
+	if n := hardwareLimit(); n > 0 {
+		limit = fmt.Sprintf("at most %d at once, the rest on the CPU", n)
+		if n != s.HardwareMaxTranscodes {
+			limit += " (the driver's limit)"
+		}
 	}
 	return "Hardware encoding: " + name + " encodes transcodes and downloads, " + limit + where
 }
@@ -193,7 +203,11 @@ func detectHardware() HardwareReport {
 			r.Problems = append(r.Problems, HardwareProblem{g.Name, encoderNames[id], err.Error()})
 			return
 		}
-		r.Encoders = append(r.Encoders, HardwareEncoder{ID: id, Device: g.Device, Name: encoderNames[id], GPU: g.Name, Vendor: g.Vendor})
+		e := HardwareEncoder{ID: id, Device: g.Device, Name: encoderNames[id], GPU: g.Name, Vendor: g.Vendor}
+		if id == "nvenc" {
+			e.Sessions = countSessions(id, g.Device)
+		}
+		r.Encoders = append(r.Encoders, e)
 	}
 	nvidia := false
 	for _, g := range r.GPUs {
@@ -400,6 +414,54 @@ func testEncode(id, device string) error {
 		reason = err.Error()
 	}
 	return fmt.Errorf("the test encode failed: %s", reason)
+}
+
+// sessionProbes is how many encodes countSessions starts at once: more than any driver allows.
+const sessionProbes = 32
+
+// countSessions starts sessionProbes short encodes with encoder id at once and counts those that
+// ran: a driver that limits sessions refuses the rest as they open ("incompatible client key").
+// 0 when all ran (no limit, or more than counted). Encodes other programs run at the time count
+// against it, as they do against the server's.
+func countSessions(id, device string) int {
+	args := []string{"-hide_banner", "-v", "error", "-re", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30",
+		"-t", "3", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p", "-f", "null", "-"}
+	args = hardwareArgs(args, id, device)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var ran atomic.Int32
+	var wg sync.WaitGroup
+	for range sessionProbes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if exec.CommandContext(ctx, "ffmpeg", args...).Run() == nil {
+				ran.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := int(ran.Load()); n > 0 && n < sessionProbes {
+		return n
+	}
+	return 0
+}
+
+// hardwareLimit is how many transcodes and downloads may use the GPU at once (0: no limit):
+// streaming.hardwareMaxTranscodes, but no more than the driver allows.
+func hardwareLimit() int {
+	limit := 0
+	if config.GlobalConfig != nil {
+		limit = config.GlobalConfig.Streaming.HardwareMaxTranscodes
+	}
+	if id, device, ok := hardwareChoice(); ok {
+		for _, e := range Hardware().Encoders {
+			if e.ID == id && (e.Device == device || id == "nvenc") && e.Sessions > 0 && (limit <= 0 || limit > e.Sessions) {
+				return e.Sessions
+			}
+		}
+	}
+	return limit
 }
 
 // hardwareChoice is the hardware encoder transcodes and downloads use now: the one Settings chose, if

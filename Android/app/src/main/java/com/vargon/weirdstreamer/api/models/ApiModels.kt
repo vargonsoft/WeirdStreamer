@@ -628,7 +628,8 @@ data class HardwareEncoder(
     @SerializedName("device") val device: String? = null, // streaming.hardwareDevice
     @SerializedName("name") val name: String,
     @SerializedName("gpu") val gpu: String,
-    @SerializedName("vendor") val vendor: String
+    @SerializedName("vendor") val vendor: String,
+    @SerializedName("sessions") val sessions: Int = 0 // encodes the driver allows at once, 0 no limit
 )
 
 data class HardwareProblem(

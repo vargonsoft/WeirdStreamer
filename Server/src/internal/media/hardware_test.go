@@ -79,3 +79,20 @@ func TestGPUName(t *testing.T) {
 		}
 	}
 }
+
+func TestHardwareLimitKeepsToTheDriver(t *testing.T) {
+	saved := config.GlobalConfig
+	defer func() { config.GlobalConfig = saved }()
+	hardware.once.Do(func() {}) // no detection: the report below is what was found
+	hardware.Lock()
+	savedReport := hardware.report
+	hardware.report = HardwareReport{Encoders: []HardwareEncoder{{ID: "nvenc", Name: "NVENC", Sessions: 8}}}
+	hardware.Unlock()
+	defer func() { hardware.Lock(); hardware.report = savedReport; hardware.Unlock() }()
+	for _, c := range []struct{ setting, want int }{{0, 8}, {12, 8}, {3, 3}} {
+		config.GlobalConfig = &config.Config{Streaming: config.StreamingConfig{HardwareEncoder: "nvenc", HardwareMaxTranscodes: c.setting}}
+		if got := hardwareLimit(); got != c.want {
+			t.Errorf("setting %d: limit %d, want %d", c.setting, got, c.want)
+		}
+	}
+}

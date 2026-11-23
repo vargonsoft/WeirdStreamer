@@ -352,7 +352,11 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   or chosen but not working here); an admin's change in Settings logs it again. Settings (web Server › Streaming,
   phone and iPhone Server tab, TV Settings › Hardware encoding, admins only) shows that and, when
   something works, the choice (`streaming.hardwareEncoder` nvenc/qsv/vaapi, `hardwareDevice` the
-  render node) and `hardwareMaxTranscodes` (0 no limit, streams and downloads together). Streaming
+  render node) and `hardwareMaxTranscodes` (0 no limit, streams and downloads together). At startup
+  NVENC's sessions are counted (`countSessions`: 32 short encodes at once, the driver refuses those
+  past its limit; GeForce driver 580 allowed 8, 615 allowed 12; Intel's had no limit at 16), and the
+  limit used is never more than that (`hardwareLimit`); the encoder's `sessions` is in the report,
+  and Settings' note names it. Streaming
   transcodes (files and discs) and download encodes use it: `hardwareArgs` turns the CPU's ffmpeg
   arguments into the encoder's (VA-API uploads frames with `format=nv12,hwupload` after the CPU's
   filters), so decoding, scaling, burned-in subtitles and 10-bit to 8-bit stay on the CPU. x264's
