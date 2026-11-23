@@ -18,6 +18,10 @@ func TestHardwareArgs(t *testing.T) {
 			"-i in.mkv -map 0:v:0 -vf scale=-2:720 -c:v h264_nvenc -preset p4 -rc vbr -b:v 4000000 -maxrate 4000000 -pix_fmt yuv420p -f mp4 pipe:1"},
 		{"qsv", cpu, "qsv", "/dev/dri/renderD128",
 			"-qsv_device /dev/dri/renderD128 -ss 10 -i in.mkv -c:v h264_qsv -preset veryfast -global_quality 24 -pix_fmt nv12 -c:a aac -movflags frag_keyframe -f mp4 pipe:1"},
+		{"videotoolbox quality", cpu, "videotoolbox", "",
+			"-ss 10 -i in.mkv -c:v h264_videotoolbox -q:v 63 -pix_fmt yuv420p -c:a aac -movflags frag_keyframe -f mp4 pipe:1"},
+		{"videotoolbox bitrate", scaled, "videotoolbox", "",
+			"-i in.mkv -map 0:v:0 -vf scale=-2:720 -c:v h264_videotoolbox -b:v 4000000 -maxrate 4000000 -pix_fmt yuv420p -f mp4 pipe:1"},
 		{"vaapi without filters", cpu, "vaapi", "/dev/dri/renderD129",
 			"-vaapi_device /dev/dri/renderD129 -ss 10 -i in.mkv -c:v h264_vaapi -rc_mode CQP -vf format=nv12,hwupload -qp 25 -c:a aac -movflags frag_keyframe -f mp4 pipe:1"},
 		{"vaapi after a scale", scaled, "vaapi", "/dev/dri/renderD128",
@@ -50,5 +54,13 @@ func TestDownloadsCountTowardGPULimit(t *testing.T) {
 	defer downloadsOnGPU.Add(-1)
 	if c.hardwareRoom() {
 		t.Error("a download on the GPU didn't count toward the limit")
+	}
+}
+
+func TestVideoToolboxQuality(t *testing.T) {
+	for crf, want := range map[int]int{18: 75, 20: 70, 23: 63, 0: 100, 51: 1} {
+		if got := videoToolboxQuality(crf); got != want {
+			t.Errorf("CRF %d: got %d, want %d", crf, got, want)
+		}
 	}
 }

@@ -332,7 +332,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 - **Hardware encoding** (`media/hardware.go`): at startup (`DetectHardware`, in the background)
   the server lists GPUs (DRM render nodes' PCI vendor and lspci name; `nvidia-smi` for NVIDIA's
   names) and tries a short test encode with each fitting encoder ffmpeg has: NVENC for NVIDIA,
-  Quick Sync and VA-API for Intel, VA-API for AMD (each render node). `GET /api/admin/hardware`
+  Quick Sync and VA-API for Intel, VA-API for AMD (each render node), and on macOS VideoToolbox
+  (no device; the GPU is named from `sysctl machdep.cpu.brand_string`). `GET /api/admin/hardware`
   reports the GPUs, the encoders that worked and why others didn't. Settings (web Server › Streaming,
   phone and iPhone Server tab, TV Settings › Hardware encoding, admins only) shows that and, when
   something works, the choice (`streaming.hardwareEncoder` nvenc/qsv/vaapi, `hardwareDevice` the
@@ -341,7 +342,9 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   arguments into the encoder's (VA-API uploads frames with `format=nv12,hwupload` after the CPU's
   filters), so decoding, scaling, burned-in subtitles and 10-bit to 8-bit stay on the CPU. x264's
   CRF becomes `-cq`/`-global_quality`/`-qp` plus `qualityOffset` (NVENC +5, Quick Sync +1, VA-API
-  +2: the same size and look as x264 veryfast; 1:1 made files 1.3 to 2 times the size). In the
+  +2: the same size and look as x264 veryfast; 1:1 made files 1.3 to 2 times the size), and
+  VideoToolbox's `-q:v` (`videoToolboxQuality`: 75 for CRF 18, 2.5 per CRF step; Apple Silicon only,
+  Intel Macs fail the test encode). In the
   transcode cache (`attach`) a new transcode goes to the GPU while under the limit; its spool keeps
   the CPU arguments' name and runs them instead if ffmpeg fails before making anything (then the GPU
   is skipped for 5 minutes, `hardwareFailed`). The Streams page names the encoder used
@@ -354,7 +357,10 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   gained nothing worth their time. On the 14700K the GPU is no faster than x264 but uses a ninth of
   the CPU; on a Core Ultra 5 125U it's 2.7 times faster at a seventh of the CPU. Quick Sync needs
   Intel's GPU runtime (Ubuntu's `libmfx-gen1.2`), and the server's account the `video` and
-  `render` groups. Streaming on Quick Sync and VA-API is still untested on real hardware.
+  `render` groups. VideoToolbox on an M1 is weaker per bit: about 20% bigger at full quality and
+  0.9 dB lower SSIM at a Compressed size, though it looked the same by eye; 1.2 times x264's speed
+  at a tenth of the CPU. Detection and both download modes were tried on the M1 (not as a running
+  server: there's no Mac package yet). Streaming on Quick Sync and VA-API is still untested on real hardware.
 - **Resumable transcodes** (`media/transcache.go`): browsers drop and reopen media connections
   with `Range: bytes=N-`, and ffmpeg can't seek its output, so every transcode goes through
   64 MB chunks in `media.transcodeCachePath` (default `transcodes` beside the thumbnails folder).

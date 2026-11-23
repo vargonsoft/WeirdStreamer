@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -98,7 +99,7 @@ func Hardware() HardwareReport {
 	return r
 }
 
-var encoderNames = map[string]string{"nvenc": "NVENC", "qsv": "Quick Sync", "vaapi": "VA-API"}
+var encoderNames = map[string]string{"nvenc": "NVENC", "qsv": "Quick Sync", "vaapi": "VA-API", "videotoolbox": "VideoToolbox"}
 
 func detectHardware() HardwareReport {
 	r := HardwareReport{GPUs: findGPUs(), Encoders: []HardwareEncoder{}}
@@ -129,14 +130,24 @@ func detectHardware() HardwareReport {
 			try("vaapi", g)
 		case "amd":
 			try("vaapi", g)
+		case "apple":
+			try("videotoolbox", g)
 		}
 	}
 	return r
 }
 
-// findGPUs lists the GPUs: each DRM render node's (Linux), and NVIDIA's by nvidia-smi.
+// findGPUs lists the GPUs: each DRM render node's (Linux), NVIDIA's by nvidia-smi, and a Mac's own
+// (VideoToolbox, which needs no device).
 func findGPUs() []GPU {
 	gpus := []GPU{}
+	if runtime.GOOS == "darwin" {
+		name := "This Mac's graphics"
+		if chip, err := commandOutput(5*time.Second, "sysctl", "-n", "machdep.cpu.brand_string"); err == nil && strings.HasPrefix(chip, "Apple") {
+			name = strings.TrimSpace(chip) + " GPU" // "Apple M1 GPU"
+		}
+		return append(gpus, GPU{Name: name, Vendor: "apple"})
+	}
 	nodes, _ := filepath.Glob("/sys/class/drm/renderD*")
 	slices.Sort(nodes)
 	for _, node := range nodes {
@@ -168,7 +179,7 @@ func findGPUs() []GPU {
 	return gpus
 }
 
-var vendorTitle = map[string]string{"nvidia": "NVIDIA", "intel": "Intel", "amd": "AMD", "other": "Other"}
+var vendorTitle = map[string]string{"nvidia": "NVIDIA", "intel": "Intel", "amd": "AMD", "apple": "Apple", "other": "Other"}
 
 func vendorName(pciVendor string) string {
 	switch strings.ToLower(pciVendor) {
@@ -339,6 +350,8 @@ func encoderCodecArgs(id string, bitrate bool) []string {
 		return []string{"-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr"}
 	case "qsv":
 		return []string{"-c:v", "h264_qsv", "-preset", "veryfast"}
+	case "videotoolbox":
+		return []string{"-c:v", "h264_videotoolbox"}
 	case "vaapi":
 		if bitrate {
 			return []string{"-c:v", "h264_vaapi", "-rc_mode", "VBR"}
@@ -354,11 +367,20 @@ func encoderCodecArgs(id string, bitrate bool) []string {
 // came out 1.3 to 2 times the size.
 var qualityOffset = map[string]int{"nvenc": 5, "qsv": 1, "vaapi": 2}
 
+// videoToolboxQuality is VideoToolbox's -q:v (1 to 100, higher is better; Apple Silicon only) for
+// x264's CRF: 75 for CRF 18 and 2.5 per CRF step, measured as qualityOffset was, on an M1.
+func videoToolboxQuality(crf int) int {
+	return max(1, min(100, 75-(crf-18)*5/2))
+}
+
 // encoderQualityArgs is x264's -crf (constant quality) in id's terms.
 func encoderQualityArgs(id, crf string) []string {
 	q := crf
 	if n, err := strconv.Atoi(crf); err == nil {
 		q = strconv.Itoa(min(n+qualityOffset[id], 51))
+		if id == "videotoolbox" {
+			q = strconv.Itoa(videoToolboxQuality(n))
+		}
 	}
 	switch id {
 	case "nvenc":
@@ -367,6 +389,8 @@ func encoderQualityArgs(id, crf string) []string {
 		return []string{"-global_quality", q}
 	case "vaapi":
 		return []string{"-qp", q}
+	case "videotoolbox":
+		return []string{"-q:v", q}
 	}
 	return []string{"-crf", crf}
 }
@@ -402,6 +426,8 @@ func encoderLabel(args []string) string {
 				return "Intel Quick Sync"
 			case "h264_vaapi":
 				return "VA-API"
+			case "h264_videotoolbox":
+				return "Apple VideoToolbox"
 			default:
 				return args[i+1]
 			}

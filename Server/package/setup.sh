@@ -146,11 +146,16 @@ remove_service() {
 # by PCI vendor, which works before any driver is loaded, and lists what each needs: Intel and AMD
 # encode through VA-API (Intel also Quick Sync), whose render node needs the video and render
 # groups; NVIDIA needs its own driver loaded and its encode library. On Debian and Ubuntu it can
-# install the packages (asking first); elsewhere it says what to install.
+# install the packages (asking first); elsewhere it says what to install. A Mac needs nothing
+# (VideoToolbox).
 #   gpu_setup         ask, then make the changes
 #   gpu_setup check   only report
 gpu_setup() {
     local mode=${1:-ask} user vendors="" dev class vendor
+    if [ "$(uname)" = Darwin ]; then
+        echo "This Mac encodes with VideoToolbox (Apple Silicon): nothing to install. Choose it in Settings (Server › Streaming)."
+        return 0
+    fi
     user=$(id -un)
     for dev in "${PCI_DEVICES:-/sys/bus/pci/devices}"/*; do
         class=$(cat "$dev/class" 2>/dev/null) || continue

@@ -309,7 +309,8 @@ type StreamingConfig struct {
 	// whatever the machine's load: a failsafe
 	PauseJobsWhileStreaming bool `json:"pauseJobsWhileStreaming,omitempty" yaml:"pauseJobsWhileStreaming"`
 	// The graphics hardware that encodes the video of transcodes and downloads: "" (the CPU, x264), "nvenc"
-	// (NVIDIA), "qsv" (Intel Quick Sync) or "vaapi" (VA-API: AMD or Intel). Settings offers what
+	// (NVIDIA), "qsv" (Intel Quick Sync), "vaapi" (VA-API: AMD or Intel) or "videotoolbox" (Apple
+	// Silicon Macs). Settings offers what
 	// the server found working (media.Hardware).
 	HardwareEncoder string `json:"hardwareEncoder,omitempty" yaml:"hardwareEncoder"`
 	// The device for qsv and vaapi: a render node such as /dev/dri/renderD128
@@ -320,7 +321,7 @@ type StreamingConfig struct {
 }
 
 // HardwareEncoders are the streaming.hardwareEncoder values ("" is the CPU).
-var HardwareEncoders = []string{"nvenc", "qsv", "vaapi"}
+var HardwareEncoders = []string{"nvenc", "qsv", "vaapi", "videotoolbox"}
 
 var GlobalConfig *Config
 
