@@ -45,6 +45,12 @@ as_root() {
     if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi
 }
 
+# Installs Debian or Ubuntu packages (asks for sudo): when one isn't found, the package lists
+# may be old, so they're updated and it's tried once more.
+apt_install() {
+    as_root apt-get install -y "$@" || { as_root apt-get update && as_root apt-get install -y "$@"; }
+}
+
 write_config() {
     echo "== Settings (written to config.yml; config.example.yml explains them all)"
     local name port options=()
@@ -377,7 +383,7 @@ gpu_setup() {
     [ "$mode" = check ] && return 0
     ask_yes "Install them and add $user to the groups, for hardware encoding (asks for sudo)?" y || return 0
     if [ ${#packages[@]} -gt 0 ]; then
-        as_root apt-get install -y "${packages[@]}" || { echo "Installing the packages failed." >&2; return 1; }
+        apt_install "${packages[@]}" || { echo "Installing the packages failed." >&2; return 1; }
     fi
     if [ ${#groups[@]} -gt 0 ]; then
         as_root usermod -aG "$(IFS=,; echo "${groups[*]}")" "$user"
@@ -524,6 +530,74 @@ case "${1:-}" in
     *) echo "Unknown command: $1 (see --help)" >&2; exit 2 ;;
 esac
 
+# The CJK font the server looks for (media/cjkfont.go's places).
+cjk_font_installed() {
+    local f
+    for f in /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc \
+        /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf \
+        /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.otf /usr/share/fonts/noto/NotoSansCJK-Regular.ttc; do
+        [ -f "$f" ] && return 0
+    done
+    return 1
+}
+
+# What the server runs, besides itself: ffmpeg (required) and the tools for HEIC photos and CJK
+# subtitles (optional). On Debian and Ubuntu, what's missing is offered for installing; elsewhere
+# setup says what to install.
+packages_setup() {
+    local apt=0 optional=() why=()
+    [ "$mac" = 0 ] && command -v apt-get >/dev/null && apt=1
+    if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+        echo "ffmpeg isn't installed: the server needs it for playing, thumbnails and everything else."
+        if [ "$apt" = 1 ] && ask_yes "Install ffmpeg now (asks for sudo)?" y; then
+            apt_install ffmpeg || echo "Installing ffmpeg failed: sudo apt install ffmpeg installs it." >&2
+        fi
+    fi
+    if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+        echo "Note: the server won't play anything until ffmpeg and ffprobe are installed:"
+        echo "$install_hint ffmpeg (or your system's package)."
+    elif ! ./check-ffmpeg.sh; then
+        echo "Note: this ffmpeg lacks what's listed above (the README's ffmpeg section says how to get one"
+        echo "that has it). Setup goes on; ./check-ffmpeg.sh checks again later."
+    fi
+
+    # Optional: HEIC/HEIF photos' thumbnails (and JPEG for browsers), and styled (ASS) subtitles in
+    # Chinese, Japanese or Korean (a subset of a CJK font made by fontTools' pyftsubset).
+    if ! command -v heif-convert >/dev/null; then
+        if [ "$apt" = 1 ]; then
+            optional+=(libheif-examples)
+            why+=("libheif-examples: HEIC photos (iPhones' and many phones') get thumbnails and show in browsers")
+        elif [ "$mac" = 1 ]; then
+            echo "Note: heif-convert isn't installed, so HEIC photos will have no thumbnails and won't show in"
+            echo "browsers: brew install libheif. Everything else works without it."
+        else
+            echo "Note: heif-convert isn't installed, so HEIC photos will have no thumbnails and won't show in"
+            echo "browsers: install your system's libheif tools. Everything else works without it."
+        fi
+    fi
+    local cjk=()
+    command -v "${SUBSET:-pyftsubset}" >/dev/null || cjk+=(fonttools)
+    cjk_font_installed || cjk+=(fonts-noto-cjk)
+    if [ ${#cjk[@]} -gt 0 ]; then
+        if [ "$apt" = 1 ]; then
+            optional+=("${cjk[@]}")
+            local size=""
+            [[ " ${cjk[*]} " == *" fonts-noto-cjk "* ]] && size=" (the font is about 100 MB)"
+            why+=("${cjk[*]}: styled subtitles in Chinese, Japanese or Korean show their characters, not boxes$size")
+        else
+            echo "Note: styled subtitles in Chinese, Japanese or Korean will show as boxes until fontTools"
+            echo "(pyftsubset) and the Noto Sans CJK font are installed: see the README's CJK subtitle font section."
+        fi
+    fi
+    if [ ${#optional[@]} -gt 0 ]; then
+        echo "Optional, everything else works without them:"
+        printf '  %s\n' "${why[@]}"
+        if ask_yes "Install ${optional[*]} (asks for sudo)?" y; then
+            apt_install "${optional[@]}" || echo "Installing them failed: sudo apt install ${optional[*]} installs them." >&2
+        fi
+    fi
+}
+
 # macOS: Homebrew's ffmpeg lacks the DVD reader, chromaprint and libass, so the package can build
 # its own (./build-ffmpeg.sh, with Homebrew's libraries) into ffmpeg/, which the server uses first.
 build_ffmpeg() {
@@ -543,30 +617,8 @@ if [ "$mac" = 1 ] && [ ! -x ffmpeg/bin/ffmpeg ] &&
     echo "the last three (styled subtitles, disc images, intro detection by sound)."
     build_ffmpeg || echo "Setup goes on; ./setup.sh again offers to build it."
 fi
-if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
-    echo "Note: ffmpeg and ffprobe aren't installed. The server needs them for thumbnails and"
-    echo "streaming: $install_hint ffmpeg (or your system's package)."
-elif ! ./check-ffmpeg.sh; then
-    echo "Note: this ffmpeg lacks what's listed above (the README's ffmpeg section says how to get one"
-    echo "that has it). Setup goes on; ./check-ffmpeg.sh checks again later."
-fi
-# Optional: styled (ASS) subtitles in Chinese, Japanese or Korean need a CJK font and fontTools'
-# pyftsubset to make a subset of it (see the README's CJK subtitle font section).
-if ! command -v "${SUBSET:-pyftsubset}" >/dev/null; then
-    echo "Note: pyftsubset (fontTools) isn't installed. Styled subtitles in Chinese, Japanese or Korean"
-    echo "will show as boxes until it is: see the README's CJK subtitle font section."
-fi
-# Optional: only HEIC/HEIF photos need it (their thumbnails, and JPEG for browsers).
-if ! command -v heif-convert >/dev/null; then
-    echo "Note: heif-convert isn't installed, so HEIC photos (iPhones' and many phones') will have no"
-    if [ "$mac" = 1 ]; then
-        echo "thumbnails and won't show in browsers: brew install libheif. Everything else works without it."
-    else
-        echo "thumbnails and won't show in browsers: sudo apt install libheif-examples (or your system's"
-        echo "libheif tools). Everything else works without it."
-    fi
-fi
-
+echo "== Programs the server uses"
+packages_setup
 echo "== Hardware encoding"
 gpu_setup || true
 

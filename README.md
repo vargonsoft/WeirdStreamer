@@ -98,6 +98,8 @@ Windows isn't supported yet. `SHA256SUMS` in the release lists each file's check
 
 Unpack the package where the server should live (it keeps its data in a `var` folder beside it) and
 run `setup.sh` in it. Setup:
+- on Debian and Ubuntu, offers to install ffmpeg, and the optional tools for HEIC photos and CJK
+  subtitles, when they're missing;
 - asks for the server's name, its port (9000 unless you pick another) and whether to use HTTPS;
 - writes `config.yml` and creates the admin user;
 - can set up your graphics card for [hardware encoding](#hardware-encoding);

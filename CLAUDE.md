@@ -215,6 +215,9 @@ vendor (no driver needed) and lists what hardware encoding needs: Intel and AMD 
 driver (or `linux-modules-nvidia-<branch>-<kernel>` when the module wasn't built for the running
 kernel) and `libnvidia-encode`; on apt systems it installs them and adds the groups after asking.
 AMD's are assumed, untested on a card; a missing ffmpeg is reported and installed with them.
+Before it, `packages_setup` (apt systems) offers ffmpeg (required) and then, in one question, what's
+missing of libheif-examples, fonttools and fonts-noto-cjk; elsewhere it prints notes. `apt_install`
+updates the package lists and tries once more when an install fails.
 `PCI_DEVICES` points it at a fake device folder for testing. `setup.sh upgrade [--check]` installs the latest
 GitHub release over the package (`release_repo`, `WEIRDSTREAMER_REPO`): the tag from where `/releases/latest`
 redirects, this platform's tarball checked against SHA256SUMS, unpacked in `.upgrade/` and moved into place
