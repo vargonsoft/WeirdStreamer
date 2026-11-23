@@ -194,7 +194,12 @@ The package's `setup.sh` (`Server/package/setup.sh`) asks only for the name, por
 writes config.yml through `cli config init`, can create the admin user and install a systemd service
 (`setup.sh service`, `setup.sh remove-service`: `bin/server` as the user who ran setup, from the
 package's folder, after network mounts), then prints the web UI's address and offers to start the
-server and open it. Libraries and the TMDB token are set in Settings: while there are no libraries,
+server and open it. Its GPU step (`gpu_setup`; alone as `setup.sh gpu [--check]`) finds graphics by PCI
+vendor (no driver needed) and lists what hardware encoding needs: Intel and AMD the `video` and
+`render` groups and VA-API drivers (Intel also `libmfx-gen1.2` for Quick Sync), NVIDIA a loaded
+driver (or `linux-modules-nvidia-<branch>-<kernel>` when the module wasn't built for the running
+kernel) and `libnvidia-encode`; on apt systems it installs them and adds the groups after asking.
+AMD's are assumed, untested on a card. `PCI_DEVICES` points it at a fake device folder for testing. Libraries and the TMDB token are set in Settings: while there are no libraries,
 an admin's sign-in opens Settings at Media Paths (`openLibrarySettings` in `app.js`). Its Browse… button picks a library's folder on the server (`openFolderPicker`, from `GET /api/config/folders?path=`, admins only: folders without hidden ones, and how many videos are in it).
 
 ## Deploying the Android app

@@ -44,6 +44,12 @@ the Android app to download, `setup.sh` and `config.example.yml`, plus the APK a
 To install the package, unpack it and run `./setup.sh` in it. It asks for the server's name, port
 and HTTPS and writes `config.yml`, can create the admin user, and can install a systemd service that
 starts the server at boot (later: `./setup.sh service`; to undo it, `./setup.sh remove-service`).
+Where it finds Intel, AMD or NVIDIA graphics, it lists what hardware encoding needs and offers to
+set it up: on Debian and Ubuntu it installs the missing packages (Intel's media driver and Quick
+Sync runtime, Mesa's VA-API drivers, NVIDIA's encode library or a kernel module for the running
+kernel) and adds the user to the `video` and `render` groups. Elsewhere it says what to install.
+`./setup.sh gpu` does that step alone (`--check` only reports). AMD's needs are assumed (Mesa's
+VA-API), not tested on a card.
 Then it prints the web UI's address and offers to start the server and open it. Sign in as the
 admin: while there are no libraries, Settings opens at Media Paths to add them (and the TMDB token).
 Otherwise run `./bin/server` from that folder. It needs ffmpeg, nothing else.

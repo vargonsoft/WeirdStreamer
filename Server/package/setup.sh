@@ -6,6 +6,7 @@
 #   ./setup.sh                  all of it, asking as it goes
 #   ./setup.sh service          install (or update) the systemd service only
 #   ./setup.sh remove-service   stop and remove the systemd service
+#   ./setup.sh gpu [--check]    set up the graphics card for hardware encoding (--check: only report)
 #
 # Without the service, run the server with ./bin/server from this folder.
 set -euo pipefail
@@ -141,11 +142,142 @@ remove_service() {
     echo "Removed. The server no longer starts at boot."
 }
 
+# Graphics cards for hardware encoding (Settings › Server › Streaming picks the encoder). Finds them
+# by PCI vendor, which works before any driver is loaded, and lists what each needs: Intel and AMD
+# encode through VA-API (Intel also Quick Sync), whose render node needs the video and render
+# groups; NVIDIA needs its own driver loaded and its encode library. On Debian and Ubuntu it can
+# install the packages (asking first); elsewhere it says what to install.
+#   gpu_setup         ask, then make the changes
+#   gpu_setup check   only report
+gpu_setup() {
+    local mode=${1:-ask} user vendors="" dev class vendor
+    user=$(id -un)
+    for dev in "${PCI_DEVICES:-/sys/bus/pci/devices}"/*; do
+        class=$(cat "$dev/class" 2>/dev/null) || continue
+        [[ $class == 0x03* ]] || continue # display controllers
+        vendor=$(cat "$dev/vendor" 2>/dev/null)
+        case $vendor in
+            0x8086) vendors+=" intel" ;;
+            0x1002) vendors+=" amd" ;;
+            0x10de) vendors+=" nvidia" ;;
+        esac
+    done
+    if [ -z "$vendors" ]; then
+        echo "No Intel, AMD or NVIDIA graphics found: transcodes and downloads use the CPU."
+        return 0
+    fi
+    local apt=0 packages=() groups=() notes=() encoders="" name
+    command -v apt-get >/dev/null && command -v dpkg-query >/dev/null && apt=1
+    command -v ffmpeg >/dev/null && encoders=$(ffmpeg -hide_banner -encoders 2>/dev/null || true)
+    installed() { [[ $(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true) == *"ok installed" ]]; }
+    available() { [ -n "$(apt-cache policy "$1" 2>/dev/null | sed -n 's/^ *Candidate: *//p' | grep -v '(none)')" ]; }
+    want() { # want PACKAGE...: the first one apt has, unless one of them is installed
+        local p
+        for p in "$@"; do
+            installed "$p" && return 0
+            [[ " ${packages[*]} " == *" $p "* ]] && return 0
+        done
+        for p in "$@"; do available "$p" && { packages+=("$p"); return 0; }; done
+        notes+=("Package $1 isn't available from apt's sources (Debian needs the non-free component, Ubuntu multiverse).")
+    }
+    want_groups() {
+        local g
+        for g in video render; do
+            getent group "$g" >/dev/null || continue
+            [ "$user" = root ] && continue
+            [[ " $(id -nG "$user") " == *" $g "* ]] && continue
+            [[ " ${groups[*]} " == *" $g "* ]] || groups+=("$g")
+        done
+    }
+    for name in $(echo "$vendors" | tr ' ' '\n' | sort -u); do
+        case $name in
+            intel)
+                echo "Found Intel graphics: VA-API and Quick Sync can encode."
+                want_groups
+                if [ "$apt" = 1 ]; then
+                    want intel-media-va-driver-non-free intel-media-va-driver # VA-API (Broadwell and later)
+                    [[ " ${packages[*]} " == *" intel-media-va-driver "* ]] &&
+                        notes+=("Intel: only the free media driver is available; it can't encode on some chips (the non-free one can: Debian's non-free component).")
+                    want libmfx-gen1.2 libmfx-gen1                            # Quick Sync's GPU runtime
+                    want vainfo
+                else
+                    notes+=("Intel: install Intel's media driver (iHD) for VA-API, and Intel's VPL GPU runtime for Quick Sync.")
+                fi
+                [ -n "$encoders" ] && ! grep -q h264_vaapi <<<"$encoders" && notes+=("This ffmpeg has no VA-API encoder (h264_vaapi).")
+                [ -n "$encoders" ] && ! grep -q h264_qsv <<<"$encoders" && notes+=("This ffmpeg has no Quick Sync encoder (h264_qsv).")
+                ;;
+            amd)
+                echo "Found AMD graphics: VA-API can encode."
+                want_groups
+                if [ "$apt" = 1 ]; then
+                    want mesa-va-drivers
+                    want vainfo
+                else
+                    notes+=("AMD: install Mesa's VA-API drivers (Fedora's leave out H.264 encoding: RPM Fusion's mesa-va-drivers-freeworld has it).")
+                fi
+                [ -n "$encoders" ] && ! grep -q h264_vaapi <<<"$encoders" && notes+=("This ffmpeg has no VA-API encoder (h264_vaapi).")
+                ;;
+            nvidia)
+                echo "Found NVIDIA graphics: NVENC can encode with NVIDIA's driver (not nouveau)."
+                if command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1; then
+                    local libs
+                    libs=$(ldconfig -p 2>/dev/null || /sbin/ldconfig -p 2>/dev/null || true)
+                    if ! grep -q 'libnvidia-encode\.so\.1' <<<"$libs"; then
+                        local branch
+                        branch=$(dpkg-query -W -f='${Package} ${Status}\n' 'nvidia-driver-*' 'nvidia-headless-*' 2>/dev/null |
+                            awk '/ok installed/ {print $1}' | sed -n 's/^nvidia-\(driver\|headless\)-\([0-9]*\).*/\2/p' | head -1 || true)
+                        if [ "$apt" = 1 ] && [ -n "$branch" ]; then
+                            want "libnvidia-encode-$branch"
+                        else
+                            notes+=("NVIDIA: the driver is loaded but its encode library (libnvidia-encode) is missing.")
+                        fi
+                    fi
+                elif command -v nvidia-smi >/dev/null; then
+                    # Installed but not loaded: usually no module built for the running kernel
+                    local driver
+                    driver=$(dpkg-query -W -f='${Package} ${Status}\n' 'nvidia-driver-*' 2>/dev/null |
+                        awk '/ok installed/ {print $1}' | sed -n 's/^nvidia-driver-//p' | head -1 || true)
+                    if [ "$apt" = 1 ] && [ -n "$driver" ] && available "linux-modules-nvidia-$driver-$(uname -r)"; then
+                        want "linux-modules-nvidia-$driver-$(uname -r)"
+                        notes+=("NVIDIA: the driver's module wasn't built for this kernel ($(uname -r)); after installing it, a reboot (or sudo modprobe nvidia) loads it.")
+                    else
+                        notes+=("NVIDIA: the driver is installed but not loaded (nvidia-smi fails). Its kernel module may not be built for this kernel ($(uname -r)), or a reboot may be pending.")
+                    fi
+                elif command -v ubuntu-drivers >/dev/null; then
+                    notes+=("NVIDIA: install NVIDIA's driver with: sudo ubuntu-drivers install (then reboot).")
+                else
+                    notes+=("NVIDIA: install NVIDIA's proprietary driver from your system's packages (then reboot).")
+                fi
+                [ -n "$encoders" ] && ! grep -q h264_nvenc <<<"$encoders" && notes+=("This ffmpeg has no NVENC encoder (h264_nvenc).")
+                ;;
+        esac
+    done
+    local n
+    printf '%s\n' "${notes[@]}" | awk 'NF && !seen[$0]++ {print "  " $0}'
+    if [ ${#packages[@]} = 0 ] && [ ${#groups[@]} = 0 ]; then
+        [ ${#notes[@]} = 0 ] && echo "  Nothing to change: choose the encoder in Settings (Server › Streaming)."
+        return 0
+    fi
+    [ ${#packages[@]} -gt 0 ] && echo "  Missing packages: ${packages[*]}"
+    [ ${#groups[@]} -gt 0 ] && echo "  $user isn't in the group(s) the GPU needs: ${groups[*]}"
+    [ "$mode" = check ] && return 0
+    ask_yes "Install them and add $user to the groups, for hardware encoding (asks for sudo)?" y || return 0
+    if [ ${#packages[@]} -gt 0 ]; then
+        as_root apt-get install -y "${packages[@]}" || { echo "Installing the packages failed." >&2; return 1; }
+    fi
+    if [ ${#groups[@]} -gt 0 ]; then
+        as_root usermod -aG "$(IFS=,; echo "${groups[*]}")" "$user"
+        echo "Added $user to ${groups[*]}: a new login (and the service, which starts with them) picks that up."
+    fi
+    echo "The server finds the encoders when it starts: then choose one in Settings (Server › Streaming)."
+}
+
 case "${1:-}" in
     service) install_service; exit ;;
+    gpu) if [ "${2:-}" = --check ]; then gpu_setup check; else gpu_setup; fi; exit ;;
     remove-service) remove_service; exit ;;
     "") ;;
-    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
     *) echo "Unknown command: $1 (see --help)" >&2; exit 2 ;;
 esac
 
@@ -168,6 +300,9 @@ if ! command -v heif-convert >/dev/null; then
     echo "thumbnails and won't show in browsers: sudo apt install libheif-examples (or your system's"
     echo "libheif tools). Everything else works without it."
 fi
+
+echo "== Hardware encoding"
+gpu_setup || true
 
 if [ -f config.yml ]; then
     echo "config.yml already exists: leaving it. (Move it aside to set up again.)"
