@@ -325,23 +325,26 @@ final class ServerClient: Sendable {
 
     /// `snakeCase`: the body's keys as the server names them (audioLanguage as audio_language).
     func send<B: Encodable>(_ method: String, _ path: String, body: B, snakeCase: Bool = false) async throws {
-        let encoder = JSONEncoder()
-        if snakeCase { encoder.keyEncodingStrategy = .convertToSnakeCase }
-        let data = try encoder.encode(body)
-        _ = try await perform(try request(method, path, body: data))
+        _ = try await perform(try request(method, path, body: try Self.encodeBody(body, snakeCase: snakeCase)))
     }
 
     func call<B: Encodable, T: Decodable>(_ method: String, _ path: String, body: B) async throws -> T {
-        let data = try JSONEncoder().encode(body)
-        return try decode(T.self, from: try await perform(try request(method, path, body: data)))
+        return try decode(T.self, from: try await perform(try request(method, path, body: try Self.encodeBody(body))))
     }
 
     /// A request whose body is sent with snake_case keys (for bodies that go back to the server
     /// as it sent them, such as a subtitle search result).
     func callSnake<B: Encodable, T: Decodable>(_ method: String, _ path: String, body: B) async throws -> T {
+        return try decode(T.self, from: try await perform(try request(method, path, body: try Self.encodeBody(body, snakeCase: true))))
+    }
+
+    /// A request body as JSON: the keys as the Swift names them, or with `snakeCase` as the server
+    /// does (audioLanguage as audio_language).
+    static func encodeBody<B: Encodable>(_ body: B, snakeCase: Bool = false) throws -> Data {
         let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        return try decode(T.self, from: try await perform(try request(method, path, body: try encoder.encode(body))))
+        encoder.outputFormatting = .sortedKeys
+        if snakeCase { encoder.keyEncodingStrategy = .convertToSnakeCase }
+        return try encoder.encode(body)
     }
 
     /// A request whose body and reply are plain JSON (the server's config, kept whole so settings
@@ -401,9 +404,28 @@ final class ServerClient: Sendable {
     }
 
     /// A thumbnail the server just made: the file's client path and the thumbnail's address.
-    struct ThumbnailUpdate: Decodable, Sendable {
+    struct ThumbnailUpdate: Decodable, Sendable, Equatable {
         let path: String
         let thumbnailURL: String
+    }
+
+    /// Reads the thumbnail-updates stream a line at a time. `lines` leaves out the blank line that
+    /// ends an event, so each event is taken at its data line (the server writes one per event,
+    /// after its name if any); only unnamed ("message") events are thumbnails.
+    struct ThumbnailEventParser {
+        private var event = ""
+
+        mutating func take(_ line: String) -> ThumbnailUpdate? {
+            if line.hasPrefix("event:") {
+                event = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
+                return nil
+            }
+            guard line.hasPrefix("data:") else { return nil }
+            defer { event = "" }
+            let data = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            guard event.isEmpty || event == "message" else { return nil }
+            return try? JSONDecoder().decode(ThumbnailUpdate.self, from: Data(data.utf8))
+        }
     }
 
     /// The server's thumbnail-ready events (`/api/media/thumbnail-updates`, server-sent events) for
@@ -426,20 +448,9 @@ final class ServerClient: Sendable {
                     guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                         throw ServerError.http(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: nil)
                     }
-                    // `lines` leaves out the blank line that ends an event, so each event is taken
-                    // at its data line (the server writes one per event, after its name if any).
-                    var event = ""
+                    var parser = ThumbnailEventParser()
                     for try await line in bytes.lines {
-                        if line.hasPrefix("event:") {
-                            event = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
-                        } else if line.hasPrefix("data:") {
-                            let data = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                            if event.isEmpty || event == "message",
-                               let update = try? JSONDecoder().decode(ThumbnailUpdate.self, from: Data(data.utf8)) {
-                                continuation.yield(update)
-                            }
-                            event = ""
-                        }
+                        if let update = parser.take(line) { continuation.yield(update) }
                     }
                     continuation.finish()
                 } catch {

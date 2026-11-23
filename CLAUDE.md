@@ -100,6 +100,12 @@ for each TODO item are at the end of this file.
   Keychain, where sign-ins are kept. Run `iOS/native/build-libass.sh` once first: it builds the ASS
   subtitle renderer (`iOS/native/assrender.c`, libass and its libraries, as Android's) into
   `iOS/native/build/` (git-ignored), which the project links (`Views/AssSubtitleView.swift`). The e2e server has an account for the simulator (see `Server/e2e/NOTES.md`).
+  Unit tests: `WeirdStreamerTests` (Swift Testing; `xcodebuild test`, `iOS/README.md`), the logic
+  and the JSON contract with the server; a new request body or reply model gets a test there.
+  From Linux, `iOS/remote/mac-ios test|build|ipa|check` has the Mac compile and test the Linux
+  checkout as it is (origin plus a patch of everything not pushed or committed), over SSH, in a
+  clone of its own (`iOS/remote/ios-remote.sh`); `ipa` brings back an unsigned IPA for AltStore.
+  Use it to check iPhone changes made on Linux before committing them.
 
 ## Live server
 

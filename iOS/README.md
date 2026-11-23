@@ -123,6 +123,51 @@ The deployment target is iOS 17 (SwiftData's minimum).
 
 The e2e server (`Server/e2e`, http://localhost:9100) has an `e2e_ios` account for the simulator.
 
+### Unit tests
+
+`WeirdStreamerTests` (Swift Testing, run by the shared `WeirdStreamer` scheme) covers the logic
+that doesn't need a server or a screen: the JSON the app sends and reads against the Go server's
+field names (a body with the wrong names is accepted and silently ignored, so it's caught here),
+the thumbnail-updates event stream, addresses and certificate keys, download languages and tracks,
+what plays offline, hardware encoder choices, WebVTT, subtitle and audio labels, CJK characters, PGS
+decoding (a hand-made .sup), `OriginalLoader`'s byte ranges, Up next, the A–Z strip, motion photos
+and the text helpers. New files in `WeirdStreamerTests/` join the target by themselves.
+
+```bash
+xcodebuild test -project iOS/WeirdStreamer/WeirdStreamer.xcodeproj -scheme WeirdStreamer \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -parallel-testing-enabled NO CODE_SIGN_IDENTITY='-'
+```
+
+### Building from another machine (Linux)
+
+`iOS/remote/mac-ios`, run in a checkout on another machine, has the Mac build or test that
+checkout as it is, over SSH: what's on origin plus everything there that isn't (commits not
+pushed, changes not committed, new files) as one patch. So iPhone changes made on Linux can be
+compiled and tested before they're committed. On the Mac, `iOS/remote/ios-remote.sh` does the work in
+a clone of its own (`~/Library/Caches/WeirdStreamer-remote`, `$IOS_REMOTE_DIR`), never in a
+checkout anyone edits, one run at a time, testing on a simulator of its own ("WeirdStreamer Remote").
+
+```bash
+iOS/remote/mac-ios test            # the unit tests
+iOS/remote/mac-ios build           # does it compile (simulator)?
+iOS/remote/mac-ios ipa             # WeirdStreamer.ipa here, for AltStore (-o to name it)
+iOS/remote/mac-ios check           # test, then ipa
+iOS/remote/mac-ios log             # the Mac's last full xcodebuild log
+```
+
+It needs SSH from that machine to the Mac without a password (Remote Login on, the machine's key
+in the Mac's `~/.ssh/authorized_keys`), and `iOS/remote/remote.local` (git-ignored) there:
+
+```bash
+MAC_HOST=user@mac.local
+MAC_SCRIPT=/path/to/WeirdStreamer/iOS/remote/ios-remote.sh
+```
+
+The IPA is unsigned: AltStore signs it with the Apple ID installing it. Its build number is the
+commit count, as Android's; a build with a patch is named `WeirdStreamer-<count>-patched.ipa` on the Mac.
+The Mac runs its own checkout's `ios-remote.sh`, so a change to that script reaches it when that
+checkout is pulled.
+
 ## Certificates
 
 A server you add is trusted with the certificate it has when it's added (home servers often use

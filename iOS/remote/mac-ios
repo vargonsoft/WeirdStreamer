@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Builds and tests the iPhone app on the Mac from another machine (Linux), over SSH, with this
+# checkout's code as it is: what's on origin, plus everything here that isn't — commits not
+# pushed, changes not committed, new files not added (.gitignore'd ones stay out) — sent as one
+# patch. The Mac builds in a clone of its own (iOS/remote/ios-remote.sh), so nothing needs pushing first.
+#
+#   mac-ios test               the unit tests, on the Mac's simulator
+#   mac-ios build              the app for the simulator (does it compile?)
+#   mac-ios ipa [-o FILE]      an unsigned IPA for AltStore (default WeirdStreamer.ipa here)
+#   mac-ios check              test, then ipa
+#   mac-ios log                the Mac's last full xcodebuild log
+#   mac-ios status             what the Mac's clone has checked out
+#
+# Options: --pushed (only what's on origin: no patch), --ref REF (build REF on origin, no patch),
+# --verbose (all of xcodebuild's output).
+# The Mac and the script's path there are in iOS/remote/remote.local (git-ignored):
+#   MAC_HOST=user@mac.local
+#   MAC_SCRIPT=/path/to/WeirdStreamer/iOS/remote/ios-remote.sh
+set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; }
+
+config="$here/remote.local"
+[ -f "$config" ] && . "$config"
+if [ -z "${MAC_HOST:-}" ] || [ -z "${MAC_SCRIPT:-}" ]; then
+    echo "Set MAC_HOST and MAC_SCRIPT in $config, as:" >&2
+    echo "  MAC_HOST=user@mac.local" >&2
+    echo "  MAC_SCRIPT=/path/to/WeirdStreamer/iOS/remote/ios-remote.sh" >&2
+    exit 2
+fi
+
+cmd="${1:-}"
+[ -n "$cmd" ] && shift
+out="WeirdStreamer.ipa" mode=patch ref="" verbose=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o|--out) out="$2"; shift 2 ;;
+        --pushed) mode=pushed; shift ;;
+        --ref) mode=pushed; ref="$2"; shift 2 ;;
+        --verbose) verbose=(--verbose); shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; usage; exit 2 ;;
+    esac
+done
+
+remote() { # the Mac's script, with its arguments quoted for the remote shell
+    local args
+    args="$(printf '%q ' "$MAC_SCRIPT" "$@")"
+    ssh -o BatchMode=yes "$MAC_HOST" "$args"
+}
+
+case "$cmd" in
+    log|status) remote "$cmd"; exit $? ;;
+    build|test|ipa|check) ;;
+    ""|-h|--help|help) usage; exit 0 ;;
+    *) echo "Unknown command: $cmd" >&2; usage; exit 2 ;;
+esac
+
+# What to build: a commit origin has (the Mac fetches it), and the patch from it to this checkout.
+cd "$(git -C "$here" rev-parse --show-toplevel)"
+patch="$(mktemp)"
+index="$(mktemp)"
+trap 'rm -f "$patch" "$index"' EXIT
+if [ "$mode" = patch ]; then
+    git fetch --quiet origin
+    upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo origin/main)"
+    base="$(git merge-base HEAD "$upstream")"
+    # The working tree as it is, new files included, through a copy of the index (yours is untouched).
+    cp "$(git rev-parse --git-path index)" "$index"
+    GIT_INDEX_FILE="$index" git add -A
+    GIT_INDEX_FILE="$index" git diff --cached --binary "$base" > "$patch"
+    changed="$(GIT_INDEX_FILE="$index" git diff --cached --name-only "$base" | wc -l | tr -d ' ')"
+    echo "Base $(git log -1 --format='%h %s' "$base") (on origin), plus $changed changed file(s) sent as a patch." >&2
+    ref="$base"
+else
+    ref="${ref:-origin/main}"
+    echo "Building $ref from origin." >&2
+fi
+
+run() { # one command on the Mac
+    local what="$1"
+    shift
+    if [ "$what" = ipa ]; then
+        local tmp="$out.part"
+        if remote ipa --ref "$ref" --patch - --out - ${verbose[@]+"${verbose[@]}"} "$@" < "$patch" > "$tmp"; then
+            mv "$tmp" "$out"
+            echo "IPA: $out ($(du -h "$out" | cut -f1))" >&2
+        else
+            local status=$?
+            rm -f "$tmp"
+            return $status
+        fi
+    else
+        remote "$what" --ref "$ref" --patch - ${verbose[@]+"${verbose[@]}"} "$@" < "$patch"
+    fi
+}
+
+case "$cmd" in
+    check) run test && run ipa ;;
+    *) run "$cmd" ;;
+esac

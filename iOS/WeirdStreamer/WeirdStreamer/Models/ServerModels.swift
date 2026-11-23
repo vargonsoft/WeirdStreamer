@@ -282,6 +282,17 @@ struct AccountSettings: Codable {
     var subtitleLanguage: String
     var subtitlesOn: Bool           // subtitles start on, in subtitleLanguage
     var languages: [String]?
+
+    // Sent with the server's names whatever the encoder does (the reply is read with
+    // convertFromSnakeCase, so decoding keeps the synthesized keys).
+    private enum RequestKeys: String, CodingKey { case audioLanguage = "audio_language", subtitleLanguage = "subtitle_language", subtitlesOn = "subtitles_on" }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: RequestKeys.self)
+        try c.encode(audioLanguage, forKey: .audioLanguage)
+        try c.encode(subtitleLanguage, forKey: .subtitleLanguage)
+        try c.encode(subtitlesOn, forKey: .subtitlesOn)
+    }
 }
 
 /// A font embedded in the video (an MKV attachment): GET /api/media/font?path=&font=index.

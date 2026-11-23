@@ -50,15 +50,16 @@ final class OriginalLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked 
             start = data.requestedOffset
             length = data.requestsAllDataToEndOfResource ? nil : Int64(data.requestedLength)
         }
+        let window = ByteWindow(start: start, length: length)
         var request = URLRequest(url: url)
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        request.setValue(length.map { "bytes=\(start)-\(start + $0 - 1)" } ?? "bytes=\(start)-", forHTTPHeaderField: "Range")
+        request.setValue(window.rangeHeader, forHTTPHeaderField: "Range")
 
         let fetcher = OriginalFetcher.shared
         let task = fetcher.session.dataTask(with: request)
         let id = ObjectIdentifier(loadingRequest)
         tasks[id] = task
-        fetcher.loads[task.taskIdentifier] = OriginalLoad(request: loadingRequest, url: url, start: start, length: length) { [weak self] in
+        fetcher.loads[task.taskIdentifier] = OriginalLoad(request: loadingRequest, url: url, window: window) { [weak self] in
             self?.tasks[id] = nil
         }
         task.resume()
@@ -72,21 +73,59 @@ final class OriginalLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked 
 
 nonisolated(unsafe) private var loaderKey: UInt8 = 0
 
+/// The bytes of a file one request asks for, and which of those a response carries: the Range
+/// header to send, and as data arrives, the part to hand on. A server that ignores the range
+/// (200, the whole file) has the bytes before `start` dropped.
+nonisolated struct ByteWindow {
+    let start: Int64
+    let length: Int64? // nil: to the end of the file
+    private var skip: Int64 = 0
+    private(set) var delivered: Int64 = 0
+
+    init(start: Int64, length: Int64?) {
+        self.start = start
+        self.length = length
+    }
+
+    var rangeHeader: String { length.map { "bytes=\(start)-\(start + $0 - 1)" } ?? "bytes=\(start)-" }
+
+    /// The response is the whole file from its first byte (a 200), not the range asked for.
+    mutating func wholeFile() { skip = start }
+
+    /// The part of `data` that's wanted, and whether that completes the window.
+    mutating func take(_ data: Data) -> (data: Data, done: Bool) {
+        var data = data
+        if skip > 0 {
+            let dropped = min(skip, Int64(data.count))
+            data = data.dropFirst(Int(dropped))
+            skip -= dropped
+        }
+        if let length {
+            let wanted = max(length - delivered, 0)
+            if Int64(data.count) > wanted { data = data.prefix(Int(wanted)) }
+        }
+        delivered += Int64(data.count)
+        return (data, length.map { delivered >= $0 } ?? false)
+    }
+
+    /// The file's length from a Content-Range header ("bytes 0-1/123456"); nil when it's not
+    /// given ("bytes 0-1/*") or there's none.
+    static func totalLength(contentRange: String?) -> Int64? {
+        contentRange?.split(separator: "/").last.flatMap { Int64($0) }
+    }
+}
+
 /// One piece of a file AVPlayer asked for, as it arrives.
 private final class OriginalLoad {
     let request: AVAssetResourceLoadingRequest
     let url: URL
-    let start: Int64
-    let length: Int64? // nil: to the end of the file
     let done: () -> Void
-    private var skip: Int64 = 0   // a server that ignored the range sends the file from its start
-    private var delivered: Int64 = 0
+    private var window: ByteWindow
 
-    init(request: AVAssetResourceLoadingRequest, url: URL, start: Int64, length: Int64?, done: @escaping () -> Void) {
+    init(request: AVAssetResourceLoadingRequest, url: URL, window: ByteWindow, done: @escaping () -> Void) {
         self.request = request
         self.url = url
-        self.start = start
-        self.length = length
+        self.window = window
         self.done = done
     }
 
@@ -96,14 +135,13 @@ private final class OriginalLoad {
             finish(ServerError.http(status: status, message: nil))
             return .cancel
         }
-        if http.statusCode == 200 { skip = start }
+        if http.statusCode == 200 { window.wholeFile() }
         if let info = request.contentInformationRequest {
             let mime = http.mimeType ?? ""
             info.contentType = UTType(mimeType: mime)?.identifier ?? AVFileType.mp4.rawValue
             info.isByteRangeAccessSupported = http.statusCode == 206
-            // "bytes 0-1/123456": the file's length; a 200 gives it as its own length.
-            if let range = http.value(forHTTPHeaderField: "Content-Range"),
-               let total = range.split(separator: "/").last.flatMap({ Int64($0) }) {
+            // The file's length: Content-Range's total; a 200 gives it as its own length.
+            if let total = ByteWindow.totalLength(contentRange: http.value(forHTTPHeaderField: "Content-Range")) {
                 info.contentLength = total
             } else if http.statusCode == 200, http.expectedContentLength > 0 {
                 info.contentLength = http.expectedContentLength
@@ -118,24 +156,10 @@ private final class OriginalLoad {
 
     /// The bytes that came, handed on; true once all that was asked for has been.
     func received(_ data: Data) -> Bool {
-        var data = data
-        if skip > 0 {
-            let dropped = min(skip, Int64(data.count))
-            data = data.dropFirst(Int(dropped))
-            skip -= dropped
-            if data.isEmpty { return false }
-        }
-        if let length {
-            let wanted = length - delivered
-            if Int64(data.count) > wanted { data = data.prefix(Int(wanted)) }
-        }
-        request.dataRequest?.respond(with: data)
-        delivered += Int64(data.count)
-        if let length, delivered >= length {
-            finish(nil)
-            return true
-        }
-        return false
+        let (wanted, done) = window.take(data)
+        if !wanted.isEmpty { request.dataRequest?.respond(with: wanted) }
+        if done { finish(nil) }
+        return done
     }
 
     func completed(_ error: Error?) {

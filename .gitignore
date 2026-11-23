@@ -70,3 +70,7 @@ xcuserdata/
 /iOS/native/build/
 # The iPhone app's signing team (iOS/WeirdStreamer/Signing.xcconfig)
 /iOS/WeirdStreamer/Signing.local.xcconfig
+/iOS/remote/remote.local
+# IPAs (iOS/remote/mac-ios ipa leaves one where it runs)
+*.ipa
+*.ipa.part
