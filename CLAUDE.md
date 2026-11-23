@@ -345,7 +345,11 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   names) and tries a short test encode with each fitting encoder ffmpeg has: NVENC for NVIDIA,
   Quick Sync and VA-API for Intel, VA-API for AMD (each render node), and on macOS VideoToolbox
   (no device; the GPU is named from `sysctl machdep.cpu.brand_string`). `GET /api/admin/hardware`
-  reports the GPUs, the encoders that worked and why others didn't. Settings (web Server › Streaming,
+  reports the GPUs, the encoders that worked and why others didn't. The startup log has a
+  `[HARDWARE]` line per GPU (`gpuName`; its kernel driver, NVIDIA's driver version and memory, a
+  Mac's shared memory, the render node), ffmpeg's version, each encoder that works or doesn't and
+  why, and the setting in effect (`HardwareSetting`: the encoder and its limit, off though one works,
+  or chosen but not working here); an admin's change in Settings logs it again. Settings (web Server › Streaming,
   phone and iPhone Server tab, TV Settings › Hardware encoding, admins only) shows that and, when
   something works, the choice (`streaming.hardwareEncoder` nvenc/qsv/vaapi, `hardwareDevice` the
   render node) and `hardwareMaxTranscodes` (0 no limit, streams and downloads together). Streaming

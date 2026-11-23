@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -122,10 +123,15 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	newConfig := update.applyTo(config.GlobalConfig)
+	before := config.GlobalConfig.Streaming
 
 	if status, err := h.saveConfig(newConfig); err != nil {
 		respondError(w, status, err.Error())
 		return
+	}
+	if s := config.GlobalConfig.Streaming; s.HardwareEncoder != before.HardwareEncoder ||
+		s.HardwareDevice != before.HardwareDevice || s.HardwareMaxTranscodes != before.HardwareMaxTranscodes {
+		log.Printf("[HARDWARE] Changed by %s: %s", claims.Username, media.HardwareSetting())
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{

@@ -64,3 +64,18 @@ func TestVideoToolboxQuality(t *testing.T) {
 		}
 	}
 }
+
+func TestGPUName(t *testing.T) {
+	for _, c := range [][3]string{
+		{"Intel", "CoffeeLake-S GT2 [UHD Graphics 630]", "Intel UHD Graphics 630"},
+		{"Intel", "Meteor Lake-P [Intel Graphics]", "Intel Graphics (Meteor Lake-P)"},
+		{pciVendor("Advanced Micro Devices, Inc. [AMD/ATI]"), "Navi 22 [Radeon RX 6700/6700 XT/6750 XT / 6800M/6850M XT]", "AMD Radeon RX 6700/6700 XT/6750 XT / 6800M/6850M XT"},
+		{pciVendor("Intel Corporation"), "Meteor Lake-P [Intel Graphics]", "Intel Graphics (Meteor Lake-P)"},
+		{"NVIDIA", "GP106 [GeForce GTX 1060 6GB]", "NVIDIA GeForce GTX 1060 6GB"},
+		{"Intel", "Device 7d55", "Intel Device 7d55"},
+	} {
+		if got := gpuName(c[0], c[1]); got != c[2] {
+			t.Errorf("%s %q: got %q, want %q", c[0], c[1], got, c[2])
+		}
+	}
+}

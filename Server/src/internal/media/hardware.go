@@ -29,6 +29,8 @@ type GPU struct {
 	Name   string `json:"name"`             // "NVIDIA GeForce GTX 1060 6GB", "Intel UHD Graphics 630"
 	Vendor string `json:"vendor"`           // nvidia, intel, amd, other
 	Device string `json:"device,omitempty"` // its render node (/dev/dri/renderD128), where it has one
+	Driver string `json:"driver,omitempty"` // its kernel driver ("i915", "amdgpu"; NVIDIA's with its version)
+	Memory string `json:"memory,omitempty"` // "6 GB" (NVIDIA's cards; a Mac's memory, which the GPU shares)
 }
 
 // HardwareEncoder is a way to encode H.264 on a GPU that passed the test encode.
@@ -53,6 +55,7 @@ type HardwareReport struct {
 	GPUs     []GPU             `json:"gpus"`
 	Encoders []HardwareEncoder `json:"encoders"`
 	Problems []HardwareProblem `json:"problems,omitempty"`
+	FFmpeg   string            `json:"ffmpeg,omitempty"` // ffmpeg's version
 }
 
 var hardware struct {
@@ -72,19 +75,94 @@ func DetectHardware() {
 			hardware.Lock()
 			hardware.report = r
 			hardware.Unlock()
-			names := []string{}
-			for _, e := range r.Encoders {
-				names = append(names, e.Name+" on "+e.GPU)
-			}
-			if len(names) == 0 {
-				names = append(names, "none")
-			}
-			log.Printf("[HARDWARE] %d GPU(s); hardware encoders: %s", len(r.GPUs), strings.Join(names, ", "))
-			for _, p := range r.Problems {
-				log.Printf("[HARDWARE] %s on %s doesn't work: %s", p.Encoder, p.GPU, p.Reason)
-			}
+			logHardware(r)
 		}()
 	})
+}
+
+// logHardware writes what the startup check found, and what Settings has chosen, to the log.
+func logHardware(r HardwareReport) {
+	if len(r.GPUs) == 0 {
+		log.Printf("[HARDWARE] No GPU found")
+	}
+	for _, g := range r.GPUs {
+		details := []string{}
+		if g.Driver != "" {
+			details = append(details, "driver "+g.Driver)
+		}
+		for _, d := range []string{g.Memory, g.Device} {
+			if d != "" {
+				details = append(details, d)
+			}
+		}
+		line := "[HARDWARE] GPU: " + g.Name
+		if len(details) > 0 {
+			line += "; " + strings.Join(details, ", ")
+		}
+		log.Print(line)
+	}
+	if r.FFmpeg != "" {
+		log.Printf("[HARDWARE] ffmpeg %s", r.FFmpeg)
+	}
+	for _, e := range r.Encoders {
+		log.Printf("[HARDWARE] %s on %s works", e.Name, e.GPU)
+	}
+	for _, p := range r.Problems {
+		log.Printf("[HARDWARE] %s on %s doesn't work: %s", p.Encoder, p.GPU, p.Reason)
+	}
+	log.Printf("[HARDWARE] %s", HardwareSetting())
+}
+
+// HardwareSetting says what encodes transcodes' and downloads' video now, for the log: the
+// encoder Settings chose and its limit, or x264 and why.
+func HardwareSetting() string {
+	const where = " (Settings › Server › Streaming)"
+	r := Hardware()
+	s := config.StreamingConfig{}
+	if config.GlobalConfig != nil {
+		s = config.GlobalConfig.Streaming
+	}
+	if r.Checking {
+		return "Hardware encoding: still being checked"
+	}
+	if s.HardwareEncoder == "" {
+		if len(r.Encoders) == 0 {
+			return "Hardware encoding: none here works, so x264 on the CPU encodes transcodes and downloads"
+		}
+		names := []string{}
+		for _, e := range r.Encoders {
+			names = append(names, e.Name+" on "+e.GPU)
+		}
+		verb := " works here"
+		if len(names) > 1 {
+			verb = " work here"
+		}
+		return "Hardware encoding is off: x264 on the CPU encodes transcodes and downloads, though " +
+			strings.Join(names, " and ") + verb + where
+	}
+	id, device, ok := hardwareChoice()
+	if !ok {
+		chosen := s.HardwareEncoder
+		if s.HardwareDevice != "" {
+			chosen += " on " + s.HardwareDevice
+		}
+		return "Hardware encoding is set to " + chosen + ", which doesn't work here: x264 on the CPU encodes instead" + where
+	}
+	name := encoderNames[id]
+	for _, e := range r.Encoders {
+		if e.ID == id && (e.Device == device || id == "nvenc") {
+			name += " on " + e.GPU
+			if e.Device != "" {
+				name += " (" + e.Device + ")"
+			}
+			break
+		}
+	}
+	limit := "no limit"
+	if s.HardwareMaxTranscodes > 0 {
+		limit = fmt.Sprintf("at most %d at once, the rest on the CPU", s.HardwareMaxTranscodes)
+	}
+	return "Hardware encoding: " + name + " encodes transcodes and downloads, " + limit + where
 }
 
 // Hardware is what DetectHardware found so far.
@@ -102,7 +180,7 @@ func Hardware() HardwareReport {
 var encoderNames = map[string]string{"nvenc": "NVENC", "qsv": "Quick Sync", "vaapi": "VA-API", "videotoolbox": "VideoToolbox"}
 
 func detectHardware() HardwareReport {
-	r := HardwareReport{GPUs: findGPUs(), Encoders: []HardwareEncoder{}}
+	r := HardwareReport{GPUs: findGPUs(), Encoders: []HardwareEncoder{}, FFmpeg: ffmpegVersion()}
 	has := ffmpegEncoders()
 	try := func(id string, g GPU) {
 		codec := "h264_" + id
@@ -146,13 +224,22 @@ func findGPUs() []GPU {
 		if chip, err := commandOutput(5*time.Second, "sysctl", "-n", "machdep.cpu.brand_string"); err == nil && strings.HasPrefix(chip, "Apple") {
 			name = strings.TrimSpace(chip) + " GPU" // "Apple M1 GPU"
 		}
-		return append(gpus, GPU{Name: name, Vendor: "apple"})
+		g := GPU{Name: name, Vendor: "apple"}
+		if out, err := commandOutput(5*time.Second, "sysctl", "-n", "hw.memsize"); err == nil {
+			if b, err := strconv.ParseFloat(strings.TrimSpace(out), 64); err == nil && b > 0 {
+				g.Memory = fmt.Sprintf("%.0f GB shared", b/(1<<30))
+			}
+		}
+		return append(gpus, g)
 	}
 	nodes, _ := filepath.Glob("/sys/class/drm/renderD*")
 	slices.Sort(nodes)
 	for _, node := range nodes {
 		vendor := readTrim(filepath.Join(node, "device", "vendor"))
 		g := GPU{Device: "/dev/dri/" + filepath.Base(node), Vendor: vendorName(vendor)}
+		if driver, err := os.Readlink(filepath.Join(node, "device", "driver")); err == nil {
+			g.Driver = filepath.Base(driver) // i915, xe, amdgpu, nvidia
+		}
 		g.Name = pciName(filepath.Join(node, "device"))
 		if g.Name == "" {
 			g.Name = vendorTitle[g.Vendor] + " GPU (" + filepath.Base(node) + ")"
@@ -161,20 +248,28 @@ func findGPUs() []GPU {
 	}
 	// NVIDIA's own name for its cards ("NVIDIA GeForce GTX 1060 6GB"), and a card without a
 	// render node (other systems).
-	if out, err := commandOutput(5*time.Second, "nvidia-smi", "--query-gpu=name", "--format=csv,noheader"); err == nil {
-		names := strings.Split(strings.TrimSpace(out), "\n")
+	// Its driver's version and the card's memory too.
+	if out, err := commandOutput(5*time.Second, "nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader,nounits"); err == nil {
+		cards := []GPU{}
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			f := strings.Split(line, ",")
+			if len(f) < 3 || strings.TrimSpace(f[0]) == "" {
+				continue
+			}
+			c := GPU{Name: strings.TrimSpace(f[0]), Vendor: "nvidia", Driver: "nvidia " + strings.TrimSpace(f[1])}
+			if mib, err := strconv.ParseFloat(strings.TrimSpace(f[2]), 64); err == nil && mib > 0 {
+				c.Memory = fmt.Sprintf("%.0f GB", mib/1024)
+			}
+			cards = append(cards, c)
+		}
 		i := 0
 		for j := range gpus {
-			if gpus[j].Vendor == "nvidia" && i < len(names) {
-				gpus[j].Name = strings.TrimSpace(names[i])
+			if gpus[j].Vendor == "nvidia" && i < len(cards) {
+				gpus[j].Name, gpus[j].Driver, gpus[j].Memory = cards[i].Name, cards[i].Driver, cards[i].Memory
 				i++
 			}
 		}
-		for ; i < len(names); i++ {
-			if n := strings.TrimSpace(names[i]); n != "" {
-				gpus = append(gpus, GPU{Name: n, Vendor: "nvidia"})
-			}
-		}
+		gpus = append(gpus, cards[i:]...)
 	}
 	return gpus
 }
@@ -213,12 +308,35 @@ func pciName(dir string) string {
 	if len(fields) < 6 {
 		return ""
 	}
-	vendor, device := fields[3], fields[5]
-	vendor = strings.TrimSuffix(strings.TrimSuffix(vendor, " Corporation"), ", Inc.")
-	if i, j := strings.Index(device, "["), strings.LastIndex(device, "]"); i >= 0 && j > i {
-		device = device[i+1 : j] // the marketing name
+	return gpuName(pciVendor(fields[3]), fields[5])
+}
+
+// pciVendor is lspci's vendor name, shortened: "Intel Corporation" is "Intel", "Advanced Micro
+// Devices, Inc. [AMD/ATI]" is "AMD".
+func pciVendor(v string) string {
+	if i, j := strings.Index(v, "["), strings.LastIndex(v, "]"); i >= 0 && j > i {
+		v, _, _ = strings.Cut(v[i+1:j], "/")
 	}
-	return strings.TrimSpace(vendor + " " + device)
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(v, " Corporation"), ", Inc."))
+}
+
+// gpuName is a GPU's name from lspci's vendor and device: the marketing name in the device's
+// brackets, with the vendor in front unless it's there already, and the chip's codename after a
+// name without a model number ("CoffeeLake-S GT2 [UHD Graphics 630]" is "Intel UHD Graphics 630",
+// "Meteor Lake-P [Intel Graphics]" is "Intel Graphics (Meteor Lake-P)").
+func gpuName(vendor, device string) string {
+	name, codename := device, ""
+	if i, j := strings.Index(device, "["), strings.LastIndex(device, "]"); i >= 0 && j > i {
+		name, codename = device[i+1:j], strings.TrimSpace(device[:i])
+	}
+	name = strings.TrimSpace(name)
+	if vendor != "" && !strings.HasPrefix(strings.ToLower(name), strings.ToLower(vendor)) {
+		name = vendor + " " + name
+	}
+	if codename != "" && !strings.ContainsAny(name, "0123456789") {
+		name += " (" + codename + ")"
+	}
+	return name
 }
 
 func readTrim(path string) string {
@@ -231,6 +349,19 @@ func commandOutput(timeout time.Duration, name string, args ...string) (string, 
 	defer cancel()
 	out, err := exec.CommandContext(ctx, name, args...).Output()
 	return string(out), err
+}
+
+// ffmpegVersion is ffmpeg's version ("8.0.1-3ubuntu2"), "" without ffmpeg.
+func ffmpegVersion() string {
+	out, err := commandOutput(15*time.Second, "ffmpeg", "-hide_banner", "-version")
+	if err != nil {
+		return ""
+	}
+	// "ffmpeg version 8.0.1-3ubuntu2 Copyright (c) 2000-2025 the FFmpeg developers"
+	if f := strings.Fields(out); len(f) >= 3 && f[0] == "ffmpeg" && f[1] == "version" {
+		return f[2]
+	}
+	return ""
 }
 
 // ffmpegEncoders are the encoders this server's ffmpeg has.
