@@ -108,6 +108,10 @@ Sign in as the admin: Settings opens where you add your libraries (Browse… pic
 the server) and, for movie and TV libraries, a TMDB API token. Every setting is explained in
 `config.example.yml`.
 
+To upgrade later, run `./setup.sh upgrade` in that folder: it downloads the latest release, checks it,
+installs it over this one (your `config.yml`, data and service stay; the files it replaced are kept in
+`.previous`) and restarts the service. `./setup.sh upgrade --check` only says whether there's a newer one.
+
 #### Linux
 
 ```bash

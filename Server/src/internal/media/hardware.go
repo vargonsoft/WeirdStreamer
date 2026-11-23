@@ -106,6 +106,8 @@ func logHardware(r HardwareReport) {
 	}
 	if r.FFmpeg != "" {
 		log.Printf("[HARDWARE] ffmpeg %s", r.FFmpeg)
+	} else {
+		log.Printf("[HARDWARE] ffmpeg can't be run: is it installed, and on the server's PATH?")
 	}
 	for _, e := range r.Encoders {
 		if e.Sessions > 0 {
@@ -191,9 +193,13 @@ var encoderNames = map[string]string{"nvenc": "NVENC", "qsv": "Quick Sync", "vaa
 
 func detectHardware() HardwareReport {
 	r := HardwareReport{GPUs: findGPUs(), Encoders: []HardwareEncoder{}, FFmpeg: ffmpegVersion()}
-	has := ffmpegEncoders()
+	has, ffmpegErr := ffmpegEncoders()
 	try := func(id string, g GPU) {
 		codec := "h264_" + id
+		if ffmpegErr != nil {
+			r.Problems = append(r.Problems, HardwareProblem{g.Name, encoderNames[id], ffmpegErr.Error()})
+			return
+		}
 		if !has[codec] {
 			r.Problems = append(r.Problems, HardwareProblem{g.Name, encoderNames[id],
 				"this server's ffmpeg has no " + codec + " encoder"})
@@ -229,6 +235,38 @@ func detectHardware() HardwareReport {
 	return r
 }
 
+// drmClass is where Linux lists its DRM devices, and devDRI their device files (a test's own
+// folders in tests).
+var drmClass, devDRI = "/sys/class/drm", "/dev/dri"
+
+// usableRenderNodes are the render nodes this machine can open (a container sees the host's
+// /sys but only the device files passed into it), without the SR-IOV virtual functions of a GPU
+// that's there itself (an Intel GPU shared with VMs: the same GPU again, there for the VMs). A
+// virtual function is kept when it's all there is of its GPU (one passed into a container).
+func usableRenderNodes() []string {
+	nodes, _ := filepath.Glob(filepath.Join(drmClass, "renderD*"))
+	slices.Sort(nodes)
+	var usable []string
+	pci := map[string]bool{} // the PCI devices of the usable nodes
+	for _, node := range nodes {
+		if _, err := os.Stat(filepath.Join(devDRI, filepath.Base(node))); err != nil {
+			continue
+		}
+		usable = append(usable, node)
+		if dev, err := filepath.EvalSymlinks(filepath.Join(node, "device")); err == nil {
+			pci[dev] = true
+		}
+	}
+	kept := usable[:0]
+	for _, node := range usable {
+		if parent, err := filepath.EvalSymlinks(filepath.Join(node, "device", "physfn")); err == nil && pci[parent] {
+			continue
+		}
+		kept = append(kept, node)
+	}
+	return kept
+}
+
 // findGPUs lists the GPUs: each DRM render node's (Linux), NVIDIA's by nvidia-smi, and a Mac's own
 // (VideoToolbox, which needs no device).
 func findGPUs() []GPU {
@@ -246,9 +284,7 @@ func findGPUs() []GPU {
 		}
 		return append(gpus, g)
 	}
-	nodes, _ := filepath.Glob("/sys/class/drm/renderD*")
-	slices.Sort(nodes)
-	for _, node := range nodes {
+	for _, node := range usableRenderNodes() {
 		vendor := readTrim(filepath.Join(node, "device", "vendor"))
 		g := GPU{Device: "/dev/dri/" + filepath.Base(node), Vendor: vendorName(vendor)}
 		if driver, err := os.Readlink(filepath.Join(node, "device", "driver")); err == nil {
@@ -378,19 +414,22 @@ func ffmpegVersion() string {
 	return ""
 }
 
-// ffmpegEncoders are the encoders this server's ffmpeg has.
-func ffmpegEncoders() map[string]bool {
+// ffmpegEncoders are the encoders this server's ffmpeg has; an error when ffmpeg can't be run.
+func ffmpegEncoders() (map[string]bool, error) {
 	has := map[string]bool{}
 	out, err := commandOutput(15*time.Second, "ffmpeg", "-hide_banner", "-encoders")
 	if err != nil {
-		return has
+		if _, lookErr := exec.LookPath("ffmpeg"); lookErr != nil {
+			return has, fmt.Errorf("ffmpeg isn't installed (or not on the server's PATH)")
+		}
+		return has, fmt.Errorf("this server's ffmpeg doesn't run: %v", err)
 	}
 	for _, line := range strings.Split(out, "\n") {
 		if f := strings.Fields(line); len(f) >= 2 && len(f[0]) == 6 {
 			has[f[1]] = true
 		}
 	}
-	return has
+	return has, nil
 }
 
 // testEncode encodes a second of a test pattern as a transcode would, with encoder id on device.

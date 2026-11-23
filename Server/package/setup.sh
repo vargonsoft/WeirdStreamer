@@ -8,6 +8,8 @@
 #   ./setup.sh service          install (or update) the service only
 #   ./setup.sh remove-service   stop and remove the service
 #   ./setup.sh gpu [--check]    set up the graphics card for hardware encoding (--check: only report)
+#   ./setup.sh upgrade [--check] install the latest release from GitHub over this one (--check: only
+#                               say whether there's a newer one)
 #
 # Without the service, run the server with ./bin/server from this folder.
 set -euo pipefail
@@ -276,6 +278,11 @@ gpu_setup() {
     local apt=0 packages=() groups=() notes=() encoders="" name
     command -v apt-get >/dev/null && command -v dpkg-query >/dev/null && apt=1
     command -v ffmpeg >/dev/null && encoders=$(ffmpeg -hide_banner -encoders 2>/dev/null || true)
+    if ! command -v ffmpeg >/dev/null; then
+        # The server runs it for everything (hardware encoders are ffmpeg's): without it, none works.
+        notes+=("ffmpeg isn't installed: the server needs it, hardware encoding too.")
+        [ "$apt" = 1 ] && packages+=(ffmpeg)
+    fi
     installed() { [[ $(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true) == *"ok installed" ]]; }
     available() { [ -n "$(apt-cache policy "$1" 2>/dev/null | sed -n 's/^ *Candidate: *//p' | grep -v '(none)')" ]; }
     want() { # want PACKAGE...: the first one apt has, unless one of them is installed
@@ -379,12 +386,141 @@ gpu_setup() {
     echo "The server finds the encoders when it starts: then choose one in Settings (Server › Streaming)."
 }
 
+# The releases upgrade takes, on GitHub (owner/name).
+release_repo=${WEIRDSTREAMER_REPO:-vargonsoft/WeirdStreamer}
+
+# This machine's package: linux-amd64, linux-arm64 or darwin-arm64.
+platform() {
+    local os arch
+    case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) return 1 ;; esac
+    case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) return 1 ;; esac
+    [ "$os-$arch" = darwin-amd64 ] && return 1 # Intel Macs: no package
+    echo "$os-$arch"
+}
+
+fetch() { # fetch URL FILE
+    if command -v curl >/dev/null; then curl -fsSL -o "$2" "$1"
+    else wget -q -O "$2" "$1"; fi
+}
+
+# The streams being watched now, from the running server (/local/streams, with the key it wrote
+# beside config.yml): their count, or nothing when no server answers.
+active_streams() {
+    [ -f config.yml ] && [ -f local.key ] || return 0
+    local port scheme out
+    port=$(sed -n 's/^  port: *\([0-9]*\).*/\1/p' config.yml | head -1)
+    scheme=http
+    grep -qE '^  certFile: *"?[^" ]+' config.yml && scheme=https
+    out=$(curl -sk --max-time 5 -H "X-Local-Key: $(cat local.key 2>/dev/null)" "$scheme://127.0.0.1:$port/local/streams" 2>/dev/null) || return 0
+    sed -n 's/.*"active": *\([0-9]*\).*/\1/p' <<<"$out" | head -1
+}
+
+# Installs the latest release over this one: the program, the web UI and the scripts are replaced;
+# config.yml, the data (var/), a built ffmpeg (ffmpeg/) and the service stay. The files replaced are
+# kept in .previous/ (one upgrade back). A running service is restarted (asking first if someone
+# is watching).
+#   upgrade         install it
+#   upgrade check   only say whether there's a newer one
+upgrade() {
+    local mode=${1:-install} target current latest tag url
+    target=$(platform) || { echo "There's no release package for $(uname -s) on $(uname -m)." >&2; return 1; }
+    command -v curl >/dev/null || command -v wget >/dev/null || { echo "Upgrading needs curl or wget." >&2; return 1; }
+    current=$(cut -d' ' -f1 VERSION 2>/dev/null)
+    # The latest release's tag, from where GitHub's /releases/latest redirects (no API, no rate limit).
+    if command -v curl >/dev/null; then
+        url=$(curl -fsSIL -o /dev/null -w '%{url_effective}' "https://github.com/$release_repo/releases/latest") || url=
+    else
+        url=$(wget -q --max-redirect=5 -S --spider "https://github.com/$release_repo/releases/latest" 2>&1 | sed -n 's/^ *Location: *//p' | tail -1)
+    fi
+    tag=${url##*/tag/}
+    if [ -z "$url" ] || [ "$tag" = "$url" ]; then
+        echo "Can't find the latest release at https://github.com/$release_repo/releases." >&2
+        return 1
+    fi
+    latest=${tag#v}
+    echo "This is ${current:-an unknown version}; the latest release is $latest."
+    local base=${current%-dirty}
+    if [ -n "$current" ] && { [ "$base" = "$latest" ] ||
+        [ "$(printf '%s\n%s\n' "$base" "$latest" | sort -V | tail -1)" = "$base" ]; }; then
+        echo "Nothing to upgrade."
+        return 0
+    fi
+    [ "$mode" = check ] && { echo "./setup.sh upgrade installs it."; return 0; }
+    ask_yes "Download and install $latest over this one?" y || return 0
+
+    local work="$dir/.upgrade" name="weirdstreamer-server-$latest-$target.tar.gz"
+    rm -rf "$work" && mkdir -p "$work" # here, so the files move into place by renaming
+    echo "== Downloading $name"
+    fetch "https://github.com/$release_repo/releases/download/$tag/$name" "$work/$name" &&
+        fetch "https://github.com/$release_repo/releases/download/$tag/SHA256SUMS" "$work/SHA256SUMS" ||
+        { echo "The download failed." >&2; rm -rf "$work"; return 1; }
+    local want got
+    want=$(awk -v f="$name" '$2 == f || $2 == "*"f {print $1}' "$work/SHA256SUMS")
+    if command -v sha256sum >/dev/null; then got=$(sha256sum "$work/$name" | cut -d' ' -f1)
+    else got=$(shasum -a 256 "$work/$name" | cut -d' ' -f1); fi
+    if [ -z "$want" ] || [ "$want" != "$got" ]; then
+        echo "The download doesn't match the release's checksum: not installing it." >&2
+        rm -rf "$work"
+        return 1
+    fi
+    tar -xzf "$work/$name" -C "$work" || { echo "Can't unpack the download." >&2; rm -rf "$work"; return 1; }
+    local new
+    new=$(find "$work" -mindepth 1 -maxdepth 1 -type d -name 'weirdstreamer-*' | head -1)
+    [ -x "$new/bin/server" ] || { echo "The download has no bin/server." >&2; rm -rf "$work"; return 1; }
+
+    # Asked before anything changes: a restart ends what's being watched.
+    local restart=0 active
+    if service_installed; then
+        restart=1
+        active=$(active_streams)
+        if [ "${active:-0}" -gt 0 ] &&
+            ! ask_yes "$active stream(s) are being watched; restarting the server ends them. Restart it now?" n; then
+            restart=0
+        fi
+    fi
+
+    echo "== Installing $latest"
+    rm -rf "$dir/.previous" && mkdir -p "$dir/.previous"
+    local f
+    for f in "$new"/* "$new"/.[!.]*; do
+        [ -e "$f" ] || continue
+        f=$(basename "$f")
+        # The old one goes to .previous, the new one into its place: both renames (a running
+        # program, this script included, keeps its old file).
+        [ -e "$dir/$f" ] && mv "$dir/$f" "$dir/.previous/$f"
+        mv "$new/$f" "$dir/$f"
+    done
+    rm -rf "$work"
+    echo "Installed $latest (what it replaced is in .previous/). What's new: https://github.com/$release_repo/releases/tag/$tag"
+    if [ "$restart" = 1 ]; then
+        restart_service
+    elif service_installed; then
+        echo "The service is still running $current: restart it when no one is watching (./setup.sh service)."
+    else
+        echo "Restart the server (./bin/server) to run $latest."
+    fi
+}
+
+# Whether this folder's server runs as a service (systemd or launchd).
+service_installed() {
+    if [ "$mac" = 1 ]; then [ -f "$plist_file" ] && grep -q "<string>$dir/bin/server</string>" "$plist_file"
+    else [ -f "$unit_file" ] && grep -q "^ExecStart=\"$dir/bin/server\"" "$unit_file"; fi
+}
+
+restart_service() {
+    echo "== Restarting the server (asks for sudo)"
+    if [ "$mac" = 1 ]; then as_root launchctl kickstart -k "system/$label"
+    else as_root systemctl restart "$service"; fi
+    echo "The server restarted with the new version."
+}
+
 case "${1:-}" in
     service) install_service; exit ;;
+    upgrade) if [ "${2:-}" = --check ]; then upgrade check; else upgrade; fi; exit ;;
     gpu) if [ "${2:-}" = --check ]; then gpu_setup check; else gpu_setup; fi; exit ;;
     remove-service) remove_service; exit ;;
     "") ;;
-    -h|--help) sed -n '2,11p' "$dir/$(basename "$0")"; exit 0 ;;
+    -h|--help) sed -n '2,/^# Without the service/p' "$dir/$(basename "$0")"; exit 0 ;;
     *) echo "Unknown command: $1 (see --help)" >&2; exit 2 ;;
 esac
 

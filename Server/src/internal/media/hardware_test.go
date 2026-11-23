@@ -1,6 +1,11 @@
 package media
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -94,5 +99,54 @@ func TestHardwareLimitKeepsToTheDriver(t *testing.T) {
 		if got := hardwareLimit(); got != c.want {
 			t.Errorf("setting %d: limit %d, want %d", c.setting, got, c.want)
 		}
+	}
+}
+
+func TestFindGPUsSkipsVirtualFunctions(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("render nodes are Linux's")
+	}
+	savedClass, savedDev := drmClass, devDRI
+	defer func() { drmClass, devDRI = savedClass, savedDev }()
+	// A GPU (00:02.0) with two SR-IOV virtual functions (00:02.1, 00:02.2), each a render node.
+	root := t.TempDir()
+	drmClass, devDRI = filepath.Join(root, "class"), filepath.Join(root, "dev")
+	pci := filepath.Join(root, "pci")
+	for i, n := range []string{"renderD128", "renderD129", "renderD130"} {
+		dev := filepath.Join(pci, fmt.Sprintf("0000:00:02.%d", i))
+		os.MkdirAll(dev, 0o755)
+		os.WriteFile(filepath.Join(dev, "vendor"), []byte("0x8086\n"), 0o644)
+		if i > 0 {
+			os.Symlink(filepath.Join(pci, "0000:00:02.0"), filepath.Join(dev, "physfn"))
+		}
+		os.MkdirAll(filepath.Join(drmClass, n), 0o755)
+		os.Symlink(dev, filepath.Join(drmClass, n, "device"))
+	}
+	nodes := func(dev ...string) []string { // the render nodes found, with these device files there
+		os.RemoveAll(devDRI)
+		os.MkdirAll(devDRI, 0o755)
+		for _, d := range dev {
+			os.WriteFile(filepath.Join(devDRI, d), nil, 0o644)
+		}
+		var got []string // nvidia-smi may add this machine's own cards: only render nodes count
+		for _, g := range findGPUs() {
+			if g.Device != "" {
+				got = append(got, filepath.Base(g.Device))
+			}
+		}
+		return got
+	}
+	if got := nodes("renderD128", "renderD129", "renderD130"); !slices.Equal(got, []string{"renderD128"}) {
+		t.Errorf("the host: %v, want the GPU only", got)
+	}
+	if got := nodes("renderD130"); !slices.Equal(got, []string{"renderD130"}) {
+		t.Errorf("a container given a virtual function: %v, want it", got)
+	}
+}
+
+func TestFFmpegMissing(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if _, err := ffmpegEncoders(); err == nil || !strings.Contains(err.Error(), "isn't installed") {
+		t.Fatalf("got %v, want ffmpeg isn't installed", err)
 	}
 }

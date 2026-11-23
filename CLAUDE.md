@@ -214,7 +214,13 @@ vendor (no driver needed) and lists what hardware encoding needs: Intel and AMD 
 `render` groups and VA-API drivers (Intel also `libmfx-gen1.2` for Quick Sync), NVIDIA a loaded
 driver (or `linux-modules-nvidia-<branch>-<kernel>` when the module wasn't built for the running
 kernel) and `libnvidia-encode`; on apt systems it installs them and adds the groups after asking.
-AMD's are assumed, untested on a card. `PCI_DEVICES` points it at a fake device folder for testing. Libraries and the TMDB token are set in Settings: while there are no libraries,
+AMD's are assumed, untested on a card; a missing ffmpeg is reported and installed with them.
+`PCI_DEVICES` points it at a fake device folder for testing. `setup.sh upgrade [--check]` installs the latest
+GitHub release over the package (`release_repo`, `WEIRDSTREAMER_REPO`): the tag from where `/releases/latest`
+redirects, this platform's tarball checked against SHA256SUMS, unpacked in `.upgrade/` and moved into place
+by renames (a running program, setup.sh included, keeps its old file), what it replaced kept in `.previous/`;
+config.yml, `var/`, `ffmpeg/` and the service stay. A service of this folder is restarted, asking first while
+`/local/streams` (with local.key) says someone is watching. Libraries and the TMDB token are set in Settings: while there are no libraries,
 an admin's sign-in opens Settings at Media Paths (`openLibrarySettings` in `app.js`). Its Browse… button picks a library's folder on the server (`openFolderPicker`, from `GET /api/config/folders?path=`, admins only: folders without hidden ones, and how many videos are in it).
 
 ## Deploying the Android app
@@ -362,7 +368,12 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   names) and tries a short test encode with each fitting encoder ffmpeg has: NVENC for NVIDIA,
   Quick Sync and VA-API for Intel, VA-API for AMD (each render node), and on macOS VideoToolbox
   (no device; the GPU is named from `sysctl machdep.cpu.brand_string`). `GET /api/admin/hardware`
-  reports the GPUs, the encoders that worked and why others didn't. The startup log has a
+  reports the GPUs, the encoders that worked and why others didn't. Only render nodes with a device file
+  in `/dev/dri` count (a container sees the host's `/sys` but only the nodes passed into it), and an
+  SR-IOV virtual function (a `physfn` link: an Intel GPU shared with VMs) only when its GPU isn't
+  there itself (`usableRenderNodes`): a host lists the GPU once, a container or VM given a virtual
+  function keeps it. An ffmpeg that doesn't run is reported as that, not as missing
+  encoders. The startup log has a
   `[HARDWARE]` line per GPU (`gpuName`; its kernel driver, NVIDIA's driver version and memory, a
   Mac's shared memory, the render node), ffmpeg's version, each encoder that works or doesn't and
   why, and the setting in effect (`HardwareSetting`: the encoder and its limit, off though one works,

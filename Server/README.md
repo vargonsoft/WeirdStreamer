@@ -57,7 +57,9 @@ Where it finds Intel, AMD or NVIDIA graphics, it lists what hardware encoding ne
 set it up: on Debian and Ubuntu it installs the missing packages (Intel's media driver and Quick
 Sync runtime, Mesa's VA-API drivers, NVIDIA's encode library or a kernel module for the running
 kernel) and adds the user to the `video` and `render` groups. Elsewhere it says what to install.
-`./setup.sh gpu` does that step alone (`--check` only reports). AMD's needs are assumed (Mesa's
+`./setup.sh gpu` does that step alone (`--check` only reports). `./setup.sh upgrade` installs the
+latest GitHub release over the package (keeping config.yml, the data and the service, and the files
+it replaced in `.previous/`) and restarts the service; `--check` only says whether there's a newer one. AMD's needs are assumed (Mesa's
 VA-API), not tested on a card.
 Then it prints the web UI's address and offers to start the server and open it. Sign in as the
 admin: while there are no libraries, Settings opens at Media Paths to add them (and the TMDB token).
