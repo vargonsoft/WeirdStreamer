@@ -12,6 +12,9 @@ and to two apps: one Android app for Android TV, phones and tablets, and one app
 - [Features](#features)
 - [Install](#install)
   - [Server](#server)
+    - [Linux](#linux)
+    - [macOS](#macos)
+    - [Hardware encoding](#hardware-encoding)
     - [ffmpeg](#ffmpeg)
     - [CJK subtitle font](#cjk-subtitle-font)
     - [HEIC photos](#heic-photos)
@@ -69,15 +72,43 @@ App READMEs: [Server](Server/README.md), [Android](Android/README.md), [iPhone](
 - **The Android app** also browses SMB shares directly, without a server.
 - **The iPhone and iPad app** plays the same library: browsing, the same transcode modes, styled (ASS)
   subtitles, PGS, and downloads that play offline with their subtitles and skip data. It runs on
-  iOS 17 or later, built from the source (see [the iPhone and iPad app](#iphone-and-ipad-app)).
-- **Runs at home:** HTTPS with HTTP/2, works behind a reverse proxy such as nginx, and keeps sign-in
-  and access logs.
+  iOS 17 or later, installed with AltStore or SideStore (see [the iPhone and iPad app](#iphone-and-ipad-app)).
+- **Hardware encoding:** transcodes and downloads can be encoded by the GPU instead of the CPU:
+  NVIDIA (NVENC), Intel (Quick Sync or VA-API), AMD (VA-API) and Apple Silicon Macs (VideoToolbox).
+  The server checks at startup which work and how many encodes NVIDIA's driver allows at once (see
+  [Hardware encoding](#hardware-encoding)).
+- **Runs at home:** on Linux (x86-64 or ARM64, such as a Raspberry Pi 4 or 5) or an Apple Silicon
+  Mac, with HTTPS and HTTP/2, behind a reverse proxy such as nginx if you like, and sign-in and
+  access logs.
 
 ## Install
 
 ### Server
 
-Download `weirdstreamer-server-<version>-linux-amd64.tar.gz` from the latest release, then:
+Each [release](https://github.com/vargonsoft/WeirdStreamer/releases/latest) has a server package
+for each platform:
+
+| Package | For |
+| --- | --- |
+| `weirdstreamer-server-<version>-linux-amd64.tar.gz` | Linux on x86-64 (most PCs and servers) |
+| `weirdstreamer-server-<version>-linux-arm64.tar.gz` | Linux on ARM64 (Raspberry Pi 4 and 5 with a 64-bit OS, ARM servers) |
+| `weirdstreamer-server-<version>-darwin-arm64.tar.gz` | Macs with Apple Silicon (M1 and later) |
+
+Windows isn't supported yet. `SHA256SUMS` in the release lists each file's checksum.
+
+Unpack the package where the server should live (it keeps its data in a `var` folder beside it) and
+run `setup.sh` in it. Setup:
+- asks for the server's name, its port (9000 unless you pick another) and whether to use HTTPS;
+- writes `config.yml` and creates the admin user;
+- can set up your graphics card for [hardware encoding](#hardware-encoding);
+- can install a service that starts the server at boot;
+- then opens the web UI.
+
+Sign in as the admin: Settings opens where you add your libraries (Browse… picks each one's folder on
+the server) and, for movie and TV libraries, a TMDB API token. Every setting is explained in
+`config.example.yml`.
+
+#### Linux
 
 ```bash
 tar xzf weirdstreamer-server-*-linux-amd64.tar.gz
@@ -85,15 +116,54 @@ cd weirdstreamer-*/
 ./setup.sh
 ```
 
-`setup.sh` asks for the server's name, its port (9000 unless you pick another) and whether to use
-HTTPS, writes `config.yml`, and creates the admin user. It can also install a systemd service that
-starts the server at boot. Then it opens the web UI. Sign in as the admin: Settings opens where you
-add your libraries (Browse… picks each one's folder on the server) and, for movie and TV
-libraries, a TMDB API token.
+(`linux-arm64` on ARM.) The Linux packages need glibc 2.34 or later: Debian 12, Ubuntu 22.04,
+RHEL 9, Raspberry Pi OS 12 (64-bit) or newer. The service is a systemd one: `./setup.sh service` installs it later,
+`./setup.sh remove-service` removes it. Without it, run `./bin/server` from that folder. The server
+needs `ffmpeg` and `ffprobe` (see [ffmpeg](#ffmpeg) below), and HEIC photos need `heif-convert` (see
+[HEIC photos](#heic-photos)).
 
-Without the service, run `./bin/server` from that folder. The server needs `ffmpeg` and
-`ffprobe` (see [ffmpeg](#ffmpeg) below), and HEIC photos need `heif-convert` (see
-[HEIC photos](#heic-photos)). Every setting is explained in `config.example.yml`.
+#### macOS
+
+On a Mac with Apple Silicon, with [Homebrew](https://brew.sh) installed:
+
+```bash
+tar xzf weirdstreamer-server-*-darwin-arm64.tar.gz
+cd weirdstreamer-*/
+./setup.sh
+```
+
+Homebrew's ffmpeg lacks three things the server uses (the DVD reader, Chromaprint and libass; see
+[ffmpeg](#ffmpeg)), so setup offers to build the server's own into the package's `ffmpeg` folder
+with Homebrew's libraries (`build-ffmpeg.sh`, a few minutes). The server uses that one first.
+Hardware encoding needs nothing installed: VideoToolbox is part of macOS.
+
+The service is a launchd one (`/Library/LaunchDaemons/com.weirdstreamer.server.plist`), started at
+boot before anyone logs in. macOS doesn't let a service read Desktop, Documents, Downloads, or
+external and network drives until it's allowed: if a library is in one of those, add the package's
+`bin/server` to System Settings › Privacy & Security › Full Disk Access, then restart it. Shares
+mounted when you log in (in Finder) aren't there at boot, so their libraries are empty until
+they're mounted. For HEIC photos, `brew install libheif`.
+
+#### Hardware encoding
+
+When something plays in a format the device can't, or a download is made smaller, the server
+encodes video. By default the CPU does that (x264). A GPU can do it instead, which takes most of
+that work off the CPU. Tests on a film showed the GPUs' picture as good as x264's at the same file
+size:
+
+| GPU | Encoder | What it needs |
+| --- | --- | --- |
+| NVIDIA | NVENC | NVIDIA's own driver (not nouveau) |
+| Intel | Quick Sync, or VA-API | Intel's media driver (and its VPL GPU runtime for Quick Sync); the server's user in the `video` and `render` groups |
+| AMD | VA-API | Mesa's VA-API driver; the server's user in the `video` and `render` groups (untested on an AMD card) |
+| Apple Silicon Mac | VideoToolbox | Nothing |
+
+On Linux, `./setup.sh gpu` finds your graphics card and lists what's missing. On Debian and Ubuntu
+it offers to install the packages and add the groups (`./setup.sh gpu --check` only reports). The
+server tests each encoder at startup and logs what it found. Turn it on in Settings › Server ›
+Streaming. You can also set how many encodes may run on the GPU at once there; the rest use the CPU.
+NVIDIA's GeForce drivers allow only a few at once (8 or 12, depending on the version): the server
+measures that at startup and never goes past it.
 
 #### ffmpeg
 
@@ -112,7 +182,8 @@ filters) is in every ffmpeg.
 
 **The easy way:** your system's package. Debian's and Ubuntu's `ffmpeg` has all four, so
 `sudo apt install ffmpeg` is enough; with a version older than 7.0 (`ffmpeg -version` shows it),
-everything but disc images works.
+everything but disc images works. On a Mac, Homebrew's lacks the last three: the macOS package's
+setup builds one that has them (see [macOS](#macos)).
 
 **Checking an ffmpeg you have:** each of these prints a line when that part is there. They check
 libx264, libass, the DVD reader and Chromaprint, in that order:
@@ -222,10 +293,19 @@ Its own README, [Android/README.md](Android/README.md), covers building and test
 
 ### iPhone and iPad app
 
-The iPhone and iPad app isn't on the App Store. It runs on iOS 17 or later, and you build it yourself
-from the source with your own Apple developer account, then install it on your device. Add your
-server by its name or address. The app's README, [iOS/README.md](iOS/README.md), covers what it
-does and how to build it.
+The iPhone and iPad app isn't on the App Store. It runs on iOS 17 or later, and installs with
+[AltStore](https://altstore.io) or [SideStore](https://sidestore.io): add this source in it once
+(Browse › Sources, +), then install Weird Streamer from it:
+
+```
+https://github.com/vargonsoft/WeirdStreamer/releases/latest/download/altstore-source.json
+```
+
+Each new release then shows as an update. AltStore signs the app with your Apple ID; with a free
+one, the app must be refreshed every 7 days (AltServer on your computer does it, or SideStore on
+the phone). Each release also has the IPA itself. Keep the app and the server at the same release.
+Add your server by its name or address. The app's README, [iOS/README.md](iOS/README.md), covers
+what it does and how to build it yourself.
 
 ## Build from source
 
@@ -240,7 +320,9 @@ does and how to build it.
   `iOS/native/build-libass.sh` once, then open `iOS/WeirdStreamer/WeirdStreamer.xcodeproj`. Its
   README has the details and the simulator build.
 - **A release:** `./release.sh` checks the tools, runs the server tests and builds everything in
-  `dist/<version>/`: the server package, the APK and their checksums.
+  `dist/<version>/`: the server packages (the ARM64 one cross-compiled with `gcc-aarch64-linux-gnu`,
+  the Mac one and the iPhone app built on a Mac over SSH), the APK, the IPA with its AltStore source,
+  and their checksums. `--publish` puts them on GitHub as a release.
 
 Server tests run from `Server/src`:
 
