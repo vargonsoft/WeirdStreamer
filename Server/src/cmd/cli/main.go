@@ -38,6 +38,7 @@ func main() {
 		printUsage()
 		os.Exit(1)
 	}
+	media.UseBundledTools()
 
 	// Load configuration
 	configPath := os.Getenv("CONFIG_PATH")
@@ -153,20 +154,9 @@ func handleUserCommand(db *database.DB, args []string) {
 			os.Exit(1)
 		}
 
-		fmt.Print("Enter password: ")
-		password, _ := term.ReadPassword(int(syscall.Stdin))
-		fmt.Println()
+		password := newPassword("Enter password: ", "Confirm password: ")
 
-		fmt.Print("Confirm password: ")
-		confirmPassword, _ := term.ReadPassword(int(syscall.Stdin))
-		fmt.Println()
-
-		if string(password) != string(confirmPassword) {
-			fmt.Println("Error: Passwords do not match")
-			os.Exit(1)
-		}
-
-		user, err := db.CreateUser(username, string(password), isAdmin, group)
+		user, err := db.CreateUser(username, password, isAdmin, group)
 		if err != nil {
 			log.Fatalf("Failed to create user: %v", err)
 		}
@@ -214,20 +204,9 @@ func handleUserCommand(db *database.DB, args []string) {
 			log.Fatalf("User not found: %s", username)
 		}
 
-		fmt.Print("Enter new password: ")
-		password, _ := term.ReadPassword(int(syscall.Stdin))
-		fmt.Println()
+		password := newPassword("Enter new password: ", "Confirm new password: ")
 
-		fmt.Print("Confirm new password: ")
-		confirmPassword, _ := term.ReadPassword(int(syscall.Stdin))
-		fmt.Println()
-
-		if string(password) != string(confirmPassword) {
-			fmt.Println("Error: Passwords do not match")
-			os.Exit(1)
-		}
-
-		if err := db.UpdateUserPassword(username, string(password), ""); err != nil {
+		if err := db.UpdateUserPassword(username, password, ""); err != nil {
 			log.Fatalf("Failed to update password: %v", err)
 		}
 
@@ -520,4 +499,58 @@ func initConfig(args []string, path string) {
 		log.Fatalf("The written %s doesn't load: %v", path, err)
 	}
 	fmt.Printf("Wrote %s\n", path)
+}
+
+// readLine reads one line of standard input a byte at a time, leaving the rest for whoever reads
+// next (setup.sh pipes the answers to its later questions through the same input).
+func readLine() (string, error) {
+	var line []byte
+	b := make([]byte, 1)
+	for {
+		n, err := os.Stdin.Read(b)
+		if n == 1 {
+			if b[0] == '\n' {
+				return string(line), nil
+			}
+			line = append(line, b[0])
+		}
+		if err != nil {
+			if len(line) > 0 {
+				return string(line), nil
+			}
+			return "", err
+		}
+	}
+}
+
+// readPassword asks for a password: without echo on a terminal, else the next line of input.
+func readPassword(prompt string) (string, error) {
+	fmt.Print(prompt)
+	if term.IsTerminal(int(syscall.Stdin)) {
+		b, err := term.ReadPassword(int(syscall.Stdin))
+		fmt.Println()
+		return string(b), err
+	}
+	line, err := readLine()
+	fmt.Println()
+	return strings.TrimRight(line, "\r"), err
+}
+
+// newPassword asks for a new password twice, and exits unless both are the same and not empty.
+func newPassword(prompt, confirm string) string {
+	password, err := readPassword(prompt)
+	if err != nil {
+		fmt.Printf("Error: can't read the password: %v\n", err)
+		os.Exit(1)
+	}
+	if password == "" {
+		fmt.Println("Error: the password can't be empty")
+		os.Exit(1)
+	}
+	again, err := readPassword(confirm)
+	if err != nil || again != password {
+		fmt.Println("Error: Passwords do not match")
+		os.Exit(1)
+	}
+	return password
 }

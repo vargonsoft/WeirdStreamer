@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Sets up a Weird Streamer release package (the folder this script is in): writes config.yml, can
-# create the admin user, can install a systemd service that starts the server at boot, and opens
-# the web UI, where the admin adds the libraries (Settings opens there while there are none).
+# create the admin user, can install a service that starts the server at boot (systemd on Linux,
+# launchd on macOS), and opens the web UI, where the admin adds the libraries (Settings opens there
+# while there are none).
 #
 #   ./setup.sh                  all of it, asking as it goes
-#   ./setup.sh service          install (or update) the systemd service only
-#   ./setup.sh remove-service   stop and remove the systemd service
+#   ./setup.sh service          install (or update) the service only
+#   ./setup.sh remove-service   stop and remove the service
 #   ./setup.sh gpu [--check]    set up the graphics card for hardware encoding (--check: only report)
 #
 # Without the service, run the server with ./bin/server from this folder.
@@ -14,6 +15,17 @@ cd "$(dirname "$0")"
 dir=$PWD
 service=weirdstreamer
 unit_file=/etc/systemd/system/$service.service
+mac=0
+[ "$(uname)" = Darwin ] && mac=1
+label=com.weirdstreamer.server # macOS: the launchd daemon
+plist_file=/Library/LaunchDaemons/$label.plist
+if [ "$mac" = 1 ]; then
+    # What the server runs (media.UseBundledTools): the package's own ffmpeg, then Homebrew's
+    PATH="$dir/ffmpeg/bin:$PATH:/opt/homebrew/bin:/usr/local/bin"
+    install_hint="brew install"
+else
+    install_hint="sudo apt install"
+fi
 
 ask() { # ask PROMPT DEFAULT -> answer
     local answer
@@ -66,6 +78,10 @@ write_config() {
 }
 
 install_service() {
+    if [ "$mac" = 1 ]; then
+        install_launchd
+        return
+    fi
     if ! command -v systemctl >/dev/null || [ ! -d /run/systemd/system ]; then
         echo "This machine doesn't run systemd: start the server with ./bin/server instead." >&2
         return 1
@@ -130,7 +146,93 @@ EOF
     echo "Stop it with: sudo systemctl stop $service. Remove it with: ./setup.sh remove-service"
 }
 
+# macOS: a launchd daemon in /Library/LaunchDaemons, run as this user, started at boot (before
+# anyone logs in) and again if it stops on an error.
+install_launchd() {
+    [ -f config.yml ] || { echo "Write config.yml first: ./setup.sh" >&2; return 1; }
+    local user group home
+    user=$(id -un)
+    group=$(id -gn)
+    home=$(eval echo "~$user")
+    mkdir -p var
+    # Kept beside the server too, to see what was installed
+    cat >"$label.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Weird Streamer, installed by $dir/setup.sh service -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$label</string>
+    <key>UserName</key>
+    <string>$user</string>
+    <key>GroupName</key>
+    <string>$group</string>
+    <key>WorkingDirectory</key>
+    <string>$dir</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$dir/bin/server</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>$home</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Started again if it stops on an error, not when it's stopped -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+    <!-- It stops its ffmpeg runs and closes the databases on SIGTERM -->
+    <key>ExitTimeOut</key>
+    <integer>20</integer>
+    <key>StandardOutPath</key>
+    <string>$dir/var/server.out</string>
+    <key>StandardErrorPath</key>
+    <string>$dir/var/server.out</string>
+</dict>
+</plist>
+PLIST
+    plutil -lint "$label.plist" >/dev/null || { echo "The service's plist is malformed." >&2; return 1; }
+    echo "== Installing $plist_file (asks for sudo)"
+    as_root launchctl bootout "system/$label" 2>/dev/null || true
+    as_root install -m 644 -o root -g wheel "$label.plist" "$plist_file"
+    as_root launchctl enable "system/$label"
+    as_root launchctl bootstrap system "$plist_file"
+    sleep 2
+    if as_root launchctl print "system/$label" 2>/dev/null | grep "state = running" >/dev/null; then
+        echo "The server is running, and starts at boot."
+    else
+        echo "The service didn't start: see $dir/var/server.out" >&2
+        return 1
+    fi
+    echo "Its output: $dir/var/server.out. Its auth and access logs are in config.yml's server.logsPath."
+    echo "macOS refuses a service access to Desktop, Documents, Downloads, and removable and network"
+    echo "volumes until it's allowed: if a library is in one of those, add $dir/bin/server to System"
+    echo "Settings › Privacy & Security › Full Disk Access, then restart the service. Shares mounted at"
+    echo "login (Finder) aren't there at boot: until they're mounted, the libraries on them are empty."
+    service_running=1
+    echo "Stop it with: sudo launchctl bootout system/$label. Remove it with: ./setup.sh remove-service"
+}
+
 remove_service() {
+    if [ "$mac" = 1 ]; then
+        if [ ! -f "$plist_file" ]; then
+            echo "No $label service is installed."
+            return 0
+        fi
+        echo "== Removing $plist_file (asks for sudo)"
+        as_root launchctl bootout "system/$label" 2>/dev/null || true
+        as_root rm -f "$plist_file"
+        echo "Removed. The server no longer starts at boot."
+        return 0
+    fi
     if [ ! -f "$unit_file" ]; then
         echo "No $service service is installed."
         return 0
@@ -282,13 +384,32 @@ case "${1:-}" in
     gpu) if [ "${2:-}" = --check ]; then gpu_setup check; else gpu_setup; fi; exit ;;
     remove-service) remove_service; exit ;;
     "") ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,11p' "$dir/$(basename "$0")"; exit 0 ;;
     *) echo "Unknown command: $1 (see --help)" >&2; exit 2 ;;
 esac
 
+# macOS: Homebrew's ffmpeg lacks the DVD reader, chromaprint and libass, so the package can build
+# its own (./build-ffmpeg.sh, with Homebrew's libraries) into ffmpeg/, which the server uses first.
+build_ffmpeg() {
+    if ! command -v brew >/dev/null; then
+        echo "Building ffmpeg needs Homebrew (https://brew.sh): install it, then run ./setup.sh again."
+        return 1
+    fi
+    ask_yes "Build the server's own ffmpeg into $dir/ffmpeg now (about 10 minutes)?" y || return 1
+    # Not setup's input: Homebrew and the build would read answers meant for setup's questions
+    FFMPEG_PREFIX="$dir/ffmpeg" ./build-ffmpeg.sh </dev/null || return 1
+    rm -rf "$dir/ffmpeg-build" # its sources and objects, only needed for building
+}
+if [ "$mac" = 1 ] && [ ! -x ffmpeg/bin/ffmpeg ] &&
+    { ! command -v ffmpeg >/dev/null || ! ./check-ffmpeg.sh 2>/dev/null; }; then
+    echo "== ffmpeg"
+    echo "The server needs ffmpeg with x264, libass, the DVD reader and chromaprint. Homebrew's lacks"
+    echo "the last three (styled subtitles, disc images, intro detection by sound)."
+    build_ffmpeg || echo "Setup goes on; ./setup.sh again offers to build it."
+fi
 if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
     echo "Note: ffmpeg and ffprobe aren't installed. The server needs them for thumbnails and"
-    echo "streaming: sudo apt install ffmpeg (or your system's package)."
+    echo "streaming: $install_hint ffmpeg (or your system's package)."
 elif ! ./check-ffmpeg.sh; then
     echo "Note: this ffmpeg lacks what's listed above (the README's ffmpeg section says how to get one"
     echo "that has it). Setup goes on; ./check-ffmpeg.sh checks again later."
@@ -302,8 +423,12 @@ fi
 # Optional: only HEIC/HEIF photos need it (their thumbnails, and JPEG for browsers).
 if ! command -v heif-convert >/dev/null; then
     echo "Note: heif-convert isn't installed, so HEIC photos (iPhones' and many phones') will have no"
-    echo "thumbnails and won't show in browsers: sudo apt install libheif-examples (or your system's"
-    echo "libheif tools). Everything else works without it."
+    if [ "$mac" = 1 ]; then
+        echo "thumbnails and won't show in browsers: brew install libheif. Everything else works without it."
+    else
+        echo "thumbnails and won't show in browsers: sudo apt install libheif-examples (or your system's"
+        echo "libheif tools). Everything else works without it."
+    fi
 fi
 
 echo "== Hardware encoding"
@@ -326,7 +451,11 @@ fi
 port=$(sed -n 's/^  port: *\([0-9]*\).*/\1/p' config.yml | head -1)
 scheme=http
 grep -qE '^  certFile: *"?[^" ]+' config.yml && scheme=https
-lan=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ "$mac" = 1 ]; then
+    lan=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)
+else
+    lan=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
 local_url="$scheme://localhost:$port"
 
 # Waits until the server answers on its port (up to 30 seconds).
@@ -351,7 +480,11 @@ offer_browser() {
 
 echo "== Starting"
 service_running=0
-if command -v systemctl >/dev/null && [ -d /run/systemd/system ] &&
+if [ "$mac" = 1 ]; then
+    if ask_yes "Install a launchd service, so the server starts at boot?" n; then
+        install_service || true
+    fi
+elif command -v systemctl >/dev/null && [ -d /run/systemd/system ] &&
     ask_yes "Install a systemd service, so the server starts at boot?" n; then
     install_service || true
 fi

@@ -5,6 +5,10 @@
 #                             to the web UI's download links (Server/web/downloads)
 #   --no-web                  leave the web UI's download links as they are
 #   --skip-tests              don't run the server tests first
+#   --platforms LIST          the server packages to build, comma-separated (default: all of them):
+#                             linux-amd64, linux-arm64 (cross-built: needs aarch64-linux-gnu-gcc),
+#                             darwin-arm64 (built on the Mac in iOS/remote/remote.local's MAC_HOST,
+#                             over SSH: it needs Go and Xcode's command-line tools there)
 #   --allow-dirty             build with uncommitted changes (the version then ends in "-dirty")
 #   --publish                 then publish it on GitHub: tag the commit v<version>, push the tag to the
 #                             "github" remote, and create the release with dist/<version>/'s files.
@@ -15,10 +19,12 @@
 #   --notes-file FILE         with --publish: the same, read from FILE (Markdown)
 #
 # dist/<version>/ then holds:
-#   weirdstreamer-server-<version>-linux-<arch>.tar.gz  the server ready to run: bin/server and
-#       bin/cli, the web UI (with this APK to download), setup.sh (writes config.yml, can create
-#       the admin user and install a systemd service), check-ffmpeg.sh, config.example.yml, LICENSE,
-#       NOTICE and VERSION.
+#   weirdstreamer-server-<version>-<os>-<arch>.tar.gz   the server ready to run, one per platform:
+#       bin/server and bin/cli, the web UI (with this APK to download), setup.sh (writes config.yml,
+#       can create the admin user and install a service: systemd, or launchd on macOS),
+#       check-ffmpeg.sh, config.example.yml, LICENSE, NOTICE and VERSION; macOS's also
+#       build-ffmpeg.sh, which setup offers to run (Homebrew's ffmpeg lacks the DVD reader,
+#       chromaprint and libass).
 #       Where it runs it needs ffmpeg, and for HEIC photos heif-convert (libheif's tools). For CJK
 #       subtitle fonts it's optional: fontTools' pyftsubset and Noto Sans CJK (see the README).
 #   WeirdStreamer-<version>.apk                         the Android app (TV and phone)
@@ -30,7 +36,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 root=$PWD
 
-web=1 tests=1 dirty_ok=0 publish=0 notes= notes_file=
+web=1 tests=1 dirty_ok=0 publish=0 notes= notes_file= platforms=linux-amd64,linux-arm64,darwin-arm64
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-web) web=0 ;;
@@ -42,8 +48,13 @@ while [ $# -gt 0 ]; do
             if [ "$1" = --notes ]; then notes=$2; else notes_file=$2; fi
             shift ;;
         --notes=*) notes=${1#--notes=} ;;
+        --platforms)
+            [ $# -ge 2 ] || { echo "$1 needs a value (see --help)" >&2; exit 2; }
+            platforms=$2
+            shift ;;
+        --platforms=*) platforms=${1#--platforms=} ;;
         --notes-file=*) notes_file=${1#--notes-file=} ;;
-        -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
     shift
@@ -73,8 +84,32 @@ if ! command -v go >/dev/null; then
 elif [ "$(printf '%s\n' 1.21 "$(go env GOVERSION | sed 's/^go//')" | sort -V | head -1)" != 1.21 ]; then
     problem "Go $(go env GOVERSION) is too old: 1.21 or later can fetch the version go.mod asks for (https://go.dev/dl/)."
 fi
-# cgo, for SQLite
-command -v gcc >/dev/null || problem "gcc is missing, which the server's SQLite needs (sudo apt install build-essential)."
+# cgo, for SQLite: a C compiler for each platform built here, and the Mac for macOS
+IFS=, read -r -a targets <<<"$platforms"
+mac_host=
+for target in "${targets[@]}"; do
+    case $target in
+        linux-amd64)
+            command -v gcc >/dev/null || problem "gcc is missing, which the server's SQLite needs (sudo apt install build-essential)."
+            [ "$(uname -m)" = x86_64 ] || command -v x86_64-linux-gnu-gcc >/dev/null ||
+                problem "linux-amd64 needs x86_64-linux-gnu-gcc on this $(uname -m) machine (sudo apt install gcc-x86-64-linux-gnu)."
+            ;;
+        linux-arm64)
+            [ "$(uname -m)" = aarch64 ] || command -v aarch64-linux-gnu-gcc >/dev/null ||
+                problem "linux-arm64 needs aarch64-linux-gnu-gcc, for SQLite (sudo apt install gcc-aarch64-linux-gnu), or leave it out with --platforms."
+            ;;
+        darwin-arm64)
+            [ -f iOS/remote/remote.local ] && mac_host=$(sed -n 's/^MAC_HOST=//p' iOS/remote/remote.local | head -1)
+            mac_host=${WS_MAC_HOST:-$mac_host}
+            if [ -z "$mac_host" ]; then
+                problem "darwin-arm64 is built on a Mac: set MAC_HOST in iOS/remote/remote.local (see iOS/README.md), or leave it out with --platforms."
+            elif ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$mac_host" 'PATH=/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH; command -v go >/dev/null && command -v clang >/dev/null' 2>/dev/null; then
+                problem "Can't build darwin-arm64 on $mac_host: it isn't reachable by SSH without a password, or lacks Go or Xcode's command-line tools."
+            fi
+            ;;
+        *) problem "Unknown platform $target: linux-amd64, linux-arm64 or darwin-arm64." ;;
+    esac
+done
 # The server tests make test videos
 if [ "$tests" = 1 ]; then
     command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null ||
@@ -150,7 +185,6 @@ base=$(sed -n 's/.*versionName = "\([0-9.]*\)\.\$buildNumber".*/\1/p' Android/ap
 [ -n "$base" ] || { echo "Can't read versionName from Android/app/build.gradle.kts" >&2; exit 1; }
 version="$base.$(git rev-list --count HEAD)$dirty"
 commit=$(git rev-parse --short HEAD)
-arch=$(go env GOARCH)
 out="dist/$version"
 tag="v$version"
 
@@ -183,14 +217,47 @@ if [ "$tests" = 1 ]; then
         { echo "Server tests failed (rerun them in Server/src to see why)." >&2; exit 1; }
 fi
 
-echo "== Server"
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"; rm -f "${notes_tmp:-}"' EXIT
-pkg="$stage/weirdstreamer-$version"
-mkdir -p "$pkg/bin"
-for cmd in server cli; do
-    # (go-sqlite3's C has a harmless const warning)
-    CGO_ENABLED=1 CGO_CFLAGS="-O2 -g -Wno-discarded-qualifiers" go -C Server/src build -trimpath -ldflags "-s -w -X main.version=$version" -o "$pkg/bin/$cmd" "./cmd/$cmd"
+ldflags="-s -w -X main.version=$version"
+# build_linux ARCH DIR: bin/server and bin/cli for Linux on ARCH, cross-compiled where it isn't
+# this machine's (cgo needs that architecture's C compiler).
+build_linux() {
+    local arch=$1 dir=$2 cc=gcc
+    case "$arch:$(uname -m)" in
+        amd64:x86_64|arm64:aarch64) ;;
+        amd64:*) cc=x86_64-linux-gnu-gcc ;;
+        arm64:*) cc=aarch64-linux-gnu-gcc ;;
+    esac
+    mkdir -p "$dir"
+    for cmd in server cli; do
+        # (go-sqlite3's C has a harmless const warning)
+        CGO_ENABLED=1 GOOS=linux GOARCH="$arch" CC="$cc" CGO_CFLAGS="-O2 -g -Wno-discarded-qualifiers" \
+            go -C Server/src build -trimpath -ldflags "$ldflags" -o "$dir/$cmd" "./cmd/$cmd"
+    done
+}
+# build_darwin DIR: bin/server and bin/cli for Apple Silicon Macs, built on the Mac (cgo needs
+# Apple's SDK): Server/src as it is here (tracked and new files, not ignored ones) goes over SSH
+# into a temporary folder there, and the binaries come back.
+build_darwin() {
+    local dir=$1
+    mkdir -p "$dir"
+    git ls-files -z -co --exclude-standard Server/src | tar -czf - --null -T - |
+        ssh -o BatchMode=yes "$mac_host" "PATH=/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:\$PATH
+            set -e; tmp=\$(mktemp -d); trap 'rm -rf \"\$tmp\"' EXIT
+            tar -xzf - -C \"\$tmp\"; cd \"\$tmp/Server/src\"
+            for cmd in server cli; do
+                CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags '$ldflags' -o \"\$tmp/out/\$cmd\" ./cmd/\$cmd >&2
+            done
+            COPYFILE_DISABLE=1 tar --no-xattrs -czf - -C \"\$tmp/out\" server cli" | tar -xzf - -C "$dir"
+}
+for target in "${targets[@]}"; do
+    echo "== Server for $target"
+    case $target in
+        linux-*) build_linux "${target#linux-}" "$stage/bin-$target" ;;
+        darwin-arm64) build_darwin "$stage/bin-$target" ;;
+    esac
+    file "$stage/bin-$target/server" 2>/dev/null | sed 's/^[^:]*: /   /' || true
 done
 
 echo "== Android"
@@ -209,7 +276,9 @@ if [ "$web" = 1 ]; then
     Android/deploy-release.sh --web --no-build | sed 's/^/   /'
 fi
 
-echo "== Server package"
+echo "== Server packages"
+pkg="$stage/weirdstreamer-$version"
+mkdir -p "$pkg"
 cp -R Server/web "$pkg/web"
 rm -rf "$pkg/web/downloads"
 # The package's own web UI offers this release's app
@@ -225,8 +294,13 @@ print(json.dumps({"version": element["versionName"], "build": element["versionCo
 PY
 cp Server/package/setup.sh Server/scripts/check-ffmpeg.sh Server/config.example.yml LICENSE NOTICE "$pkg/"
 echo "$version ($commit)" >"$pkg/VERSION"
-tarball="weirdstreamer-server-$version-linux-$arch.tar.gz"
-tar -C "$stage" -czf "$out/$tarball" "weirdstreamer-$version"
+# Each platform's package: the shared files and its own binaries (macOS's also build-ffmpeg.sh)
+for target in "${targets[@]}"; do
+    rm -rf "$pkg/bin" "$pkg/build-ffmpeg.sh"
+    cp -R "$stage/bin-$target" "$pkg/bin"
+    [ "$target" = darwin-arm64 ] && cp Server/scripts/build-ffmpeg.sh "$pkg/"
+    tar -C "$stage" -czf "$out/weirdstreamer-server-$version-$target.tar.gz" "weirdstreamer-$version"
+done
 
 (cd "$out" && sha256sum -- * >SHA256SUMS)
 echo "== Done: $root/$out"

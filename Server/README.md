@@ -38,12 +38,20 @@ Otherwise it falls back to plain HTTP.
 ## Release package
 
 `./release.sh` at the top of the repository builds a release into `dist/<version>/`: a server
-package (`weirdstreamer-server-<version>-linux-<arch>.tar.gz`) with the binaries, the web UI with
-the Android app to download, `setup.sh` and `config.example.yml`, plus the APK and `SHA256SUMS`.
+package per platform (`weirdstreamer-server-<version>-<platform>.tar.gz`: `linux-amd64`,
+`linux-arm64` and `darwin-arm64`, Macs with Apple Silicon) with the binaries, the web UI with the
+Android app to download, `setup.sh` and `config.example.yml`, plus the APK and `SHA256SUMS`. The
+ARM Linux one is cross-compiled (`gcc-aarch64-linux-gnu`); the Mac one is built on the Mac named in
+`iOS/remote/remote.local` over SSH. `--platforms` builds only some.
 
 To install the package, unpack it and run `./setup.sh` in it. It asks for the server's name, port
-and HTTPS and writes `config.yml`, can create the admin user, and can install a systemd service that
-starts the server at boot (later: `./setup.sh service`; to undo it, `./setup.sh remove-service`).
+and HTTPS and writes `config.yml`, can create the admin user, and can install a service that starts
+the server at boot: systemd, or on macOS a launchd daemon (later: `./setup.sh service`; to undo it,
+`./setup.sh remove-service`). On a Mac it first offers to build the server's own ffmpeg into the
+package (`build-ffmpeg.sh`, about 10 minutes with Homebrew), since Homebrew's lacks the DVD reader,
+chromaprint and libass; the server uses `ffmpeg/bin` beside its `bin` folder first. A Mac's
+service can't read Desktop, Documents, Downloads or removable and network volumes until
+`bin/server` has Full Disk Access (System Settings › Privacy & Security).
 Where it finds Intel, AMD or NVIDIA graphics, it lists what hardware encoding needs and offers to
 set it up: on Debian and Ubuntu it installs the missing packages (Intel's media driver and Quick
 Sync runtime, Mesa's VA-API drivers, NVIDIA's encode library or a kernel module for the running

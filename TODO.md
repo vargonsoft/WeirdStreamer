@@ -48,6 +48,8 @@ Requests saved for later, newest last.
 
 ## Platforms
 
-- [ ] **Server packages for more platforms:** Linux arm64, macOS (Intel and Apple Silicon) and
-      Windows x64, beside today's Linux amd64. Feasibility is in CLAUDE.md's notes ("More
-      server platforms").
+- [x] **Server packages for Linux arm64 and macOS (Apple Silicon)**, beside Linux amd64:
+      `release.sh` builds all three (`--platforms`); the Mac's setup builds ffmpeg and installs a
+      launchd service. Intel Macs are left out (current macOS runs only on Apple Silicon).
+- [ ] **Server package for Windows x64.** Feasibility is in CLAUDE.md's notes ("More server
+      platforms").

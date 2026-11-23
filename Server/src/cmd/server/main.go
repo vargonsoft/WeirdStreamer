@@ -74,6 +74,7 @@ func main() {
 		}
 	}
 	privateUmask()
+	media.UseBundledTools()
 	// A stop signal (a restart) cancels ctx: the background jobs stop and the server shuts down.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

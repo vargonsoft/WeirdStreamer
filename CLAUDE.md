@@ -180,21 +180,32 @@ for each TODO item are at the end of this file.
 ## Release builds
 
 `./release.sh` (repo root, on the build machine: it has the signing key) checks the tools, runs the
-server tests, then builds `dist/<version>/`, the assets for a GitHub Release: the server package
-(`weirdstreamer-server-<version>-linux-<arch>.tar.gz`: `bin/server`, `bin/cli`, the web UI with this
-APK to download, `setup.sh`, `config.example.yml`, LICENSE and VERSION; needs only ffmpeg where it
-runs), the APK and `SHA256SUMS`. It also publishes the APK to the web download links (`--no-web`
+server tests, then builds `dist/<version>/`, the assets for a GitHub Release: a server package per
+platform (`weirdstreamer-server-<version>-<platform>.tar.gz`, `--platforms` picks: `linux-amd64`;
+`linux-arm64`, cross-compiled with `aarch64-linux-gnu-gcc` for SQLite's cgo; `darwin-arm64`, built on
+the Mac in `iOS/remote/remote.local` over SSH from `Server/src` as it is here, `build_darwin`. Each
+has `bin/server`, `bin/cli`, the web UI with this APK to download, `setup.sh`, `config.example.yml`,
+LICENSE and VERSION, the Mac's also `build-ffmpeg.sh`; needs only ffmpeg where it runs), the APK and
+`SHA256SUMS`. The server and cli put `ffmpeg/bin` beside their `bin` folder first on the PATH, and on
+macOS add Homebrew's folders (`media.UseBundledTools`): a package's own ffmpeg, Server/ffmpeg/bin in
+the repo. It also publishes the APK to the web download links (`--no-web`
 doesn't). The version is the app's (`0.0.1.<commit count>`). It refuses uncommitted changes
 (`--allow-dirty` builds them as `<version>-dirty`) and installs on no device. Artifacts stay out of git.
 `--publish` then tags the commit `v<version>`, pushes the tag to the `github` remote and creates the
-GitHub Release with the three files (`gh`, signed in; checked before building; it never replaces a
+GitHub Release with the files (`gh`, signed in; checked before building; it never replaces a
 release, nor moves a tag that's on another commit).
 
 The package's `setup.sh` (`Server/package/setup.sh`) asks only for the name, port and HTTPS and
 writes config.yml through `cli config init`, can create the admin user and install a systemd service
 (`setup.sh service`, `setup.sh remove-service`: `bin/server` as the user who ran setup, from the
 package's folder, after network mounts), then prints the web UI's address and offers to start the
-server and open it. Its GPU step (`gpu_setup`; alone as `setup.sh gpu [--check]`) finds graphics by PCI
+server and open it. On macOS (`mac=1`) it offers to build ffmpeg into the package
+(`FFMPEG_PREFIX=<package>/ffmpeg ./build-ffmpeg.sh`) when there's none with what check-ffmpeg.sh
+asks for, gives Homebrew install hints, and installs a launchd daemon
+(`/Library/LaunchDaemons/com.weirdstreamer.server.plist`: the user, the package folder, started at
+boot and again after an error, output in `var/server.out`) instead of systemd; it says a library in
+Desktop, Documents, Downloads or on removable or network volumes needs Full Disk Access for
+`bin/server`. Its GPU step (`gpu_setup`; alone as `setup.sh gpu [--check]`) finds graphics by PCI
 vendor (no driver needed) and lists what hardware encoding needs: Intel and AMD the `video` and
 `render` groups and VA-API drivers (Intel also `libmfx-gen1.2` for Quick Sync), NVIDIA a loaded
 driver (or `linux-modules-nvidia-<branch>-<kernel>` when the module wasn't built for the running
