@@ -1,7 +1,22 @@
 # WeirdStreamer for iPhone
 
-The iPhone and iPad app for a WeirdStreamer server. It isn't on the App Store: you build it from the
-source with your own Apple developer account and install it on your device.
+The iPhone and iPad app for a WeirdStreamer server. It isn't on the App Store: install it with
+AltStore or SideStore (below), or build it from the source with your own Apple developer account.
+
+## Installing with AltStore or SideStore
+
+Each GitHub release has the app as an unsigned IPA and an AltStore source listing it. In AltStore (or
+SideStore), add this source once (Browse › Sources, +):
+
+```
+https://github.com/vargonsoft/WeirdStreamer/releases/latest/download/altstore-source.json
+```
+
+Then install Weird Streamer from it; each new release shows as an update. AltStore signs the app with
+your Apple ID. With a free one, it must refresh the app every 7 days (AltServer on your computer, or
+SideStore on the phone) and at most 3 sideloaded apps are active. The app needs nothing a free Apple
+ID can't give (see Constraints). Keep the app and the server at the same release: they change
+together.
 
 ## What's there
 
@@ -163,8 +178,13 @@ MAC_HOST=user@mac.local
 MAC_SCRIPT=/path/to/WeirdStreamer/iOS/remote/ios-remote.sh
 ```
 
-The IPA is unsigned: AltStore signs it with the Apple ID installing it. Its build number is the
-commit count, as Android's; a build with a patch is named `WeirdStreamer-<count>-patched.ipa` on the Mac.
+The IPA is unsigned: AltStore signs it with the Apple ID installing it. Its version is Android's
+(`MARKETING_VERSION`, 0.0.1) and its build number the commit count, as Android's: Settings shows
+`0.0.1.<build>`. A build with a patch is named `WeirdStreamer-<count>-patched.ipa` on the Mac.
+`release.sh` builds a release's IPA from the release commit (`mac-ios ipa --ref`, so it must be on
+origin) and writes its AltStore source with `iOS/altstore/make-source.py`, which reads the version,
+build, minimum iOS and privacy strings from the IPA itself (AltStore refuses an IPA that doesn't
+match its source).
 The Mac runs its own checkout's `ios-remote.sh`, so a change to that script reaches it when that
 checkout is pulled.
 

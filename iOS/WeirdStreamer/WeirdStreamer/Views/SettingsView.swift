@@ -10,6 +10,14 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     let onBack: () -> Void
 
+    /// "0.0.1.496", as Android's versionName: the version and the build number (the commit count).
+    static var version: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let short = info["CFBundleShortVersionString"] as? String ?? ""
+        let build = info["CFBundleVersion"] as? String ?? ""
+        return build.isEmpty ? short : "\(short).\(build)"
+    }
+
     @State private var tab: String
 
     init(startTab: String = "App", onBack: @escaping () -> Void) {
@@ -200,7 +208,7 @@ struct AppTab: View {
                 }
 
                 Divider().overlay(Palette.raised).padding(.vertical, 8)
-                Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                Text("Version \(SettingsView.version)")
                     .font(.footnote).foregroundStyle(Palette.muted).padding(16)
             }
         }

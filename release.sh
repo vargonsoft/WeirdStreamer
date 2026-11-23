@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Builds a release: the server, the Android app, and the web UI's download of the app.
+# Builds a release: the server, the Android and iPhone apps, and the web UI's download of the app.
 #
 #   ./release.sh              tests and builds everything into dist/<version>/, and publishes the APK
 #                             to the web UI's download links (Server/web/downloads)
 #   --no-web                  leave the web UI's download links as they are
 #   --skip-tests              don't run the server tests first
+#   --no-ipa                  don't build the iPhone app
 #   --platforms LIST          the server packages to build, comma-separated (default: all of them):
 #                             linux-amd64, linux-arm64 (cross-built: needs aarch64-linux-gnu-gcc),
 #                             darwin-arm64 (built on the Mac in iOS/remote/remote.local's MAC_HOST,
@@ -28,6 +29,13 @@
 #       Where it runs it needs ffmpeg, and for HEIC photos heif-convert (libheif's tools). For CJK
 #       subtitle fonts it's optional: fontTools' pyftsubset and Noto Sans CJK (see the README).
 #   WeirdStreamer-<version>.apk                         the Android app (TV and phone)
+#   WeirdStreamer-<version>.ipa                         the iPhone app, unsigned, for AltStore and
+#       SideStore (they sign it), built on the Mac (iOS/remote/mac-ios) from the release commit,
+#       which must be on origin
+#   altstore-source.json                                the AltStore source listing that IPA
+#       (iOS/altstore/make-source.py): users add
+#       https://github.com/<owner>/<repo>/releases/latest/download/altstore-source.json once, and
+#       each release is an update
 #   SHA256SUMS
 #
 # The version is the app's: 0.0.1.<commit count>, the same build number as the APK.
@@ -36,11 +44,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 root=$PWD
 
-web=1 tests=1 dirty_ok=0 publish=0 notes= notes_file= platforms=linux-amd64,linux-arm64,darwin-arm64
+web=1 tests=1 ipa=1 dirty_ok=0 publish=0 notes= notes_file= platforms=linux-amd64,linux-arm64,darwin-arm64
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-web) web=0 ;;
         --skip-tests) tests=0 ;;
+        --no-ipa) ipa=0 ;;
         --allow-dirty) dirty_ok=1 ;;
         --publish) publish=1 ;;
         --notes|--notes-file)
@@ -54,7 +63,7 @@ while [ $# -gt 0 ]; do
             shift ;;
         --platforms=*) platforms=${1#--platforms=} ;;
         --notes-file=*) notes_file=${1#--notes-file=} ;;
-        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,/^# It installs/p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
     shift
@@ -140,6 +149,26 @@ fi
 # won't install over the app already on the devices.
 key="$HOME/.config/.android/debug.keystore"
 [ -f "$key" ] || problem "No signing key at $key: copy it from the machine that builds the app. (A new key would make an APK that won't update the installed app.)"
+
+# The iPhone app: built on the Mac by iOS/remote/mac-ios, from a commit on origin (its build number
+# is that commit's count), with the same version as Android's.
+if [ "$ipa" = 1 ]; then
+    ios_host=$(sed -n 's/^MAC_HOST=//p' iOS/remote/remote.local 2>/dev/null | head -1)
+    if [ -z "$ios_host" ] || ! grep -q '^MAC_SCRIPT=' iOS/remote/remote.local 2>/dev/null; then
+        problem "The iPhone app is built on a Mac: set MAC_HOST and MAC_SCRIPT in iOS/remote/remote.local (see iOS/README.md), or pass --no-ipa."
+    elif ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$ios_host" true 2>/dev/null; then
+        problem "Can't reach $ios_host by SSH without a password, which builds the iPhone app (or pass --no-ipa)."
+    fi
+    ios_version=$(sed -n 's/.*MARKETING_VERSION = \(.*\);/\1/p' iOS/WeirdStreamer/WeirdStreamer.xcodeproj/project.pbxproj | sort -u)
+    android_version=$(sed -n 's/.*versionName = "\([0-9.]*\)\.\$buildNumber".*/\1/p' Android/app/build.gradle.kts)
+    [ "$ios_version" = "$android_version" ] ||
+        problem "The iPhone app's version ($ios_version, MARKETING_VERSION in the Xcode project) isn't Android's ($android_version)."
+    if [ "$dirty_ok" = 0 ]; then
+        git fetch -q origin
+        [ -n "$(git branch -r --contains HEAD 2>/dev/null | grep '^ *origin/')" ] ||
+            problem "The release commit isn't on origin yet: push it (the Mac builds the iPhone app from origin), or pass --no-ipa."
+    fi
+fi
 
 for tool in git python3 tar sha256sum; do
     command -v "$tool" >/dev/null || problem "$tool is missing."
@@ -270,6 +299,32 @@ if [ "$built" != "${version%-dirty}" ]; then
     exit 1
 fi
 cp -p "$apk" "$out/WeirdStreamer-$version.apk"
+
+if [ "$ipa" = 1 ]; then
+    echo "== iPhone"
+    ipa_file="$out/WeirdStreamer-$version.ipa"
+    if [ -n "$dirty" ]; then
+        iOS/remote/mac-ios ipa -o "$ipa_file" 2>&1 | sed 's/^/   /' # with the uncommitted changes
+    else
+        iOS/remote/mac-ios ipa --ref "$(git rev-parse HEAD)" -o "$ipa_file" 2>&1 | sed 's/^/   /'
+    fi
+    [ -f "$ipa_file" ] || { echo "The iPhone app didn't build (iOS/remote/mac-ios log says why)." >&2; exit 1; }
+    built=$(python3 -c 'import plistlib,sys,zipfile
+z = zipfile.ZipFile(sys.argv[1])
+i = plistlib.loads(z.read(next(n for n in z.namelist() if n.count("/") == 2 and n.endswith(".app/Info.plist"))))
+print(i["CFBundleShortVersionString"] + "." + i["CFBundleVersion"])' "$ipa_file")
+    if [ -z "$dirty" ] && [ "$built" != "$version" ]; then
+        echo "The IPA says $built, not $version." >&2
+        exit 1
+    fi
+    # The AltStore source, pointing at this release's IPA on GitHub
+    repo=${repo:-$({ git config --get remote.github.url || true; } | sed -nE 's#^(git@github\.com:|https://github\.com/|ssh://git@github\.com/)([^/]+/[^/]+)$#\2#p' | sed 's/\.git$//')}
+    if [ -n "$repo" ]; then
+        python3 iOS/altstore/make-source.py "$ipa_file" --repo "$repo" --tag "$tag" --notes "$notes" >"$out/altstore-source.json"
+    else
+        echo "   No \"github\" remote: no AltStore source, which points at the release on GitHub."
+    fi
+fi
 
 if [ "$web" = 1 ]; then
     echo "== Web download"

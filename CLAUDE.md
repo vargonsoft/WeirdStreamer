@@ -185,7 +185,11 @@ platform (`weirdstreamer-server-<version>-<platform>.tar.gz`, `--platforms` pick
 `linux-arm64`, cross-compiled with `aarch64-linux-gnu-gcc` for SQLite's cgo; `darwin-arm64`, built on
 the Mac in `iOS/remote/remote.local` over SSH from `Server/src` as it is here, `build_darwin`. Each
 has `bin/server`, `bin/cli`, the web UI with this APK to download, `setup.sh`, `config.example.yml`,
-LICENSE and VERSION, the Mac's also `build-ffmpeg.sh`; needs only ffmpeg where it runs), the APK and
+LICENSE and VERSION, the Mac's also `build-ffmpeg.sh`; needs only ffmpeg where it runs), the APK, the
+iPhone app's IPA (`mac-ios ipa --ref` the release commit, which must be on origin; `--no-ipa` skips it;
+its version must equal Android's) with `altstore-source.json` (`iOS/altstore/make-source.py`, from the
+IPA's Info.plist: AltStore and SideStore users add
+`https://github.com/vargonsoft/WeirdStreamer/releases/latest/download/altstore-source.json`) and
 `SHA256SUMS`. The server and cli put `ffmpeg/bin` beside their `bin` folder first on the PATH, and on
 macOS add Homebrew's folders (`media.UseBundledTools`): a package's own ffmpeg, Server/ffmpeg/bin in
 the repo. It also publishes the APK to the web download links (`--no-web`

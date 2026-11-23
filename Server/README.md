@@ -40,7 +40,8 @@ Otherwise it falls back to plain HTTP.
 `./release.sh` at the top of the repository builds a release into `dist/<version>/`: a server
 package per platform (`weirdstreamer-server-<version>-<platform>.tar.gz`: `linux-amd64`,
 `linux-arm64` and `darwin-arm64`, Macs with Apple Silicon) with the binaries, the web UI with the
-Android app to download, `setup.sh` and `config.example.yml`, plus the APK and `SHA256SUMS`. The
+Android app to download, `setup.sh` and `config.example.yml`, plus the APK, the iPhone app's IPA with
+its AltStore source (see `iOS/README.md`) and `SHA256SUMS`. The
 ARM Linux one is cross-compiled (`gcc-aarch64-linux-gnu`); the Mac one is built on the Mac named in
 `iOS/remote/remote.local` over SSH. `--platforms` builds only some.
 
