@@ -281,7 +281,7 @@ func (s *Scanner) getImageMetadata(item *models.MediaItem) error {
 func (s *Scanner) GenerateVideoThumbnail(videoPath string) string {
 	thumbnailDir := config.GlobalConfig.Media.ThumbnailPath
 	hash := GenerateThumbnailHash(videoPath)
-	_, thumbnailURL := GetThumbnailPath(thumbnailDir, hash, ".jpg")
+	thumbnailPath, thumbnailURL := GetThumbnailPath(thumbnailDir, hash, ".jpg")
 
 	// Use the shared thumbnail generator
 	if _, err := s.thumbnailGenerator.GenerateThumbnail(videoPath); err != nil {
@@ -292,7 +292,7 @@ func (s *Scanner) GenerateVideoThumbnail(videoPath string) string {
 		return ""
 	}
 
-	return thumbnailURL
+	return versionedThumbnailURL(thumbnailURL, thumbnailPath)
 }
 
 // ForgetThumbnailFailure lets path's thumbnail be tried again (refreshing a folder's thumbnails).
@@ -313,7 +313,7 @@ func (s *Scanner) GenerateImageThumbnail(imagePath string) string {
 		thumbnailExt = ".jpg"
 	}
 
-	_, thumbnailURL := GetThumbnailPath(thumbnailDir, hash, thumbnailExt)
+	thumbnailPath, thumbnailURL := GetThumbnailPath(thumbnailDir, hash, thumbnailExt)
 
 	// Use the shared thumbnail generator
 	if _, err := s.thumbnailGenerator.GenerateThumbnail(imagePath); err != nil {
@@ -324,7 +324,24 @@ func (s *Scanner) GenerateImageThumbnail(imagePath string) string {
 		return ""
 	}
 
-	return thumbnailURL
+	return versionedThumbnailURL(thumbnailURL, thumbnailPath)
+}
+
+// ThumbnailFile is a thumbnail URL without its version: "/thumbnails/a/b/<hash>.jpg".
+func ThumbnailFile(url string) string {
+	file, _, _ := strings.Cut(url, "?")
+	return file
+}
+
+// versionedThumbnailURL adds the thumbnail's file time to its URL (?v=): a thumbnail made again
+// (Regenerate Thumbnails) gets a new URL, so no cache keeps showing the old picture, in any listing
+// that uses it (folder icons too). The same picture keeps the same URL.
+func versionedThumbnailURL(url, path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return url
+	}
+	return url + "?v=" + strconv.FormatInt(info.ModTime().Unix(), 10)
 }
 
 func (s *Scanner) generateDocThumbnail(docPath string) string {
@@ -348,7 +365,7 @@ func (s *Scanner) cleanupOrphanedThumbnails() error {
 	for _, item := range allMedia {
 		if item.ThumbnailURL != "" {
 			// Extract path from URL (e.g., "/thumbnails/a/b/abc123.jpg" -> "a/b/abc123.jpg")
-			relativePath := strings.TrimPrefix(item.ThumbnailURL, "/thumbnails/")
+			relativePath := strings.TrimPrefix(ThumbnailFile(item.ThumbnailURL), "/thumbnails/")
 			validThumbnails[relativePath] = true
 		}
 	}

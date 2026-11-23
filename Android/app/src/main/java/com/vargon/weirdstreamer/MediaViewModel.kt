@@ -1379,9 +1379,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                 ?.collect { update ->
                     // Library view thumbnails are generated when a title page is first opened.
                     openTitle?.let { title -> openTitle = title.withThumbnail(update.path, update.thumbnailURL) }
-                    val target = fileList.firstOrNull { it.originalPath == update.path } ?: return@collect
+                    // A file's thumbnail, or a folder's icon picture (a folder's path is its client path).
+                    val target = fileList.firstOrNull { it.originalPath == update.path || it.isDirectory && it.path == update.path }
+                        ?: return@collect
                     val fullThumbnailUrl = if (update.thumbnailURL.startsWith("http")) update.thumbnailURL else "${normalizedServerUrl(serverUrl)}${update.thumbnailURL}"
-                    val thumbnailUrl = "$fullThumbnailUrl?t=${System.currentTimeMillis()}"
+                    val thumbnailUrl = fullThumbnailUrl + (if ('?' in fullThumbnailUrl) "&" else "?") + "t=${System.currentTimeMillis()}"
                     queueItemUpdate(target.path) { it.copy(thumbnailUrl = thumbnailUrl) }
                 }
         }

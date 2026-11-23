@@ -427,11 +427,16 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   Terminal Green and Terminal Amber (phosphor on black, all text monospace: `ThemePalette.monospace`), dark themes built like
   Ember with the same colors on each (a `ThemePalette` and a `:root[data-theme=…]` block). Android also has
   Light and Auto Light/Dark (`AppTheme`). Themes are picked from a grid of tiles drawn in each theme's colors (its background, box, accent and button), applied and kept at once: the web's Settings, Themes tab (`renderThemePicker`, colors read from the theme's CSS block), and the Themes tab of the TV and phone Settings (`ThemeTiles.kt`: `TvThemePicker`, 3 rows of 7, and `PhoneThemePicker`). The TV's Settings has tabs beside its title (`SettingsScreen.kt`, rows drawn by `TvSettingsRow`): General (this TV's options and the app update), Account (with a server open: Languages, Sign in on a TV), Sources (saved servers and shares), Server (an admin's account: Hardware encoding) and Themes.
-- **Folder pictures:** a folder without a TMDB poster shows a picture inside its folder icon (web
+- **Folder pictures:** in folder view every folder shows a picture inside its folder icon (posters are only the Library view's) (web
   `folderPreview`, Android `FolderPreview` in `FolderThumbnails.kt`, iPhone `FolderPreview`): the
   browse response's `thumbnail_url` on each folder (`folderImage`, `database.FolderPreview`): its own
   `thumbnail.png` if the media database has it, else the thumbnail nearest the folder among the first 200
-  under it in path order (its own files before its subfolders'). A library (the root listing) shows
+  under it in path order (its own files before its subfolders'), else the TMDB poster of a matched
+  folder with nothing thumbnailed yet. Thumbnail URLs carry the thumbnail file's time (`?v=`,
+  `versionedThumbnailURL`; `ThumbnailFile` strips it for file names), so a remade one is fetched
+  anew everywhere it's used. Regenerate Thumbnails also remakes the picture each subfolder's icon
+  shows (`folderPictureFile`) and sends a thumbnail event with the folder's path, which the web,
+  Android and iPhone apply to the folder's icon. A library (the root listing) shows
   only the `thumbnail.png` directly in its folder. In folder views (only there) videos have filmstrip
   edges, telling them from photos (`.filmstrip` on the web, `Modifier.filmstrip()`, `Filmstrip`).
 - **Recently Added:** `showNewAdditions` (`config.yml` or Settings) is `on`, `libraryOnly` or `off`

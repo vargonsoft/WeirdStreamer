@@ -303,6 +303,16 @@ function showMainScreen() {
     api.connectThumbnailUpdates();
     api.onThumbnailUpdate((data) => {
         console.log('[SSE] Thumbnail update received:', data);
+        // A folder's icon picture (Regenerate Thumbnails one level up)
+        const folder = [...document.querySelectorAll('.directory-item')].find(el => el.dataset.path === data.path);
+        if (folder) {
+            const dir = state.directories.find(d => d.path === data.path);
+            if (dir) dir.thumbnail_url = data.thumbnailURL;
+            const thumbnail = folder.querySelector('.folder-thumbnail');
+            thumbnail.querySelector('.folder-preview, .placeholder-icon')?.remove();
+            thumbnail.prepend(folderPreview(data.thumbnailURL, dir ? dir.name : ''));
+            return;
+        }
         // Find and update the thumbnail for this item
         const item = state.mediaItems.find(i => i.path === data.path);
         if (item) {
@@ -327,7 +337,7 @@ function showMainScreen() {
                         thumbnailDiv.classList.remove('no-thumb');
                         const img = document.createElement('img');
                         // Add cache buster to force reload
-                        img.src = api.getThumbnailUrl(data.thumbnailURL) + '?t=' + Date.now();
+                        img.src = api.getThumbnailUrl(data.thumbnailURL) + (data.thumbnailURL.includes('?') ? '&' : '?') + 't=' + Date.now();
                         img.alt = item.name;
                         img.onerror = () => {
                             thumbnailDiv.classList.add('no-thumb');
@@ -642,6 +652,7 @@ function renderMedia() {
 function createDirectoryElement(dir) {
     const div = document.createElement('div');
     div.className = 'media-item directory-item';
+    div.dataset.path = dir.path; // for live updates of its icon's picture
     div.onclick = () => {
         if (!state.currentPath && dir.library_type && getLibraryMode(dir.path) === 'library') {
             showLibrary(dir.path);
@@ -653,17 +664,9 @@ function createDirectoryElement(dir) {
     
     const thumbnail = document.createElement('div');
     thumbnail.className = 'media-thumbnail folder-thumbnail';
-    if (dir.metadata && dir.metadata.poster) {
-        const img = document.createElement('img');
-        img.src = API_BASE + dir.metadata.poster;
-        img.alt = dir.name;
-        img.className = 'poster';
-        img.onerror = () => {
-            img.insertAdjacentHTML('afterend', placeholderIcon('folder'));
-            img.remove();
-        };
-        thumbnail.appendChild(img);
-    } else if (dir.thumbnail_url) {
+    // Folder view: every folder is a folder icon with the server's picture in it (posters are the
+    // Library view's).
+    if (dir.thumbnail_url) {
         thumbnail.appendChild(folderPreview(dir.thumbnail_url, dir.name));
     } else {
         thumbnail.innerHTML = placeholderIcon('folder');

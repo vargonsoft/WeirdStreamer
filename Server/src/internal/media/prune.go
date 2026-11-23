@@ -149,7 +149,7 @@ func (p *Pruner) Prune(ctx context.Context, force bool) (int, error) {
 	inUse := map[string]bool{}
 	for _, r := range records {
 		if !forgotten[r.Path] {
-			inUse[r.ThumbnailURL] = true
+			inUse[ThumbnailFile(r.ThumbnailURL)] = true
 			inUse[GenerateThumbnailHash(r.Path)] = true
 		}
 	}
@@ -179,8 +179,9 @@ func libraryIndex(libraries []config.MediaPath, path string) int {
 // removeGenerated deletes a forgotten file's thumbnail and trickplay frames, unless inUse names
 // them (another file's record still uses them).
 func removeGenerated(r database.MediaRecord, inUse map[string]bool) {
-	if dir := config.GlobalConfig.Media.ThumbnailPath; dir != "" && strings.HasPrefix(r.ThumbnailURL, "/thumbnails/") && !inUse[r.ThumbnailURL] {
-		rel := filepath.FromSlash(strings.TrimPrefix(r.ThumbnailURL, "/thumbnails/"))
+	if file := ThumbnailFile(r.ThumbnailURL); config.GlobalConfig.Media.ThumbnailPath != "" && strings.HasPrefix(file, "/thumbnails/") && !inUse[file] {
+		dir := config.GlobalConfig.Media.ThumbnailPath
+		rel := filepath.FromSlash(strings.TrimPrefix(file, "/thumbnails/"))
 		if !strings.Contains(rel, "..") {
 			os.Remove(filepath.Join(dir, rel))
 		}

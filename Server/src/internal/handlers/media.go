@@ -652,12 +652,15 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			h.meta.Annotate(targetLib, absTarget, dirs, items)
 		}
 	}
+	// Every folder's picture for inside its icon: its thumbnail.png, else one from inside it, else
+	// (a movie's, show's or season's with nothing thumbnailed yet) its poster.
 	for i := range dirs {
-		if dirs[i].Metadata == nil || dirs[i].Metadata.Poster == "" {
-			dir := filepath.Join(targetPath, dirs[i].Name)
-			if dirs[i].ThumbnailURL = h.folderImage(dir, false); dirs[i].ThumbnailURL == "" {
-				dirs[i].ThumbnailURL = h.db.FolderPreview(dir)
-			}
+		dir := filepath.Join(targetPath, dirs[i].Name)
+		if dirs[i].ThumbnailURL = h.folderImage(dir, false); dirs[i].ThumbnailURL == "" {
+			dirs[i].ThumbnailURL = h.db.FolderPreview(dir)
+		}
+		if dirs[i].ThumbnailURL == "" && dirs[i].Metadata != nil {
+			dirs[i].ThumbnailURL = dirs[i].Metadata.Poster
 		}
 	}
 	annotateItems(items, h.requestPlayback(r))
@@ -672,6 +675,46 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+// regenerateThumbnail makes a file's thumbnail again and saves its new URL (the thumbnail's file
+// time is in it, so caches don't keep the old picture in any listing that uses it, folder icons
+// too). Pages showing the file are told. "" when no thumbnail could be made.
+func (h *MediaHandler) regenerateThumbnail(path string) string {
+	mediaType := config.MediaType(path)
+	thumbExt := ".jpg"
+	if mediaType == "image" && strings.ToLower(filepath.Ext(path)) == ".png" {
+		thumbExt = ".png"
+	}
+	thumbPath, _ := media.GetThumbnailPath(config.GlobalConfig.Media.ThumbnailPath, media.GenerateThumbnailHash(path), thumbExt)
+	os.Remove(thumbPath)
+	h.scanner.ForgetThumbnailFailure(path)
+	var url string
+	if mediaType == "image" {
+		url = h.scanner.GenerateImageThumbnail(path)
+	} else {
+		url = h.scanner.GenerateVideoThumbnail(path)
+	}
+	if url == "" {
+		return ""
+	}
+	if item, err := h.db.GetMediaItem(path); err == nil {
+		item.ThumbnailURL = url
+		h.db.SaveMediaItem(item)
+	}
+	h.notifyThumbnailReady(path, url)
+	return url
+}
+
+// folderPictureFile is the file whose thumbnail a folder (a disk path) shows in its icon: its
+// thumbnail.png, else the one FolderPreview picks; "" when it has none.
+func (h *MediaHandler) folderPictureFile(dir string) string {
+	png := filepath.Join(dir, "thumbnail.png")
+	if _, err := h.db.GetMediaItem(png); err == nil {
+		return png
+	}
+	_, path := h.db.FolderPreviewItem(dir)
+	return path
 }
 
 // folderImage gives the thumbnail of the thumbnail.png directly in dir (a disk path), the picture
@@ -798,7 +841,8 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Start regeneration in background
+	// Start regeneration in background: the folder's photos and videos, and the picture each of
+	// its subfolders shows in its icon.
 	go func() {
 		count := 0
 		entries, err := os.ReadDir(targetPath)
@@ -806,46 +850,23 @@ func (h *MediaHandler) RegenerateThumbnails(w http.ResponseWriter, r *http.Reque
 			log.Printf("Failed to read directory for thumbnail regeneration: %v", err)
 			return
 		}
-
 		for _, entry := range entries {
+			entryPath := filepath.Join(targetPath, entry.Name())
 			if entry.IsDir() {
+				if file := h.folderPictureFile(entryPath); file != "" {
+					if url := h.regenerateThumbnail(file); url != "" {
+						h.notifyThumbnailReady(entryPath, url) // the folder's icon, in open listings
+						count++
+					}
+				}
 				continue
 			}
-
-			entryPath := filepath.Join(targetPath, entry.Name())
-			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			mediaType := config.MediaType(entryPath)
-
-			if mediaType == "image" || mediaType == "video" {
-				// Delete existing thumbnail
-				hash := media.GenerateThumbnailHash(entryPath)
-				var thumbExt string
-				if mediaType == "image" && strings.ToLower(ext) == ".png" {
-					thumbExt = ".png"
-				} else {
-					thumbExt = ".jpg"
+			if mediaType := config.MediaType(entryPath); mediaType == "image" || mediaType == "video" {
+				if h.regenerateThumbnail(entryPath) != "" {
+					count++
 				}
-				thumbPath, _ := media.GetThumbnailPath(config.GlobalConfig.Media.ThumbnailPath, hash, thumbExt)
-				os.Remove(thumbPath)
-				h.scanner.ForgetThumbnailFailure(entryPath)
-
-				// Regenerate thumbnail
-				var thumbnailURL string
-				if mediaType == "image" {
-					thumbnailURL = h.scanner.GenerateImageThumbnail(entryPath)
-				} else {
-					thumbnailURL = h.scanner.GenerateVideoThumbnail(entryPath)
-				}
-
-				// Notify SSE clients about the regenerated thumbnail
-				if thumbnailURL != "" {
-					h.notifyThumbnailReady(entryPath, thumbnailURL)
-				}
-
-				count++
 			}
 		}
-
 		log.Printf("Regenerated %d thumbnails in %s", count, targetPath)
 	}()
 

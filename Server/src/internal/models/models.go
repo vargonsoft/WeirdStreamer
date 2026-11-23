@@ -104,8 +104,8 @@ type Directory struct {
 	Fixable bool `json:"fixable,omitempty"`
 	// The library's type ("movie", "tv") on browse responses, so clients know metadata applies
 	LibraryType string `json:"library_type,omitempty"`
-	// A photo's or video's thumbnail to show inside the folder's icon, for folders without a
-	// poster: its thumbnail.png, else one from inside it. A library shows only its own thumbnail.png.
+	// A picture to show inside the folder's icon: its thumbnail.png, else a photo's or video's
+	// thumbnail from inside it, else its poster. A library shows only its own thumbnail.png.
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
 }
 

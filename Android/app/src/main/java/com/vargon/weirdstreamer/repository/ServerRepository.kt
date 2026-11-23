@@ -261,7 +261,7 @@ class ServerRepository(
                                 liveVideo = mediaItem.liveVideo?.let { getStreamUrl(it) },
                                 thumbnailUrl = mediaItem.thumbnailUrl?.let { 
                                     val baseUrl = if (it.startsWith("http")) it else "$requestBase$it"
-                                    if (cacheVersion > 0) "$baseUrl?v=$cacheVersion" else baseUrl
+                                    if (cacheVersion > 0) baseUrl + (if ('?' in baseUrl) "&" else "?") + "c=$cacheVersion" else baseUrl
                                 },
                                 duration = mediaItem.duration,
                                 width = mediaItem.width,
