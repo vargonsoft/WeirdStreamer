@@ -186,7 +186,7 @@ case "$cmd" in
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CURRENT_PROJECT_VERSION="$build_number"
         app="$derived/Build/Products/Release-iphoneos/WeirdStreamer.app"
         [ -d "$app" ] || { echo "No app was built at $app." >&2; exit 1; }
-        name="WeirdStreamer-$build_number$([ -s "$incoming" ] && echo -patched).ipa"
+        name="WeirdStreamer-$build_number$([ -s "$incoming" ] && echo -patched || true).ipa" # (no patch: the test fails, which set -e would end on)
         staging="$work/ipa"
         rm -rf "$staging" && mkdir -p "$staging/Payload"
         cp -R "$app" "$staging/Payload/"
