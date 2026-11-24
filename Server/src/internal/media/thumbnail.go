@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,9 +10,11 @@ import (
 	"image/jpeg"
 	"image/png"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -140,62 +143,12 @@ func (tg *ThumbnailGenerator) generate(filePath string) (string, error) {
 		log.Printf("[THUMBNAIL] Generating video thumbnail for %s -> %s", filePath, thumbnailPath)
 		part := partPath(thumbnailPath)
 
-		// Try different seek positions: 1 minute, 30 seconds, 1 second
-		seekTimes := []string{"00:01:00.000", "00:00:30.000", "00:00:01.000"}
 		var success bool
-		codec := ""
 		if IsDiscImage(filePath) {
-			// Disc images: a frame a tenth of the way into the main title
-			seekTimes = nil
-			if args, err := DiscFrameArgs(filePath, 0.1); err == nil {
-				args = append(args, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
-				// One frame, so no progress to watch until it's made: a stuck DVD demuxer is
-				// stopped after a fixed time instead.
-				ctx, cancel := context.WithTimeout(context.Background(), discThumbnailTimeout)
-				err := exec.CommandContext(ctx, "ffmpeg", args...).Run()
-				if ctx.Err() != nil {
-					log.Printf("[THUMBNAIL] %s: %v", filePath, ErrFFmpegStalled)
-				}
-				cancel()
-				if err == nil {
-					if info, statErr := os.Stat(part); statErr == nil && info.Size() > 1024 {
-						success = true
-					}
-				}
-			}
+			// Disc images: a frame a tenth of the way into the main title, or further while it's blank
+			success = discThumbnail(filePath, part)
 		} else {
-			// Get codec info for conditional BSF
-			codec = tg.getVideoCodec(filePath)
-		}
-
-		for _, seekTime := range seekTimes {
-			// format=yuvj420p is the critical fix for MJPEG compliance in FFmpeg 7.1.1.
-			var args []string
-			if codec == "h264" || codec == "hevc" {
-				args = append(args, "-bsf:v", codec+"_metadata=matrix_coefficients=1")
-			}
-			args = append(args, "-ss", seekTime, "-noaccurate_seek", "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
-
-			cmd := exec.Command("ffmpeg", args...)
-			if err := cmd.Run(); err == nil {
-				if info, statErr := os.Stat(part); statErr == nil && info.Size() > 1024 {
-					success = true
-					break
-				} else if statErr == nil {
-					os.Remove(part)
-				}
-			}
-
-			// Fallback without BSF if needed
-			cmdFallback := exec.Command("ffmpeg", "-ss", seekTime, "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
-			if errFallback := cmdFallback.Run(); errFallback == nil {
-				if info, statErr := os.Stat(part); statErr == nil && info.Size() > 1024 {
-					success = true
-					break
-				} else if statErr == nil {
-					os.Remove(part)
-				}
-			}
+			success = videoThumbnail(filePath, part, tg.getVideoCodec(filePath))
 		}
 
 		// If all attempts failed, return error
@@ -487,3 +440,163 @@ func resizeImage(src image.Image, maxWidth, maxHeight int) image.Image {
 
 	return dst
 }
+
+// Where a video's thumbnail is taken: a minute in, then 30 s further each time the frame is blank
+// (black, white or one color: a fade, a title card on black), the last one 3½ minutes in. A video
+// too short for a minute gets 30 s, 10 s or 1 s in. When every frame is blank, the least blank is kept.
+var (
+	thumbnailSeeks      = []float64{60, 90, 120, 150, 180, 210}
+	shortThumbnailSeeks = []float64{30, 10, 1}
+)
+
+// videoThumbnail writes the video's thumbnail to part; false when no frame could be had at all.
+func videoThumbnail(filePath, part, codec string) bool {
+	var best []byte
+	bestScore := -1.0
+	// forward: each seek is further on, so one past the end ends the list
+	try := func(seeks []float64, forward bool) (found bool) {
+		for _, at := range seeks {
+			frame, made := grabFrame(filePath, part, codec, at)
+			if !made {
+				if forward {
+					return found
+				}
+				continue
+			}
+			found = true
+			if len(frame) <= 1024 {
+				continue // a JPEG that small is blank, and too small to keep
+			}
+			blank, score := frameBlank(frame)
+			if !blank {
+				best = frame
+				return true
+			}
+			if score > bestScore {
+				best, bestScore = frame, score
+			}
+		}
+		return found
+	}
+	if !try(thumbnailSeeks, true) && best == nil {
+		try(shortThumbnailSeeks, false)
+	}
+	if best == nil {
+		return false
+	}
+	return os.WriteFile(part, best, 0644) == nil
+}
+
+// grabFrame is the JPEG of the frame at seconds in; made is false when ffmpeg makes none there.
+func grabFrame(filePath, part, codec string, seconds float64) (frame []byte, made bool) {
+	at := strconv.FormatFloat(seconds, 'f', 3, 64)
+	// format=yuvj420p is the critical fix for MJPEG compliance in FFmpeg 7.1.1.
+	var args []string
+	if codec == "h264" || codec == "hevc" {
+		args = append(args, "-bsf:v", codec+"_metadata=matrix_coefficients=1")
+	}
+	args = append(args, "-ss", at, "-noaccurate_seek", "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
+	attempts := [][]string{args,
+		// Without the bitstream filter, if it was the trouble
+		{"-ss", at, "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part}}
+	for _, a := range attempts {
+		os.Remove(part)
+		if exec.Command("ffmpeg", a...).Run() != nil {
+			continue
+		}
+		if data, err := os.ReadFile(part); err == nil && len(data) > 0 {
+			if len(data) > 1024 || frame == nil {
+				frame = data
+			}
+			if len(data) > 1024 {
+				break
+			}
+		}
+	}
+	os.Remove(part)
+	return frame, frame != nil
+}
+
+// discThumbnail writes a disc image's thumbnail to part: a tenth of the way into the main title,
+// then further on (a fifth, three tenths) while the frame is blank.
+func discThumbnail(filePath, part string) bool {
+	var best []byte
+	bestScore := -1.0
+	for _, fraction := range []float64{0.1, 0.2, 0.3} {
+		args, err := DiscFrameArgs(filePath, fraction)
+		if err != nil {
+			break
+		}
+		args = append(args, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
+		// One frame, so no progress to watch until it's made: a stuck DVD demuxer is stopped
+		// after a fixed time instead.
+		ctx, cancel := context.WithTimeout(context.Background(), discThumbnailTimeout)
+		os.Remove(part)
+		err = exec.CommandContext(ctx, "ffmpeg", args...).Run()
+		if ctx.Err() != nil {
+			log.Printf("[THUMBNAIL] %s: %v", filePath, ErrFFmpegStalled)
+		}
+		cancel()
+		data, readErr := os.ReadFile(part)
+		if err != nil || readErr != nil || len(data) == 0 {
+			break
+		}
+		if len(data) <= 1024 {
+			continue // blank, and too small to keep
+		}
+		blank, score := frameBlank(data)
+		if !blank {
+			best = data
+			break
+		}
+		if score > bestScore {
+			best, bestScore = data, score
+		}
+	}
+	os.Remove(part)
+	if best == nil {
+		return false
+	}
+	return os.WriteFile(part, best, 0644) == nil
+}
+
+// frameBlank says whether a thumbnail frame (JPEG) shows next to nothing: nearly black, nearly
+// white, or nearly one color (little spread in brightness or in color). score is how much the
+// frame varies, to keep the least blank when all are.
+func frameBlank(jpegData []byte) (blank bool, score float64) {
+	img, err := jpeg.Decode(bytes.NewReader(jpegData))
+	if err != nil {
+		return false, 0 // can't tell: take it
+	}
+	b := img.Bounds()
+	var n, sumY, sumY2, sumR, sumR2, sumG, sumG2, sumB, sumB2 float64
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, bl, _ := img.At(x, y).RGBA()
+			rf, gf, bf := float64(r)/65535, float64(g)/65535, float64(bl)/65535
+			luma := 0.2126*rf + 0.7152*gf + 0.0722*bf
+			n++
+			sumY += luma
+			sumY2 += luma * luma
+			sumR, sumR2 = sumR+rf, sumR2+rf*rf
+			sumG, sumG2 = sumG+gf, sumG2+gf*gf
+			sumB, sumB2 = sumB+bf, sumB2+bf*bf
+		}
+	}
+	if n == 0 {
+		return true, 0
+	}
+	spread := func(sum, sum2 float64) float64 { return math.Sqrt(math.Max(0, sum2/n-(sum/n)*(sum/n))) }
+	mean := sumY / n
+	variety := math.Max(spread(sumY, sumY2), (spread(sumR, sumR2)+spread(sumG, sumG2)+spread(sumB, sumB2))/3)
+	blank = mean < blankDark || mean > blankBright || variety < blankFlat
+	return blank, variety
+}
+
+// The limits of a blank frame: its mean brightness (0 black to 1 white) below blankDark or above
+// blankBright, or its spread of brightness and color under blankFlat.
+const (
+	blankDark   = 0.07
+	blankBright = 0.93
+	blankFlat   = 0.05
+)
