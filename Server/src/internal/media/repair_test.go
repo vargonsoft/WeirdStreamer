@@ -91,6 +91,17 @@ func TestRepairs(t *testing.T) {
 	if bad, reason, _, err := checkSeek(ctx, ts); err != nil || bad {
 		t.Fatalf("good TS: damaged %v (%s) %v", bad, reason, err)
 	}
+	// An unfinished encode with a gap: no video from 0:10 to 3:20, so a jump to the middle rightly
+	// lands on the last keyframe before it
+	gaps := filepath.Join(root, "gaps.mp4")
+	if out, err := exec.Command("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=160x120:r=10:d=20",
+		"-vf", "setpts='if(gte(N,100),PTS+190/TB,PTS)'", "-fps_mode", "passthrough", "-c:v", "libx264",
+		"-preset", "ultrafast", "-g", "50", gaps).CombinedOutput(); err != nil {
+		t.Fatalf("making the video with a gap: %v %s", err, out)
+	}
+	if bad, reason, _, err := checkSeek(ctx, gaps); err != nil || bad {
+		t.Fatalf("video with a gap: damaged %v (%s) %v", bad, reason, err)
+	}
 	bad, reason, claimed, err := checkSeek(ctx, damaged)
 	if err != nil || !bad {
 		t.Fatalf("damaged FLV: damaged %v %v", bad, err)

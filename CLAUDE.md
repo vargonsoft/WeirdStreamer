@@ -521,6 +521,7 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   "Damaged videos" job (after each scan and every 6 hours, like the ASS cache: `repairPath/index.json`
   by `config.CacheKey`, size and mtime) checks each changed video (`checkSeek`: ffprobe drops the index
   as invalid, or a jump to the middle finds no video or video far off, by the packet's pts, else its dts (DivX in AVI has none);
+  landing well before it is fine when no keyframe lies between, `keyframeBetween`: a video with gaps, as an unfinished encode;
   MPEG-TS packet lines have an extra field; `repairChecks` has those an older check listed looked at again) and lists a damaged one (state `damaged`); only an admin's Fix (`POST /api/admin/damaged/fix`,
   `RepairJob.Fix`: in the background, one at a time, shown as `fixing`, refused unless about the video's size
   plus 2 GB is free) copies its streams untouched into an indexed Matroska file in

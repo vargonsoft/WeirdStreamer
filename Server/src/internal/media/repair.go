@@ -60,7 +60,8 @@ type repairEntry struct {
 
 // repairChecks numbers the seek check: a video an older one found damaged (and with no fixed copy)
 // is checked again. 2: a packet's dts counts when it has no pts (DivX in AVI), which 1 took for no video.
-const repairChecks = 2
+// 3: landing on the last keyframe before the target counts as a working jump (a video with gaps).
+const repairChecks = 3
 
 var repairIndex struct {
 	mu      sync.Mutex
@@ -181,9 +182,51 @@ func checkSeek(ctx context.Context, path string) (damaged bool, reason string, c
 		return true, "Jumping into it finds no video", claimed, nil
 	}
 	if math.Abs(pts-mid) > math.Max(60, claimed*0.05) {
+		// Landing well before the target is right when no keyframe lies between: a video with gaps
+		// (an unfinished encode) has nothing to show there.
+		if pts < mid {
+			between, err := keyframeBetween(ctx, path, pts, mid)
+			if ctx.Err() != nil {
+				return false, "", claimed, ctx.Err()
+			}
+			if err == nil && !between {
+				return false, "", claimed, nil
+			}
+		}
 		return true, fmt.Sprintf("Jumping to %s lands at %s", clock(mid), clock(pts)), claimed, nil
 	}
 	return false, "", claimed, nil
+}
+
+// keyframeBetween says whether the video has a keyframe after from (by more than a second) and
+// at or before to, reading its packets from from on.
+func keyframeBetween(ctx context.Context, path string, from, to float64) (bool, error) {
+	out, err := backgroundCommand(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0",
+		"-read_intervals", fmt.Sprintf("%.3f%%%.3f", from, to), "-show_entries", "packet=pts_time,dts_time,flags",
+		"-of", "csv=p=0", path).Output()
+	if err != nil {
+		return false, err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		// pts, dts, flags ("K__" for a keyframe), and for MPEG-TS a field more
+		fields := strings.Split(strings.TrimSpace(line), ",")
+		key := false
+		for _, f := range fields {
+			key = key || strings.HasPrefix(f, "K")
+		}
+		if !key {
+			continue
+		}
+		for _, f := range fields { // its pts, else its dts
+			if t, err := strconv.ParseFloat(f, 64); err == nil {
+				if t > from+1 && t <= to {
+					return true, nil
+				}
+				break
+			}
+		}
+	}
+	return false, nil
 }
 
 func lastLine(s string) string {
