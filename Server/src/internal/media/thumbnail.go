@@ -561,8 +561,9 @@ func discThumbnail(filePath, part string) bool {
 }
 
 // frameBlank says whether a thumbnail frame (JPEG) shows next to nothing: nearly black, nearly
-// white, or nearly one color (little spread in brightness or in color). score is how much the
-// frame varies, to keep the least blank when all are.
+// white, or nearly one color (little spread in brightness or in color, or most of the frame one
+// color: a white card with a small logo). score is how much the frame varies, to keep the least
+// blank when all are.
 func frameBlank(jpegData []byte) (blank bool, score float64) {
 	img, err := jpeg.Decode(bytes.NewReader(jpegData))
 	if err != nil {
@@ -570,9 +571,11 @@ func frameBlank(jpegData []byte) (blank bool, score float64) {
 	}
 	b := img.Bounds()
 	var n, sumY, sumY2, sumR, sumR2, sumG, sumG2, sumB, sumB2 float64
+	colors := map[[3]uint32]int{} // 16 levels a channel
 	for y := b.Min.Y; y < b.Max.Y; y++ {
 		for x := b.Min.X; x < b.Max.X; x++ {
 			r, g, bl, _ := img.At(x, y).RGBA()
+			colors[[3]uint32{r >> 12, g >> 12, bl >> 12}]++
 			rf, gf, bf := float64(r)/65535, float64(g)/65535, float64(bl)/65535
 			luma := 0.2126*rf + 0.7152*gf + 0.0722*bf
 			n++
@@ -589,14 +592,22 @@ func frameBlank(jpegData []byte) (blank bool, score float64) {
 	spread := func(sum, sum2 float64) float64 { return math.Sqrt(math.Max(0, sum2/n-(sum/n)*(sum/n))) }
 	mean := sumY / n
 	variety := math.Max(spread(sumY, sumY2), (spread(sumR, sumR2)+spread(sumG, sumG2)+spread(sumB, sumB2))/3)
-	blank = mean < blankDark || mean > blankBright || variety < blankFlat
-	return blank, variety
+	most := 0
+	for _, c := range colors {
+		most = max(most, c)
+	}
+	oneColor := float64(most) / n
+	blank = mean < blankDark || mean > blankBright || variety < blankFlat || oneColor >= blankOneColor
+	return blank, variety * (1 - oneColor)
 }
 
 // The limits of a blank frame: its mean brightness (0 black to 1 white) below blankDark or above
-// blankBright, or its spread of brightness and color under blankFlat.
+// blankBright, its spread of brightness and color under blankFlat, or one color (to 1/16 a
+// channel) over blankOneColor of it. Pictures measured had at most about 30% of one color; a
+// nearly white card with a logo, 93%.
 const (
-	blankDark   = 0.07
-	blankBright = 0.93
-	blankFlat   = 0.05
+	blankDark     = 0.07
+	blankBright   = 0.93
+	blankFlat     = 0.05
+	blankOneColor = 0.80
 )

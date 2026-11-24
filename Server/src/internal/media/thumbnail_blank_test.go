@@ -40,12 +40,19 @@ func TestFrameBlank(t *testing.T) {
 		{"color bars", func(x, y int) color.Color {
 			return []color.Color{color.RGBA{255, 0, 0, 255}, color.RGBA{0, 255, 0, 255}, color.RGBA{0, 0, 255, 255}, color.RGBA{200, 200, 0, 255}}[x*4/320]
 		}, false},
+		// Nearly white with a small dark logo: spread enough, but nearly all one color
+		{"white card with a logo", func(x, y int) color.Color {
+			if x > 130 && x < 190 && y > 70 && y < 110 {
+				return color.Gray{20}
+			}
+			return color.Gray{235}
+		}, true},
 		// A dark scene with something lit in it still counts as a picture
 		{"dark scene", func(x, y int) color.Color {
 			if x > 100 && x < 220 && y > 60 && y < 120 {
 				return color.Gray{180}
 			}
-			return color.Gray{25}
+			return color.Gray{uint8(10 + x*60/320)} // a real background's shading, not one flat color
 		}, false},
 	}
 	for _, c := range cases {
