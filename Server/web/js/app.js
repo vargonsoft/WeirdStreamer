@@ -1051,8 +1051,10 @@ function chooseCompatibility(p) {
     if (audioNeedsConverting(p) || burnsInSubtitles(p) || originalProblem(p.codecs)) p.mode = 'auto';
 }
 
-// Audio a stream can carry as it is (not TrueHD, which is only experimental in MP4).
-const KEPT_AUDIO = ['aac', 'ac3', 'eac3', 'mp3', 'opus', 'flac', 'dts'];
+// Audio a stream can carry as it is (not TrueHD, which is only experimental in MP4). Not MP3: browsers
+// that play an MP3 file (audio/mpeg) can stay silent with MP3 inside the stream's MP4 (Firefox), and
+// MP3 is at most stereo, so converting it to AAC costs little.
+const KEPT_AUDIO = ['aac', 'ac3', 'eac3', 'opus', 'flac', 'dts'];
 const AUDIO_STEPS = {
     copy: { query: '&audiocodec=copy' },
     surround: { query: '&audiocodec=aac', label: 'AAC 5.1' },
