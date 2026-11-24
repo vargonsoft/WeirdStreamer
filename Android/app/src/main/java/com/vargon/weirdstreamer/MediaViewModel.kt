@@ -1273,12 +1273,16 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun showImage(path: String) { selectedImagePath = path }
     fun closeImage(lastViewedPath: String? = null) {
         lastViewedPath?.let { recordSelection(currentPath, it) }
+        // Back from the viewer, the folder selects the last photo seen, as from the player (not
+        // the toolbar, after a view toggle)
+        toolbarKeepsFocus = false
         selectedImagePath = null
     }
 
     fun showPdf(path: String) { selectedPdfPath = path }
     fun closePdf(lastViewedPath: String? = null) {
         lastViewedPath?.let { recordSelection(currentPath, it) }
+        toolbarKeepsFocus = false
         selectedPdfPath = null
     }
 
