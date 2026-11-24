@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -388,7 +389,14 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
     if (damaged.videos?.isEmpty() == true) TvNote("None found.")
     damaged.loadError?.let { TvNote("Couldn't read the damaged videos: $it") }
     damaged.videos.orEmpty().forEach { v ->
-        TvSettingsRow(v.name, damagedWhere(v) + "\n" + damagedSizes(v), onClick = { damagedVideo = v }) { TvChevron() }
+        TvSettingsRow(v.name, damagedWhere(v) + "\n" + damagedSizes(v), onClick = { damagedVideo = v }) {
+            server.absoluteUrl(v.thumbnailUrl)?.let { thumb ->
+                coil.compose.AsyncImage(model = thumb, contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.padding(end = 16.dp).width(160.dp).height(90.dp).clip(RoundedCornerShape(6.dp)))
+            }
+            TvChevron()
+        }
     }
     TvNote(trashText(damaged.trash))
     if (damaged.trash.files > 0) {

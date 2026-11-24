@@ -665,6 +665,7 @@ data class DamagedVideo(
     @SerializedName("fixed_size") val fixedSize: Long = 0,
     @SerializedName("claimed") val claimed: Double = 0.0, // the length the original says
     @SerializedName("duration") val duration: Double = 0.0, // the fixed copy's
+    @SerializedName("thumbnail_url") val thumbnailUrl: String? = null,
 ) {
     val fixed get() = state == "fixed"
     /** Fix makes its copy: not fixed yet, or it failed. */

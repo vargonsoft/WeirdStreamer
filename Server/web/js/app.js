@@ -3487,7 +3487,17 @@ async function loadDamagedVideos() {
             button('Play fixed copy', 'play', false, () => playDamaged(v, false));
             button('Replace with fixed copy', 'save', false, () => replaceDamaged(v));
         }
-        li.append(title, where, sizes, buttons);
+        const body = document.createElement('div');
+        body.className = 'damaged-body';
+        body.append(title, where, sizes, buttons);
+        if (v.thumbnail_url) {
+            const img = document.createElement('img');
+            img.className = 'damaged-thumb';
+            img.src = v.thumbnail_url;
+            img.alt = '';
+            li.append(img);
+        }
+        li.append(body);
         list.appendChild(li);
     }
     decorateIconButtons();

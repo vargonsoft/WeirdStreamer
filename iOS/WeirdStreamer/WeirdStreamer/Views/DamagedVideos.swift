@@ -14,6 +14,7 @@ struct DamagedVideo: Decodable, Identifiable {
     var fixedSize: Int64?
     var claimed: Double?        // the length the original says
     var duration: Double?       // the fixed copy's
+    var thumbnailUrl: String?   // its thumbnail, when the library has one
     var id: String { path }
     var fixed: Bool { state == "fixed" }
     /// Fix makes its copy: not fixed yet, or it failed.
@@ -87,6 +88,10 @@ struct DamagedVideosSection: View {
         if list?.videos?.isEmpty == true { Text("None found.").font(.subheadline) }
         ForEach(list?.videos ?? []) { v in
             VStack(alignment: .leading, spacing: 4) {
+                if let thumb = v.thumbnailUrl {
+                    RemoteImage(relative: thumb).aspectRatio(16 / 9, contentMode: .fill)
+                        .frame(maxWidth: .infinity).frame(height: 160).clipShape(RoundedRectangle(cornerRadius: 6))
+                }
                 Text(v.name).font(.headline)
                 Text(DamagedVideos.whereText(v)).font(.caption).foregroundStyle(Palette.muted)
                 Text(DamagedVideos.sizes(v)).font(.caption).foregroundStyle(Palette.muted)

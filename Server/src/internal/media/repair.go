@@ -53,7 +53,12 @@ type repairEntry struct {
 	Duration  float64 `json:"duration,omitempty"`  // the fixed copy's real length
 	Claimed   float64 `json:"claimed,omitempty"`   // the length the damaged file claims
 	Checked   int64   `json:"checked"`
+	Version   int     `json:"version,omitempty"` // the check it was found damaged by (repairChecks)
 }
+
+// repairChecks numbers the seek check: a video an older one found damaged (and with no fixed copy)
+// is checked again. 2: a packet's dts counts when it has no pts (DivX in AVI), which 1 took for no video.
+const repairChecks = 2
 
 var repairIndex struct {
 	mu      sync.Mutex
@@ -152,7 +157,7 @@ func checkSeek(ctx context.Context, path string) (damaged bool, reason string, c
 	}
 	mid := claimed / 2
 	probe := backgroundCommand(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0",
-		"-read_intervals", fmt.Sprintf("%.3f%%+#1", mid), "-show_entries", "packet=pts_time", "-of", "csv=p=0", path)
+		"-read_intervals", fmt.Sprintf("%.3f%%+#1", mid), "-show_entries", "packet=pts_time,dts_time", "-of", "csv=p=0", path)
 	got, err := probe.Output()
 	if ctx.Err() != nil {
 		return false, "", claimed, ctx.Err()
@@ -160,9 +165,16 @@ func checkSeek(ctx context.Context, path string) (damaged bool, reason string, c
 	if err != nil {
 		return false, "", claimed, nil // a reading error, not a seek one: left alone
 	}
-	// The first packet's time ("150.03", or "150.03," for MPEG-TS, whose programs add a field)
+	// The first packet's time: its pts, else its dts (DivX in AVI has no pts: "N/A,150.03"; MPEG-TS's
+	// programs add a field)
 	first := strings.TrimSpace(strings.SplitN(string(got), "\n", 2)[0])
-	pts, perr := strconv.ParseFloat(strings.TrimSpace(strings.SplitN(first, ",", 2)[0]), 64)
+	pts, perr := 0.0, errors.New("no packet")
+	for _, field := range strings.Split(first, ",") {
+		if t, err := strconv.ParseFloat(strings.TrimSpace(field), 64); err == nil {
+			pts, perr = t, nil
+			break
+		}
+	}
 	if perr != nil {
 		return true, "Jumping into it finds no video", claimed, nil
 	}
@@ -314,7 +326,9 @@ func (j *RepairJob) runOnce(ctx context.Context) string {
 		key := config.CacheKey(p)
 		keep[key] = true
 		total++
-		if e, ok := repairIndex.entries[key]; repairCurrent(p, e, ok) {
+		if e, ok := repairIndex.entries[key]; repairCurrent(p, e, ok) &&
+			(e.State == RepairOK || e.State == RepairUnknown || e.Version >= repairChecks ||
+				(e.State == RepairFixed && fileExists(fixedFile(key)))) {
 			continue
 		}
 		work = append(work, todo{p, key})
@@ -342,7 +356,7 @@ func (j *RepairJob) runOnce(ctx context.Context) string {
 		}
 		j.job.SetRunner(0, filepath.Base(w.path))
 		info, statErr := os.Stat(w.path)
-		entry := repairEntry{Path: w.path, Checked: time.Now().Unix()}
+		entry := repairEntry{Path: w.path, Checked: time.Now().Unix(), Version: repairChecks}
 		if statErr == nil {
 			entry.Size, entry.ModTime = info.Size(), info.ModTime().Unix()
 		}

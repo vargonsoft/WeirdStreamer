@@ -520,8 +520,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   .avi) can't be jumped in: transcodes started past 0 read nothing, thumbnails and trickplay fail. The
   "Damaged videos" job (after each scan and every 6 hours, like the ASS cache: `repairPath/index.json`
   by `config.CacheKey`, size and mtime) checks each changed video (`checkSeek`: ffprobe drops the index
-  as invalid, or a jump to the middle finds no video or video far off; MPEG-TS packet lines have an
-  extra field) and lists a damaged one (state `damaged`); only an admin's Fix (`POST /api/admin/damaged/fix`,
+  as invalid, or a jump to the middle finds no video or video far off, by the packet's pts, else its dts (DivX in AVI has none);
+  MPEG-TS packet lines have an extra field; `repairChecks` has those an older check listed looked at again) and lists a damaged one (state `damaged`); only an admin's Fix (`POST /api/admin/damaged/fix`,
   `RepairJob.Fix`: in the background, one at a time, shown as `fixing`, refused unless about the video's size
   plus 2 GB is free) copies its streams untouched into an indexed Matroska file in
   `media.repairPath` (default `repairs` beside the thumbnails; `fixVideo`, checked to seek). `media.Playable`
@@ -530,7 +530,7 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   `POST /api/admin/damaged/play`, for an hour), thumbnails, trickplay, intros and credits, the ASS cache,
   downloads and the scanner's length. Fixing one removes its trickplay frames and thumbnail for remaking and
   stores its real length (the damaged header's is often wrong). Settings › Server lists them for admins
-  (`GET /api/admin/damaged`; web, phone, iPhone, TV) with Play original, Play fixed copy and Replace with
+  (`GET /api/admin/damaged`, with each one's thumbnail when the library has one; web, phone, iPhone, TV) with Play original, Play fixed copy and Replace with
   fixed copy (`POST /api/admin/damaged/replace`, `media.ReplaceWithFixed`: the copy goes in as `<name>.mkv`
   with the original's time on disk, refused while someone else plays it; `db.MoveFile` moves its progress,
   segments, subtitle timing and episode matches to the new client path; the original goes to the trash,

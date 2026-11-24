@@ -73,6 +73,15 @@ func TestRepairs(t *testing.T) {
 	if bad, reason, _, err := checkSeek(ctx, good); err != nil || bad {
 		t.Fatalf("good FLV: damaged %v (%s) %v", bad, reason, err)
 	}
+	// DivX with B-frames in AVI: its packets have no pts (only a dts), and it seeks fine
+	avi := filepath.Join(root, "bframes.avi")
+	if out, err := exec.Command("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=160x120:r=25:d=300",
+		"-c:v", "mpeg4", "-vtag", "DX50", "-bf", "2", "-g", "250", avi).CombinedOutput(); err != nil {
+		t.Fatalf("making the AVI: %v %s", err, out)
+	}
+	if bad, reason, _, err := checkSeek(ctx, avi); err != nil || bad {
+		t.Fatalf("B-frame AVI: damaged %v (%s) %v", bad, reason, err)
+	}
 	// MPEG-TS seeks fine (its packet lines have an extra field)
 	ts := filepath.Join(root, "good.ts")
 	if out, err := exec.Command("ffmpeg", "-v", "error", "-y", "-i", good, "-c", "copy", "-f", "mpegts", ts).CombinedOutput(); err != nil {

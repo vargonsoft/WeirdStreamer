@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
@@ -365,6 +366,11 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
             items(damaged.videos.orEmpty(), key = { "damaged:${it.path}" }) { v ->
                 Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        server.absoluteUrl(v.thumbnailUrl)?.let { thumb ->
+                            coil.compose.AsyncImage(model = thumb, contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxWidth().then(Modifier.aspectRatio(16f / 9f)).clip(RoundedCornerShape(6.dp)))
+                        }
                         Text(v.name, style = MaterialTheme.typography.titleMedium)
                         Text(damagedWhere(v), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(damagedSizes(v), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

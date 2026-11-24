@@ -46,6 +46,7 @@ type damagedVideo struct {
 	FixedSize int64   `json:"fixed_size,omitempty"`
 	Claimed   float64 `json:"claimed,omitempty"`  // the length the original says it has
 	Duration  float64 `json:"duration,omitempty"` // the fixed copy's real length
+	Thumbnail string  `json:"thumbnail_url,omitempty"` // its thumbnail, when the library has one
 }
 
 type trashReport struct {
@@ -81,7 +82,8 @@ func (h *MediaHandler) DamagedVideos(w http.ResponseWriter, r *http.Request) {
 		}
 		list = append(list, damagedVideo{Path: clientPath(v.Path), Name: filepath.Base(v.Path), Library: lib.Name,
 			Folder: rel, Reason: v.Reason, State: v.State, Error: withoutDiskPath(v.Error, v.Path),
-			Size: v.Size, FixedSize: v.FixedSize, Claimed: v.Claimed, Duration: v.Duration})
+			Size: v.Size, FixedSize: v.FixedSize, Claimed: v.Claimed, Duration: v.Duration,
+			Thumbnail: h.thumbnailOf(v.Path)})
 	}
 	respondJSON(w, http.StatusOK, map[string]any{"videos": list, "trash": trashState()})
 }
@@ -259,4 +261,12 @@ func (h *MediaHandler) PlayDamaged(w http.ResponseWriter, r *http.Request) {
 	}
 	originals.Unlock()
 	respondJSON(w, http.StatusOK, map[string]any{"original": req.Original})
+}
+
+// thumbnailOf is a library file's thumbnail URL, as listings give it, or "" when it has none.
+func (h *MediaHandler) thumbnailOf(path string) string {
+	if item, err := h.db.GetMediaItem(path); err == nil {
+		return item.ThumbnailURL
+	}
+	return ""
 }
