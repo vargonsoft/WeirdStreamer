@@ -528,6 +528,14 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   segments, subtitle timing and episode matches to the new client path; the original goes to the trash,
   `media.trashPath`, default `trash` beside the thumbnails, emptied after 30 days by the job or with Empty
   the trash, `POST /api/admin/trash/empty`). Both folders are on the Jobs page's storage list.
+- **3D videos marked twice** (`media/stereo.go`): an H.264 side-by-side (or other 3D) video whose
+  layout is marked in both the container (Matroska's StereoMode) and the stream's SEI can't be decoded
+  by ffmpeg 8: each frame gets the marker twice ("File exists" from the filter graph), so no thumbnail,
+  trickplay or transcode, though its original plays. Such a video (`stereoMarked`: H.264 with the
+  container's Stereo 3D side data, remembered until it changes) is read with its SEI left out by an
+  input bitstream filter (`inputFilters`: `-bsf:v filter_units=remove_types=6` before `-i`, chained after
+  the matrix filter where there is one): thumbnails, trickplay, transcodes, download encodes and credits
+  on black. The file isn't touched, and it isn't a damaged video (no fixed copy).
 - **Video thumbnails** (`media/thumbnail.go`): a frame a minute in, and while it's blank (`frameBlank`:
   mean brightness under 0.07 or over 0.93, little spread in brightness and color, or 80% or more of it
   one color, as a white card with a small logo: a fade, a title card, one color) 30 s further, up to 3½ minutes in; the first that isn't wins, else the least blank. A video

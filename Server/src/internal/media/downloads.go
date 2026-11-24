@@ -323,7 +323,8 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 		if track < 0 || track >= len(codecs.Audio) {
 			track = codecs.DefaultAudio()
 		}
-		args = []string{"-i", Playable(job.Path), "-map", "0:v:0", "-map", fmt.Sprintf("0:a:%d?", track)}
+		src := Playable(job.Path)
+		args = append(inputFilters(src, ""), "-i", src, "-map", "0:v:0", "-map", fmt.Sprintf("0:a:%d?", track))
 		if height > 0 {
 			args = append(args, "-vf", fmt.Sprintf("scale=-2:%d", height))
 		}

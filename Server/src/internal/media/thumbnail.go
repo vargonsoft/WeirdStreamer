@@ -494,14 +494,14 @@ func videoThumbnail(filePath, part, codec string) bool {
 func grabFrame(filePath, part, codec string, seconds float64) (frame []byte, made bool) {
 	at := strconv.FormatFloat(seconds, 'f', 3, 64)
 	// format=yuvj420p is the critical fix for MJPEG compliance in FFmpeg 7.1.1.
-	var args []string
+	matrix := ""
 	if codec == "h264" || codec == "hevc" {
-		args = append(args, "-bsf:v", codec+"_metadata=matrix_coefficients=1")
+		matrix = codec + "_metadata=matrix_coefficients=1"
 	}
-	args = append(args, "-ss", at, "-noaccurate_seek", "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
+	args := append(inputFilters(filePath, matrix), "-ss", at, "-noaccurate_seek", "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)
 	attempts := [][]string{args,
-		// Without the bitstream filter, if it was the trouble
-		{"-ss", at, "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part}}
+		// Without the matrix filter, if it was the trouble (a 3D video's SEI still left out)
+		append(inputFilters(filePath, ""), "-ss", at, "-i", filePath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-y", part)}
 	for _, a := range attempts {
 		os.Remove(part)
 		if exec.Command("ffmpeg", a...).Run() != nil {

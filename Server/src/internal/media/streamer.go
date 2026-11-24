@@ -405,6 +405,7 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 		// Add -ss before -i for faster seeking
 		args = append(args, "-ss", startTime)
 	}
+	args = append(args, inputFilters(filePath, "")...) // a 3D video marked twice decodes
 	args = append(args, "-i", filePath)
 
 	// Down to that height, never up: a smaller source keeps its size.

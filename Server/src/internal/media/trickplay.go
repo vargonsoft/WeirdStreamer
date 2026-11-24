@@ -409,11 +409,12 @@ func (tg *TrickplayGenerator) extractBatch(ctx context.Context, videoPath, dir, 
 	for k, i := range times {
 		outs[k] = partPath(filepath.Join(dir, fmt.Sprintf("frame-%d.jpg", i)))
 		os.Remove(outs[k])
+		matrix := ""
 		if codec == "h264" || codec == "hevc" {
-			args = append(args, "-threads", "1", "-bsf:v", codec+"_metadata=matrix_coefficients=1")
-		} else {
-			args = append(args, "-threads", "1")
+			matrix = codec + "_metadata=matrix_coefficients=1"
 		}
+		args = append(args, "-threads", "1")
+		args = append(args, inputFilters(videoPath, matrix)...)
 		args = append(args, "-ss", fmt.Sprintf("%.3f", float64(i)), "-noaccurate_seek", "-i", videoPath)
 	}
 	for k := range times {
@@ -437,9 +438,11 @@ func (tg *TrickplayGenerator) extractFrame(ctx context.Context, videoPath, out s
 
 	// format=yuvj420p and -strict unofficial are MANDATORY for MJPEG compliance in FFmpeg 7.1.1.
 	var args []string
+	matrix := ""
 	if codec == "h264" || codec == "hevc" {
-		args = append(args, "-bsf:v", codec+"_metadata=matrix_coefficients=1")
+		matrix = codec + "_metadata=matrix_coefficients=1"
 	}
+	args = append(args, inputFilters(videoPath, matrix)...)
 	args = append(args, "-ss", timestamp, "-noaccurate_seek", "-i", videoPath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-strict", "unofficial", "-y", out)
 
 	cmd := backgroundCommand(ctx, "ffmpeg", args...)
@@ -450,7 +453,7 @@ func (tg *TrickplayGenerator) extractFrame(ctx context.Context, videoPath, out s
 	}
 
 	// Simple fallback without BSF or format flags.
-	cmdFallback := backgroundCommand(ctx, "ffmpeg", "-ss", timestamp, "-i", videoPath, "-vf", "scale=320:-1", "-frames:v", "1", "-strict", "unofficial", "-y", out)
+	cmdFallback := backgroundCommand(ctx, "ffmpeg", append(inputFilters(videoPath, ""), "-ss", timestamp, "-i", videoPath, "-vf", "scale=320:-1", "-frames:v", "1", "-strict", "unofficial", "-y", out)...)
 	if errFallback := cmdFallback.Run(); errFallback == nil {
 		if info, statErr := os.Stat(out); statErr == nil && info.Size() > 0 {
 			return true

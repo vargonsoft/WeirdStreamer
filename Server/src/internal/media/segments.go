@@ -159,9 +159,11 @@ const (
 // keyframes alone miss most of it.
 func BlackCredits(ctx context.Context, path string, duration, span float64) (*Segment, error) {
 	from := max(0, duration-span)
-	cmd := backgroundCommand(ctx, "ffmpeg", "-hide_banner", "-nostdin", "-skip_frame", "noref",
-		"-ss", fmt.Sprintf("%.3f", from), "-i", Playable(path), "-an", "-sn", "-map", "0:v:0",
+	src := Playable(path)
+	args := append([]string{"-hide_banner", "-nostdin", "-skip_frame", "noref"}, inputFilters(src, "")...)
+	args = append(args, "-ss", fmt.Sprintf("%.3f", from), "-i", src, "-an", "-sn", "-map", "0:v:0",
 		"-vf", "fps=2,scale=320:-2,blackdetect=d=0:pic_th=0.80:pix_th=0.03", "-f", "null", "-")
+	cmd := backgroundCommand(ctx, "ffmpeg", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
