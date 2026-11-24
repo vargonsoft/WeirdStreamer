@@ -232,8 +232,10 @@ an admin's sign-in opens Settings at Media Paths (`openLibrarySettings` in `app.
 given: `--emulators` (the running emulators, with a launch-and-crash check; emulators go first and
 a crash stops the rest), one flag per real device in `Android/devices.local` (git-ignored, one line
 each: `flag|display name|model prefix`; `--help` lists them), and `--web`: copies it to `Server/web/downloads/WeirdStreamer.apk`
-(git-ignored), which the web UI's sign-in page and Settings (My Account) link to for downloading;
-the links hide when there's no APK. With none it builds nothing. `--no-build` reuses the built APK. A
+(git-ignored), which the web UI's Settings (My Account) links to for downloading;
+the link hides when there's no APK. `/downloads/` is for signed-in accounts only (a 20 MB file anyone could
+fetch over and over), so the apps' `AppUpdater` asks each server with its token (`updateServers`: only
+saved servers with an account signed in), and Settings' update row hides when there's none. With none it builds nothing. `--no-build` reuses the built APK. A
 destination that isn't connected, or a failed install, makes it exit non-zero.
 
 - Versions: `versionCode` (the build number) is the git commit count, and `versionName` is a

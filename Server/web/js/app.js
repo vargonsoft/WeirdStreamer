@@ -209,7 +209,6 @@ function setupEventListeners() {
     setupMatchDialog();
     setupFolderPicker();
     setupPlayerControls();
-    setupAppDownloads();
     decorateIconButtons();
     setupSecretToggles();
 
@@ -286,6 +285,7 @@ function showMainScreen() {
     // Update regenerate thumbnails button visibility
     updateRegenerateThumbnailsButton();
     updateHeaderServer();
+    setupAppDownloads(); // signed in only: the server refuses the app to anyone else
 
     // Load config for friendly path names for all users
     if (!state.currentConfig) {
@@ -2381,7 +2381,7 @@ const MATERIAL_ICONS = {
 
 // Links to the Android app's release APK, which Android/deploy-release.sh --web publishes to
 // web/downloads with WeirdStreamer.json ({ version, build, size, built }): shown, with its
-// version, build number, size and date, once it's there.
+// version, build number, size and date, once it's there. Only for those signed in (Settings).
 async function setupAppDownloads() {
     try {
         let app = null;

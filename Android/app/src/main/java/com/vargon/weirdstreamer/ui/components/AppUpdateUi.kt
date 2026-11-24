@@ -45,7 +45,7 @@ private const val TV_BANNER_MS = 15_000L
 internal fun UpdateChecks(viewModel: MediaViewModel) {
     LaunchedEffect(viewModel.currentSource?.serverAddress) {
         while (true) {
-            AppUpdater.checkQuietly(updateServers(viewModel))
+            updateServers(viewModel).takeIf { it.isNotEmpty() }?.let { AppUpdater.checkQuietly(it) }
             delay(UPDATE_CHECK_EVERY_MS)
         }
     }
@@ -86,10 +86,16 @@ internal fun UpdateBanner(isTv: Boolean, onOpenSettings: () -> Unit, modifier: M
     }
 }
 
-/** Servers to look for a newer app on: the one in use first, then the other saved ones. */
-internal fun updateServers(viewModel: MediaViewModel): List<String> {
+/**
+ * Servers to look for a newer app on, with their tokens: the one in use first, then the other saved
+ * ones, each only while an account is signed in to it (servers give the app to no one else). None
+ * hides Settings' update row.
+ */
+internal fun updateServers(viewModel: MediaViewModel): List<Pair<String, String>> {
     val current = viewModel.currentSource?.takeIf { it.typeId == "SERVER" }?.serverAddress
-    return listOfNotNull(current) + viewModel.credentialManager.getApiServers().sorted()
+    val credentials = viewModel.credentialManager
+    return (listOfNotNull(current) + credentials.getApiServers().sorted()).distinct()
+        .mapNotNull { server -> credentials.getServerToken(server)?.let { server to it } }
 }
 
 /** The row's title and the line under it. */

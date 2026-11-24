@@ -37,7 +37,8 @@ sealed interface UpdateState {
 /**
  * Updates the app from the APK a WeirdStreamer server publishes: newer when its build number
  * (the git commit count) is above the installed one. The APK goes straight into a
- * PackageInstaller session, and the system asks the user to confirm the install.
+ * PackageInstaller session, and the system asks the user to confirm the install. Servers give it
+ * only to accounts signed in, so each is asked with its token.
  */
 object AppUpdater {
     var state by mutableStateOf<UpdateState>(UpdateState.Idle)
@@ -49,9 +50,12 @@ object AppUpdater {
     var dismissedBuild by mutableStateOf(0)
 
     /** A look for a newer build while the app runs, for the banner: leaves an update under way, or found, as it is. */
-    suspend fun checkQuietly(servers: List<String>) {
+    suspend fun checkQuietly(servers: List<Pair<String, String>>) {
         if (state in listOf(UpdateState.Idle, UpdateState.UpToDate, UpdateState.NotPublished)) check(servers)
     }
+
+    private fun signedIn(url: String, token: String?) = Request.Builder().url(url)
+        .apply { if (token != null) header("Authorization", "Bearer $token") }.build()
 
     private val client: OkHttpClient by lazy {
         // Saved servers' certificate rules (ServerTrust).
@@ -62,15 +66,19 @@ object AppUpdater {
             .build()
     }
 
-    /** Looks for a newer build on [servers] (the first one's wins a tie). */
-    suspend fun check(servers: List<String>) {
+    /** The tokens [check] was given, by server, for downloading the APK from the one it found. */
+    private var tokens = emptyMap<String, String>()
+
+    /** Looks for a newer build on [servers], each server's address and token (the first one's wins a tie). */
+    suspend fun check(servers: List<Pair<String, String>>) {
         if (state is UpdateState.Checking || state is UpdateState.Downloading) return
         state = UpdateState.Checking
+        tokens = servers.associate { (server, token) -> server.trimEnd('/') to token }
         val releases = withContext(Dispatchers.IO) {
-            servers.distinct().mapNotNull { server ->
+            servers.distinctBy { it.first }.mapNotNull { (server, token) ->
                 runCatching {
                     val base = server.trimEnd('/')
-                    client.newCall(Request.Builder().url("$base/downloads/WeirdStreamer.json").build()).execute().use { r ->
+                    client.newCall(signedIn("$base/downloads/WeirdStreamer.json", token)).execute().use { r ->
                         if (!r.isSuccessful) return@runCatching null
                         val json = JSONObject(r.body!!.string())
                         AppRelease(json.getString("version"), json.getInt("build"), json.optLong("size"), base)
@@ -101,7 +109,7 @@ object AppUpdater {
                 }
                 val id = installer.createSession(params)
                 installer.openSession(id).use { session ->
-                    client.newCall(Request.Builder().url(release.apkUrl).build()).execute().use { r ->
+                    client.newCall(signedIn(release.apkUrl, tokens[release.server])).execute().use { r ->
                         if (!r.isSuccessful) error("The server answered ${r.code}")
                         val body = r.body!!
                         val total = body.contentLength().takeIf { it > 0 } ?: release.size

@@ -294,8 +294,8 @@ sudo apt install libheif-examples
 
 ### Android app
 
-The server offers the app for download: use the link on the web UI's sign-in page, or in
-Settings under My Account. The same APK is attached to each release. It needs Android 10 or
+The server offers the app to its signed-in users: sign in to the web UI on the device and use the
+link in Settings under My Account. The same APK is attached to each release. It needs Android 10 or
 later, and the same app works on Android TV and on phones. Install it from the file
 (sideloading), then add your server by its name or address. Without a port, the app looks for it on
 9000, 443, 80 and 8080, over HTTPS or HTTP, and saves the address it found.

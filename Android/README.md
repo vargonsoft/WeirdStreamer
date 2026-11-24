@@ -7,8 +7,7 @@ The server's README is [Server/README.md](../Server/README.md), and the iPhone a
 
 ## Install
 
-The server offers the app for download from its web UI (the sign-in page, or Settings under My
-Account), and each release attaches the same APK. It runs on Android TV, on phones and on tablets. It
+The server offers the app to its signed-in users from its web UI (Settings under My Account), and each release attaches the same APK. It runs on Android TV, on phones and on tablets. It
 needs Android 10 (API 29) or later. Install it from the file (allow installs from your browser or
 file manager when asked), then add your server by its name or address.
 

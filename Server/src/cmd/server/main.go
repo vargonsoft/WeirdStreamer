@@ -316,6 +316,12 @@ func main() {
 		mime.AddExtensionType(".apk", "application/vnd.android.package-archive")
 		// no-cache makes browsers revalidate (a cheap 304) instead of running a stale web UI after an update
 		fileServer := http.FileServer(http.Dir(webDir))
+		// The app (20 MB) only for those signed in: anyone else fetching it over and over would use
+		// up the server's upload. Signed-in pages and the apps' update checks fetch it with their token.
+		r.PathPrefix("/downloads/").Handler(authHandler.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-cache")
+			fileServer.ServeHTTP(w, r)
+		})))
 		r.PathPrefix("/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-cache")
 			fileServer.ServeHTTP(w, r)

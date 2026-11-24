@@ -143,8 +143,8 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                 )
             }
 
-            // App update, from the APK a server publishes
-            item {
+            // App update, from the APK a server publishes to its signed-in accounts: only with one signed in
+            if (updateServers(viewModel).isNotEmpty()) item {
                 val (title, detail) = updateLabels(AppUpdater.state)
                 ListItem(
                     headlineContent = {

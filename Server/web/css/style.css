@@ -830,19 +830,6 @@ body {
     font-size: 0.85em;
 }
 
-.app-download-login {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    margin-top: 20px;
-    color: var(--primary-color);
-    font-size: 14px;
-}
-
-.app-download-login:hover {
-    text-decoration: underline;
-}
-
 .app-download-text {
     color: var(--muted-text);
     margin-bottom: 12px;
