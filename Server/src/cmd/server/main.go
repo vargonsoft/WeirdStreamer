@@ -289,6 +289,7 @@ func main() {
 	api.HandleFunc("/admin/backups", configHandler.BackUpNow).Methods("POST")
 	api.HandleFunc("/admin/damaged", mediaHandler.DamagedVideos).Methods("GET")
 	api.HandleFunc("/admin/damaged/replace", mediaHandler.ReplaceDamaged).Methods("POST")
+	api.HandleFunc("/admin/damaged/fix", mediaHandler.FixDamaged).Methods("POST")
 	api.HandleFunc("/admin/damaged/play", mediaHandler.PlayDamaged).Methods("POST")
 	api.HandleFunc("/admin/trash/empty", mediaHandler.EmptyTrash).Methods("POST")
 	api.HandleFunc("/groups", configHandler.GetAvailableGroups).Methods("GET")

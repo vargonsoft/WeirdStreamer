@@ -100,6 +100,8 @@ struct APIContractTests {
         #expect(DamagedVideos.whereText(v).hasPrefix("Movies · Its seek index"))
         #expect(DamagedVideos.trashText(list.trash).hasPrefix("The trash holds 1 replaced original ("))
         #expect(DamagedVideos.trashText(TrashReport(files: 0, bytes: 0, days: 30)) == "The trash is empty. Replaced originals are kept there 30 days.")
+        let waiting = try decode(DamagedVideo.self, #"{"path":"01c6653f/Movies/Clip.avi","name":"Clip.avi","state":"damaged","size":1048576}"#)
+        #expect(waiting.fixable && !waiting.fixed && DamagedVideos.sizes(waiting).hasSuffix("Fix makes a copy of about its size"))
     }
 
     @Test func hardwareReportWithNothingFound() throws {

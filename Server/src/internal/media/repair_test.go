@@ -150,3 +150,56 @@ func TestRepairs(t *testing.T) {
 		t.Fatalf("replacing again: %v", err)
 	}
 }
+
+// The job only lists damaged videos; Fix makes the copy on request, in the background.
+func TestFixOnRequest(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("no ffmpeg")
+	}
+	root := t.TempDir()
+	library := filepath.Join(root, "Movies")
+	os.MkdirAll(library, 0o755)
+	saved := config.GlobalConfig
+	config.GlobalConfig = &config.Config{Media: config.MediaConfig{
+		Paths:      []config.MediaPath{{ID: "lib1", Name: "Movies", Path: library}},
+		RepairPath: filepath.Join(root, "repairs"),
+	}}
+	repairIndex.mu.Lock()
+	repairIndex.loaded, repairIndex.entries = false, nil
+	repairIndex.mu.Unlock()
+	t.Cleanup(func() {
+		config.GlobalConfig = saved
+		repairIndex.mu.Lock()
+		repairIndex.loaded, repairIndex.entries = false, nil
+		repairIndex.mu.Unlock()
+	})
+	_, damaged := damagedFLV(t, library)
+	info, _ := os.Stat(damaged)
+	key := config.CacheKey(damaged)
+	repairIndex.mu.Lock()
+	loadRepairIndex()
+	repairIndex.entries[key] = repairEntry{Path: damaged, Size: info.Size(), ModTime: info.ModTime().Unix(), State: RepairDamaged, Reason: "test"}
+	repairIndex.mu.Unlock()
+	inLib := func(string) bool { return true }
+	if got := DamagedVideos(inLib); len(got) != 1 || got[0].State != RepairDamaged || Playable(damaged) != damaged {
+		t.Fatalf("before fixing: %+v", got)
+	}
+	j := &RepairJob{}
+	if err := j.Fix(damaged); err != nil {
+		t.Fatalf("fix: %v", err)
+	}
+	if err := j.Fix(damaged); err != ErrFixing {
+		t.Fatalf("a second fix while the first runs: %v", err)
+	}
+	for i := 0; i < 100 && DamagedVideos(inLib)[0].State == RepairFixing; i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if got := DamagedVideos(inLib); got[0].State != RepairFixed || Playable(damaged) != fixedFile(key) {
+		t.Fatalf("after fixing: %+v, playing %s", got, Playable(damaged))
+	}
+	// Its copy gone (deleted by hand), it's listed to fix again and plays as it is
+	os.Remove(fixedFile(key))
+	if got := DamagedVideos(inLib); got[0].State != RepairDamaged || Playable(damaged) != damaged {
+		t.Fatalf("copy gone: %+v", got)
+	}
+}

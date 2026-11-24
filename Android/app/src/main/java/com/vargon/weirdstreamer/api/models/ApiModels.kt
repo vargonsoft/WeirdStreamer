@@ -659,7 +659,7 @@ data class DamagedVideo(
     @SerializedName("library") val library: String = "",
     @SerializedName("folder") val folder: String = "",
     @SerializedName("reason") val reason: String = "",
-    @SerializedName("state") val state: String = "", // "fixed", or "failed"
+    @SerializedName("state") val state: String = "", // "damaged", "fixing", "fixed" or "failed"
     @SerializedName("error") val error: String? = null,
     @SerializedName("size") val size: Long = 0,
     @SerializedName("fixed_size") val fixedSize: Long = 0,
@@ -667,6 +667,9 @@ data class DamagedVideo(
     @SerializedName("duration") val duration: Double = 0.0, // the fixed copy's
 ) {
     val fixed get() = state == "fixed"
+    /** Fix makes its copy: not fixed yet, or it failed. */
+    val fixable get() = state == "damaged" || state == "failed"
+    val fixing get() = state == "fixing"
 }
 
 /** The trash of replaced originals: deleted [days] after they went in. */

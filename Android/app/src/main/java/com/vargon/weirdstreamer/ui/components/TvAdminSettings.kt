@@ -422,7 +422,8 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
                     onPlay(v.path, if (original) "${v.name} (original)" else "${v.name} (fixed copy)", if (original) 0.0 else v.duration)
                 }
             },
-            onReplace = { damagedVideo = null; damaged.replace(v) })
+            onReplace = { damagedVideo = null; damaged.replace(v) },
+            onFix = { damagedVideo = null; damaged.fix(v) })
     }
     if (emptying) {
         TvConfirmDialog("Empty the trash?", "Every replaced original in it is deleted now. They can't be brought back.", "Empty the trash",
@@ -449,13 +450,14 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
 /** A damaged video: play it as it is or its fixed copy, or replace it with the fixed copy (asked first). */
 @Composable
 private fun TvDamagedDialog(v: com.vargon.weirdstreamer.api.models.DamagedVideo, onDismiss: () -> Unit,
-                            onPlay: (original: Boolean) -> Unit, onReplace: () -> Unit) {
+                            onPlay: (original: Boolean) -> Unit, onReplace: () -> Unit, onFix: () -> Unit) {
     var confirming by remember { mutableStateOf(false) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     TvDialogFrame(v.name, onDismiss) {
         TvNote(damagedWhere(v) + "\n" + damagedSizes(v))
         TvValueRow("Play original", focus = first) { onPlay(true) }
+        if (v.fixable) TvValueRow(if (v.state == "failed") "Try fixing again" else "Fix") { onFix() }
         if (v.fixed) {
             TvValueRow("Play fixed copy") { onPlay(false) }
             TvValueRow("Replace with fixed copy") { confirming = true }

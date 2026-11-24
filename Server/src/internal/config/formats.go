@@ -17,6 +17,9 @@ func MediaType(path string) string {
 	if GlobalConfig == nil {
 		return ""
 	}
+	if IsDVDFolder(path) {
+		return "video" // a DVD's VIDEO_TS folder, played as a disc
+	}
 	m := GlobalConfig.Media
 	ext := strings.ToLower(filepath.Ext(path))
 	switch {
@@ -89,4 +92,10 @@ func syncBytes(head []byte, offset, packet int) bool {
 		return false
 	}
 	return len(head) <= offset+packet || head[offset+packet] == 0x47
+}
+
+// IsDVDFolder says whether path names a DVD's VIDEO_TS folder (an unpacked disc), by its name:
+// it's played as a disc, as an ISO is. media.DVDFolder also checks that it holds VIDEO_TS.IFO.
+func IsDVDFolder(path string) bool {
+	return strings.EqualFold(filepath.Base(path), "VIDEO_TS")
 }

@@ -67,7 +67,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     // chosen angle and tracks; the disc dialog changes them.
     val isDisc = remember(path) {
         viewModel.getFileItemForPath(path)?.let { item ->
-            item.name.endsWith(".iso", ignoreCase = true) || (item.originalPath ?: "").endsWith(".iso", ignoreCase = true)
+            isDiscPath(item.name) || isDiscPath(item.originalPath ?: "")
         } ?: false
     }
     var discInfo by remember { mutableStateOf<DiscInfo?>(null) }

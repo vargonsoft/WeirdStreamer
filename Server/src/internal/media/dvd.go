@@ -24,9 +24,82 @@ import (
 // chain (PGC) at a time, while a title can be several chained PGCs, so the disc's own tables
 // (its IFO files) are read to know each title's chain; ffprobe supplies chapters and tracks.
 
-// IsDiscImage reports whether a file is a disc image played through the DVD reader.
+// IsDiscImage reports whether a file is a disc played through the DVD reader: an image (.iso),
+// or an unpacked DVD's VIDEO_TS folder (DVDFolder), which ffmpeg's dvdvideo opens the same way.
 func IsDiscImage(path string) bool {
-	return strings.EqualFold(filepath.Ext(path), ".iso")
+	return strings.EqualFold(filepath.Ext(path), ".iso") || config.IsDVDFolder(path)
+}
+
+// DVDFolder says whether path is a VIDEO_TS folder holding a DVD (its VIDEO_TS.IFO): listed and
+// played as one video, named after the folder it's in, its VOB, IFO and BUP files never on their own.
+func DVDFolder(path string) bool {
+	if !config.IsDVDFolder(path) {
+		return false
+	}
+	_, err := findInFolder(path, "VIDEO_TS.IFO")
+	return err == nil
+}
+
+// DiscName is the name a disc is listed by: an image's own, and a VIDEO_TS folder's parent's
+// (the folder it was unpacked into, as "Frivolous_Lola").
+func DiscName(path string) string {
+	if config.IsDVDFolder(path) {
+		return filepath.Base(filepath.Dir(path))
+	}
+	return filepath.Base(path)
+}
+
+// DiscSize is a disc's size: an image's, or the files in a VIDEO_TS folder together.
+func DiscSize(path string, info os.FileInfo) int64 {
+	if info == nil || !info.IsDir() {
+		if info != nil {
+			return info.Size()
+		}
+		return 0
+	}
+	var total int64
+	entries, _ := os.ReadDir(path)
+	for _, e := range entries {
+		if fi, err := e.Info(); err == nil && !e.IsDir() {
+			total += fi.Size()
+		}
+	}
+	return total
+}
+
+// findInFolder is the path of a file in dir by its name, in any case (discs' files are VIDEO_TS.IFO
+// or video_ts.ifo, as copied).
+func findInFolder(dir, name string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if strings.EqualFold(e.Name(), name) && !e.IsDir() {
+			return filepath.Join(dir, e.Name()), nil
+		}
+	}
+	return "", fmt.Errorf("%s: %w", name, errNotOnDisc)
+}
+
+// dvdFiles reads a disc's files by their path on the disc ("VIDEO_TS", "VTS_01_0.IFO"): from an ISO
+// image, or from an unpacked VIDEO_TS folder.
+type dvdFiles interface {
+	readFile(parts ...string) ([]byte, error)
+}
+
+// folderDisc is a VIDEO_TS folder on disk, as dvdFiles.
+type folderDisc string
+
+func (d folderDisc) readFile(parts ...string) ([]byte, error) {
+	if len(parts) == 0 {
+		return nil, errNotOnDisc
+	}
+	file, err := findInFolder(string(d), parts[len(parts)-1])
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(file)
 }
 
 // discInfoVersion changes when probing changes, so discs stored by older builds are probed again.
@@ -657,14 +730,20 @@ func (t dvdTitleTable) segments() []DiscSegment {
 // readDVDTables reads the title table from VIDEO_TS.IFO and each title's chapters and PGC
 // lengths from its title set's IFO.
 func readDVDTables(path string) ([]dvdTitleTable, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	fs, err := openISO9660(f)
-	if err != nil {
-		return nil, err
+	var fs dvdFiles
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		fs = folderDisc(path)
+	} else {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		iso, err := openISO9660(f)
+		if err != nil {
+			return nil, err
+		}
+		fs = iso
 	}
 	vmg, err := fs.readFile("VIDEO_TS", "VIDEO_TS.IFO")
 	if err != nil {

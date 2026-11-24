@@ -281,7 +281,13 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
     in `streamer.go`: `.mkv`, `.avi`, `.wmv` and similar). The web UI always sends it, so the
     browser gets originals unless the user presses "Transcode to MP4".
   - Discs (`.iso`) are always transcoded, per title (`title`, `angle`, `audio` params); their
-    subtitles come beside the stream (below).
+    subtitles come beside the stream (below). An unpacked DVD, a `VIDEO_TS` folder holding
+    `VIDEO_TS.IFO` (`media.DVDFolder`; `config.IsDVDFolder` by name, which `config.MediaType` takes for a
+    video and `media.IsDiscImage` for a disc), is one too: the scanner and folder listings show it as one
+    video named after its parent folder (`DiscName`), sized as its files (`DiscSize`), and never go into
+    it; its IFOs are read from the folder (`folderDisc`), ffmpeg's dvdvideo opens the folder, and the
+    clients take a path ending in `VIDEO_TS` for a disc as they do `.iso`. No VOB/IFO extensions in
+    config.yml: the folder is found by its structure.
 - **Web player** (`app.js`): `playVideo(item, forceTranscode, startAt)` plays in the
   `<video id="video-player">` of `#player-modal`, with the player's own controls
   (`#player-controls`, `setupPlayerControls`; the native `controls` are off). Discs (`playDisc`)
@@ -515,7 +521,9 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   "Damaged videos" job (after each scan and every 6 hours, like the ASS cache: `repairPath/index.json`
   by `config.CacheKey`, size and mtime) checks each changed video (`checkSeek`: ffprobe drops the index
   as invalid, or a jump to the middle finds no video or video far off; MPEG-TS packet lines have an
-  extra field) and copies a damaged one's streams untouched into an indexed Matroska file in
+  extra field) and lists a damaged one (state `damaged`); only an admin's Fix (`POST /api/admin/damaged/fix`,
+  `RepairJob.Fix`: in the background, one at a time, shown as `fixing`, refused unless about the video's size
+  plus 2 GB is free) copies its streams untouched into an indexed Matroska file in
   `media.repairPath` (default `repairs` beside the thumbnails; `fixVideo`, checked to seek). `media.Playable`
   gives that copy in the video's place to everything that reads it: the stream, codecs, seek-point,
   subtitle and font handlers (`h.playable`: not with `original=1`, or for an admin who chose Play original,

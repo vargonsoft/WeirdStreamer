@@ -372,6 +372,9 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
                             PhoneSecondaryButton(onClick = { damaged.play(v, original = true) { onPlay(v.path, "${v.name} (original)", 0.0) } }) {
                                 Text("Play original")
                             }
+                            if (v.fixable) {
+                                PhoneButton(onClick = { damaged.fix(v) }) { Text(if (v.state == "failed") "Try fixing again" else "Fix") }
+                            }
                             if (v.fixed) {
                                 PhoneButton(onClick = { damaged.play(v, original = false) { onPlay(v.path, "${v.name} (fixed copy)", v.duration) } }) {
                                     Text("Play fixed copy")

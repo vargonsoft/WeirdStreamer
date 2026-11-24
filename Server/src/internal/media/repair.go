@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
@@ -25,7 +26,7 @@ import (
 // ffmpeg can't jump into them: players can't skip ahead, transcodes that start past 0 read nothing,
 // and thumbnails and trickplay fail. The "Damaged videos" job (after each scan and every 6 hours)
 // checks every library video that changed since it last looked, and copies a damaged one's streams,
-// untouched, into an indexed Matroska file in media.repairPath, which Playable then gives in its
+// untouched (when an admin presses Fix: a copy is as big as the video), into an indexed Matroska file in media.repairPath, which Playable then gives in its
 // place to everything that reads it with ffmpeg (streams, codecs, thumbnails, trickplay, subtitles,
 // intros and credits, downloads). The index (repairPath/index.json) is keyed by config.CacheKey.
 // An admin can replace the original with its fixed copy (ReplaceWithFixed): the original goes to
@@ -34,8 +35,10 @@ import (
 // Repair states
 const (
 	RepairOK      = "ok"      // seeks fine
+	RepairDamaged = "damaged" // damaged; listed in Settings, where an admin can fix it (a copy made on request)
+	RepairFixing  = "fixing"  // its fixed copy is being made (shown, not stored)
 	RepairFixed   = "fixed"   // damaged; the fixed copy is in place
-	RepairFailed  = "failed"  // damaged, and it couldn't be fixed
+	RepairFailed  = "failed"  // damaged, and it couldn't be fixed (Fix tries again)
 	RepairUnknown = "unknown" // not a video ffprobe reads: not looked at again until it changes
 )
 
@@ -332,7 +335,7 @@ func (j *RepairJob) runOnce(ctx context.Context) string {
 
 	j.job.SetTotal(total)
 	j.job.Step(total - len(work))
-	damaged, fixed, failed := 0, 0, 0
+	damaged := 0
 	for i, w := range work {
 		if !j.job.Wait(ctx, func() (bool, string) { return busyFor(w.path, j.streams) }) {
 			break
@@ -357,23 +360,10 @@ func (j *RepairJob) runOnce(ctx context.Context) string {
 			entry.State = RepairOK
 			os.Remove(fixedFile(w.key)) // fine now (changed since)
 		default:
+			// Listed for an admin to fix (a copy as big as the video: never made unasked)
 			damaged++
-			entry.Reason, entry.Claimed = reason, claimed
-			j.job.SetRunner(0, "Fixing "+filepath.Base(w.path))
-			size, length, ferr := fixVideo(ctx, w.path, w.key)
-			if ctx.Err() != nil {
-				break
-			}
-			if ferr != nil {
-				failed++
-				entry.State, entry.Error = RepairFailed, ferr.Error()
-				log.Printf("repairs: %s: %s; couldn't fix it: %v", w.path, reason, ferr)
-			} else {
-				fixed++
-				entry.State, entry.FixedSize, entry.Duration = RepairFixed, size, length
-				j.redo(w.path, w.key, length)
-				log.Printf("repairs: %s: %s; fixed (%s, %s long)", w.path, reason, formatSize(size), clock(length))
-			}
+			entry.State, entry.Reason, entry.Claimed = RepairDamaged, reason, claimed
+			log.Printf("repairs: %s: %s", w.path, reason)
 		}
 		j.job.SetRunner(0, "")
 		j.job.Step(1)
@@ -395,11 +385,92 @@ func (j *RepairJob) runOnce(ctx context.Context) string {
 	if damaged == 0 {
 		return fmt.Sprintf("%s checked, none damaged", plural(len(work), "video"))
 	}
-	result := fmt.Sprintf("%s checked: %d damaged, %d fixed", plural(len(work), "video"), damaged, fixed)
-	if failed > 0 {
-		result += fmt.Sprintf(", %d couldn't be", failed)
+	return fmt.Sprintf("%s checked: %d damaged (listed in Settings › Server, to fix)", plural(len(work), "video"), damaged)
+}
+
+// fixing holds the videos whose fixed copies are being made (by key), one at a time.
+var fixing = struct {
+	sync.Mutex
+	keys map[string]bool
+	one  sync.Mutex
+}{keys: map[string]bool{}}
+
+// ErrFixing: its fixed copy is being made already.
+var ErrFixing = errors.New("its fixed copy is being made already")
+
+// ErrNotDamaged: the video isn't listed as damaged (fine, gone, or changed since it was checked).
+var ErrNotDamaged = errors.New("it isn't listed as damaged (it may have changed: the next scan checks it again)")
+
+// freeSpace is how many bytes can still be written where dir is.
+func freeSpace(dir string) (int64, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(dir, &st); err != nil {
+		return 0, err
 	}
-	return result
+	return int64(st.Bavail) * int64(st.Bsize), nil
+}
+
+// spareSpace is left free on the fixed copies' disk: a fix that would leave less isn't started.
+const spareSpace = 2 << 30
+
+// Fix makes a damaged video's fixed copy, on an admin's request, in the background (one at a time;
+// the list shows it as fixing until it's done). It's refused when the copy (about the video's size)
+// wouldn't leave spareSpace free.
+func (j *RepairJob) Fix(path string) error {
+	key := config.CacheKey(path)
+	repairIndex.mu.Lock()
+	loadRepairIndex()
+	e, ok := repairIndex.entries[key]
+	repairIndex.mu.Unlock()
+	fixedGone := e.State == RepairFixed && !fileExists(fixedFile(key))
+	if !ok || !repairCurrent(path, e, ok) || (e.State != RepairDamaged && e.State != RepairFailed && !fixedGone) {
+		return ErrNotDamaged
+	}
+	if err := os.MkdirAll(repairDir(), 0o700); err != nil {
+		return err
+	}
+	if free, err := freeSpace(repairDir()); err == nil && free-e.Size < spareSpace {
+		return fmt.Errorf("not enough free space for its fixed copy: it needs about %s, and %s is free (%s is kept spare)",
+			formatSize(e.Size), formatSize(free), formatSize(spareSpace))
+	}
+	fixing.Lock()
+	if fixing.keys[key] {
+		fixing.Unlock()
+		return ErrFixing
+	}
+	fixing.keys[key] = true
+	fixing.Unlock()
+	go func() {
+		defer func() {
+			fixing.Lock()
+			delete(fixing.keys, key)
+			fixing.Unlock()
+		}()
+		fixing.one.Lock()
+		defer fixing.one.Unlock()
+		size, length, err := fixVideo(context.Background(), path, key)
+		repairIndex.mu.Lock()
+		e := repairIndex.entries[key]
+		if err != nil {
+			e.State, e.Error = RepairFailed, err.Error()
+			log.Printf("repairs: %s: couldn't fix it: %v", path, err)
+		} else {
+			e.State, e.Error, e.FixedSize, e.Duration = RepairFixed, "", size, length
+			log.Printf("repairs: %s: fixed (%s, %s long)", path, formatSize(size), clock(length))
+		}
+		repairIndex.entries[key] = e
+		saveRepairIndex()
+		repairIndex.mu.Unlock()
+		if err == nil {
+			j.redo(path, key, length)
+		}
+	}()
+	return nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // redo has what was made from a damaged video made again from its fixed copy: its trickplay
@@ -413,6 +484,9 @@ func (j *RepairJob) redo(path, key string, length float64) {
 	if dir := config.GlobalConfig.Media.ThumbnailPath; dir != "" {
 		thumb, _ := GetThumbnailPath(dir, key, ".jpg")
 		os.Remove(thumb)
+	}
+	if j.db == nil {
+		return
 	}
 	if item, err := j.db.GetMediaItem(path); err == nil && length > 0 {
 		item.Duration = length
@@ -436,7 +510,7 @@ func formatSize(b int64) string {
 type DamagedVideo struct {
 	Path      string  // on disk
 	Reason    string  // what's wrong
-	State     string  // RepairFixed or RepairFailed
+	State     string  // RepairDamaged, RepairFixing, RepairFixed or RepairFailed
 	Error     string  // why it couldn't be fixed
 	Size      int64   // the original's
 	FixedSize int64   // the fixed copy's
@@ -450,15 +524,19 @@ func DamagedVideos(inLibrary func(string) bool) []DamagedVideo {
 	loadRepairIndex()
 	var out []DamagedVideo
 	for key, e := range repairIndex.entries {
-		if (e.State != RepairFixed && e.State != RepairFailed) || !inLibrary(e.Path) || !repairCurrent(e.Path, e, true) {
+		if e.State == RepairOK || e.State == RepairUnknown || e.State == "" || !inLibrary(e.Path) || !repairCurrent(e.Path, e, true) {
 			continue
 		}
-		if e.State == RepairFixed {
-			if _, err := os.Stat(fixedFile(key)); err != nil {
-				continue
-			}
+		state := e.State
+		if state == RepairFixed && !fileExists(fixedFile(key)) {
+			state = RepairDamaged // its copy was removed: it can be fixed again
 		}
-		out = append(out, DamagedVideo{Path: e.Path, Reason: e.Reason, State: e.State, Error: e.Error,
+		fixing.Lock()
+		if fixing.keys[key] {
+			state = RepairFixing
+		}
+		fixing.Unlock()
+		out = append(out, DamagedVideo{Path: e.Path, Reason: e.Reason, State: state, Error: e.Error,
 			Size: e.Size, FixedSize: e.FixedSize, Claimed: e.Claimed, Duration: e.Duration})
 	}
 	repairIndex.mu.Unlock()

@@ -121,7 +121,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
     // chosen angle and tracks; the disc sheet changes them.
     val isDisc = remember(path) {
         viewModel.getFileItemForPath(path)?.let { item ->
-            item.name.endsWith(".iso", ignoreCase = true) || (item.originalPath ?: "").endsWith(".iso", ignoreCase = true)
+            isDiscPath(item.name) || isDiscPath(item.originalPath ?: "")
         } ?: false
     }
     var discInfo by remember { mutableStateOf<DiscInfo?>(null) }

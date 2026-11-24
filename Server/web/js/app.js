@@ -2129,8 +2129,9 @@ function playerPosition() {
 
 let disc = null; // { item, info, title, angle, audio, subtitle, offset, fromFolder }
 
+// A DVD: an image (.iso), or an unpacked disc's VIDEO_TS folder (listed by its parent folder's name)
 function isDiscImage(item) {
-    return /\.iso$/i.test(item.path || item.name || '');
+    return /(\.iso|(^|\/)VIDEO_TS)$/i.test(item.path || item.name || '');
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -3462,9 +3463,11 @@ async function loadDamagedVideos() {
         where.textContent = [v.library, v.folder].filter(Boolean).join(' › ') + ' · ' + v.reason;
         const sizes = document.createElement('div');
         sizes.className = 'settings-hint';
-        sizes.textContent = v.state === 'fixed'
-            ? `Original: ${formatSize(v.size)}, says ${clockText(v.claimed)} long · Fixed copy: ${formatSize(v.fixed_size)}, ${clockText(v.duration)}`
-            : `Original: ${formatSize(v.size)} · Couldn't be fixed: ${v.error || 'unknown'}`;
+        sizes.textContent = {
+            fixed: `Original: ${formatSize(v.size)}, says ${clockText(v.claimed)} long · Fixed copy: ${formatSize(v.fixed_size)}, ${clockText(v.duration)}`,
+            fixing: `${formatSize(v.size)} · Making the fixed copy…`,
+            failed: `${formatSize(v.size)} · Couldn't be fixed: ${v.error || 'unknown'}`,
+        }[v.state] || `${formatSize(v.size)} · Not fixed: Fix makes a copy of about its size`;
         const buttons = document.createElement('div');
         buttons.className = 'damaged-buttons';
         const button = (label, icon, secondary, onClick) => {
@@ -3477,6 +3480,9 @@ async function loadDamagedVideos() {
             buttons.appendChild(b);
         };
         button('Play original', 'play', true, () => playDamaged(v, true));
+        if (v.state === 'damaged' || v.state === 'failed') {
+            button(v.state === 'failed' ? 'Try fixing again' : 'Fix', 'save', false, () => fixDamaged(v));
+        }
         if (v.state === 'fixed') {
             button('Play fixed copy', 'play', false, () => playDamaged(v, false));
             button('Replace with fixed copy', 'save', false, () => replaceDamaged(v));
@@ -3485,6 +3491,11 @@ async function loadDamagedVideos() {
         list.appendChild(li);
     }
     decorateIconButtons();
+    // While a copy is being made, the list is asked again until it's done
+    clearTimeout(loadDamagedVideos.timer);
+    if (info.videos.some(v => v.state === 'fixing') && document.getElementById('damaged-list').isConnected) {
+        loadDamagedVideos.timer = setTimeout(loadDamagedVideos, 3000);
+    }
     const t = info.trash;
     trashStatus.textContent = t.files
         ? `The trash holds ${t.files} replaced original${t.files === 1 ? '' : 's'} (${formatSize(t.bytes)}), each deleted ${t.days} days after it went in.`
@@ -3504,6 +3515,17 @@ async function playDamaged(v, original) {
     }
     playVideo({ path: v.path, name: original ? `${v.name} (original)` : `${v.name} (fixed copy)`, type: 'video',
         duration: original ? 0 : v.duration }, false, 0, false);
+}
+
+async function fixDamaged(v) {
+    const message = document.getElementById('damaged-message');
+    try {
+        await api.request('/api/admin/damaged/fix', { method: 'POST', body: JSON.stringify({ path: api.encodePath(v.path) }) });
+        message.textContent = `Making the fixed copy of "${v.name}"…`;
+    } catch (e) {
+        message.textContent = e.message;
+    }
+    loadDamagedVideos();
 }
 
 async function replaceDamaged(v) {

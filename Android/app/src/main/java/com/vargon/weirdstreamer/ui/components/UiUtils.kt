@@ -209,3 +209,7 @@ fun secretKeyboard(imeAction: androidx.compose.ui.text.input.ImeAction = android
 
 // Settings' "Rewind 5 seconds when resuming": how far an unpause goes back first.
 const val RESUME_REWIND_S = 5L
+
+/** A DVD: an image (.iso), or an unpacked disc's VIDEO_TS folder (listed by its parent folder's name). */
+fun isDiscPath(path: String): Boolean =
+    path.endsWith(".iso", ignoreCase = true) || path.substringAfterLast('/').equals("VIDEO_TS", ignoreCase = true)

@@ -152,6 +152,10 @@ interface ApiService {
     suspend fun playDamaged(@Body body: com.google.gson.JsonObject): Response<com.google.gson.JsonObject>
 
     /** {"path": base64 client path}: the fixed copy replaces it, as .mkv; answers its new path */
+    /** {"path": base64 client path}: makes its fixed copy in the background */
+    @POST("/api/admin/damaged/fix")
+    suspend fun fixDamaged(@Body body: com.google.gson.JsonObject): Response<com.google.gson.JsonObject>
+
     @POST("/api/admin/damaged/replace")
     suspend fun replaceDamaged(@Body body: com.google.gson.JsonObject): Response<com.vargon.weirdstreamer.api.models.DamagedReplaced>
 

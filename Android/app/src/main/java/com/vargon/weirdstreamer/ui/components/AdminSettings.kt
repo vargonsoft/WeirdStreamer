@@ -659,6 +659,15 @@ class DamagedVideosModel(val server: ServerRepository, private val scope: Corout
         }
     }
 
+    /** Makes its fixed copy, in the server's background: the list says fixing until it's done. */
+    fun fix(video: com.vargon.weirdstreamer.api.models.DamagedVideo) {
+        scope.launch {
+            val (_, err) = attempt { server.api.fixDamaged(body(video.path)) }
+            message = (err ?: "Making the fixed copy of ${video.name}…") to (err != null)
+            load()
+        }
+    }
+
     fun replace(video: com.vargon.weirdstreamer.api.models.DamagedVideo) {
         scope.launch {
             val (reply, err) = attempt { server.api.replaceDamaged(body(video.path)) }
@@ -683,20 +692,32 @@ fun rememberDamagedVideos(server: ServerRepository): DamagedVideosModel {
     val scope = rememberCoroutineScope()
     val model = remember(server.address) { DamagedVideosModel(server, scope) }
     LaunchedEffect(model) { model.load() }
+    // While a copy is being made, asked again until it's done
+    val fixing = model.videos?.any { it.fixing } == true
+    LaunchedEffect(model, fixing) {
+        while (fixing) {
+            delay(3000)
+            model.load()
+        }
+    }
     return model
 }
 
 /** The name a damaged video gets when its fixed copy replaces it: its own, as .mkv. */
 internal fun replacedName(name: String) = name.substringBeforeLast('.', name) + ".mkv"
 
-internal const val DAMAGED_ABOUT = "Videos players can't jump in (a broken seek index), found by scans. The server plays a fixed copy " +
-    "in their place: the same video and audio, copied untouched into an indexed file. Play each to compare, then replace the " +
-    "original with the fixed copy (as .mkv, keeping its watch progress); the original goes to the trash."
+internal const val DAMAGED_ABOUT = "Videos players can't jump in (a broken seek index), found by scans. Fix makes a fixed copy (the " +
+    "same video and audio, copied untouched into an indexed file, about as big as the video), which the server then plays in its " +
+    "place. Play each to compare, then replace the original with the fixed copy (as .mkv, keeping its watch progress); the " +
+    "original goes to the trash."
 
 /** "Original: 316 MB, says 2:07:52 long · Fixed copy: 298 MB, 1:14:32", or why it couldn't be fixed. */
-internal fun damagedSizes(v: com.vargon.weirdstreamer.api.models.DamagedVideo) =
-    if (v.fixed) "Original: ${formatBytes(v.size)}, says ${streamClock(v.claimed)} long · Fixed copy: ${formatBytes(v.fixedSize)}, ${streamClock(v.duration)}"
-    else "Original: ${formatBytes(v.size)} · Couldn't be fixed: ${v.error ?: "unknown"}"
+internal fun damagedSizes(v: com.vargon.weirdstreamer.api.models.DamagedVideo) = when (v.state) {
+    "fixed" -> "Original: ${formatBytes(v.size)}, says ${streamClock(v.claimed)} long · Fixed copy: ${formatBytes(v.fixedSize)}, ${streamClock(v.duration)}"
+    "fixing" -> "${formatBytes(v.size)} · Making the fixed copy…"
+    "failed" -> "${formatBytes(v.size)} · Couldn't be fixed: ${v.error ?: "unknown"}"
+    else -> "${formatBytes(v.size)} · Not fixed: Fix makes a copy of about its size"
+}
 
 internal fun damagedWhere(v: com.vargon.weirdstreamer.api.models.DamagedVideo) =
     listOf(v.library, v.folder).filter { it.isNotEmpty() }.joinToString(" › ") + " · " + v.reason

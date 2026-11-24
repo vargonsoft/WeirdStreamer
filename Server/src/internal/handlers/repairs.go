@@ -148,6 +148,35 @@ func newPathFor(path string) string {
 	return path[:len(path)-len(filepath.Ext(path))] + ".mkv"
 }
 
+// FixDamaged makes a damaged video's fixed copy (POST /api/admin/damaged/fix with {"path": base64
+// client path}), in the background: the list shows it as "fixing" until it's done. Refused when
+// the copy wouldn't fit.
+func (h *MediaHandler) FixDamaged(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(w, r) {
+		return
+	}
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request")
+		return
+	}
+	path, ok := h.decodeMediaPath(w, r, req.Path)
+	if !ok {
+		return
+	}
+	if h.repairs == nil {
+		respondError(w, http.StatusServiceUnavailable, "Fixing damaged videos is off (no media.repairPath)")
+		return
+	}
+	if err := h.repairs.Fix(path); err != nil {
+		respondError(w, http.StatusConflict, "Couldn't fix it: "+withoutDiskPath(err.Error(), path))
+		return
+	}
+	respondJSON(w, http.StatusAccepted, map[string]any{"state": "fixing"})
+}
+
 // EmptyTrash deletes every replaced original in the trash (POST /api/admin/trash/empty).
 func (h *MediaHandler) EmptyTrash(w http.ResponseWriter, r *http.Request) {
 	if !isAdmin(w, r) {

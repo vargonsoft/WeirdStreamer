@@ -57,6 +57,10 @@ func (s *Scanner) ScanMediaPaths() error {
 	totalFiles := 0
 	for _, mediaPath := range config.GlobalConfig.Media.Paths {
 		filepath.Walk(mediaPath.Path, func(p string, info os.FileInfo, err error) error {
+			if err == nil && info.IsDir() && DVDFolder(p) {
+				totalFiles++ // an unpacked DVD: one video
+				return filepath.SkipDir
+			}
 			if err == nil && !info.IsDir() && config.MediaType(p) != "" {
 				totalFiles++
 			}
@@ -118,8 +122,21 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 			}
 		}
 
-		if info.IsDir() {
+		// An unpacked DVD (a VIDEO_TS folder) is one video, its files never on their own: once it's
+		// taken (or left out), the walk doesn't go into it.
+		dvd := info.IsDir() && DVDFolder(path)
+		if info.IsDir() && !dvd {
 			return nil
+		}
+		next := func(err error) error {
+			if dvd && err == nil {
+				return filepath.SkipDir
+			}
+			return err
+		}
+		size := info.Size()
+		if dvd {
+			size = DiscSize(path, info)
 		}
 
 		mediaType := config.MediaType(path)
@@ -127,7 +144,7 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 			return nil // Skip unsupported files
 		}
 		if IsNonDiscISO(path) {
-			return nil // An installer or data disc image, not a video
+			return next(nil) // An installer or data disc image, not a video
 		}
 
 		// Already scanned and unchanged (same size): nothing to redo, so a scan only probes new
@@ -135,9 +152,9 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 		// so files that can't be read aren't probed again on every scan.
 		s.job.Wait(context.Background(), nil) // held while paused
 		s.job.Step(1)
-		if known, err := s.db.GetMediaItem(path); err == nil && known.Size == info.Size() {
+		if known, err := s.db.GetMediaItem(path); err == nil && known.Size == size {
 			*processed++
-			return nil
+			return next(nil)
 		}
 
 		// Update progress
@@ -154,14 +171,25 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 			Path:     path,
 			Name:     info.Name(),
 			Type:     mediaType,
-			Size:     info.Size(),
+			Size:     size,
 			MimeType: MimeType(path),
+		}
+		if dvd {
+			item.Name = DiscName(path)
 		}
 
 		// Get metadata based on type
 		switch mediaType {
 		case "video":
-			if err := s.getVideoMetadata(item); err == nil {
+			if IsDiscImage(path) {
+				// A disc's length and size are its main title's
+				if disc, err := LoadDisc(path); err == nil {
+					if t := disc.Title(0); t != nil {
+						item.Duration, item.Width, item.Height = t.Duration, t.Width, t.Height
+					}
+					item.ThumbnailURL = s.GenerateVideoThumbnail(path)
+				}
+			} else if err := s.getVideoMetadata(item); err == nil {
 				item.ThumbnailURL = s.GenerateVideoThumbnail(path)
 			}
 		case "image":
@@ -172,7 +200,7 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 			item.ThumbnailURL = s.generateDocThumbnail(path)
 		}
 
-		return s.db.SaveMediaItem(item)
+		return next(s.db.SaveMediaItem(item))
 	})
 }
 
@@ -189,6 +217,9 @@ func (s *Scanner) GetFileMetadata(path string) (*models.MediaItem, error) {
 		Type:     config.MediaType(path),
 		Size:     info.Size(),
 		MimeType: MimeType(path),
+	}
+	if info.IsDir() && DVDFolder(path) {
+		item.Name, item.Size = DiscName(path), DiscSize(path, info)
 	}
 
 	// Get metadata based on type

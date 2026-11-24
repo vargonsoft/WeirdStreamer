@@ -8,7 +8,7 @@ struct DamagedVideo: Decodable, Identifiable {
     var library: String?
     var folder: String?
     var reason: String?
-    var state: String?          // "fixed", or "failed"
+    var state: String?          // "damaged", "fixing", "fixed" or "failed"
     var error: String?
     var size: Int64?
     var fixedSize: Int64?
@@ -16,6 +16,9 @@ struct DamagedVideo: Decodable, Identifiable {
     var duration: Double?       // the fixed copy's
     var id: String { path }
     var fixed: Bool { state == "fixed" }
+    /// Fix makes its copy: not fixed yet, or it failed.
+    var fixable: Bool { state == "damaged" || state == "failed" }
+    var fixing: Bool { state == "fixing" }
 }
 
 /// The trash of replaced originals: deleted `days` after they went in.
@@ -32,7 +35,7 @@ struct DamagedList: Decodable {
 
 /// Texts for the damaged videos list, as Android's (AdminSettings.kt) and the web's.
 enum DamagedVideos {
-    static let about = "Videos players can't jump in (a broken seek index), found by scans. The server plays a fixed copy in their place: the same video and audio, copied untouched into an indexed file. Play each to compare, then replace the original with the fixed copy (as .mkv, keeping its watch progress); the original goes to the trash."
+    static let about = "Videos players can't jump in (a broken seek index), found by scans. Fix makes a fixed copy (the same video and audio, copied untouched into an indexed file, about as big as the video), which the server then plays in its place. Play each to compare, then replace the original with the fixed copy (as .mkv, keeping its watch progress); the original goes to the trash."
 
     /// "1:14:32"
     static func clock(_ seconds: Double?) -> String {
@@ -51,9 +54,12 @@ enum DamagedVideos {
     }
 
     static func sizes(_ v: DamagedVideo) -> String {
-        v.fixed
-            ? "Original: \(formatBytes(v.size)), says \(clock(v.claimed)) long · Fixed copy: \(formatBytes(v.fixedSize)), \(clock(v.duration))"
-            : "Original: \(formatBytes(v.size)) · Couldn't be fixed: \(v.error ?? "unknown")"
+        switch v.state {
+        case "fixed": return "Original: \(formatBytes(v.size)), says \(clock(v.claimed)) long · Fixed copy: \(formatBytes(v.fixedSize)), \(clock(v.duration))"
+        case "fixing": return "\(formatBytes(v.size)) · Making the fixed copy…"
+        case "failed": return "\(formatBytes(v.size)) · Couldn't be fixed: \(v.error ?? "unknown")"
+        default: return "\(formatBytes(v.size)) · Not fixed: Fix makes a copy of about its size"
+        }
     }
 
     static func trashText(_ t: TrashReport?) -> String {
@@ -86,6 +92,9 @@ struct DamagedVideosSection: View {
                 Text(DamagedVideos.sizes(v)).font(.caption).foregroundStyle(Palette.muted)
                 HStack {
                     Button("Play original") { Task { await play(v, original: true) } }.buttonStyle(PhoneSecondaryButtonStyle())
+                    if v.fixable {
+                        Button(v.state == "failed" ? "Try fixing again" : "Fix") { Task { await fix(v) } }.buttonStyle(PhoneButtonStyle())
+                    }
                     if v.fixed {
                         Button("Play fixed copy") { Task { await play(v, original: false) } }.buttonStyle(PhoneButtonStyle())
                     }
@@ -104,7 +113,14 @@ struct DamagedVideosSection: View {
             Button("Empty the trash now") { emptying = true }.buttonStyle(PhoneSecondaryButtonStyle())
         }
         Color.clear.frame(height: 0)
-            .task { await load() }
+            .task {
+                await load()
+                // While a copy is being made, asked again until it's done
+                while !Task.isCancelled, list?.videos?.contains(where: { $0.fixing }) == true {
+                    try? await Task.sleep(for: .seconds(3))
+                    await load()
+                }
+            }
             .alert(replacing.map { "Replace \($0.name)?" } ?? "", isPresented: Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } })) {
                 Button("Cancel", role: .cancel) { replacing = nil }
                 Button("Replace") { if let v = replacing { Task { await replace(v) } }; replacing = nil }
@@ -137,6 +153,21 @@ struct DamagedVideosSection: View {
             model.playServerFile(v.path, name: original ? "\(v.name) (original)" : "\(v.name) (fixed copy)")
         } catch {
             message = (errorText(error), true)
+        }
+    }
+
+    private func fix(_ v: DamagedVideo) async {
+        guard let client = model.client else { return }
+        do {
+            _ = try await client.json("POST", "/api/admin/damaged/fix", body: ["path": ServerClient.encodePath(v.path)])
+            message = ("Making the fixed copy of \(v.name)…", false)
+        } catch {
+            message = (errorText(error), true)
+        }
+        await load()
+        while !Task.isCancelled, list?.videos?.contains(where: { $0.fixing }) == true {
+            try? await Task.sleep(for: .seconds(3))
+            await load()
         }
     }
 

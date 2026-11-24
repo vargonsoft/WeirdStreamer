@@ -355,6 +355,12 @@ func (e *UnreadableFile) Error() string { return e.Message + ": " + e.Err.Error(
 // CheckReadable opens filePath and reads its first byte, so a stream or a transcode fails with
 // the real reason before it starts, not with an empty response or a player error.
 func CheckReadable(filePath string) *UnreadableFile {
+	// An unpacked DVD reads if its VIDEO_TS.IFO does.
+	if IsDiscImage(filePath) && !strings.EqualFold(filepath.Ext(filePath), ".iso") {
+		if ifo, err := findInFolder(filePath, "VIDEO_TS.IFO"); err == nil {
+			filePath = ifo
+		}
+	}
 	f, err := os.Open(filePath)
 	if err != nil && Wake(filePath, err) {
 		f, err = os.Open(filePath)

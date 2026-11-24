@@ -586,7 +586,9 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if isDir {
+		// An unpacked DVD (a VIDEO_TS folder) is listed as one video, named after this folder.
+		dvd := isDir && media.DVDFolder(entryPath)
+		if isDir && !dvd {
 			dirs = append(dirs, models.Directory{
 				Path: relPath,
 				Name: entry.Name(),
@@ -600,6 +602,10 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Printf("Failed to get file info for %s: %v", entryPath, err)
 				continue
+			}
+			size, name := fileInfo.Size(), entry.Name()
+			if dvd {
+				size, name = media.DiscSize(entryPath, fileInfo), media.DiscName(entryPath)
 			}
 
 			// Determine media type based on extension
@@ -621,9 +627,9 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 				// Not in database - create item with basic info
 				item = &models.MediaItem{
 					Path:     entryPath,
-					Name:     entry.Name(),
+					Name:     name,
 					Type:     mediaType,
-					Size:     fileInfo.Size(),
+					Size:     size,
 					MimeType: media.MimeType(ext),
 				}
 
@@ -637,8 +643,8 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 			} else {
 				// Item found in database. A size that's out of date (the file changed, or a
 				// symlink's own size was stored) is corrected.
-				if item.Size != fileInfo.Size() {
-					item.Size = fileInfo.Size()
+				if item.Size != size {
+					item.Size = size
 					fixed := *item // a copy: the thumbnail goroutine below may change item
 					go h.db.SaveMediaItem(&fixed)
 				}

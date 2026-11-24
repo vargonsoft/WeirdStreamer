@@ -89,7 +89,7 @@ data class DownloadRequest(
     val title: String? = null,
     val thumbnailUrl: String? = null
 ) {
-    val isDisc get() = name.endsWith(".iso", ignoreCase = true)
+    val isDisc get() = isDiscPath(name) || isDiscPath(sourcePath)
 
     companion object {
         fun of(item: FileItem, title: String? = null) = item.originalPath?.let {

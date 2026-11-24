@@ -94,7 +94,7 @@ final class PlaybackModel {
     init(request: PlayRequest) {
         self.request = request
         self.title = request.title
-        self.isDisc = request.localFile == nil && (request.path as NSString).pathExtension.lowercased() == "iso"
+        self.isDisc = request.localFile == nil && isDiscPath(request.path)
     }
 
     // MARK: Starting
@@ -1424,4 +1424,10 @@ struct VolumeControl: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+}
+
+/// A DVD: an image (.iso), or an unpacked disc's VIDEO_TS folder (listed by its parent folder's name).
+func isDiscPath(_ path: String) -> Bool {
+    let p = path as NSString
+    return p.pathExtension.lowercased() == "iso" || p.lastPathComponent.uppercased() == "VIDEO_TS"
 }
