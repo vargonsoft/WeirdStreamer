@@ -209,6 +209,7 @@ function setupEventListeners() {
     setupMatchDialog();
     setupFolderPicker();
     setupPlayerControls();
+    document.querySelector('.app-download-github')?.insertAdjacentHTML('afterbegin', iconSvg('android'));
     decorateIconButtons();
     setupSecretToggles();
 
