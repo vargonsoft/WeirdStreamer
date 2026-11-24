@@ -205,20 +205,16 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         up = rewindFocus, down = clearCacheFocus, onClick = { showSubtitleStyle = true }) {
                         Icon(Icons.Default.ClosedCaption, contentDescription = null)
                     }
-                    // App update, from the APK a server publishes to its signed-in accounts: only with one signed in
-                    val canUpdate = remember { updateServers(viewModel).isNotEmpty() }
-                    TvSettingsRow("Clear thumbnail cache", focus = clearCacheFocus, up = subtitleStyleFocus,
-                        down = if (canUpdate) updateFocus else null,
+                    TvSettingsRow("Clear thumbnail cache", focus = clearCacheFocus, up = subtitleStyleFocus, down = updateFocus,
                         onClick = { viewModel.clearThumbnailCache(context) }) {
                         Icon(Icons.Default.DeleteSweep, contentDescription = null)
                     }
-                    if (canUpdate) {
-                        val (title, detail) = updateLabels(AppUpdater.state)
-                        TvSettingsRow(title, detail, updateFocus, up = clearCacheFocus,
-                            titleColor = if (AppUpdater.state is UpdateState.Available) WeirdStreamerTheme.spec.headingColor else Color.Unspecified,
-                            onClick = { onUpdateRow(viewModel, context) }) {
-                            Icon(Icons.Default.SystemUpdate, contentDescription = null)
-                        }
+                    // App update, from the APK a server publishes to its signed-in accounts, or GitHub's
+                    val (title, detail) = updateLabels(AppUpdater.state)
+                    TvSettingsRow(title, detail, updateFocus, up = clearCacheFocus,
+                        titleColor = if (AppUpdater.state is UpdateState.Available) WeirdStreamerTheme.spec.headingColor else Color.Unspecified,
+                        onClick = { onUpdateRow(viewModel, context) }) {
+                        Icon(Icons.Default.SystemUpdate, contentDescription = null)
                     }
                 }
                 // Required by TMDB's terms for apps that show its data.

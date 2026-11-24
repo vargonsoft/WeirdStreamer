@@ -1,6 +1,9 @@
 package com.vargon.weirdstreamer.ui.components
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
@@ -45,7 +48,7 @@ private const val TV_BANNER_MS = 15_000L
 internal fun UpdateChecks(viewModel: MediaViewModel) {
     LaunchedEffect(viewModel.currentSource?.serverAddress) {
         while (true) {
-            updateServers(viewModel).takeIf { it.isNotEmpty() }?.let { AppUpdater.checkQuietly(it) }
+            AppUpdater.checkQuietly(updateServers(viewModel))
             delay(UPDATE_CHECK_EVERY_MS)
         }
     }
@@ -88,8 +91,8 @@ internal fun UpdateBanner(isTv: Boolean, onOpenSettings: () -> Unit, modifier: M
 
 /**
  * Servers to look for a newer app on, with their tokens: the one in use first, then the other saved
- * ones, each only while an account is signed in to it (servers give the app to no one else). None
- * hides Settings' update row.
+ * ones, each only while an account is signed in to it (servers give the app to no one else). With
+ * none, or none offering it, the updater asks GitHub.
  */
 internal fun updateServers(viewModel: MediaViewModel): List<Pair<String, String>> {
     val current = viewModel.currentSource?.takeIf { it.typeId == "SERVER" }?.serverAddress
@@ -98,6 +101,9 @@ internal fun updateServers(viewModel: MediaViewModel): List<Pair<String, String>
         .mapNotNull { server -> credentials.getServerToken(server)?.let { server to it } }
 }
 
+/** Every release's APK, for when neither a server nor GitHub's API answered (the asset's name has its version, so the page). */
+private const val RELEASES_PAGE = "github.com/${AppUpdater.GITHUB_REPO}/releases/latest"
+
 /** The row's title and the line under it. */
 internal fun updateLabels(state: UpdateState): Pair<String, String> {
     val installed = "Installed: ${AppUpdater.installedVersion}"
@@ -105,9 +111,9 @@ internal fun updateLabels(state: UpdateState): Pair<String, String> {
         UpdateState.Idle -> "Check for updates" to installed
         UpdateState.Checking -> "Checking for updates…" to installed
         UpdateState.UpToDate -> "Up to date" to "$installed. Select to check again."
-        UpdateState.NotPublished -> "No update published" to "$installed. None of your servers offers the app."
+        UpdateState.NotPublished -> "Get the latest version on GitHub" to "$installed. Neither your servers nor GitHub answered: $RELEASES_PAGE"
         is UpdateState.Available -> "Update to ${state.release.version}" to
-            "$installed. ${formatBytes(state.release.size)} from ${state.release.server}"
+            "$installed. ${formatBytes(state.release.size)} from ${state.release.from}"
         is UpdateState.Downloading -> "Downloading ${state.release.version}… ${(state.fraction * 100).toInt()}%" to installed
         UpdateState.Installing -> "Installing…" to "Confirm in the installer. The app closes when it's done: open it again."
         is UpdateState.Failed -> "Update failed" to "${state.message}. Select to try again."
@@ -123,6 +129,12 @@ internal fun onUpdateRow(viewModel: MediaViewModel, context: Context) {
     when (val state = AppUpdater.state) {
         is UpdateState.Available -> scope.launch { AppUpdater.install(context.applicationContext, state.release) }
         UpdateState.Checking, is UpdateState.Downloading, UpdateState.Installing -> Unit
+        // The releases page in a browser; a TV without one looks again (the row shows the address)
+        UpdateState.NotPublished -> try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://$RELEASES_PAGE")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: ActivityNotFoundException) {
+            scope.launch { AppUpdater.check(updateServers(viewModel)) }
+        }
         else -> scope.launch { AppUpdater.check(updateServers(viewModel)) }
     }
 }

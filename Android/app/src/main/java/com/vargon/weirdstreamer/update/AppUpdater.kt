@@ -18,16 +18,17 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/** A build published on a server (deploy-release.sh --web: downloads/WeirdStreamer.json). */
-data class AppRelease(val version: String, val build: Int, val size: Long, val server: String) {
-    val apkUrl get() = "$server/downloads/WeirdStreamer.apk"
-}
+/**
+ * A build published on a server (deploy-release.sh --web: downloads/WeirdStreamer.json) or on
+ * GitHub (a release's APK); [from] is the server's address, or "GitHub".
+ */
+data class AppRelease(val version: String, val build: Int, val size: Long, val from: String, val apkUrl: String)
 
 sealed interface UpdateState {
     data object Idle : UpdateState
     data object Checking : UpdateState
     data object UpToDate : UpdateState
-    data object NotPublished : UpdateState // no server has one
+    data object NotPublished : UpdateState // no server has one, and GitHub couldn't be asked
     data class Available(val release: AppRelease) : UpdateState
     data class Downloading(val release: AppRelease, val fraction: Float) : UpdateState
     data object Installing : UpdateState // the system installer has it
@@ -35,12 +36,14 @@ sealed interface UpdateState {
 }
 
 /**
- * Updates the app from the APK a WeirdStreamer server publishes: newer when its build number
- * (the git commit count) is above the installed one. The APK goes straight into a
- * PackageInstaller session, and the system asks the user to confirm the install. Servers give it
- * only to accounts signed in, so each is asked with its token.
+ * Updates the app from the APK a WeirdStreamer server publishes, or else GitHub's latest release:
+ * newer when its build number (the git commit count) is above the installed one. The APK goes
+ * straight into a PackageInstaller session, and the system asks the user to confirm the install.
+ * Servers give it only to accounts signed in, so each is asked with its token.
  */
 object AppUpdater {
+    const val GITHUB_REPO = "vargonsoft/WeirdStreamer"
+
     var state by mutableStateOf<UpdateState>(UpdateState.Idle)
         private set
 
@@ -81,16 +84,35 @@ object AppUpdater {
                     client.newCall(signedIn("$base/downloads/WeirdStreamer.json", token)).execute().use { r ->
                         if (!r.isSuccessful) return@runCatching null
                         val json = JSONObject(r.body!!.string())
-                        AppRelease(json.getString("version"), json.getInt("build"), json.optLong("size"), base)
+                        AppRelease(json.getString("version"), json.getInt("build"), json.optLong("size"), base,
+                            "$base/downloads/WeirdStreamer.apk")
                     }
                 }.getOrNull()
             }
         }
-        val newest = releases.maxByOrNull { it.build }
+        // None of the servers offers it (none signed in, or none publishes it): GitHub's latest release
+        val offered = releases.ifEmpty { withContext(Dispatchers.IO) { listOfNotNull(runCatching { latestOnGitHub() }.getOrNull()) } }
+        val newest = offered.maxByOrNull { it.build }
         state = when {
             newest == null -> UpdateState.NotPublished
-            newest.build > BuildConfig.VERSION_CODE -> UpdateState.Available(releases.first { it.build == newest.build })
+            newest.build > BuildConfig.VERSION_CODE -> UpdateState.Available(offered.first { it.build == newest.build })
             else -> UpdateState.UpToDate
+        }
+    }
+
+    /** The latest GitHub release's APK: its tag is v<version>, whose last part is the build number. */
+    private fun latestOnGitHub(): AppRelease? {
+        val request = Request.Builder().url("https://api.github.com/repos/$GITHUB_REPO/releases/latest")
+            .header("Accept", "application/vnd.github+json").build()
+        return client.newCall(request).execute().use { r ->
+            if (!r.isSuccessful) return null
+            val json = JSONObject(r.body!!.string())
+            val version = json.getString("tag_name").removePrefix("v")
+            val build = version.substringAfterLast('.').toIntOrNull() ?: return null
+            val assets = json.getJSONArray("assets")
+            val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
+                .firstOrNull { it.getString("name").endsWith(".apk") } ?: return null
+            AppRelease(version, build, apk.optLong("size"), "GitHub", apk.getString("browser_download_url"))
         }
     }
 
@@ -109,8 +131,8 @@ object AppUpdater {
                 }
                 val id = installer.createSession(params)
                 installer.openSession(id).use { session ->
-                    client.newCall(signedIn(release.apkUrl, tokens[release.server])).execute().use { r ->
-                        if (!r.isSuccessful) error("The server answered ${r.code}")
+                    client.newCall(signedIn(release.apkUrl, tokens[release.from])).execute().use { r ->
+                        if (!r.isSuccessful) error("${release.from} answered ${r.code}")
                         val body = r.body!!
                         val total = body.contentLength().takeIf { it > 0 } ?: release.size
                         session.openWrite("WeirdStreamer.apk", 0, total.takeIf { it > 0 } ?: -1).use { out ->
