@@ -143,6 +143,21 @@ interface ApiService {
     @POST("/api/admin/backups")
     suspend fun backUpNow(): Response<com.vargon.weirdstreamer.api.models.BackupInfo>
 
+    // Damaged videos (a broken seek index) and their fixed copies, and the trash (admins)
+    @GET("/api/admin/damaged")
+    suspend fun getDamaged(): Response<com.vargon.weirdstreamer.api.models.DamagedList>
+
+    /** {"path": base64 client path, "original": true to play the damaged file as it is for an hour} */
+    @POST("/api/admin/damaged/play")
+    suspend fun playDamaged(@Body body: com.google.gson.JsonObject): Response<com.google.gson.JsonObject>
+
+    /** {"path": base64 client path}: the fixed copy replaces it, as .mkv; answers its new path */
+    @POST("/api/admin/damaged/replace")
+    suspend fun replaceDamaged(@Body body: com.google.gson.JsonObject): Response<com.vargon.weirdstreamer.api.models.DamagedReplaced>
+
+    @POST("/api/admin/trash/empty")
+    suspend fun emptyTrash(): Response<com.vargon.weirdstreamer.api.models.DamagedReplaced>
+
     @GET("/api/groups")
     suspend fun getGroups(): Response<List<String>>
 

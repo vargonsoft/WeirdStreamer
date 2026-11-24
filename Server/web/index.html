@@ -158,6 +158,15 @@
                     </div>
 
                     <div class="settings-group">
+                        <h3>Damaged videos</h3>
+                        <p class="settings-hint">Videos players can't jump in (a broken seek index), found by scans. The server plays a fixed copy in their place: the same video and audio, copied untouched into an indexed file. Play each to compare, then replace the original with the fixed copy (as .mkv, keeping its watch progress); the original goes to the trash.</p>
+                        <ul id="damaged-list" class="damaged-list"></ul>
+                        <p id="damaged-message" class="backup-message"></p>
+                        <p id="trash-status" class="hardware-status"></p>
+                        <button type="button" id="empty-trash-btn" class="btn btn-secondary" data-icon="delete" hidden><span class="btn-label">Empty the trash now</span></button>
+                    </div>
+
+                    <div class="settings-group">
                         <h3>Metadata</h3>
                         <p style="font-size: 13px; color: var(--muted-text); margin-bottom: 10px;">TMDB is used for libraries with a Movies or TV Shows type.</p>
                         <label>TMDB API Read Access Token:<br>

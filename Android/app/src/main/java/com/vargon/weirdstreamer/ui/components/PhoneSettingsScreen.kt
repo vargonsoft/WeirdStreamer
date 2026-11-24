@@ -85,7 +85,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
             )
         }
         when (tab) {
-        "Server" -> ServerSettingsTab(server!!)
+        "Server" -> ServerSettingsTab(server!!, onPlay = viewModel::playServerFile)
         "Users" -> UsersTab(server!!)
         "Streams" -> StreamsTab(server!!)
         "Jobs" -> JobsTab(server!!)

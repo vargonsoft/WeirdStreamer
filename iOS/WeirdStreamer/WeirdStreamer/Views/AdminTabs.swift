@@ -170,6 +170,7 @@ struct ServerSettingsTab: View {
                 }
                 hardwareSection
                 backupSection
+                DamagedVideosSection()
 
                 SectionTitle(text: "Metadata")
                 Text("TMDB is used for libraries with a Movies or TV Shows type.").font(.caption).foregroundStyle(Palette.muted)

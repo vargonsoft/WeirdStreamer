@@ -515,6 +515,15 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         playVideo(file.path, ask = ask, fromDownload = fromDownload)
     }
 
+    /** Plays a library video from the start by its client path (Settings' Damaged videos). */
+    fun playServerFile(path: String, name: String, duration: Double) {
+        val repo = serverRepository ?: return
+        val file = FileItem(name = name, path = repo.getStreamUrl(path), isDirectory = false, type = "video",
+            duration = duration.takeIf { it > 0 }, originalPath = path)
+        playbackQueue = listOf(file)
+        playVideo(file.path, fromStart = true, ask = false, fromDownload = false)
+    }
+
     fun removeFromContinue(item: ContinueItem) {
         val repo = serverRepository ?: return
         continueItems = continueItems - item

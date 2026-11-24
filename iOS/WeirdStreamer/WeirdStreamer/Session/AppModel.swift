@@ -634,6 +634,11 @@ final class AppModel {
         play(item.path, name: item.metadata?.playerTitle ?? item.name, from: resumeSeconds(item.path, item.playback), ask: ask)
     }
 
+    /// Plays a library video from the start by its client path (Settings' Damaged videos).
+    func playServerFile(_ path: String, name: String) {
+        startPlaying(path, name: name, from: 0, file: nil)
+    }
+
     func playLibraryFile(_ file: LibraryFile, title: String? = nil, fromStart: Bool = false) {
         play(file.path, name: title ?? file.name, from: fromStart ? 0 : resumeSeconds(file.path, file.playback))
     }

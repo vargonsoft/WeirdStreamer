@@ -2850,6 +2850,7 @@ async function showSettings(pushHistory = true) {
             document.getElementById('pause-jobs-streaming').checked = !!config.streaming.pauseJobsWhileStreaming;
             showHardwareSettings(config.streaming);
             showBackupSettings(config.database || {});
+            loadDamagedVideos();
             const metadata = config.metadata || {};
             document.getElementById('tmdb-token').value = metadata.tmdbAccessToken || '';
             document.getElementById('opensubtitles-key').value = metadata.openSubtitlesApiKey || '';
@@ -3424,6 +3425,110 @@ async function backUpNow() {
         button.disabled = false;
         loadBackupList();
     }
+}
+
+// Settings › Server › Damaged videos (GET /api/admin/damaged): videos with a broken seek index and
+// their fixed copies, each playable (the original as it is, or the fixed copy: POST
+// /api/admin/damaged/play) and replaceable by its fixed copy; and the trash of replaced originals.
+function clockText(seconds) {
+    const s = Math.round(seconds || 0);
+    return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+async function loadDamagedVideos() {
+    const list = document.getElementById('damaged-list');
+    const trashStatus = document.getElementById('trash-status'), emptyBtn = document.getElementById('empty-trash-btn');
+    let info;
+    try {
+        info = await api.request('/api/admin/damaged');
+    } catch (e) {
+        list.innerHTML = '';
+        trashStatus.textContent = "Couldn't read the damaged videos: " + e.message;
+        return;
+    }
+    list.innerHTML = '';
+    if (!info.videos.length) {
+        const li = document.createElement('li');
+        li.textContent = 'None found.';
+        list.appendChild(li);
+    }
+    for (const v of info.videos) {
+        const li = document.createElement('li');
+        const title = document.createElement('div');
+        title.className = 'damaged-name';
+        title.textContent = v.name;
+        const where = document.createElement('div');
+        where.className = 'settings-hint';
+        where.textContent = [v.library, v.folder].filter(Boolean).join(' › ') + ' · ' + v.reason;
+        const sizes = document.createElement('div');
+        sizes.className = 'settings-hint';
+        sizes.textContent = v.state === 'fixed'
+            ? `Original: ${formatSize(v.size)}, says ${clockText(v.claimed)} long · Fixed copy: ${formatSize(v.fixed_size)}, ${clockText(v.duration)}`
+            : `Original: ${formatSize(v.size)} · Couldn't be fixed: ${v.error || 'unknown'}`;
+        const buttons = document.createElement('div');
+        buttons.className = 'damaged-buttons';
+        const button = (label, icon, secondary, onClick) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = secondary ? 'btn btn-secondary' : 'btn';
+            b.dataset.icon = icon;
+            b.innerHTML = `<span class="btn-label">${label}</span>`;
+            b.onclick = onClick;
+            buttons.appendChild(b);
+        };
+        button('Play original', 'play', true, () => playDamaged(v, true));
+        if (v.state === 'fixed') {
+            button('Play fixed copy', 'play', false, () => playDamaged(v, false));
+            button('Replace with fixed copy', 'save', false, () => replaceDamaged(v));
+        }
+        li.append(title, where, sizes, buttons);
+        list.appendChild(li);
+    }
+    decorateIconButtons();
+    const t = info.trash;
+    trashStatus.textContent = t.files
+        ? `The trash holds ${t.files} replaced original${t.files === 1 ? '' : 's'} (${formatSize(t.bytes)}), each deleted ${t.days} days after it went in.`
+        : `The trash is empty. Replaced originals are kept there ${t.days} days.`;
+    emptyBtn.hidden = !t.files;
+    emptyBtn.onclick = emptyTrash;
+}
+
+async function playDamaged(v, original) {
+    const message = document.getElementById('damaged-message');
+    message.textContent = '';
+    try {
+        await api.request('/api/admin/damaged/play', { method: 'POST', body: JSON.stringify({ path: api.encodePath(v.path), original }) });
+    } catch (e) {
+        message.textContent = e.message;
+        return;
+    }
+    playVideo({ path: v.path, name: original ? `${v.name} (original)` : `${v.name} (fixed copy)`, type: 'video',
+        duration: original ? 0 : v.duration }, false, 0, false);
+}
+
+async function replaceDamaged(v) {
+    const newName = v.name.replace(/\.[^.]*$/, '') + '.mkv';
+    if (!confirm(`Replace "${v.name}" with its fixed copy?\n\nThe fixed copy goes into its folder as "${newName}", with its watch progress, and the original goes to the trash (deleted after 30 days).`)) return;
+    const message = document.getElementById('damaged-message');
+    try {
+        await api.request('/api/admin/damaged/replace', { method: 'POST', body: JSON.stringify({ path: api.encodePath(v.path) }) });
+        message.textContent = `Replaced: "${newName}" is in its place, and the original is in the trash.`;
+    } catch (e) {
+        message.textContent = e.message;
+    }
+    loadDamagedVideos();
+}
+
+async function emptyTrash() {
+    if (!confirm('Delete every replaced original in the trash now? They can\'t be brought back.')) return;
+    const message = document.getElementById('damaged-message');
+    try {
+        await api.request('/api/admin/trash/empty', { method: 'POST' });
+        message.textContent = 'The trash is empty.';
+    } catch (e) {
+        message.textContent = e.message;
+    }
+    loadDamagedVideos();
 }
 
 // Settings › Streaming › Hardware encoding: the server's GPUs and the encoders that passed its

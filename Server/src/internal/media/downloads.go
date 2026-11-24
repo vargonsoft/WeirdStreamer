@@ -99,6 +99,7 @@ func NewDownloadManager(dir string) *DownloadManager {
 
 // Source probes a file for the download options.
 func Source(path string) (*DownloadSource, error) {
+	path = Playable(path) // a damaged video's fixed copy
 	st, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -314,7 +315,7 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 			}
 		}
 	} else {
-		codecs, err := ProbeCodecs(job.Path)
+		codecs, err := ProbeCodecs(Playable(job.Path))
 		if err != nil {
 			return err
 		}
@@ -322,7 +323,7 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 		if track < 0 || track >= len(codecs.Audio) {
 			track = codecs.DefaultAudio()
 		}
-		args = []string{"-i", job.Path, "-map", "0:v:0", "-map", fmt.Sprintf("0:a:%d?", track)}
+		args = []string{"-i", Playable(job.Path), "-map", "0:v:0", "-map", fmt.Sprintf("0:a:%d?", track)}
 		if height > 0 {
 			args = append(args, "-vf", fmt.Sprintf("scale=-2:%d", height))
 		}

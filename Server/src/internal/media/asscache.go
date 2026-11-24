@@ -360,9 +360,10 @@ func (j *AssJob) runOnce(ctx context.Context) string {
 		}
 		j.job.SetRunner(0, filepath.Base(w.path))
 		info, statErr := os.Stat(w.path)
-		found, err := assTracks(ctx, w.path)
+		src := Playable(w.path) // a damaged video's fixed copy
+		found, err := assTracks(ctx, src)
 		if err == nil && statErr == nil && len(found) > 0 {
-			err = extractAss(ctx, w.path, w.key, found)
+			err = extractAss(ctx, src, w.key, found)
 		}
 		j.job.SetRunner(0, "")
 		j.job.Step(1)

@@ -29,7 +29,7 @@ func keepDataPrivate(c *config.Config) {
 	}
 	m := c.Media
 	for _, dir := range []string{c.Server.LogsPath, m.ThumbnailPath, m.TrickplayPath, m.ArtworkPath,
-		m.DownloadPath, m.TranscodeCachePath, m.SubtitlePath, m.TempPath} {
+		m.DownloadPath, m.TranscodeCachePath, m.SubtitlePath, m.TempPath, m.RepairPath, m.TrashPath} {
 		if dir == "" || holdsLibrary(c, dir) {
 			continue
 		}

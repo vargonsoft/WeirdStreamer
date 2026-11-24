@@ -40,6 +40,7 @@ type MediaHandler struct {
 	pruner             *media.Pruner          // nil until StartCleanup
 	trickplay          *media.TrickplayJob    // nil until StartTrickplay
 	assCache           *media.AssJob          // nil until StartAssCache
+	repairs            *media.RepairJob       // nil until StartRepairs
 	thumbnails         *thumbnailQueue        // missing thumbnails pages asked for
 }
 
@@ -365,7 +366,12 @@ func (h *MediaHandler) StreamMedia(w http.ResponseWriter, r *http.Request) {
 	sess := h.beginStream(r, item)
 	defer sess.End()
 
-	if err := h.streamer.ServeContent(w, r, path, item.MimeType, forceTranscode, audioTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages, bitrate, resolution, sess); err != nil {
+	// A damaged video plays from its fixed copy (unless original=1)
+	src, mimeType := h.playable(r, path), item.MimeType
+	if src != path {
+		mimeType = media.MimeType(src)
+	}
+	if err := h.streamer.ServeContent(w, r, src, mimeType, forceTranscode, audioTranscode, autoTranscode, startTime, config.GlobalConfig.Streaming.AutoConvertImages, bitrate, resolution, sess); err != nil {
 		log.Printf("[STREAM] Failed to stream %s: %v", path, err)
 		if respondDiscBusy(w, err) {
 			return
@@ -809,6 +815,9 @@ func (h *MediaHandler) scan() {
 	}
 	if h.assCache != nil {
 		h.assCache.Wake() // and their styled subtitle tracks
+	}
+	if h.repairs != nil {
+		h.repairs.Wake() // and whether they're damaged
 	}
 }
 

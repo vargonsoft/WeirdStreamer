@@ -123,6 +123,13 @@ func main() {
 	if config.GlobalConfig.Media.TempPath == "" {
 		config.GlobalConfig.Media.TempPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "tmp")
 	}
+	// Fixed copies of damaged videos, and the originals they replaced: beside the thumbnails by default
+	if config.GlobalConfig.Media.RepairPath == "" {
+		config.GlobalConfig.Media.RepairPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "repairs")
+	}
+	if config.GlobalConfig.Media.TrashPath == "" {
+		config.GlobalConfig.Media.TrashPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "trash")
+	}
 	if err := media.SetTempDir(config.GlobalConfig.Media.TempPath); err != nil {
 		log.Printf("Warning: could not prepare the temp folder %s: %v", config.GlobalConfig.Media.TempPath, err)
 	}
@@ -178,6 +185,7 @@ func main() {
 	mediaHandler.StartTrickplay(ctx)
 	// Videos' styled (ASS/SSA) subtitle tracks, copied out of them for whole windows and downloads.
 	mediaHandler.StartAssCache(ctx)
+	mediaHandler.StartRepairs(ctx)
 	// New files, found every hour (and on Scan Media).
 	go mediaHandler.StartScans(ctx)
 	backup.Start(ctx, db, version) // on the schedule Settings sets
@@ -279,6 +287,10 @@ func main() {
 	api.HandleFunc("/admin/hardware", configHandler.Hardware).Methods("GET")
 	api.HandleFunc("/admin/backups", configHandler.Backups).Methods("GET")
 	api.HandleFunc("/admin/backups", configHandler.BackUpNow).Methods("POST")
+	api.HandleFunc("/admin/damaged", mediaHandler.DamagedVideos).Methods("GET")
+	api.HandleFunc("/admin/damaged/replace", mediaHandler.ReplaceDamaged).Methods("POST")
+	api.HandleFunc("/admin/damaged/play", mediaHandler.PlayDamaged).Methods("POST")
+	api.HandleFunc("/admin/trash/empty", mediaHandler.EmptyTrash).Methods("POST")
 	api.HandleFunc("/groups", configHandler.GetAvailableGroups).Methods("GET")
 	api.HandleFunc("/groups", configHandler.CreateGroup).Methods("POST")
 	api.HandleFunc("/groups/{name}", configHandler.RenameGroup).Methods("PUT")

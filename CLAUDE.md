@@ -510,6 +510,24 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   Terminal Green and Terminal Amber (phosphor on black, all text monospace: `ThemePalette.monospace`), dark themes built like
   Ember with the same colors on each (a `ThemePalette` and a `:root[data-theme=…]` block). Android also has
   Light and Auto Light/Dark (`AppTheme`). Themes are picked from a grid of tiles drawn in each theme's colors (its background, box, accent and button), applied and kept at once: the web's Settings, Themes tab (`renderThemePicker`, colors read from the theme's CSS block), and the Themes tab of the TV and phone Settings (`ThemeTiles.kt`: `TvThemePicker`, 3 rows of 7, and `PhoneThemePicker`). The TV's Settings has tabs under its title (`SettingsScreen.kt`, rows drawn by `TvSettingsRow`): General (this TV's options and the app update), Account (with a server open: Languages, Change password, Sign in on a TV), Sources (saved servers and shares), Themes, and for an admin's account Server, Users, Streams and Jobs, as the phone's and the web's. Server administration's state and requests are shared (`AdminSettings.kt`: `ServerSettingsModel`, `UsersModel`, `PasswordChangeModel`, `StreamsModel`, `JobsModel`, each with a `remember…`), and each draws its own screens on them: the phone in `PhoneServerSettings.kt` (a Save button), the TV in `TvAdminSettings.kt` (rows that open dialogs; each change saves at once, `saveSoon` for Left/Right steps, and the server's answer is a toast). A change to these settings goes in the model and both screens.
+- **Damaged videos** (`media/repair.go`): a video whose seek index is broken (often FLV, some named
+  .avi) can't be jumped in: transcodes started past 0 read nothing, thumbnails and trickplay fail. The
+  "Damaged videos" job (after each scan and every 6 hours, like the ASS cache: `repairPath/index.json`
+  by `config.CacheKey`, size and mtime) checks each changed video (`checkSeek`: ffprobe drops the index
+  as invalid, or a jump to the middle finds no video or video far off; MPEG-TS packet lines have an
+  extra field) and copies a damaged one's streams untouched into an indexed Matroska file in
+  `media.repairPath` (default `repairs` beside the thumbnails; `fixVideo`, checked to seek). `media.Playable`
+  gives that copy in the video's place to everything that reads it: the stream, codecs, seek-point,
+  subtitle and font handlers (`h.playable`: not with `original=1`, or for an admin who chose Play original,
+  `POST /api/admin/damaged/play`, for an hour), thumbnails, trickplay, intros and credits, the ASS cache,
+  downloads and the scanner's length. Fixing one removes its trickplay frames and thumbnail for remaking and
+  stores its real length (the damaged header's is often wrong). Settings › Server lists them for admins
+  (`GET /api/admin/damaged`; web, phone, iPhone, TV) with Play original, Play fixed copy and Replace with
+  fixed copy (`POST /api/admin/damaged/replace`, `media.ReplaceWithFixed`: the copy goes in as `<name>.mkv`
+  with the original's time on disk, refused while someone else plays it; `db.MoveFile` moves its progress,
+  segments, subtitle timing and episode matches to the new client path; the original goes to the trash,
+  `media.trashPath`, default `trash` beside the thumbnails, emptied after 30 days by the job or with Empty
+  the trash, `POST /api/admin/trash/empty`). Both folders are on the Jobs page's storage list.
 - **Video thumbnails** (`media/thumbnail.go`): a frame a minute in, and while it's blank (`frameBlank`:
   mean brightness under 0.07 or over 0.93, little spread in brightness and color, or 80% or more of it
   one color, as a white card with a small logo: a fade, a title card, one color) 30 s further, up to 3½ minutes in; the first that isn't wins, else the least blank. A video

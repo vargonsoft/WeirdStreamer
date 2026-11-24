@@ -851,6 +851,29 @@ body {
     text-decoration: underline;
 }
 
+/* Settings › Damaged videos */
+.damaged-list {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0;
+}
+
+.damaged-list li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+}
+
+.damaged-name {
+    font-weight: 600;
+}
+
+.damaged-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+}
+
 .app-download-text {
     color: var(--muted-text);
     margin-bottom: 12px;

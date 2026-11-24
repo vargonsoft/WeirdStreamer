@@ -91,6 +91,8 @@ func countFolders() {
 		{"Download encodes", m.DownloadPath},
 		{"Subtitles", m.SubtitlePath},
 		{"Backups", db.BackupDir()},
+		{"Fixed videos", m.RepairPath},
+		{"Trash", m.TrashPath},
 	} {
 		if f.dir != "" {
 			uses = append(uses, StorageUse{Name: f.name, Bytes: dirSize(f.dir)})

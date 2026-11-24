@@ -80,8 +80,10 @@ func HasTrickplay(videoPath string) bool {
 // job can pause; it stops when ctx ends or wait says so, and marks the video done when finished.
 func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wait func() bool) error {
 	fmt.Printf("Generating trickplay frames for %s\n", videoPath)
+	// A damaged video's frames come from its fixed copy (src); what's kept is keyed by videoPath.
+	src := Playable(videoPath)
 
-	duration, codec, err := tg.getVideoInfo(videoPath)
+	duration, codec, err := tg.getVideoInfo(src)
 	if errors.Is(err, errUnreadableMedia) && ctx.Err() == nil && readable(videoPath) {
 		// Every way of reading it failed, but the file is there and reads (so it's not the share):
 		// not a video (code named .ts, say, or a corrupt file). Marked done, it isn't tried again.
@@ -106,7 +108,7 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 	}
 	removeParts(trickplayVideoDir)
 
-	start, err := os.Stat(videoPath)
+	start, err := os.Stat(src)
 	if err != nil {
 		return err
 	}
@@ -131,7 +133,7 @@ loop:
 		n := min(config.TrickplayFramesPerRunner(), len(pending))
 		batch := pending[:n]
 		pending = pending[n:]
-		made := tg.extractBatch(ctx, videoPath, trickplayVideoDir, codec, batch)
+		made := tg.extractBatch(ctx, src, trickplayVideoDir, codec, batch)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -145,7 +147,7 @@ loop:
 				failures, lastGood = 0, i
 				continue
 			}
-			if err := tg.generateFrame(ctx, videoPath, trickplayVideoDir, float64(i), i, codec); err != nil {
+			if err := tg.generateFrame(ctx, src, trickplayVideoDir, float64(i), i, codec); err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
@@ -157,7 +159,7 @@ loop:
 					// that went away: mark it done with the frames it has instead of trying it again
 					// every start. Otherwise give up for now, keeping the frames made, and leave it
 					// unmarked.
-					if lastGood >= 0 && tg.stillReadable(ctx, videoPath, start, float64(lastGood), codec) {
+					if lastGood >= 0 && tg.stillReadable(ctx, src, start, float64(lastGood), codec) {
 						fmt.Printf("Damaged file: no frames after %ds of %.0fs; keeping the frames up to there: %s\n", lastGood, duration, videoPath)
 						break loop
 					}

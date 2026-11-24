@@ -628,3 +628,79 @@ internal fun jobNextRun(j: com.vargon.weirdstreamer.api.models.BackgroundJob, no
         else -> "Runs: ${j.schedule ?: "when asked"}"
     } + if (j.paused) " (paused)" else ""
 }
+
+// ---------------------------------------------------------------------------------------------
+// Damaged videos (the Server tab): videos with a broken seek index, which the server plays from
+// fixed copies; each can be played as it is or fixed, and replaced by its fixed copy. And the trash
+// of replaced originals.
+
+class DamagedVideosModel(val server: ServerRepository, private val scope: CoroutineScope) {
+    var videos by mutableStateOf<List<com.vargon.weirdstreamer.api.models.DamagedVideo>?>(null); private set
+    var trash by mutableStateOf(com.vargon.weirdstreamer.api.models.TrashReport()); private set
+    var loadError by mutableStateOf<String?>(null); private set
+    var message by mutableStateOf<Notice?>(null)
+
+    private fun body(path: String, original: Boolean? = null) = JsonObject().apply {
+        addProperty("path", android.util.Base64.encodeToString(path.toByteArray(), android.util.Base64.NO_WRAP))
+        original?.let { addProperty("original", it) }
+    }
+
+    suspend fun load() {
+        val (list, err) = attempt { server.api.getDamaged() }
+        loadError = err
+        list?.let { videos = it.videos.orEmpty(); it.trash?.let { t -> trash = t } }
+    }
+
+    /** Has the server give this account's players the original as it is (or the fixed copy), then [then] plays it. */
+    fun play(video: com.vargon.weirdstreamer.api.models.DamagedVideo, original: Boolean, then: () -> Unit) {
+        scope.launch {
+            val (_, err) = attempt { server.api.playDamaged(body(video.path, original)) }
+            if (err != null) message = err to true else then()
+        }
+    }
+
+    fun replace(video: com.vargon.weirdstreamer.api.models.DamagedVideo) {
+        scope.launch {
+            val (reply, err) = attempt { server.api.replaceDamaged(body(video.path)) }
+            message = if (err != null) err to true
+                else "Replaced: ${replacedName(video.name)} is in its place, and the original is in the trash." to false
+            reply?.trash?.let { trash = it }
+            load()
+        }
+    }
+
+    fun emptyTrash() {
+        scope.launch {
+            val (reply, err) = attempt { server.api.emptyTrash() }
+            message = (err ?: "The trash is empty.") to (err != null)
+            reply?.trash?.let { trash = it }
+        }
+    }
+}
+
+@Composable
+fun rememberDamagedVideos(server: ServerRepository): DamagedVideosModel {
+    val scope = rememberCoroutineScope()
+    val model = remember(server.address) { DamagedVideosModel(server, scope) }
+    LaunchedEffect(model) { model.load() }
+    return model
+}
+
+/** The name a damaged video gets when its fixed copy replaces it: its own, as .mkv. */
+internal fun replacedName(name: String) = name.substringBeforeLast('.', name) + ".mkv"
+
+internal const val DAMAGED_ABOUT = "Videos players can't jump in (a broken seek index), found by scans. The server plays a fixed copy " +
+    "in their place: the same video and audio, copied untouched into an indexed file. Play each to compare, then replace the " +
+    "original with the fixed copy (as .mkv, keeping its watch progress); the original goes to the trash."
+
+/** "Original: 316 MB, says 2:07:52 long · Fixed copy: 298 MB, 1:14:32", or why it couldn't be fixed. */
+internal fun damagedSizes(v: com.vargon.weirdstreamer.api.models.DamagedVideo) =
+    if (v.fixed) "Original: ${formatBytes(v.size)}, says ${streamClock(v.claimed)} long · Fixed copy: ${formatBytes(v.fixedSize)}, ${streamClock(v.duration)}"
+    else "Original: ${formatBytes(v.size)} · Couldn't be fixed: ${v.error ?: "unknown"}"
+
+internal fun damagedWhere(v: com.vargon.weirdstreamer.api.models.DamagedVideo) =
+    listOf(v.library, v.folder).filter { it.isNotEmpty() }.joinToString(" › ") + " · " + v.reason
+
+internal fun trashText(t: com.vargon.weirdstreamer.api.models.TrashReport) =
+    if (t.files > 0) "The trash holds ${t.files} replaced original${if (t.files == 1) "" else "s"} (${formatBytes(t.bytes)}), each deleted ${t.days} days after it went in."
+    else "The trash is empty. Replaced originals are kept there ${t.days} days."

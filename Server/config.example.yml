@@ -90,6 +90,14 @@ media:
   # Short-lived work files, such as HEIC photos converted to JPEG (default: "tmp" beside the
   # thumbnails folder). The server's own files there are removed when it starts.
   tempPath: ./var/tmp
+  # Fixed copies of damaged videos: ones whose seek index is broken, so players can't jump in them
+  # (and their thumbnails fail). Scans find them and copy their video and audio, untouched, into
+  # an indexed Matroska file here, played in their place (default: "repairs" beside the
+  # thumbnails folder). Settings › Server lists them, to play both and replace the original.
+  repairPath: ./var/repairs
+  # The originals replaced by their fixed copies, deleted after 30 days or with Settings' Empty
+  # trash (default: "trash" beside the thumbnails folder).
+  trashPath: ./var/trash
   # Styled (ASS) subtitles in Chinese, Japanese or Korean need a CJK font: the server makes a small
   # subset of it for each video's lines, for the web player and the Android apps (which can't
   # reach the fonts of the browser or the device). It must be Noto Sans CJK: the players use that

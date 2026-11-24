@@ -7,6 +7,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/models"
 )
 
@@ -78,6 +79,17 @@ func (h *MediaHandler) filePath(r *http.Request, encoded string) (string, int) {
 }
 
 // decodeMediaPath is filePath for a handler: it writes the error response when there's no file.
+// playable is the file to read a library video from: its fixed copy when it's damaged and has one
+// (media.Playable), unless the request asks for the original as it is (original=1), or its user
+// chose to play the original in Settings' Damaged videos (PlayDamaged). path stays the video's own for everything else: its client path, its
+// progress, the files beside it.
+func (h *MediaHandler) playable(r *http.Request, path string) string {
+	if r.URL.Query().Get("original") == "1" || playsOriginal(r, path) {
+		return path
+	}
+	return media.Playable(path)
+}
+
 func (h *MediaHandler) decodeMediaPath(w http.ResponseWriter, r *http.Request, encoded string) (string, bool) {
 	path, status := h.filePath(r, encoded)
 	switch status {

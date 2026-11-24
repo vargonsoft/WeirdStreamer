@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Password
@@ -289,8 +290,13 @@ private class TextEntry(val title: String, val initial: String, val kind: TvEntr
 private class ChoiceEntry(val title: String, val options: List<Pair<String, String>>, val selected: String, val onPick: (String) -> Unit)
 
 @Composable
-fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusRequester) {
+fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusRequester,
+                onPlay: (path: String, name: String, duration: Double) -> Unit = { _, _, _ -> }) {
     val m = rememberServerSettings(server)
+    val damaged = rememberDamagedVideos(server)
+    TvNoticeToast(damaged.message)
+    var damagedVideo by remember { mutableStateOf<com.vargon.weirdstreamer.api.models.DamagedVideo?>(null) }
+    var emptying by remember { mutableStateOf(false) }
     TvNoticeToast(m.message)
     TvNoticeToast(m.groupMessage)
     TvNoticeToast(m.backupMessage)
@@ -377,6 +383,20 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
         onClick = { if (!m.backingUp) m.backUpNow() }) { Icon(Icons.Default.Backup, contentDescription = null) }
     list?.backups.orEmpty().forEach { b -> TvNote("${BackupSettings.date(b.created)} · ${formatBytes(b.size)}", Modifier.padding(start = 12.dp)) }
 
+    TvSectionTitle("Damaged videos")
+    TvNote(DAMAGED_ABOUT)
+    if (damaged.videos?.isEmpty() == true) TvNote("None found.")
+    damaged.loadError?.let { TvNote("Couldn't read the damaged videos: $it") }
+    damaged.videos.orEmpty().forEach { v ->
+        TvSettingsRow(v.name, damagedWhere(v) + "\n" + damagedSizes(v), onClick = { damagedVideo = v }) { TvChevron() }
+    }
+    TvNote(trashText(damaged.trash))
+    if (damaged.trash.files > 0) {
+        TvSettingsRow("Empty the trash now", onClick = { emptying = true }) {
+            Icon(Icons.Default.Delete, contentDescription = null)
+        }
+    }
+
     TvSectionTitle("Metadata")
     TvNote("TMDB is used for libraries with a Movies or TV Shows type.")
     TvSettingsRow("TMDB API read access token", if (m.tmdbToken.isBlank()) "Not set" else "Set", onClick = {
@@ -394,6 +414,20 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
         Icon(Icons.Default.Search, contentDescription = null)
     }
 
+    damagedVideo?.let { v ->
+        TvDamagedDialog(v, onDismiss = { damagedVideo = null },
+            onPlay = { original ->
+                damagedVideo = null
+                damaged.play(v, original) {
+                    onPlay(v.path, if (original) "${v.name} (original)" else "${v.name} (fixed copy)", if (original) 0.0 else v.duration)
+                }
+            },
+            onReplace = { damagedVideo = null; damaged.replace(v) })
+    }
+    if (emptying) {
+        TvConfirmDialog("Empty the trash?", "Every replaced original in it is deleted now. They can't be brought back.", "Empty the trash",
+            onDismiss = { emptying = false }) { damaged.emptyTrash() }
+    }
     entry?.let { e -> TvTextEntryDialog(e.title, e.initial, e.kind, e.note, onDismiss = { entry = null }, onDone = e.onDone) }
     choice?.let { c -> TvChoiceDialog(c.title, c.options, c.selected, onPick = c.onPick, onDismiss = { choice = null }) }
     library?.let { i ->
@@ -409,6 +443,28 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
     val hw = m.hardware
     if (showHardware && hw != null) {
         TvHardwareDialog(server, hw, config, onChanged = { m.adopt(it) }, onDismiss = { showHardware = false })
+    }
+}
+
+/** A damaged video: play it as it is or its fixed copy, or replace it with the fixed copy (asked first). */
+@Composable
+private fun TvDamagedDialog(v: com.vargon.weirdstreamer.api.models.DamagedVideo, onDismiss: () -> Unit,
+                            onPlay: (original: Boolean) -> Unit, onReplace: () -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    TvDialogFrame(v.name, onDismiss) {
+        TvNote(damagedWhere(v) + "\n" + damagedSizes(v))
+        TvValueRow("Play original", focus = first) { onPlay(true) }
+        if (v.fixed) {
+            TvValueRow("Play fixed copy") { onPlay(false) }
+            TvValueRow("Replace with fixed copy") { confirming = true }
+        }
+    }
+    if (confirming) {
+        TvConfirmDialog("Replace ${v.name}?",
+            "The fixed copy goes into its folder as ${replacedName(v.name)}, with its watch progress, and the original goes to the trash (deleted after 30 days).",
+            "Replace", onDismiss = { confirming = false }) { onReplace() }
     }
 }
 

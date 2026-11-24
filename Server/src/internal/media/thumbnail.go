@@ -36,6 +36,7 @@ type ThumbnailGenerator struct {
 type fileStamp struct {
 	size    int64
 	modTime int64
+	source  string // the file read (a damaged video's fixed copy, once there is one: tried again then)
 }
 
 // ErrThumbnailFailedBefore is a file whose thumbnail already failed, unchanged since.
@@ -85,7 +86,7 @@ func (tg *ThumbnailGenerator) GenerateThumbnail(filePath string) (string, error)
 	defer tg.mu.Unlock()
 	var stamp fileStamp
 	if st, err := os.Stat(filePath); err == nil {
-		stamp = fileStamp{st.Size(), st.ModTime().UnixNano()}
+		stamp = fileStamp{st.Size(), st.ModTime().UnixNano(), Playable(filePath)}
 		if tg.failed[filePath] == stamp {
 			return "", ErrThumbnailFailedBefore
 		}
@@ -148,7 +149,9 @@ func (tg *ThumbnailGenerator) generate(filePath string) (string, error) {
 			// Disc images: a frame a tenth of the way into the main title, or further while it's blank
 			success = discThumbnail(filePath, part)
 		} else {
-			success = videoThumbnail(filePath, part, tg.getVideoCodec(filePath))
+			// A damaged video's frames come from its fixed copy
+			src := Playable(filePath)
+			success = videoThumbnail(src, part, tg.getVideoCodec(src))
 		}
 
 		// If all attempts failed, return error

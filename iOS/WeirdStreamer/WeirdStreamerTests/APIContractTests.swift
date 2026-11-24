@@ -90,6 +90,18 @@ struct APIContractTests {
         #expect(BackupSettings.time("4:00") == "04:00" && BackupSettings.time("25:00") == "04:00" && !BackupSettings.validTime("4:0"))
     }
 
+    @Test func damagedList() throws {
+        // As the server writes it (snake case; error only for one that couldn't be fixed)
+        let list = try decode(DamagedList.self, #"{"videos":[{"path":"01c6653f/Movies/Film.avi","name":"Film.avi","library":"Movies","folder":"","reason":"Its seek index is broken: players can't jump in it","state":"fixed","size":316013903,"fixed_size":312475648,"claimed":7672.419,"duration":4472.12}],"trash":{"files":1,"bytes":1024,"oldest":"2026-11-24T15:00:00Z","days":30}}"#)
+        let v = try #require(list.videos?.first)
+        #expect(v.fixed && v.fixedSize == 312475648 && v.claimed == 7672.419)
+        #expect(DamagedVideos.clock(v.duration) == "1:14:32" && DamagedVideos.clock(v.claimed) == "2:07:52")
+        #expect(DamagedVideos.replacedName("Film.avi") == "Film.mkv" && DamagedVideos.replacedName("Melissa P.flv") == "Melissa P.mkv")
+        #expect(DamagedVideos.whereText(v).hasPrefix("Movies · Its seek index"))
+        #expect(DamagedVideos.trashText(list.trash).hasPrefix("The trash holds 1 replaced original ("))
+        #expect(DamagedVideos.trashText(TrashReport(files: 0, bytes: 0, days: 30)) == "The trash is empty. Replaced originals are kept there 30 days.")
+    }
+
     @Test func hardwareReportWithNothingFound() throws {
         // The server sends null for empty lists (gpus and encoders aren't omitempty).
         let r = try decode(HardwareReport.self, #"{"checking":false,"gpus":null,"encoders":null}"#)

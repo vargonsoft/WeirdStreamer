@@ -200,19 +200,20 @@ func (s *Scanner) GetFileMetadata(path string) (*models.MediaItem, error) {
 			}
 		}
 	} else if item.Type == "video" {
-		// Get duration using ffprobe
+		// Get duration using ffprobe (a damaged video's fixed copy has the real one)
+		src := Playable(path)
 		cmd := exec.Command("ffprobe",
 			"-v", "error",
 			"-show_entries", "format=duration",
 			"-of", "default=noprint_wrappers=1:nokey=1",
-			path,
+			src,
 		)
 
 		output, err := cmd.Output()
 		if err == nil {
 			var duration float64
 			fmt.Sscanf(string(output), "%f", &duration)
-			item.Duration = orPackets(path, duration)
+			item.Duration = orPackets(src, duration)
 		}
 	} else if item.Type == "image" {
 		s.getImageMetadata(item)

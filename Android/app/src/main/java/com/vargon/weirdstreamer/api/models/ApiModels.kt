@@ -652,6 +652,42 @@ data class BackupList(
     @SerializedName("next") val next: String? = null, // RFC 3339; none when backups are off
 )
 
+/** A damaged video (its seek index broken) and its fixed copy, for Settings (GET /api/admin/damaged). */
+data class DamagedVideo(
+    @SerializedName("path") val path: String = "", // client path
+    @SerializedName("name") val name: String = "",
+    @SerializedName("library") val library: String = "",
+    @SerializedName("folder") val folder: String = "",
+    @SerializedName("reason") val reason: String = "",
+    @SerializedName("state") val state: String = "", // "fixed", or "failed"
+    @SerializedName("error") val error: String? = null,
+    @SerializedName("size") val size: Long = 0,
+    @SerializedName("fixed_size") val fixedSize: Long = 0,
+    @SerializedName("claimed") val claimed: Double = 0.0, // the length the original says
+    @SerializedName("duration") val duration: Double = 0.0, // the fixed copy's
+) {
+    val fixed get() = state == "fixed"
+}
+
+/** The trash of replaced originals: deleted [days] after they went in. */
+data class TrashReport(
+    @SerializedName("files") val files: Int = 0,
+    @SerializedName("bytes") val bytes: Long = 0,
+    @SerializedName("oldest") val oldest: String? = null,
+    @SerializedName("days") val days: Int = 30,
+)
+
+data class DamagedList(
+    @SerializedName("videos") val videos: List<DamagedVideo>? = null,
+    @SerializedName("trash") val trash: TrashReport? = null,
+)
+
+/** Replace's answer (the new file's client path) and Empty trash's: the trash now. */
+data class DamagedReplaced(
+    @SerializedName("path") val path: String? = null,
+    @SerializedName("trash") val trash: TrashReport? = null,
+)
+
 data class HardwareReport(
     @SerializedName("checking") val checking: Boolean,
     @SerializedName("gpus") val gpus: List<HardwareGpu>? = null,

@@ -290,7 +290,8 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	}
 	// Tracks past the video's own are its subtitle files, in the codecs report's order.
 	own := 0
-	codecs, err := media.ProbeCodecs(path)
+	src := h.playable(r, path) // a damaged video's tracks come from its fixed copy
+	codecs, err := media.ProbeCodecs(src)
 	if err == nil {
 		own = len(codecs.Subtitles)
 	} else {
@@ -323,10 +324,10 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Query().Get("format") == "sup" { // a PGS track, for the players to draw
 		if codecs != nil && media.IsDVDSubtitle(codecs.Subtitles[track].Codec) {
-			media.ServeDVDSubtitles(w, r, path, track, start, duration, forcedOnly) // made PGS, drawn the same
+			media.ServeDVDSubtitles(w, r, src, track, start, duration, forcedOnly) // made PGS, drawn the same
 			return
 		}
-		media.ServePictureSubtitles(w, r, path, track, start, duration)
+		media.ServePictureSubtitles(w, r, src, track, start, duration)
 		return
 	}
 	if assFormat { // an ASS/SSA track, for the players' ASS renderers
@@ -342,10 +343,10 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		media.ServeAssSubtitles(w, r, path, track, start, duration)
+		media.ServeAssSubtitles(w, r, src, track, start, duration)
 		return
 	}
-	media.ServeSubtitles(w, r, path, track, start, duration)
+	media.ServeSubtitles(w, r, src, track, start, duration)
 }
 
 // subsetLimit is a per-user budget of subset requests: 20 a minute.
@@ -432,7 +433,7 @@ func (h *MediaHandler) GetSeekPoint(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("next") == "1" {
 		// The keyframe at or after start instead, for a jump forward that would land where it began.
 		t, _ := strconv.ParseFloat(start, 64)
-		ask, begins, err := media.NextStart(path, t)
+		ask, begins, err := media.NextStart(h.playable(r, path), t)
 		if err != nil {
 			respondError(w, http.StatusUnprocessableEntity, "No keyframe after that time")
 			return
@@ -440,7 +441,7 @@ func (h *MediaHandler) GetSeekPoint(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]any{"start": begins, "ask": ask})
 		return
 	}
-	point, err := media.SeekPoint(path, start)
+	point, err := media.SeekPoint(h.playable(r, path), start)
 	if err == nil && point < 0 {
 		err = fmt.Errorf("seek point %v", point) // a time ffmpeg couldn't give
 	}
@@ -461,7 +462,7 @@ func (h *MediaHandler) GetCodecs(w http.ResponseWriter, r *http.Request) {
 	if respondUnreadable(w, path) {
 		return
 	}
-	codecs, err := media.ProbeCodecs(path)
+	codecs, err := media.ProbeCodecs(h.playable(r, path))
 	if err != nil {
 		respondError(w, http.StatusUnprocessableEntity, "Could not read the file's codecs")
 		return
@@ -489,7 +490,7 @@ func (h *MediaHandler) GetFont(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "Invalid font")
 		return
 	}
-	codecs, err := media.ProbeCodecs(path)
+	codecs, err := media.ProbeCodecs(h.playable(r, path))
 	if err != nil {
 		respondError(w, http.StatusUnprocessableEntity, "Could not read the file")
 		return
@@ -504,7 +505,7 @@ func (h *MediaHandler) GetFont(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "No such font")
 		return
 	}
-	data, err := media.ReadFont(path, index)
+	data, err := media.ReadFont(h.playable(r, path), index)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "No such font")
 		return

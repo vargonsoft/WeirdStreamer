@@ -33,7 +33,7 @@ var (
 
 // ChapterSegments returns a file's chapters named like an intro or credits (nil for none).
 func ChapterSegments(ctx context.Context, path string) (intro, credits *Segment, err error) {
-	out, err := backgroundCommand(ctx, "ffprobe", "-v", "error", "-print_format", "json", "-show_chapters", path).Output()
+	out, err := backgroundCommand(ctx, "ffprobe", "-v", "error", "-print_format", "json", "-show_chapters", Playable(path)).Output()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -71,7 +71,7 @@ const fingerprintStep = 0.1238
 // Fingerprint returns the Chromaprint points of a file's first audio track over [start, start+length).
 func Fingerprint(ctx context.Context, path string, start, length float64) ([]uint32, error) {
 	cmd := backgroundCommand(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-		"-ss", fmt.Sprintf("%.3f", start), "-t", fmt.Sprintf("%.3f", length), "-i", path,
+		"-ss", fmt.Sprintf("%.3f", start), "-t", fmt.Sprintf("%.3f", length), "-i", Playable(path),
 		"-map", "0:a:0", "-ac", "1", "-f", "chromaprint", "-fp_format", "raw", "-")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -160,7 +160,7 @@ const (
 func BlackCredits(ctx context.Context, path string, duration, span float64) (*Segment, error) {
 	from := max(0, duration-span)
 	cmd := backgroundCommand(ctx, "ffmpeg", "-hide_banner", "-nostdin", "-skip_frame", "noref",
-		"-ss", fmt.Sprintf("%.3f", from), "-i", path, "-an", "-sn", "-map", "0:v:0",
+		"-ss", fmt.Sprintf("%.3f", from), "-i", Playable(path), "-an", "-sn", "-map", "0:v:0",
 		"-vf", "fps=2,scale=320:-2,blackdetect=d=0:pic_th=0.80:pix_th=0.03", "-f", "null", "-")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

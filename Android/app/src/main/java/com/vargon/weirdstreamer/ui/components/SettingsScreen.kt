@@ -230,7 +230,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
             }
 
             // The open server's administration (admins), as the phone's and the web's Settings
-            TvSettingsTab.Server -> item { adminServer?.let { TvServerTab(it, adminFocus, tabUp) } }
+            TvSettingsTab.Server -> item { adminServer?.let { TvServerTab(it, adminFocus, tabUp, onPlay = viewModel::playServerFile) } }
             TvSettingsTab.Users -> item { adminServer?.let { TvUsersTab(it, adminFocus, tabUp) } }
             TvSettingsTab.Streams -> item { adminServer?.let { TvStreamsTab(it, adminFocus, tabUp) } }
             TvSettingsTab.Jobs -> item { adminServer?.let { TvJobsTab(it, adminFocus, tabUp) } }
