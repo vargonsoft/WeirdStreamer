@@ -58,6 +58,8 @@ enum class ContentFilter {
 
 class MediaViewModel(application: Application) : AndroidViewModel(application) {
     val credentialManager = CredentialManager(application)
+    /** The PINs that guard this device's server accounts (Settings › Account). */
+    val pins = AccountPins.get(application)
 
     val baseContext: CIFSContext by lazy {
         val props = Properties().apply {
@@ -725,6 +727,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                         if (user.isBlank()) credentialManager.clearCredentials(source.serverAddress)
                         else credentialManager.saveCredentials(source.serverAddress, user.trim(), pass)
                     }
+                    clearForgottenPin(source.serverAddress)
                     // Trigger UI update for auth status
                     authStateRefreshTrigger++
                 }
@@ -879,6 +882,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         errorMessage = null
         // A sign-in cancelled: else the browser still asks for it and opens the dialog again.
         authRequiredSource = null
+        pinResetFor = null
         authTitle = null
         fileList = emptyList()
         currentPathDisplayName = null
@@ -969,8 +973,57 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Opens a server as one of its accounts, or asks for its password when its sign-in has expired. */
+    /** An account chosen on the source list that has a PIN: asked for before it opens. */
+    data class PinRequest(val provider: SourceProvider, val address: String, val username: String)
+    var pinRequest by mutableStateOf<PinRequest?>(null)
+        private set
+
+    // The account whose PIN was forgotten: its password's sign-in, once it works, clears the PIN.
+    private var pinResetFor: Pair<String, String>? = null
+
+    /**
+     * Opens a server as one of its accounts, or asks for its password when its sign-in has expired.
+     * An account with a PIN on this device asks for it first ([pinRequest]).
+     */
     fun chooseServerAccount(provider: SourceProvider, address: String, username: String) {
+        if (provider.typeId == "SERVER" && pins.has(address, username)) {
+            pinRequest = PinRequest(provider, address, username)
+            return
+        }
+        openAccount(provider, address, username)
+    }
+
+    /** The PIN typed for [pinRequest]: right opens the account. */
+    fun pinEntered(code: String): AccountPins.Check {
+        val request = pinRequest ?: return AccountPins.Check.Right
+        val result = pins.check(request.address, request.username, code)
+        if (result is AccountPins.Check.Right) {
+            pinRequest = null
+            openAccount(request.provider, request.address, request.username)
+        }
+        return result
+    }
+
+    fun cancelPin() { pinRequest = null }
+
+    /** The PIN is forgotten: the account's password (or a TV's code) signs it in instead, and clears the PIN. */
+    fun usePasswordInstead() {
+        val request = pinRequest ?: return
+        pinRequest = null
+        pinResetFor = request.address to request.username
+        lastServer = request.address
+        currentRepository = null
+        askToSignIn(request.provider, request.address, request.username)
+    }
+
+    /** A sign-in worked: if it was the forgotten PIN's account, the PIN goes. */
+    private fun clearForgottenPin(address: String) {
+        val (server, username) = pinResetFor ?: return
+        pinResetFor = null
+        if (server == address && credentialManager.getServerAccount(address) == username) pins.clear(address, username)
+    }
+
+    private fun openAccount(provider: SourceProvider, address: String, username: String) {
         lastServer = address
         currentRepository = null // the account's own libraries, not the last account's
         continueItems = emptyList() // nor the last account's videos in progress
@@ -1004,6 +1057,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
 
     /** The TV signed in with a code (its token is saved, as a password sign-in saves it): opens the server as that account. */
     fun signedInWithCode(source: MediaSource) {
+        clearForgottenPin(source.serverAddress)
         authStateRefreshTrigger++
         loadPath(source, currentPath)
     }
@@ -1013,6 +1067,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         else {
             endSessions(address, listOfNotNull(credentialManager.tokenOf(address, username)))
             credentialManager.signOutServerAccount(address, username)
+            pins.clear(address, username)
         }
         authStateRefreshTrigger++
     }
@@ -1034,6 +1089,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     fun removeServer(provider: SourceProvider, address: String) {
         if (provider.typeId == "SERVER") {
             endSessions(address, credentialManager.getServerAccounts(address).mapNotNull { credentialManager.tokenOf(address, it.username) })
+            credentialManager.getServerAccounts(address).forEach { pins.clear(address, it.username) }
         }
         provider.removeServer(address)
         authStateRefreshTrigger++

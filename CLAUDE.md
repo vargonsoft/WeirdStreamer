@@ -569,6 +569,17 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   token goes only into the HttpOnly cookie (`Secure` over HTTPS, including behind a trusted proxy
   that sends `X-Forwarded-Proto: https`), and its requests send `X-WeirdStreamer-Web: 1`, without
   which the cookie works for GET only (other sites can't add the header).
+- **Account PINs (apps):** a server account saved on a device can have a PIN there, so others using
+  the device can't open it from the source list (`chooseServerAccount` / iPhone `chooseAccount` ask
+  first: `pinRequest`). Each device keeps its own (Android `AccountPins`, iPhone `PinStore`: salted
+  PBKDF2, never sent anywhere), set in Settings › Account: 4 or more digits on a phone (`PhonePinSettings`,
+  the iPhone's `PinSettings`, asked for with a number pad: `PhonePinPrompt`, `PinDialog`), and on a TV a
+  code of 4 or more D-pad arrows (`TvPinSettingsRow`, `TvPinPrompt`) of which the screen only flashes a dot
+  per press; OK ends it, Back clears it, and the code is checked only at OK. Changing or removing one asks
+  for the current one. After 5 wrong tries each try waits (30 s, doubling to an hour), across restarts.
+  Forgotten: "Use the password instead" (the TV: hold OK) signs the account in again, and only a sign-in
+  that works for that same account clears the PIN. Signing the account out (Android) or removing its
+  server clears it. SMB accounts have none.
 - **Server certificates (apps):** home servers often have self-signed certificates, so the apps
   trust a saved server's certificate whatever it is, but only that one: its SHA-256 is kept when
   the server is added (from the address check), or at the first connection of a server saved

@@ -53,6 +53,13 @@ struct AuthRequest: Identifiable {
     let title: String
 }
 
+/// An account chosen on the source list that has a PIN on this phone: asked for before it opens.
+struct PinRequest: Identifiable, Equatable {
+    var id: String { "\(address)|\(username)" }
+    let address: String
+    let username: String
+}
+
 /// An account on a server's row: its name, and whether its sign-in is still good here.
 struct AccountRow: Identifiable, Hashable {
     let username: String
@@ -67,6 +74,9 @@ final class AppModel {
     private(set) var servers: [SavedServer] = []
     var authRequest: AuthRequest?
     var authError: String?
+    var pinRequest: PinRequest?
+    // The account whose PIN was forgotten: its password's sign-in, once it works, clears the PIN.
+    private var pinResetFor: PinRequest?
 
     // ---- The open server ----
     private(set) var currentAddress: String?
@@ -174,6 +184,7 @@ final class AppModel {
         for account in accounts(of: address) {
             endSession(address, TokenStore.load(address: address, username: account.username)?.token)
             TokenStore.delete(address: address, username: account.username)
+            PinStore.shared.clear(address, account.username)
         }
         TrustPolicy.shared.forget(address)
         deleteAll(SavedAccount.self, matching: #Predicate { $0.address == address })
@@ -185,7 +196,35 @@ final class AppModel {
     }
 
     /// Opens a server as one of its accounts, or asks for its password when its sign-in has run out.
+    /// An account with a PIN on this phone asks for it first (`pinRequest`).
     func chooseAccount(_ address: String, _ username: String) {
+        if PinStore.shared.has(address, username) {
+            pinRequest = PinRequest(address: address, username: username)
+            return
+        }
+        openAccount(address, username)
+    }
+
+    /// The PIN typed for `pinRequest`: right opens the account.
+    func pinEntered(_ pin: String) -> PinStore.Check {
+        guard let request = pinRequest else { return .right }
+        let result = PinStore.shared.check(request.address, request.username, pin: pin)
+        if result == .right {
+            pinRequest = nil
+            openAccount(request.address, request.username)
+        }
+        return result
+    }
+
+    /// The PIN is forgotten: the account's password signs it in instead, and clears the PIN.
+    func usePasswordInstead() {
+        guard let request = pinRequest else { return }
+        pinRequest = nil
+        pinResetFor = request
+        authRequest = AuthRequest(address: request.address, username: request.username, title: "Sign in again")
+    }
+
+    private func openAccount(_ address: String, _ username: String) {
         if let saved = TokenStore.load(address: address, username: username) {
             open(address, username: username, token: saved.token)
         } else {
@@ -223,6 +262,10 @@ final class AppModel {
                 ?? { let new = SavedAccount(address: request.address, username: username); context.insert(new); return new }()
             account.isAdmin = reply.user.isAdmin ?? false
             save()
+            if let reset = pinResetFor, reset.address == request.address, reset.username == username {
+                PinStore.shared.clear(request.address, username)
+            }
+            pinResetFor = nil
             authRequest = nil
             open(request.address, username: username, token: reply.token)
         } catch {

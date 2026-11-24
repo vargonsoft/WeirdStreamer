@@ -283,6 +283,9 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
             }
         )
     }
+
+    // An account with a PIN on this phone, chosen on the source list
+    PhonePinPrompt(viewModel)
 }
 
 @Composable

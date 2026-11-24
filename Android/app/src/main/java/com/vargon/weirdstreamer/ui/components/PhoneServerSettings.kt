@@ -573,6 +573,10 @@ fun AccountTab(server: ServerRepository) {
         item { SignInOnTv(server) }
         item { SectionTitle("Languages") }
         item { AccountLanguages(server) }
+        if (me != null) {
+            item { SectionTitle("PIN on this phone") }
+            item { PhonePinSettings(server.address, me) }
+        }
         item { SectionTitle("Change password") }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

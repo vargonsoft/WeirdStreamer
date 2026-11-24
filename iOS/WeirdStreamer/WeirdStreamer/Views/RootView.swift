@@ -25,6 +25,8 @@ struct RootView: View {
                 AddSourceDialog { showAddSource = false }
             } else if let request = model.authRequest {
                 AuthDialog(request: request)
+            } else if let request = model.pinRequest {
+                PinDialog(request: request)
             } else if model.resumeChoice != nil {
                 ResumeDialog()
             } else if model.sourceChoice != nil {

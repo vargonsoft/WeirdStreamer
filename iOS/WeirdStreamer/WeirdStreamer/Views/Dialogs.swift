@@ -48,9 +48,9 @@ struct PhoneTextField: View {
                         SecureField(placeholder, text: $text)
                     } else {
                         TextField(placeholder, text: $text)
-                            .keyboardType(keyboard)
                     }
                 }
+                .keyboardType(keyboard)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(.body)
@@ -159,6 +159,58 @@ struct AuthDialog: View {
     private func cancel() {
         model.authError = nil
         model.authRequest = nil
+    }
+}
+
+/// The PIN asked for when an account with one is opened (Android's PhonePinPrompt).
+struct PinDialog: View {
+    @Environment(AppModel.self) private var model
+    let request: PinRequest
+
+    @State private var pin = ""
+    @State private var wrong = false
+    @State private var lockedUntil: Date?
+
+    var body: some View {
+        PhoneDialog(title: "\(request.username)'s PIN", onDismiss: { model.pinRequest = nil }) {
+            VStack(alignment: .leading, spacing: 8) {
+                TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                    let locked = lockedUntil.map { $0 > context.date } ?? false
+                    VStack(alignment: .leading, spacing: 8) {
+                        PhoneTextField(label: "PIN", text: $pin, secure: true, keyboard: .numberPad)
+                            .disabled(locked)
+                        if locked, let until = lockedUntil {
+                            Text("Too many wrong tries. Try again in \(PinStore.wait(until: until, now: context.date)).")
+                                .font(.footnote).foregroundStyle(Palette.error)
+                        } else if wrong {
+                            Text("That PIN isn't right.").font(.footnote).foregroundStyle(Palette.error)
+                        }
+                    }
+                }
+                Button("Forgot it? Use the password instead") { model.usePasswordInstead() }
+                    .font(.footnote).foregroundStyle(Palette.accent)
+            }
+        } buttons: {
+            Button("Cancel") { model.pinRequest = nil }.buttonStyle(PhoneSecondaryButtonStyle())
+            Button("Open", action: submit).buttonStyle(PhoneButtonStyle()).disabled(pin.isEmpty)
+        }
+        .onAppear {
+            lockedUntil = PinStore.shared.lockedUntil(request.address, request.username)
+        }
+        .onChange(of: pin) { _, value in
+            let digits = value.filter(\.isNumber)
+            if digits != value { pin = digits }
+            wrong = false
+        }
+    }
+
+    private func submit() {
+        switch model.pinEntered(pin) {
+        case .right: return
+        case .wrong(let until): wrong = true; lockedUntil = until
+        case .locked(let until): lockedUntil = until
+        }
+        pin = ""
     }
 }
 

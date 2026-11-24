@@ -375,6 +375,9 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         )
     }
 
+    // An account with a code on this TV, chosen on the source list
+    TvPinPrompt(viewModel)
+
     // Regenerate Thumbnails Dialog
     if (showRegenerateThumbnailsDialog) {
         val focusRequester = remember { FocusRequester() }

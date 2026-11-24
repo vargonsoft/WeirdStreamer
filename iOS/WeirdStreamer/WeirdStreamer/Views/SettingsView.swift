@@ -354,6 +354,11 @@ struct AccountTab: View {
                     Text(languageMessage).font(.footnote).foregroundStyle(Palette.error)
                 }
 
+                if let address = model.currentAddress, let username = model.currentAccount {
+                    Divider().overlay(Palette.raised).padding(.vertical, 8)
+                    PinSettings(address: address, username: username)
+                }
+
                 Divider().overlay(Palette.raised).padding(.vertical, 8)
                 Text("Change password").font(.subheadline.weight(.medium)).foregroundStyle(Palette.accent)
                 PhoneTextField(label: "Current password", text: $current, secure: true)
@@ -532,5 +537,77 @@ enum Backup {
         try? context.save()
         model.reloadServers()
         return "Restored \(file.servers.count) servers and \(restored) progress positions."
+    }
+}
+
+/// Settings › Account: this account's PIN on this phone (Android's PhonePinSettings): set, change or remove it.
+struct PinSettings: View {
+    let address: String
+    let username: String
+
+    @State private var has = false
+    @State private var editing: Bool?   // true: set or change, false: remove
+    @State private var current = ""
+    @State private var pin = ""
+    @State private var confirm = ""
+    @State private var message: (String, Bool)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("PIN on this phone").font(.subheadline.weight(.medium)).foregroundStyle(Palette.accent)
+            Text(has ? "Opening \(username) on this phone asks for its PIN."
+                 : "Anyone using this phone can open \(username). A PIN of \(PinStore.minLength) or more digits keeps it to you.")
+                .font(.footnote).foregroundStyle(Palette.muted)
+            if let editing {
+                if has { PhoneTextField(label: "Current PIN", text: digits($current), secure: true, keyboard: .numberPad) }
+                if editing {
+                    PhoneTextField(label: "New PIN (\(PinStore.minLength) or more digits)", text: digits($pin), secure: true, keyboard: .numberPad)
+                    PhoneTextField(label: "New PIN again", text: digits($confirm), secure: true, keyboard: .numberPad)
+                }
+                if let message { Text(message.0).font(.footnote).foregroundStyle(message.1 ? Palette.error : Palette.muted) }
+                HStack {
+                    Button("Cancel") { close(nil) }.buttonStyle(PhoneSecondaryButtonStyle())
+                    Button(editing ? "Save" : "Remove") { save(editing) }.buttonStyle(PhoneButtonStyle())
+                }
+            } else {
+                if let message { Text(message.0).font(.footnote).foregroundStyle(message.1 ? Palette.error : Palette.muted) }
+                HStack {
+                    Button(has ? "Change PIN" : "Set a PIN") { editing = true; message = nil }.buttonStyle(PhoneButtonStyle())
+                    if has { Button("No PIN") { editing = false; message = nil }.buttonStyle(PhoneSecondaryButtonStyle()) }
+                }
+            }
+        }
+        .onAppear { has = PinStore.shared.has(address, username) }
+    }
+
+    private func digits(_ binding: Binding<String>) -> Binding<String> {
+        Binding(get: { binding.wrappedValue }, set: { binding.wrappedValue = $0.filter(\.isNumber) })
+    }
+
+    private func close(_ done: String?) {
+        editing = nil; current = ""; pin = ""; confirm = ""
+        message = done.map { ($0, false) }
+        has = PinStore.shared.has(address, username)
+    }
+
+    private func save(_ setting: Bool) {
+        let store = PinStore.shared
+        if has {
+            switch store.check(address, username, pin: current) {
+            case .right: break
+            case .wrong(let until):
+                current = ""
+                message = (until.map { "Too many wrong tries. Try again in \(PinStore.wait(until: $0))." } ?? "The current PIN isn't right.", true)
+                return
+            case .locked(let until):
+                message = ("Too many wrong tries. Try again in \(PinStore.wait(until: until)).", true)
+                return
+            }
+        }
+        if !setting { store.clear(address, username); close("No PIN: anyone using this phone can open \(username)."); return }
+        if pin.count < PinStore.minLength { message = ("Use \(PinStore.minLength) or more digits.", true); return }
+        if pin != confirm { message = ("The PINs don't match.", true); return }
+        store.set(address, username, pin: pin)
+        close("PIN saved.")
     }
 }

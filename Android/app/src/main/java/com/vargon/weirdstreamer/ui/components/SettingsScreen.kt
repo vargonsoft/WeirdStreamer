@@ -220,6 +220,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     onClick = { if (account != null) showLanguages = true }) {
                     Icon(Icons.Default.Language, contentDescription = null)
                 }
+                languageServer?.let { s -> s.signedInAs().first?.let { TvPinSettingsRow(s.address, it) } }
                 languageServer?.let { TvChangePasswordRow(it) }
                 Spacer(modifier = Modifier.height(8.dp))
                 HorizontalDivider()
