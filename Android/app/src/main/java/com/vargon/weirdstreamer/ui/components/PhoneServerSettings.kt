@@ -102,22 +102,8 @@ import kotlinx.coroutines.launch
 import retrofit2.Response
 import java.util.Locale
 
-// Server administration for the phone app: the same settings as the web UI's Settings page.
-
-/** A request's error message from the server, or a generic one. */
-private fun <T> Response<T>.problem(): String? {
-    if (isSuccessful) return null
-    val body = runCatching { errorBody()?.string() }.getOrNull()
-    val message = runCatching { JsonParser.parseString(body).asJsonObject.get("message")?.asString }.getOrNull()
-    return message ?: "Request failed (${code()})"
-}
-
-private suspend fun <T> attempt(block: suspend () -> Response<T>): Pair<T?, String?> = try {
-    val r = block()
-    r.body() to r.problem()
-} catch (e: Exception) {
-    null to (e.localizedMessage ?: "Couldn't reach the server")
-}
+// Server administration for the phone app: the same settings as the web UI's Settings page, drawn
+// on the shared models in AdminSettings.kt (the TV's are TvAdminSettings.kt).
 
 @Composable
 private fun SectionTitle(text: String) {
@@ -145,25 +131,11 @@ fun AdminOnly(message: String = "Only administrators can change these settings."
     }
 }
 
-/** One media path being edited; [source] keeps the fields this screen doesn't show. */
-private class PathEdit(val source: JsonObject, name: String, path: String, groups: List<String>, type: String) {
-    var name by mutableStateOf(name)
-    var path by mutableStateOf(path)
-    val groups = mutableStateListOf<String>().apply { addAll(groups) } // the groups that can see it
-    var type by mutableStateOf(type)
-    // Where its videos in progress and its newest videos show (the web's defaults when unset)
-    var continueWatching by mutableStateOf(source.get("continueWatchingMode")?.asString ?: "on")
-    var newAdditions by mutableStateOf(source.get("showNewAdditions")?.asString ?: "off")
-    // Shown as it is, with Edit, so a stray tap can't change it; one just added opens for editing.
-    var editing by mutableStateOf(source.size() == 0)
-}
-
-private fun jsonNames(names: List<String>) = JsonArray().apply { names.forEach { add(it) } }
-
 /** The groups that can see a library: chips for each defined group. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LibraryGroups(all: List<String>, selected: MutableList<String>) {
+private fun LibraryGroups(all: List<String>, p: PathEdit) {
+    val selected = p.groups
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
         Text("Groups:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.CenterVertically))
@@ -173,11 +145,7 @@ private fun LibraryGroups(all: List<String>, selected: MutableList<String>) {
             val on = g in selected
             FilterChip(colors = phoneChipColors(), shape = AppButtonShape, selected = on, border = phoneChipBorder(on), label = { Text(g) },
                 leadingIcon = if (on) { { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) } } else null,
-                onClick = {
-                if (on) selected.remove(g) else selected.add(g)
-                val order = all.filter { it in selected } // keep the groups' order
-                selected.clear(); selected.addAll(order)
-            })
+                onClick = { p.toggleGroup(g, all) })
         }
     }
 }
@@ -191,158 +159,26 @@ private fun LibrarySummaryRow(label: String, value: @Composable () -> Unit) {
     }
 }
 
-private val libraryTypes = listOf("" to "No type", "movie" to "Movies", "tv" to "TV Shows")
-
-// Where a library's Continue Watching and Recently Added rows show (continueWatchingMode, showNewAdditions)
-private val libraryRowModes = listOf("on" to "Home screen and library", "libraryOnly" to "Library only", "off" to "Off")
-
 // ---------------------------------------------------------------------------------------------
 // Server tab: media paths, server, streaming and metadata settings, and a library scan.
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ServerSettingsTab(server: ServerRepository) {
-    val scope = rememberCoroutineScope()
-    var config by remember { mutableStateOf<JsonObject?>(null) }
-    var loadError by remember { mutableStateOf<String?>(null) }
-    val paths = remember { mutableStateListOf<PathEdit>() }
-    var serverName by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("") }
-    var host by remember { mutableStateOf("") }
-    var http2 by remember { mutableStateOf(false) }
-    var pauseJobs by remember { mutableStateOf(false) }
-    // Hardware encoding: what the server found, and the config's choice ("" the CPU, else "id|device")
-    var hardware by remember { mutableStateOf<com.vargon.weirdstreamer.api.models.HardwareReport?>(com.vargon.weirdstreamer.api.models.HardwareReport(checking = true)) }
-    var hwEncoder by remember { mutableStateOf("") }
-    var hwDevice by remember { mutableStateOf("") }
-    var hwMax by remember { mutableStateOf("0") }
-    // Backups: the schedule (saved with the rest), and the backups in the folder config.yml names
-    var backupSchedule by remember { mutableStateOf("daily") }
-    var backupDay by remember { mutableStateOf("sunday") }
-    var backupTime by remember { mutableStateOf("04:00") }
-    var backupKeep by remember { mutableStateOf("7") }
-    var backups by remember { mutableStateOf<com.vargon.weirdstreamer.api.models.BackupList?>(null) }
-    var backingUp by remember { mutableStateOf(false) }
-    var backupMessage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    var tmdbToken by remember { mutableStateOf("") }
-    var openSubtitlesKey by remember { mutableStateOf("") }
+    val m = rememberServerSettings(server)
     var showSubtitlesKey by remember { mutableStateOf(false) }
     var showToken by remember { mutableStateOf(false) }
-    var language by remember { mutableStateOf("") }
     var newPath by remember { mutableStateOf("") }
     var newType by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    var saving by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<PathEdit?>(null) }
-    // The defined groups. Changes go to the server right away, and into this screen's settings
-    // (which a Save sends back whole, so they must match).
-    val groupNames = remember { mutableStateListOf<String>() }
     var newGroupName by remember { mutableStateOf("") }
     var renaming by remember { mutableStateOf<String?>(null) }
-    var groupMessage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    val paths = m.paths
+    val groupNames = m.groupNames
 
-    fun applyGroups(list: List<String>) {
-        groupNames.clear(); groupNames.addAll(list)
-        config?.add("groups", jsonNames(list))
-    }
-
-    fun adopt(c: JsonObject) {
-        config = c
-        val media = c.getAsJsonObject("media")
-        paths.clear()
-        media?.getAsJsonArray("paths")?.forEach { e ->
-            val o = e.asJsonObject
-            paths.add(PathEdit(o, o.get("name")?.asString ?: "", o.get("path")?.asString ?: "",
-                o.getAsJsonArray("groups")?.map { it.asString } ?: emptyList(),
-                o.get("type")?.asString ?: ""))
-        }
-        groupNames.clear()
-        c.getAsJsonArray("groups")?.forEach { groupNames.add(it.asString) }
-        c.getAsJsonObject("server")?.let {
-            serverName = it.get("name")?.asString ?: ""
-            port = it.get("port")?.asString ?: ""; host = it.get("host")?.asString ?: ""
-        }
-        c.getAsJsonObject("streaming")?.let {
-            http2 = it.get("enableHTTP2")?.asBoolean ?: false
-            pauseJobs = it.get("pauseJobsWhileStreaming")?.asBoolean ?: false
-        }
-        hwEncoder = HardwareSettings.encoderOf(c); hwDevice = HardwareSettings.deviceOf(c)
-        hwMax = HardwareSettings.maxOf(c).toString()
-        c.getAsJsonObject("database")?.let {
-            backupSchedule = it.get("backupSchedule")?.asString?.ifEmpty { null } ?: "daily"
-            backupDay = it.get("backupDay")?.asString?.ifEmpty { null } ?: "sunday"
-            backupTime = it.get("backupTime")?.asString?.ifEmpty { null } ?: "04:00"
-            backupKeep = (it.get("backupKeep")?.asInt?.takeIf { k -> k > 0 } ?: 7).toString()
-        }
-        c.getAsJsonObject("metadata")?.let {
-            tmdbToken = it.get("tmdbAccessToken")?.asString ?: ""
-            openSubtitlesKey = it.get("openSubtitlesApiKey")?.asString ?: ""
-            language = it.get("language")?.asString ?: ""
-        }
-    }
-
-    LaunchedEffect(server.address) {
-        val (c, err) = attempt { server.api.getConfig() }
-        if (c != null && err == null) adopt(c) else loadError = err
-    }
-    suspend fun loadBackups() {
-        backups = runCatching { server.api.getBackups().body() }.getOrNull()
-    }
-    LaunchedEffect(server.address) { loadBackups() }
-    // The server tries its GPUs' encoders at startup: asked again until that's done.
-    LaunchedEffect(server.address) {
-        while (true) {
-            val report = runCatching { server.api.getHardware().body() }.getOrNull()
-            hardware = report
-            if (report == null) break
-            if (!report.checking) break
-            kotlinx.coroutines.delay(2000)
-        }
-    }
-
-    fun buildConfig(): JsonObject? {
-        val c = config?.deepCopy() ?: return null
-        val array = JsonArray()
-        paths.forEach { p ->
-            val o = p.source.deepCopy()
-            o.addProperty("name", p.name.trim())
-            o.addProperty("path", p.path.trim())
-            o.add("groups", jsonNames(p.groups))
-            if (p.type.isEmpty()) o.remove("type") else o.addProperty("type", p.type)
-            // Only where set before or changed from the default, so config.yml changes only where it was changed.
-            if (o.has("continueWatchingMode") || p.continueWatching != "on") o.addProperty("continueWatchingMode", p.continueWatching)
-            if (o.has("showNewAdditions") || p.newAdditions != "off") o.addProperty("showNewAdditions", p.newAdditions)
-            array.add(o)
-        }
-        c.getAsJsonObject("media").add("paths", array)
-        c.add("groups", jsonNames(groupNames))
-        c.getAsJsonObject("server").apply {
-            addProperty("name", serverName.trim())
-            port.trim().toIntOrNull()?.let { addProperty("port", it) }
-            addProperty("host", host.trim())
-        }
-        c.getAsJsonObject("streaming").apply {
-            addProperty("enableHTTP2", http2)
-            addProperty("pauseJobsWhileStreaming", pauseJobs)
-        }
-        if (hardware?.encoders?.isNotEmpty() == true) {
-            HardwareSettings.apply(c, HardwareSettings.key(hwEncoder, hwDevice), hwMax.toIntOrNull() ?: 0)
-        }
-        val database = c.getAsJsonObject("database") ?: JsonObject().also { c.add("database", it) }
-        database.addProperty("backupSchedule", backupSchedule)
-        database.addProperty("backupDay", backupDay)
-        database.addProperty("backupTime", BackupSettings.time(backupTime))
-        database.addProperty("backupKeep", (backupKeep.toIntOrNull() ?: 7).coerceIn(1, 365))
-        val metadata = c.getAsJsonObject("metadata") ?: JsonObject().also { c.add("metadata", it) }
-        metadata.addProperty("tmdbAccessToken", tmdbToken.trim())
-        metadata.addProperty("openSubtitlesApiKey", openSubtitlesKey.trim())
-        metadata.addProperty("language", language.trim())
-        return c
-    }
-
-    val loaded = config
+    val loaded = m.config
     when {
-        loaded == null && loadError != null -> AdminOnly(loadError!!)
+        loaded == null && m.loadError != null -> AdminOnly(m.loadError!!)
         loaded == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else -> LazyColumn(contentPadding = PaddingValues(16.dp)) {
             item { SectionTitle("Media paths") }
@@ -373,7 +209,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                     } else Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(p.name, { p.name = it }, label = { Text("Name") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth())
-                        LibraryGroups(groupNames, p.groups)
+                        LibraryGroups(groupNames, p)
                         LibraryOptionMenu("Library type", libraryTypes, p.type) { p.type = it }
                         LibraryOptionMenu("Continue Watching", libraryRowModes, p.continueWatching) { p.continueWatching = it }
                         LibraryOptionMenu("Recently Added", libraryRowModes, p.newAdditions) { p.newAdditions = it }
@@ -398,16 +234,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                         placeholder = { Text("/path/to/media") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     LibraryOptionMenu("Library type", libraryTypes, newType) { newType = it }
                     OutlinedButton(shape = AppButtonShape, onClick = {
-                        val path = newPath.trim()
-                        when {
-                            path.isEmpty() -> message = "Enter a path" to true
-                            paths.any { it.path == path } -> message = "That path is already listed" to true
-                            else -> {
-                                val name = path.trimEnd('/').substringAfterLast('/').ifEmpty { path }
-                                paths.add(PathEdit(JsonObject(), name, path, emptyList(), newType))
-                                newPath = ""; newType = ""; message = "Added. Save to apply." to false
-                            }
-                        }
+                        if (m.addPath(newPath, newType)) { newPath = ""; newType = "" }
                     }) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(Modifier.width(6.dp)); Text("Add path")
@@ -429,55 +256,35 @@ fun ServerSettingsTab(server: ServerRepository) {
                     }
                     Spacer(Modifier.weight(1f))
                     if (g != groupNames.firstOrNull()) {
-                        IconButton(onClick = {
-                            scope.launch {
-                                val (list, err) = attempt { server.api.makeDefaultGroup(g) }
-                                if (list != null && err == null) { applyGroups(list); groupMessage = "$g is the default group: new users start in it." to false }
-                                else groupMessage = (err ?: "Couldn't make $g the default") to true
-                            }
-                        }) { Icon(Icons.Default.StarBorder, contentDescription = "Make $g the default group") }
+                        IconButton(onClick = { m.makeDefaultGroup(g) }) { Icon(Icons.Default.StarBorder, contentDescription = "Make $g the default group") }
                     }
                     IconButton(onClick = { renaming = g }) { Icon(Icons.Default.Edit, contentDescription = "Rename $g") }
-                    IconButton(onClick = {
-                        scope.launch {
-                            val (list, err) = attempt { server.api.deleteGroup(g) }
-                            if (list != null && err == null) { applyGroups(list); groupMessage = "Removed $g." to false }
-                            else groupMessage = (err ?: "Couldn't remove $g") to true // still in use: says by whom
-                        }
-                    }) { Icon(Icons.Default.Delete, contentDescription = "Remove $g", tint = MaterialTheme.colorScheme.error) }
+                    IconButton(onClick = { m.deleteGroup(g) }) { Icon(Icons.Default.Delete, contentDescription = "Remove $g", tint = MaterialTheme.colorScheme.error) }
                 }
             }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(newGroupName, { newGroupName = it }, label = { Text("New group") }, singleLine = true,
                         modifier = Modifier.weight(1f))
-                    OutlinedButton(shape = AppButtonShape, onClick = {
-                        val name = newGroupName.trim()
-                        if (name.isEmpty()) return@OutlinedButton
-                        scope.launch {
-                            val (list, err) = attempt { server.api.createGroup(JsonObject().apply { addProperty("name", name) }) }
-                            if (list != null && err == null) { applyGroups(list); newGroupName = ""; groupMessage = "Added $name." to false }
-                            else groupMessage = (err ?: "Couldn't add $name") to true
-                        }
-                    }) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Add") }
+                    OutlinedButton(shape = AppButtonShape, onClick = { m.createGroup(newGroupName) { newGroupName = "" } }) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Add") }
                 }
             }
-            item { Message(groupMessage?.first, groupMessage?.second ?: false) }
+            item { Message(m.groupMessage?.first, m.groupMessage?.second ?: false) }
             item { SectionTitle("Server") }
             item {
-                OutlinedTextField(serverName, { serverName = it }, label = { Text("Name") }, singleLine = true,
+                OutlinedTextField(m.serverName, { m.serverName = it }, label = { Text("Name") }, singleLine = true,
                     supportingText = { Text("Shown in the apps' server lists") }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(port, { port = it.filter(Char::isDigit) }, label = { Text("Port") }, singleLine = true,
+                    OutlinedTextField(m.port, { m.port = it.filter(Char::isDigit) }, label = { Text("Port") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
-                    OutlinedTextField(host, { host = it }, label = { Text("Host") }, singleLine = true, keyboardOptions = addressKeyboard(), modifier = Modifier.weight(2f))
+                    OutlinedTextField(m.host, { m.host = it }, label = { Text("Host") }, singleLine = true, keyboardOptions = addressKeyboard(), modifier = Modifier.weight(2f))
                 }
             }
             item { SectionTitle("Streaming") }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Enable HTTP/2", modifier = Modifier.weight(1f))
-                    Switch(checked = http2, onCheckedChange = { http2 = it })
+                    Switch(checked = m.http2, onCheckedChange = { m.http2 = it })
                 }
                 // Background jobs run while the server has room to spare; this has them wait whenever anyone streams.
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -486,24 +293,24 @@ fun ServerSettingsTab(server: ServerRepository) {
                         Text("Finding intros and credits, trickplay frames, cleanup", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = pauseJobs, onCheckedChange = { pauseJobs = it })
+                    Switch(checked = m.pauseJobs, onCheckedChange = { m.pauseJobs = it })
                 }
                 Text("Hardware encoding", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
-                val report = hardware
+                val report = m.hardware
                 if (report == null) {
-                    Text("Couldn't read the server's graphics hardware.", style = MaterialTheme.typography.bodySmall,
+                    Text("Couldn't read the server's graphics m.hardware.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     Text(HardwareSettings.status(report), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (!report.checking && !report.encoders.isNullOrEmpty()) {
-                        val chosen = HardwareSettings.chosenKey(report, hwEncoder, hwDevice)
+                        val chosen = HardwareSettings.chosenKey(report, m.hwEncoder, m.hwDevice)
                         Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LibraryOptionMenu("Encode transcodes on", HardwareSettings.choices(report, hwEncoder, hwDevice), chosen) {
-                                hwEncoder = it.substringBefore('|', ""); hwDevice = if (it.isEmpty()) "" else it.substringAfter('|', "")
+                            LibraryOptionMenu("Encode transcodes on", HardwareSettings.choices(report, m.hwEncoder, m.hwDevice), chosen) {
+                                m.hwEncoder = it.substringBefore('|', ""); m.hwDevice = if (it.isEmpty()) "" else it.substringAfter('|', "")
                             }
                             if (chosen.isNotEmpty()) {
-                                OutlinedTextField(hwMax, { hwMax = it.filter(Char::isDigit) }, label = { Text("Transcodes on the GPU at once") },
+                                OutlinedTextField(m.hwMax, { m.hwMax = it.filter(Char::isDigit) }, label = { Text("Transcodes on the GPU at once") },
                                     supportingText = { Text("0: no limit; the rest use the CPU") }, singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                             }
@@ -519,36 +326,27 @@ fun ServerSettingsTab(server: ServerRepository) {
                     "Restore one with bin/cli backup restore, with the server stopped.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LibraryOptionMenu("Back up", BackupSettings.schedules, backupSchedule) { backupSchedule = it }
-                    if (backupSchedule == "weekly") {
-                        LibraryOptionMenu("On", BackupSettings.days, backupDay) { backupDay = it }
+                    LibraryOptionMenu("Back up", BackupSettings.schedules, m.backupSchedule) { m.backupSchedule = it }
+                    if (m.backupSchedule == "weekly") {
+                        LibraryOptionMenu("On", BackupSettings.days, m.backupDay) { m.backupDay = it }
                     }
-                    if (backupSchedule != "off") {
-                        OutlinedTextField(backupTime, { backupTime = it.filter { ch -> ch.isDigit() || ch == ':' }.take(5) },
+                    if (m.backupSchedule != "off") {
+                        OutlinedTextField(m.backupTime, { m.backupTime = it.filter { ch -> ch.isDigit() || ch == ':' }.take(5) },
                             label = { Text("At (24-hour, the server's time)") }, placeholder = { Text("04:00") }, singleLine = true,
-                            isError = !BackupSettings.validTime(backupTime),
+                            isError = !BackupSettings.validTime(m.backupTime),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                     }
-                    OutlinedTextField(backupKeep, { backupKeep = it.filter(Char::isDigit).take(3) }, label = { Text("Backups kept") },
+                    OutlinedTextField(m.backupKeep, { m.backupKeep = it.filter(Char::isDigit).take(3) }, label = { Text("Backups kept") },
                         supportingText = { Text("The newest; the oldest go") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                 }
-                val list = backups
-                Text(if (list == null) "Couldn't read the backups." else BackupSettings.where(list),
+                val list = m.backups
+                Text(if (list == null) "Couldn't read the m.backups." else BackupSettings.where(list),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp))
-                Message(backupMessage?.first, backupMessage?.second ?: false)
-                PhoneSecondaryButton(onClick = {
-                    backingUp = true
-                    backupMessage = null
-                    scope.launch {
-                        val (made, err) = attempt { server.api.backUpNow() }
-                        backingUp = false
-                        backupMessage = if (err != null) err to true else "Made ${made?.name} (${formatBytes(made?.size ?: 0)})." to false
-                        loadBackups()
-                    }
-                }, enabled = !backingUp, modifier = Modifier.padding(top = 4.dp)) {
-                    ButtonLabel(if (backingUp) "Backing up…" else "Back up now")
+                Message(m.backupMessage?.first, m.backupMessage?.second ?: false)
+                PhoneSecondaryButton(onClick = { m.backUpNow() }, enabled = !m.backingUp, modifier = Modifier.padding(top = 4.dp)) {
+                    ButtonLabel(if (m.backingUp) "Backing up…" else "Back up now")
                 }
                 list?.backups.orEmpty().forEach { b ->
                     Text("${BackupSettings.date(b.created)} · ${formatBytes(b.size)}", style = MaterialTheme.typography.bodySmall,
@@ -560,7 +358,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                 Text("TMDB is used for libraries with a Movies or TV Shows type.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(
-                    tmdbToken, { tmdbToken = it }, label = { Text("TMDB API read access token") }, singleLine = true,
+                    m.tmdbToken, { m.tmdbToken = it }, label = { Text("TMDB API read access token") }, singleLine = true,
                     visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = secretKeyboard(),
                     trailingIcon = {
@@ -572,7 +370,7 @@ fun ServerSettingsTab(server: ServerRepository) {
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
                 OutlinedTextField(
-                    openSubtitlesKey, { openSubtitlesKey = it }, label = { Text("OpenSubtitles API key") }, singleLine = true,
+                    m.openSubtitlesKey, { m.openSubtitlesKey = it }, label = { Text("OpenSubtitles API key") }, singleLine = true,
                     supportingText = { Text("For searching subtitles online") },
                     visualTransformation = if (showSubtitlesKey) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = secretKeyboard(),
@@ -584,40 +382,21 @@ fun ServerSettingsTab(server: ServerRepository) {
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
-                OutlinedTextField(language, { language = it }, label = { Text("Language") }, placeholder = { Text("en-US") },
+                OutlinedTextField(m.language, { m.language = it }, label = { Text("Language") }, placeholder = { Text("en-US") },
                     singleLine = true, modifier = Modifier.padding(top = 8.dp))
             }
             item {
-                Message(message?.first, message?.second ?: false)
+                Message(m.message?.first, m.message?.second ?: false)
                 // Same width and height, whether or not a label wraps.
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(top = 8.dp).fillMaxWidth().height(IntrinsicSize.Min)
                 ) {
-                    Button(shape = AppButtonShape, colors = phoneButtonColors(), enabled = !saving, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = {
-                        val body = buildConfig() ?: return@Button
-                        saving = true
-                        scope.launch {
-                            val (result, err) = attempt { server.api.updateConfig(body) }
-                            saving = false
-                            if (err != null) {
-                                message = err to true
-                            } else {
-                                result?.getAsJsonObject("config")?.let { adopt(it) }
-                                message = (result?.get("message")?.asString ?: "Settings saved.") to false
-                                loadBackups() // the next backup, by the schedule saved
-                            }
-                        }
-                    }) {
+                    Button(shape = AppButtonShape, colors = phoneButtonColors(), enabled = !m.saving, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = { m.save() }) {
                         Icon(Icons.Default.Save, contentDescription = null)
-                        Spacer(Modifier.width(6.dp)); ButtonLabel(if (saving) "Saving…" else "Save settings")
+                        Spacer(Modifier.width(6.dp)); ButtonLabel(if (m.saving) "Saving…" else "Save settings")
                     }
-                    OutlinedButton(shape = AppButtonShape, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = {
-                        scope.launch {
-                            val (_, err) = attempt { server.api.scanMedia() }
-                            message = (err ?: "Scan started.") to (err != null)
-                        }
-                    }) {
+                    OutlinedButton(shape = AppButtonShape, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = { m.scan() }) {
                         Icon(Icons.Default.Search, contentDescription = null)
                         Spacer(Modifier.width(6.dp)); ButtonLabel("Scan media")
                     }
@@ -634,18 +413,8 @@ fun ServerSettingsTab(server: ServerRepository) {
             text = { OutlinedTextField(name, { name = it }, label = { Text("New name") }, singleLine = true) },
             confirmButton = {
                 PhoneButton(onClick = {
-                    val new = name.trim()
                     renaming = null
-                    if (new.isEmpty() || new == old) return@PhoneButton
-                    scope.launch {
-                        val (list, err) = attempt { server.api.renameGroup(old, JsonObject().apply { addProperty("name", new) }) }
-                        if (list != null && err == null) {
-                            applyGroups(list)
-                            // Its libraries here follow, as on the server
-                            paths.forEach { p -> val i = p.groups.indexOf(old); if (i >= 0) p.groups[i] = new }
-                            groupMessage = "Renamed $old to $new, for its users and libraries." to false
-                        } else groupMessage = (err ?: "Couldn't rename $old") to true
-                    }
+                    m.renameGroup(old, name)
                 }) { Text("Rename") }
             },
             dismissButton = { PhoneSecondaryButton(onClick = { renaming = null }) { Text("Cancel") } }
@@ -657,7 +426,7 @@ fun ServerSettingsTab(server: ServerRepository) {
             onDismissRequest = { removing = null },
             title = { Text("Remove ${p.name.ifEmpty { "this path" }}?") },
             text = { Text("It's removed from the server's libraries when you save. The files aren't touched.") },
-            confirmButton = { PhoneButton(destructive = true, onClick = { paths.remove(p); removing = null; message = "Removed. Save to apply." to false }) { Text("Remove") } },
+            confirmButton = { PhoneButton(destructive = true, onClick = { m.removePath(p); removing = null }) { Text("Remove") } },
             dismissButton = { PhoneSecondaryButton(onClick = { removing = null }) { Text("Cancel") } }
         )
     }
@@ -688,78 +457,36 @@ private fun LibraryOptionMenu(label: String, options: List<Pair<String, String>>
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UsersTab(server: ServerRepository) {
-    val scope = rememberCoroutineScope()
-    val me = remember(server.address) { server.signedInAs().first }
-    var users by remember { mutableStateOf<List<ServerUser>?>(null) }
-    var groups by remember { mutableStateOf<List<String>>(emptyList()) }
-    var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    val m = rememberUsers(server)
     var deleting by remember { mutableStateOf<ServerUser?>(null) }
-    var newName by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var newGroup by remember { mutableStateOf("") }
-    var newAdmin by remember { mutableStateOf(false) }
     var creatingGroup by remember { mutableStateOf(false) }
-
-    suspend fun reload() {
-        val (list, err) = attempt { server.api.getUsers() }
-        if (err != null) message = err to true else users = list
-        attempt { server.api.getGroups() }.first?.let { groups = it }
-        if (newGroup !in groups) newGroup = groups.firstOrNull() ?: ""
-    }
-    LaunchedEffect(server.address) { reload() }
-
-    fun update(user: ServerUser, changes: JsonObject) {
-        scope.launch {
-            val (_, err) = attempt { server.api.updateUser(user.username, changes) }
-            message = (err ?: "Updated ${user.username}.") to (err != null)
-            reload()
-        }
-    }
 
     LazyColumn(contentPadding = PaddingValues(16.dp)) {
         item { SectionTitle("Create a user") }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(newName, { newName = it }, label = { Text("Username") }, singleLine = true, keyboardOptions = usernameKeyboard(), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(newPassword, { newPassword = it }, label = { Text("Password") }, singleLine = true,
+                OutlinedTextField(m.newName, { m.newName = it }, label = { Text("Username") }, singleLine = true, keyboardOptions = usernameKeyboard(), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(m.newPassword, { m.newPassword = it }, label = { Text("Password") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = secretKeyboard(), modifier = Modifier.fillMaxWidth())
-                GroupMenu(newGroup, groups, Modifier.fillMaxWidth(), onNew = { creatingGroup = true }) { newGroup = it }
+                GroupMenu(m.newGroup, m.groups, Modifier.fillMaxWidth(), onNew = { creatingGroup = true }) { m.newGroup = it }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = newAdmin, onCheckedChange = { newAdmin = it })
+                    Checkbox(checked = m.newAdmin, onCheckedChange = { m.newAdmin = it })
                     Text("Administrator")
                 }
-                Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = {
-                    if (newName.isBlank() || newPassword.isEmpty()) {
-                        message = "Enter a username and password" to true; return@Button
-                    }
-                    if (newGroup !in groups) {
-                        message = "Choose a group for the user" to true; return@Button
-                    }
-                    scope.launch {
-                        val (_, err) = attempt {
-                            server.api.createUser(CreateUserRequest(newName.trim(), newPassword, newAdmin, newGroup.trim()))
-                        }
-                        if (err == null) {
-                            message = "Created ${newName.trim()}." to false; newName = ""; newPassword = ""; newAdmin = false
-                            newGroup = groups.firstOrNull() ?: "" // back to the default group
-                        }
-                        else message = err to true
-                        reload()
-                    }
-                }) {
+                Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = { m.create() }) {
                     Icon(Icons.Default.PersonAdd, contentDescription = null)
                     Spacer(Modifier.width(6.dp)); Text("Create user")
                 }
             }
         }
-        item { Message(message?.first, message?.second ?: false) }
+        item { Message(m.message?.first, m.message?.second ?: false) }
         item { SectionTitle("Users") }
-        val list = users
+        val list = m.users
         if (list == null) {
             item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
         } else {
             itemsIndexed(list, key = { _, u -> u.username }) { _, user ->
-                val isMe = user.username == me
+                val isMe = user.username == m.me
                 Card(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
                     Column(Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -772,14 +499,10 @@ fun UsersTab(server: ServerRepository) {
                             }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            GroupMenu(user.group ?: "", groups, modifier = Modifier.weight(1f)) { g ->
-                                update(user, JsonObject().apply { addProperty("group", g) })
-                            }
+                            GroupMenu(user.group ?: "", m.groups, modifier = Modifier.weight(1f)) { g -> m.setGroup(user, g) }
                             Spacer(Modifier.width(8.dp))
                             Text("Admin")
-                            Checkbox(checked = user.isAdmin, enabled = !isMe, onCheckedChange = { admin ->
-                                update(user, JsonObject().apply { addProperty("is_admin", admin) })
-                            })
+                            Checkbox(checked = user.isAdmin, enabled = !isMe, onCheckedChange = { admin -> m.setAdmin(user, admin) })
                         }
                     }
                 }
@@ -794,15 +517,7 @@ fun UsersTab(server: ServerRepository) {
             title = { Text("New group") },
             text = { OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true) },
             confirmButton = {
-                PhoneButton(onClick = {
-                    val new = name.trim()
-                    creatingGroup = false
-                    if (new.isEmpty()) return@PhoneButton
-                    scope.launch {
-                        val (list, err) = attempt { server.api.createGroup(JsonObject().apply { addProperty("name", new) }) }
-                        if (list != null && err == null) { groups = list; newGroup = new } else message = (err ?: "Couldn't add $new") to true
-                    }
-                }) { Text("Add") }
+                PhoneButton(onClick = { creatingGroup = false; m.createGroup(name) }) { Text("Add") }
             },
             dismissButton = { PhoneSecondaryButton(onClick = { creatingGroup = false }) { Text("Cancel") } }
         )
@@ -814,14 +529,7 @@ fun UsersTab(server: ServerRepository) {
             title = { Text("Delete ${user.username}?") },
             text = { Text("They won't be able to sign in any more.") },
             confirmButton = {
-                PhoneButton(destructive = true, onClick = {
-                    deleting = null
-                    scope.launch {
-                        val (_, err) = attempt { server.api.deleteUser(user.username) }
-                        message = (err ?: "Deleted ${user.username}.") to (err != null)
-                        reload()
-                    }
-                }) { Text("Delete") }
+                PhoneButton(destructive = true, onClick = { deleting = null; m.delete(user) }) { Text("Delete") }
             },
             dismissButton = { PhoneSecondaryButton(onClick = { deleting = null }) { Text("Cancel") } }
         )
@@ -832,12 +540,7 @@ fun UsersTab(server: ServerRepository) {
 @Composable
 private fun GroupMenu(group: String, groups: List<String>, modifier: Modifier, onNew: (() -> Unit)? = null, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    // The defined groups only; a group that isn't one any more (or none) shows as such until changed
-    val shown = when {
-        group in groups -> group
-        group.isEmpty() -> "Choose a group"
-        else -> "$group (not a group)"
-    }
+    val shown = groupShown(group, groups)
     ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }, modifier = modifier) {
         OutlinedTextField(
             value = shown, onValueChange = {}, readOnly = true, label = { Text("Group") },
@@ -858,12 +561,8 @@ private fun GroupMenu(group: String, groups: List<String>, modifier: Modifier, o
 
 @Composable
 fun AccountTab(server: ServerRepository) {
-    val scope = rememberCoroutineScope()
     val (me, isAdmin) = remember(server.address) { server.signedInAs() }
-    var current by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var confirm by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    val pw = rememberPasswordChange(server)
     LazyColumn(contentPadding = PaddingValues(16.dp)) {
         item {
             SectionTitle("Signed in")
@@ -877,25 +576,14 @@ fun AccountTab(server: ServerRepository) {
         item { SectionTitle("Change password") }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(current, { current = it }, label = { Text("Current password") }, singleLine = true,
+                OutlinedTextField(pw.current, { pw.current = it }, label = { Text("Current password") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = secretKeyboard(), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(password, { password = it }, label = { Text("New password") }, singleLine = true,
+                OutlinedTextField(pw.password, { pw.password = it }, label = { Text("New password") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = secretKeyboard(), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(confirm, { confirm = it }, label = { Text("Confirm password") }, singleLine = true,
+                OutlinedTextField(pw.confirm, { pw.confirm = it }, label = { Text("Confirm password") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(), keyboardOptions = secretKeyboard(), modifier = Modifier.fillMaxWidth())
-                Message(message?.first, message?.second ?: false)
-                Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = {
-                    when {
-                        current.isEmpty() -> message = "Enter your current password" to true
-                        password.isEmpty() -> message = "Enter a new password" to true
-                        password != confirm -> message = "The passwords don't match" to true
-                        else -> scope.launch {
-                            val (_, err) = attempt { server.api.changePassword(ChangePasswordRequest(current, password)) }
-                            message = (err ?: "Password changed.") to (err != null)
-                            if (err == null) { current = ""; password = ""; confirm = "" }
-                        }
-                    }
-                }) { Text("Change password") }
+                Message(pw.message?.first, pw.message?.second ?: false)
+                Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = { pw.change() }) { Text("Change password") }
             }
         }
     }
@@ -1013,19 +701,10 @@ private fun SignInOnTv(server: ServerRepository) {
 
 @Composable
 fun StreamsTab(server: ServerRepository) {
-    var streams by remember { mutableStateOf<List<AdminStream>?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(server.address) {
-        while (true) {
-            val (list, err) = attempt { server.api.getStreams() }
-            error = err
-            if (list != null) streams = list
-            delay(3000)
-        }
-    }
-    val list = streams
+    val m = rememberStreams(server)
+    val list = m.streams
     when {
-        list == null && error != null -> AdminOnly(error!!)
+        list == null && m.error != null -> AdminOnly(m.error!!)
         list == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         list.isEmpty() -> AdminOnly("Nothing is playing.")
         else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1036,99 +715,55 @@ fun StreamsTab(server: ServerRepository) {
 
 @Composable
 private fun StreamCard(s: AdminStream) {
-    fun clock(seconds: Double): String {
-        val t = seconds.toLong().coerceAtLeast(0)
-        return if (t >= 3600) String.format(Locale.US, "%d:%02d:%02d", t / 3600, (t % 3600) / 60, t % 60)
-        else String.format(Locale.US, "%d:%02d", t / 60, t % 60)
-    }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(s.title ?: s.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            val stateColor = when (s.state) {
-                "playing" -> Color(0xFF2E7D32); "paused" -> Color(0xFFB7791F); else -> MaterialTheme.colorScheme.onSurfaceVariant
-            }
-            Text("${s.state.replaceFirstChar { it.uppercase() }} · ${if (s.mode == "transcode") "Transcoding" else "Direct play"}",
-                color = stateColor, style = MaterialTheme.typography.labelLarge)
+            Text(streamState(s), color = streamStateColor(s.state), style = MaterialTheme.typography.labelLarge)
             Text("${s.user} · ${s.client} · ${s.clientIp}", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            val position = s.position ?: s.servedTo
             if (s.duration > 0) {
-                LinearProgressIndicator(progress = { (position / s.duration).toFloat().coerceIn(0f, 1f) },
+                LinearProgressIndicator(progress = { ((s.position ?: s.servedTo) / s.duration).toFloat().coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
             }
-            Text("${clock(position)} / ${clock(s.duration)}" + if (s.position == null) " (estimated)" else "",
-                style = MaterialTheme.typography.bodySmall)
+            Text(streamPosition(s), style = MaterialTheme.typography.bodySmall)
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            Text(s.name, style = MaterialTheme.typography.bodySmall)
-            if (s.width > 0) Text("Source ${s.width}×${s.height}", style = MaterialTheme.typography.bodySmall)
-            s.transcode?.let { t ->
-                Text(t.reason, style = MaterialTheme.typography.bodySmall)
-                Text("Video: ${t.video}", style = MaterialTheme.typography.bodySmall)
-                Text("Audio: ${t.audio}", style = MaterialTheme.typography.bodySmall)
-                t.sourceVideo?.let { Text("Source: $it", style = MaterialTheme.typography.bodySmall) }
-                Text(if (t.stalled) "Transcoder waiting for the player"
-                    else String.format(Locale.US, "Transcoder %.2f× realtime · %.0f fps", t.speed, t.fps),
-                    style = MaterialTheme.typography.bodySmall)
-            }
+            streamDetails(s).forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
 
+/** A stream's state in color: playing green, paused amber. */
+@Composable
+internal fun streamStateColor(state: String) = when (state) {
+    "playing" -> Color(0xFF2E7D32); "paused" -> Color(0xFFB7791F); else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+/** A job's state in color: running green, waiting amber, paused red. */
+@Composable
+internal fun jobStateColor(state: String) = when (state) {
+    "running" -> Color(0xFF2E7D32); "waiting" -> Color(0xFFB7791F); "paused" -> Color(0xFFC62828)
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
 // ---------------------------------------------------------------------------------------------
-// Jobs tab (admins): the server's background jobs, with what each is doing, its last and next run
-// (a countdown) and Run now / Pause. Fetched every few seconds; the times tick in between.
+// Jobs tab (admins): the server's background jobs (JobsModel), with Run now / Pause.
 
 @Composable
 fun JobsTab(server: ServerRepository) {
-    val scope = rememberCoroutineScope()
-    var data by remember { mutableStateOf<JobsResponse?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(server.address) {
-        while (true) {
-            val (d, err) = attempt { server.api.getJobs() }
-            error = err
-            if (d != null) data = d
-            delay(5000)
-        }
-    }
-    LaunchedEffect(Unit) {
-        while (true) {
-            now = System.currentTimeMillis()
-            delay(1000)
-        }
-    }
-    fun control(id: String, action: String) {
-        scope.launch {
-            val (d, err) = attempt { server.api.controlJob(id, action) }
-            if (d != null) data = d
-            error = err
-        }
-    }
-    val d = data
+    val m = rememberJobs(server)
+    val d = m.data
     when {
-        d == null && error != null -> AdminOnly(error!!)
+        d == null && m.error != null -> AdminOnly(m.error!!)
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                Text("Jobs run at low priority, so playback gets the CPU and disks first. They wait while a disk or a network share " +
-                    "is busy (or, with the setting under Streaming, while anyone is streaming). Pause holds a job until you resume it, " +
-                    "or the server restarts.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(JOBS_ABOUT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 d.load?.let { Text(loadText(it), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp)) }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                m.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
-            d.trickplay?.let { tp ->
-                item {
-                    TrickplaySettingsBox(tp) { runners, frames ->
-                        val (resp, err) = attempt { server.api.setTrickplaySettings(TrickplaySettingsRequest(runners, frames)) }
-                        if (resp != null) data = resp
-                        err
-                    }
-                }
-            }
-            itemsIndexed(d.jobs, key = { _, j -> j.id }) { _, j -> JobCard(j, now, ::control) }
+            d.trickplay?.let { tp -> item { TrickplaySettingsBox(tp, m::saveTrickplay) } }
+            itemsIndexed(d.jobs, key = { _, j -> j.id }) { _, j -> JobCard(j, m.now, m::control) }
             item { StorageCard(d.storage.orEmpty()) }
         }
     }
@@ -1163,10 +798,7 @@ private fun TrickplaySettingsBox(tp: TrickplaySettings, save: suspend (Int, Int)
                     singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f))
             }
-            // Each frame in a batch holds its own decoder: about 110 MB (25 frames took 2.8 GB).
-            Text("$r × $f = ${r * f} frames at once, about ${String.format(Locale.US, "%.1f", r * f * 0.11)} GB of memory at most. " +
-                "Runners 1 to ${tp.maxRunners}, frames per runner 1 to ${tp.maxFrames}, and at most ${tp.maxProduct} frames at once.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(trickplayNote(r, f, tp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(shape = AppButtonShape, colors = phoneButtonColors(), enabled = r > 0 && f > 0, onClick = {
                     scope.launch {
@@ -1216,48 +848,6 @@ private fun StorageCard(storage: List<StorageUse>) {
     }
 }
 
-private fun loadText(l: JobLoad): String {
-    fun pct(f: Double) = "${(f * 100).roundToInt()}%"
-    val parts = mutableListOf<String>()
-    // Jobs wait at the lower limit on a disk or share someone is playing from.
-    if (l.available) {
-        parts += listOf("CPU ${pct(l.cpu)}",
-            "Disk ${pct(l.disk)} (jobs wait above ${pct(l.maxDisk)} on a disk someone is playing from, ${pct(l.relaxedDisk)} otherwise)")
-        val shares = l.shares.orEmpty()
-        if (shares.isNotEmpty()) {
-            parts += "Shares ${shares.joinToString(", ") { "${it.library} ${it.ms.roundToInt()} ms" }} " +
-                "(above ${l.maxShareMs.roundToInt()} ms on a share someone is playing from, ${l.relaxedShareMs.roundToInt()} ms otherwise)"
-        }
-    } else parts += "No load readings: jobs wait while anyone is streaming"
-    if (l.streaming) parts += "Someone is streaming"
-    if (l.pauseWhileStreaming) parts += "Jobs pause while anyone streams"
-    return parts.joinToString(" · ")
-}
-
-private fun epochMillis(time: String?): Long? =
-    time?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
-
-/** A span of time: "2h 05m 09s", "4m 09s", "12s" (days as "3d 4h"). */
-private fun jobDuration(ms: Long): String {
-    val s = (ms / 1000).coerceAtLeast(0)
-    val d = s / 86400; val h = s % 86400 / 3600; val m = s % 3600 / 60; val sec = s % 60
-    return when {
-        d > 0 -> "${d}d ${h}h"
-        h > 0 -> String.format(Locale.US, "%dh %02dm %02ds", h, m, sec)
-        m > 0 -> String.format(Locale.US, "%dm %02ds", m, sec)
-        else -> "${sec}s"
-    }
-}
-
-private fun jobWhen(at: Long, now: Long): String {
-    val ago = now - at
-    return when {
-        ago < 60_000 -> "just now"
-        ago < 86_400_000 -> jobDuration(ago).replace(Regex(" \\d+s$"), "") + " ago"
-        else -> java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(at))
-    }
-}
-
 @Composable
 private fun JobCard(j: BackgroundJob, now: Long, control: (String, String) -> Unit) {
     val started = epochMillis(j.started)
@@ -1265,11 +855,7 @@ private fun JobCard(j: BackgroundJob, now: Long, control: (String, String) -> Un
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(j.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                val stateColor = when (j.state) {
-                    "running" -> Color(0xFF2E7D32); "waiting" -> Color(0xFFB7791F); "paused" -> Color(0xFFC62828)
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                }
-                Text(j.state.replaceFirstChar { it.uppercase() }, color = stateColor, style = MaterialTheme.typography.labelLarge)
+                Text(j.state.replaceFirstChar { it.uppercase() }, color = jobStateColor(j.state), style = MaterialTheme.typography.labelLarge)
             }
             Text(j.about, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (started != null) {
@@ -1277,8 +863,7 @@ private fun JobCard(j: BackgroundJob, now: Long, control: (String, String) -> Un
                     LinearProgressIndicator(progress = { (j.done.toFloat() / j.total).coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
                 }
-                val count = if (j.total > 0) String.format(Locale.US, "%,d of %,d · ", j.done, j.total) else ""
-                Text("${count}running for ${jobDuration(now - started)}", style = MaterialTheme.typography.bodySmall)
+                Text(jobProgress(j, started, now), style = MaterialTheme.typography.bodySmall)
                 j.detail?.takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 // What each runner is on, for a job that runs several at once.
                 j.runners?.forEachIndexed { i, file ->
@@ -1288,19 +873,8 @@ private fun JobCard(j: BackgroundJob, now: Long, control: (String, String) -> Un
             if (j.state == "waiting" && !j.note.isNullOrEmpty()) {
                 Text("Waiting: ${j.note}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
             }
-            val lastEnd = epochMillis(j.lastEnd)
-            val lastStart = epochMillis(j.lastStart)
-            Text(if (lastEnd == null) "Last run: not since the server started"
-                else "Last run: ${jobWhen(lastEnd, now)}, took ${jobDuration(lastEnd - (lastStart ?: lastEnd))}" +
-                    (j.lastResult?.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""),
-                style = MaterialTheme.typography.bodySmall)
-            val next = epochMillis(j.next)
-            val nextText = when {
-                started != null -> "Next run: after this one"
-                next != null -> if (next > now) "Next run: in ${jobDuration(next - now)}" else "Next run: any moment"
-                else -> "Runs: ${j.schedule ?: "when asked"}"
-            } + if (j.paused) " (paused)" else ""
-            Text(nextText, style = MaterialTheme.typography.bodySmall)
+            Text(jobLastRun(j, now), style = MaterialTheme.typography.bodySmall)
+            Text(jobNextRun(j, now), style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                 Button(shape = AppButtonShape, colors = phoneButtonColors(), enabled = j.canRun && started == null,
                     onClick = { control(j.id, "run") }) { Text("Run now") }

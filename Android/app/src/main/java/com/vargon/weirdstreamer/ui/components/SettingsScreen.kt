@@ -40,8 +40,11 @@ import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import com.vargon.weirdstreamer.MediaViewModel
 import kotlinx.coroutines.delay
 
-/** The TV Settings' tabs. Account needs a server open; Server, an admin's account on it. */
-private enum class TvSettingsTab(val title: String) { General("General"), Account("Account"), Sources("Sources"), Server("Server"), Themes("Themes") }
+/** The TV Settings' tabs. Account needs a server open; Server, Users, Streams and Jobs, an admin's account on it. */
+private enum class TvSettingsTab(val title: String, val admin: Boolean = false) {
+    General("General"), Account("Account"), Sources("Sources"), Themes("Themes"),
+    Server("Server", admin = true), Users("Users", admin = true), Streams("Streams", admin = true), Jobs("Jobs", admin = true)
+}
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -70,27 +73,9 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     LaunchedEffect(languageServer?.address) {
         account = languageServer?.let { s -> runCatching { s.api.getAccount().body() }.getOrNull() }
     }
-    // Hardware encoding (admins): the server's GPUs and the transcode encoder, with a server open.
-    val hardwareFocus = remember { FocusRequester() }
-    val hardwareServer = languageServer?.takeIf { it.signedInAs().second }
-    var hardware by remember(hardwareServer?.address) { mutableStateOf<com.vargon.weirdstreamer.api.models.HardwareReport?>(null) }
-    var serverConfig by remember(hardwareServer?.address) { mutableStateOf<com.google.gson.JsonObject?>(null) }
-    var showHardware by remember { mutableStateOf(false) }
-    LaunchedEffect(hardwareServer?.address) {
-        val s = hardwareServer ?: return@LaunchedEffect
-        serverConfig = runCatching { s.api.getConfig().body() }.getOrNull()
-        while (true) { // the server tries its GPUs at startup: asked again until that's done
-            val report = runCatching { s.api.getHardware().body() }.getOrNull() ?: break
-            hardware = report
-            if (!report.checking) break
-            kotlinx.coroutines.delay(2000)
-        }
-    }
-    val hw = hardware
-    val hwConfig = serverConfig
-    if (showHardware && hardwareServer != null && hw != null && hwConfig != null) {
-        TvHardwareDialog(hardwareServer, hw, hwConfig, onChanged = { serverConfig = it }, onDismiss = { showHardware = false })
-    }
+    // The server's administration (admins): its own tabs, each with the focus the tabs' Down lands on.
+    val adminServer = languageServer?.takeIf { it.signedInAs().second }
+    val adminFocus = remember { FocusRequester() }
     val a = account
     if (showLanguages && languageServer != null && a != null) {
         TvLanguagesDialog(languageServer, a, onChanged = { account = it }, onDismiss = { showLanguages = false })
@@ -118,8 +103,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     val tabs = TvSettingsTab.entries.filter {
         when (it) {
             TvSettingsTab.Account -> languageServer != null
-            TvSettingsTab.Server -> hardwareServer != null
-            else -> true
+            else -> !it.admin || adminServer != null
         }
     }
     val tab = TvSettingsTab.valueOf(tabName).takeIf { it in tabs } ?: TvSettingsTab.General
@@ -128,7 +112,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
         TvSettingsTab.General -> hiddenFilesFocus
         TvSettingsTab.Account -> languagesFocus
         TvSettingsTab.Sources -> if (hasSources) firstSourceFocus else FocusRequester.Default
-        TvSettingsTab.Server -> hardwareFocus
+        TvSettingsTab.Server, TvSettingsTab.Users, TvSettingsTab.Streams, TvSettingsTab.Jobs -> adminFocus
         TvSettingsTab.Themes -> currentThemeFocus
     }
     val tabUp = tabFocus.getValue(tab)
@@ -156,22 +140,23 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         onClick = onBack,
                         modifier = Modifier
                             .focusRequester(backFocus)
-                            .focusProperties { 
-                                down = firstBelowTabs
-                            }
+                            .focusProperties { down = tabUp }
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Text("Settings", style = MaterialTheme.typography.headlineMedium, color = WeirdStreamerTheme.spec.headingColor)
-                    Spacer(modifier = Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+                // The tabs on a line of their own, under the title: an admin's eight don't fit beside it.
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     tabs.forEachIndexed { i, t ->
                         if (i > 0) Spacer(modifier = Modifier.width(12.dp))
                         Button(shape = tvButtonShape(),
                             onClick = { tabName = t.name },
                             colors = if (tab == t) tvButtonColors()
                                 else tvButtonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface),
-                            modifier = Modifier.focusRequester(tabFocus.getValue(t)).focusProperties { down = firstBelowTabs }
+                            modifier = Modifier.focusRequester(tabFocus.getValue(t)).focusProperties { up = backFocus; down = firstBelowTabs }
                         ) {
                             Text(t.title)
                         }
@@ -235,6 +220,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                     onClick = { if (account != null) showLanguages = true }) {
                     Icon(Icons.Default.Language, contentDescription = null)
                 }
+                languageServer?.let { TvChangePasswordRow(it) }
                 Spacer(modifier = Modifier.height(8.dp))
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(24.dp))
@@ -242,13 +228,11 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                 languageServer?.let { TvSignInTvSection(it) }
             }
 
-            // The open server's settings (admins)
-            TvSettingsTab.Server -> item {
-                TvSettingsRow("Hardware encoding", hardwareSummary(hardware, serverConfig), hardwareFocus, up = tabUp,
-                    onClick = { if (hardware != null && serverConfig != null) showHardware = true }) {
-                    Icon(Icons.Default.Memory, contentDescription = null)
-                }
-            }
+            // The open server's administration (admins), as the phone's and the web's Settings
+            TvSettingsTab.Server -> item { adminServer?.let { TvServerTab(it, adminFocus, tabUp) } }
+            TvSettingsTab.Users -> item { adminServer?.let { TvUsersTab(it, adminFocus, tabUp) } }
+            TvSettingsTab.Streams -> item { adminServer?.let { TvStreamsTab(it, adminFocus, tabUp) } }
+            TvSettingsTab.Jobs -> item { adminServer?.let { TvJobsTab(it, adminFocus, tabUp) } }
 
             // The saved servers and shares
             TvSettingsTab.Sources -> {
@@ -323,10 +307,10 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun TvSettingsRow(
+internal fun TvSettingsRow(
     title: String,
     detail: String? = null,
-    focus: FocusRequester,
+    focus: FocusRequester? = null,
     up: FocusRequester? = null,
     down: FocusRequester? = null,
     titleColor: Color = Color.Unspecified,
@@ -350,7 +334,7 @@ private fun TvSettingsRow(
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .focusRequester(focus)
+            .then(if (focus != null) Modifier.focusRequester(focus) else Modifier)
             .focusProperties {
                 up?.let { this.up = it }
                 down?.let { this.down = it }
