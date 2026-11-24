@@ -632,7 +632,7 @@ internal fun jobNextRun(j: com.vargon.weirdstreamer.api.models.BackgroundJob, no
 // ---------------------------------------------------------------------------------------------
 // Damaged videos (the Server tab): videos with a broken seek index, which the server plays from
 // fixed copies; each can be played as it is or fixed, and replaced by its fixed copy. And the trash
-// of replaced originals.
+// of replaced originals, each of which can be restored (its replace undone).
 
 class DamagedVideosModel(val server: ServerRepository, private val scope: CoroutineScope) {
     var videos by mutableStateOf<List<com.vargon.weirdstreamer.api.models.DamagedVideo>?>(null); private set
@@ -648,7 +648,8 @@ class DamagedVideosModel(val server: ServerRepository, private val scope: Corout
     suspend fun load() {
         val (list, err) = attempt { server.api.getDamaged() }
         loadError = err
-        list?.let { videos = it.videos.orEmpty(); it.trash?.let { t -> trash = t } }
+        list?.let { videos = it.videos.orEmpty() }
+        attempt { server.api.getTrash() }.first?.let { trash = it }
     }
 
     /** Has the server give this account's players the original as it is (or the fixed copy), then [then] plays it. */
@@ -673,7 +674,6 @@ class DamagedVideosModel(val server: ServerRepository, private val scope: Corout
             val (reply, err) = attempt { server.api.replaceDamaged(body(video.path)) }
             message = if (err != null) err to true
                 else "Replaced: ${replacedName(video.name)} is in its place, and the original is in the trash." to false
-            reply?.trash?.let { trash = it }
             load()
         }
     }
@@ -682,7 +682,16 @@ class DamagedVideosModel(val server: ServerRepository, private val scope: Corout
         scope.launch {
             val (reply, err) = attempt { server.api.emptyTrash() }
             message = (err ?: "The trash is empty.") to (err != null)
-            reply?.trash?.let { trash = it }
+            reply?.let { trash = it }
+        }
+    }
+
+    /** Undoes its replace: the original back in its folder with its progress, listed as damaged again (fixed). */
+    fun restore(item: com.vargon.weirdstreamer.api.models.TrashItem) {
+        scope.launch {
+            val (_, err) = attempt { server.api.restoreTrash(JsonObject().apply { addProperty("id", item.id) }) }
+            message = (err ?: "Restored: ${item.name} is back in its folder.") to (err != null)
+            load()
         }
     }
 }
@@ -709,7 +718,7 @@ internal fun replacedName(name: String) = name.substringBeforeLast('.', name) + 
 internal const val DAMAGED_ABOUT = "Videos players can't jump in (a broken seek index), found by scans. Fix makes a fixed copy (the " +
     "same video and audio, copied untouched into an indexed file, about as big as the video), which the server then plays in its " +
     "place. Play each to compare, then replace the original with the fixed copy (as .mkv, keeping its watch progress); the " +
-    "original goes to the trash."
+    "original goes to the trash, where Restore puts it back."
 
 /** "Original: 316 MB, says 2:07:52 long · Fixed copy: 298 MB, 1:14:32", or why it couldn't be fixed. */
 internal fun damagedSizes(v: com.vargon.weirdstreamer.api.models.DamagedVideo) = when (v.state) {
@@ -725,3 +734,21 @@ internal fun damagedWhere(v: com.vargon.weirdstreamer.api.models.DamagedVideo) =
 internal fun trashText(t: com.vargon.weirdstreamer.api.models.TrashReport) =
     if (t.files > 0) "The trash holds ${t.files} replaced original${if (t.files == 1) "" else "s"} (${formatBytes(t.bytes)}), each deleted ${t.days} days after it went in."
     else "The trash is empty. Replaced originals are kept there ${t.days} days."
+
+/** "Movies › Old" (where it was in its library). */
+internal fun trashWhere(t: com.vargon.weirdstreamer.api.models.TrashItem) =
+    listOf(t.library, t.folder).filter { it.isNotEmpty() }.joinToString(" › ").ifEmpty { "Not in a library" }
+
+/** "11 MB · Replaced 11/24/26 by x.mkv · Deleted 12/24/26" */
+internal fun trashDates(t: com.vargon.weirdstreamer.api.models.TrashItem): String {
+    val day = { iso: String ->
+        epochMillis(iso)?.let { java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date(it)) } ?: "?"
+    }
+    return "${formatBytes(t.size)} · Replaced ${day(t.trashedAt)}" +
+        (if (t.replacement.isNotEmpty()) " by ${t.replacement}" else "") + " · Deleted ${day(t.deletesAt)}"
+}
+
+/** What Restore does, for its confirmation. */
+internal fun restoreText(t: com.vargon.weirdstreamer.api.models.TrashItem) =
+    "It goes back to its folder, " + (if (t.replacement.isNotEmpty()) "${t.replacement} goes back to the fixed copies, " else "") +
+        "and its watch progress goes back to it. It's listed with the damaged videos again."

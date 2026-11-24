@@ -535,7 +535,15 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   with the original's time on disk, refused while someone else plays it; `db.MoveFile` moves its progress,
   segments, subtitle timing and episode matches to the new client path; the original goes to the trash,
   `media.trashPath`, default `trash` beside the thumbnails, emptied after 30 days by the job or with Empty
-  the trash, `POST /api/admin/trash/empty`). Both folders are on the Jobs page's storage list.
+  the trash, `POST /api/admin/trash/empty`). Each trashed file has its own folder (`<unix>-<n>/`, its ID)
+  with a note (`.trash.json`: its disk and client paths, its replacement's, the reason and lengths) and a
+  copy of its thumbnail (`.thumbnail.jpg`: the Cleanup job deletes a gone file's). Settings lists the trash
+  (`GET /api/admin/trash`: name, library and folder, size, when it went in and is deleted, the thumbnail from
+  `/api/admin/trash/thumbnail?id=`, admins only) with Restore (`POST /api/admin/trash/restore {"id"}`,
+  `media.RestoreFromTrash`), which undoes a replace: the original back in its place, the `.mkv` back to the
+  repairs folder as its fixed copy (listed as fixed again), the thumbnail back if it's gone, and `db.MoveFile`
+  the other way; refused while a file is in its place, the replacement has changed, or someone else plays it.
+  The job keeps a restored video's index entry until a scan lists it. Both folders are on the Jobs page's storage list.
 - **3D videos marked twice** (`media/stereo.go`): an H.264 side-by-side (or other 3D) video whose
   layout is marked in both the container (Matroska's StereoMode) and the stream's SEI can't be decoded
   by ffmpeg 8: each frame gets the marker twice ("File exists" from the filter graph), so no thumbnail,

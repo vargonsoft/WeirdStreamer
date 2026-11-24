@@ -170,6 +170,7 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
     val damaged = rememberDamagedVideos(server)
     var replacing by remember { mutableStateOf<com.vargon.weirdstreamer.api.models.DamagedVideo?>(null) }
     var emptying by remember { mutableStateOf(false) }
+    var restoring by remember { mutableStateOf<com.vargon.weirdstreamer.api.models.TrashItem?>(null) }
     var showSubtitlesKey by remember { mutableStateOf(false) }
     var showToken by remember { mutableStateOf(false) }
     var newPath by remember { mutableStateOf("") }
@@ -393,10 +394,30 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
             }
             item {
                 Message(damaged.message?.first, damaged.message?.second ?: false)
+                Text("Trash", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
                 Text(trashText(damaged.trash), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(damaged.trash.items.orEmpty(), key = { "trash:${it.id}" }) { t ->
+                Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        server.absoluteUrl(t.thumbnailUrl)?.let { thumb ->
+                            coil.compose.AsyncImage(model = thumb, contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxWidth().then(Modifier.aspectRatio(16f / 9f)).clip(RoundedCornerShape(6.dp)))
+                        }
+                        Text(t.name, style = MaterialTheme.typography.titleMedium)
+                        Text(trashWhere(t), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(trashDates(t), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (t.restorable) {
+                            PhoneSecondaryButton(onClick = { restoring = t }) { Text("Restore") }
+                        }
+                    }
+                }
+            }
+            item {
                 if (damaged.trash.files > 0) {
-                    PhoneSecondaryButton(onClick = { emptying = true }, modifier = Modifier.padding(top = 4.dp)) { Text("Empty the trash now") }
+                    PhoneSecondaryButton(onClick = { emptying = true }, modifier = Modifier.padding(top = 8.dp)) { Text("Empty the trash now") }
                 }
             }
             item { SectionTitle("Metadata") }
@@ -474,6 +495,15 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
             text = { Text("The fixed copy goes into its folder as ${replacedName(v.name)}, with its watch progress, and the original goes to the trash (deleted after ${damaged.trash.days} days).") },
             confirmButton = { PhoneButton(onClick = { damaged.replace(v); replacing = null }) { Text("Replace") } },
             dismissButton = { PhoneSecondaryButton(onClick = { replacing = null }) { Text("Cancel") } }
+        )
+    }
+    restoring?.let { t ->
+        AlertDialog(
+            onDismissRequest = { restoring = null },
+            title = { Text("Restore ${t.name}?") },
+            text = { Text(restoreText(t)) },
+            confirmButton = { PhoneButton(onClick = { damaged.restore(t); restoring = null }) { Text("Restore") } },
+            dismissButton = { PhoneSecondaryButton(onClick = { restoring = null }) { Text("Cancel") } }
         )
     }
     if (emptying) {

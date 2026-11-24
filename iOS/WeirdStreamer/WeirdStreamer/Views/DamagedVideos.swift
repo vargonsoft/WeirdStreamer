@@ -22,21 +22,37 @@ struct DamagedVideo: Decodable, Identifiable {
     var fixing: Bool { state == "fixing" }
 }
 
-/// The trash of replaced originals: deleted `days` after they went in.
+/// A replaced original in the trash (GET /api/admin/trash), which Restore puts back.
+struct TrashItem: Decodable, Identifiable {
+    var id: String
+    var name: String
+    var library: String?
+    var folder: String?
+    var size: Int64?
+    var trashedAt: String?      // RFC 3339
+    var deletesAt: String?
+    var reason: String?
+    var replacement: String?    // the name of the file that replaced it
+    var restorable: Bool?
+    var thumbnailUrl: String?   // its thumbnail's copy in the trash (admins only)
+}
+
+/// The trash of replaced originals: deleted `days` after they went in (GET /api/admin/trash, and
+/// Empty's answer).
 struct TrashReport: Decodable {
     var files: Int?
     var bytes: Int64?
     var days: Int?
+    var items: [TrashItem]?
 }
 
 struct DamagedList: Decodable {
     var videos: [DamagedVideo]?
-    var trash: TrashReport?
 }
 
 /// Texts for the damaged videos list, as Android's (AdminSettings.kt) and the web's.
 enum DamagedVideos {
-    static let about = "Videos players can't jump in (a broken seek index), found by scans. Fix makes a fixed copy (the same video and audio, copied untouched into an indexed file, about as big as the video), which the server then plays in its place. Play each to compare, then replace the original with the fixed copy (as .mkv, keeping its watch progress); the original goes to the trash."
+    static let about = "Videos players can't jump in (a broken seek index), found by scans. Fix makes a fixed copy (the same video and audio, copied untouched into an indexed file, about as big as the video), which the server then plays in its place. Play each to compare, then replace the original with the fixed copy (as .mkv, keeping its watch progress); the original goes to the trash, where Restore puts it back."
 
     /// "1:14:32"
     static func clock(_ seconds: Double?) -> String {
@@ -63,6 +79,28 @@ enum DamagedVideos {
         }
     }
 
+    /// "Movies › Old" (where it was in its library).
+    static func trashWhere(_ t: TrashItem) -> String {
+        let text = [t.library ?? "", t.folder ?? ""].filter { !$0.isEmpty }.joined(separator: " › ")
+        return text.isEmpty ? "Not in a library" : text
+    }
+
+    /// "11 MB · Replaced 11/24/26 by x.mkv · Deleted 12/24/26"
+    static func trashDates(_ t: TrashItem) -> String {
+        func day(_ iso: String?) -> String {
+            guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "?" }
+            return d.formatted(date: .numeric, time: .omitted)
+        }
+        let by = (t.replacement ?? "").isEmpty ? "" : " by \(t.replacement ?? "")"
+        return "\(formatBytes(t.size)) · Replaced \(day(t.trashedAt))\(by) · Deleted \(day(t.deletesAt))"
+    }
+
+    /// What Restore does, for its confirmation.
+    static func restoreText(_ t: TrashItem) -> String {
+        let back = (t.replacement ?? "").isEmpty ? "" : "\(t.replacement ?? "") goes back to the fixed copies, "
+        return "It goes back to its folder, \(back)and its watch progress goes back to it. It's listed with the damaged videos again."
+    }
+
     static func trashText(_ t: TrashReport?) -> String {
         let files = t?.files ?? 0, days = t?.days ?? 30
         return files > 0
@@ -72,10 +110,13 @@ enum DamagedVideos {
 }
 
 /// Settings › Server › Damaged videos (admins): each damaged video with Play original, Play fixed
-/// copy and Replace with fixed copy (asked first), and the trash with Empty the trash now.
+/// copy and Replace with fixed copy (asked first), and the trash: each original in it with Restore
+/// (its replace undone), and Empty the trash now.
 struct DamagedVideosSection: View {
     @Environment(AppModel.self) private var model
     @State private var list: DamagedList?
+    @State private var trash: TrashReport?
+    @State private var restoring: TrashItem?
     @State private var loadError: String?
     @State private var message: (String, Bool)?
     @State private var replacing: DamagedVideo?
@@ -113,8 +154,26 @@ struct DamagedVideosSection: View {
             .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8))
         }
         MessageLine(message: message)
-        Text(DamagedVideos.trashText(list?.trash)).font(.caption).foregroundStyle(Palette.muted)
-        if (list?.trash?.files ?? 0) > 0 {
+        Text("Trash").font(.subheadline.weight(.semibold))
+        Text(DamagedVideos.trashText(trash)).font(.caption).foregroundStyle(Palette.muted)
+        ForEach(trash?.items ?? []) { t in
+            VStack(alignment: .leading, spacing: 4) {
+                if let thumb = t.thumbnailUrl {
+                    RemoteImage(relative: thumb).aspectRatio(16 / 9, contentMode: .fill)
+                        .frame(maxWidth: .infinity).frame(height: 160).clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                Text(t.name).font(.headline)
+                Text(DamagedVideos.trashWhere(t)).font(.caption).foregroundStyle(Palette.muted)
+                Text(DamagedVideos.trashDates(t)).font(.caption).foregroundStyle(Palette.muted)
+                if t.restorable == true {
+                    Button("Restore") { restoring = t }.buttonStyle(PhoneSecondaryButtonStyle())
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8))
+        }
+        if (trash?.files ?? 0) > 0 {
             Button("Empty the trash now") { emptying = true }.buttonStyle(PhoneSecondaryButtonStyle())
         }
         Color.clear.frame(height: 0)
@@ -132,6 +191,12 @@ struct DamagedVideosSection: View {
             } message: {
                 Text(replacing.map { "The fixed copy goes into its folder as \(DamagedVideos.replacedName($0.name)), with its watch progress, and the original goes to the trash (deleted after 30 days)." } ?? "")
             }
+            .alert(restoring.map { "Restore \($0.name)?" } ?? "", isPresented: Binding(get: { restoring != nil }, set: { if !$0 { restoring = nil } })) {
+                Button("Cancel", role: .cancel) { restoring = nil }
+                Button("Restore") { if let t = restoring { Task { await restore(t) } }; restoring = nil }
+            } message: {
+                Text(restoring.map { DamagedVideos.restoreText($0) } ?? "")
+            }
             .alert("Empty the trash?", isPresented: $emptying) {
                 Button("Cancel", role: .cancel) {}
                 Button("Empty the trash", role: .destructive) { Task { await emptyTrash() } }
@@ -148,6 +213,19 @@ struct DamagedVideosSection: View {
         } catch {
             loadError = errorText(error)
         }
+        if let t = try? await client.get("/api/admin/trash") as TrashReport { trash = t }
+    }
+
+    /// Undoes its replace: the original back in its folder with its progress, listed as damaged again.
+    private func restore(_ t: TrashItem) async {
+        guard let client = model.client else { return }
+        do {
+            _ = try await client.json("POST", "/api/admin/trash/restore", body: ["id": t.id])
+            message = ("Restored: \(t.name) is back in its folder.", false)
+        } catch {
+            message = (errorText(error), true)
+        }
+        await load()
     }
 
     /// The server gives this account's players the original as it is (or the fixed copy), then it plays.

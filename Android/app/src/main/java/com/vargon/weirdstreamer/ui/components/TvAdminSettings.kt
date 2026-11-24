@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextField
@@ -298,6 +299,7 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
     TvNoticeToast(damaged.message)
     var damagedVideo by remember { mutableStateOf<com.vargon.weirdstreamer.api.models.DamagedVideo?>(null) }
     var emptying by remember { mutableStateOf(false) }
+    var restoring by remember { mutableStateOf<com.vargon.weirdstreamer.api.models.TrashItem?>(null) }
     TvNoticeToast(m.message)
     TvNoticeToast(m.groupMessage)
     TvNoticeToast(m.backupMessage)
@@ -399,6 +401,17 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
         }
     }
     TvNote(trashText(damaged.trash))
+    damaged.trash.items.orEmpty().forEach { t ->
+        TvSettingsRow(t.name, trashWhere(t) + "\n" + trashDates(t) + if (t.restorable) "\nOK to restore it" else "",
+            onClick = { if (t.restorable) restoring = t }) {
+            server.absoluteUrl(t.thumbnailUrl)?.let { thumb ->
+                coil.compose.AsyncImage(model = thumb, contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.padding(end = 16.dp).width(160.dp).height(90.dp).clip(RoundedCornerShape(6.dp)))
+            }
+            if (t.restorable) Icon(Icons.Default.Restore, contentDescription = "Restore")
+        }
+    }
     if (damaged.trash.files > 0) {
         TvSettingsRow("Empty the trash now", onClick = { emptying = true }) {
             Icon(Icons.Default.Delete, contentDescription = null)
@@ -432,6 +445,9 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
             },
             onReplace = { damagedVideo = null; damaged.replace(v) },
             onFix = { damagedVideo = null; damaged.fix(v) })
+    }
+    restoring?.let { t ->
+        TvConfirmDialog("Restore ${t.name}?", restoreText(t), "Restore", onDismiss = { restoring = null }) { damaged.restore(t) }
     }
     if (emptying) {
         TvConfirmDialog("Empty the trash?", "Every replaced original in it is deleted now. They can't be brought back.", "Empty the trash",

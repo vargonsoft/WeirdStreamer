@@ -159,10 +159,12 @@
 
                     <div class="settings-group">
                         <h3>Damaged videos</h3>
-                        <p class="settings-hint">Videos players can't jump in (a broken seek index), found by scans. Fix makes a fixed copy (the same video and audio, copied untouched into an indexed file, about as big as the video), which the server then plays in its place. Play each to compare, then replace the original with the fixed copy (as .mkv, keeping its watch progress); the original goes to the trash.</p>
+                        <p class="settings-hint">Videos players can't jump in (a broken seek index), found by scans. Fix makes a fixed copy (the same video and audio, copied untouched into an indexed file, about as big as the video), which the server then plays in its place. Play each to compare, then replace the original with the fixed copy (as .mkv, keeping its watch progress); the original goes to the trash, where Restore puts it back.</p>
                         <ul id="damaged-list" class="damaged-list"></ul>
                         <p id="damaged-message" class="backup-message"></p>
+                        <h4>Trash</h4>
                         <p id="trash-status" class="hardware-status"></p>
+                        <ul id="trash-list" class="damaged-list"></ul>
                         <button type="button" id="empty-trash-btn" class="btn btn-secondary" data-icon="delete" hidden><span class="btn-label">Empty the trash now</span></button>
                     </div>
 

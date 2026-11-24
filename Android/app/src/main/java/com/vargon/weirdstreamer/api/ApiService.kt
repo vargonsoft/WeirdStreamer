@@ -159,8 +159,15 @@ interface ApiService {
     @POST("/api/admin/damaged/replace")
     suspend fun replaceDamaged(@Body body: com.google.gson.JsonObject): Response<com.vargon.weirdstreamer.api.models.DamagedReplaced>
 
+    @GET("/api/admin/trash")
+    suspend fun getTrash(): Response<com.vargon.weirdstreamer.api.models.TrashReport>
+
+    /** {"id": the trash item's}: puts the original back and its replacement back to the fixed copies */
+    @POST("/api/admin/trash/restore")
+    suspend fun restoreTrash(@Body body: com.google.gson.JsonObject): Response<com.vargon.weirdstreamer.api.models.DamagedReplaced>
+
     @POST("/api/admin/trash/empty")
-    suspend fun emptyTrash(): Response<com.vargon.weirdstreamer.api.models.DamagedReplaced>
+    suspend fun emptyTrash(): Response<com.vargon.weirdstreamer.api.models.TrashReport>
 
     @GET("/api/groups")
     suspend fun getGroups(): Response<List<String>>

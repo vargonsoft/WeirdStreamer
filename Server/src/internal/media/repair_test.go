@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/database"
 )
 
 // damagedFLV writes a 5-minute FLV with a seek index (good), and a copy whose index points at
@@ -210,5 +211,153 @@ func TestFixOnRequest(t *testing.T) {
 	os.Remove(fixedFile(key))
 	if got := DamagedVideos(inLib); got[0].State != RepairDamaged || Playable(damaged) != damaged {
 		t.Fatalf("copy gone: %+v", got)
+	}
+}
+
+// Replacing a damaged video and restoring it from the trash: the files, the progress and the
+// repair index go back as they were, and the original is listed as fixed again.
+func TestReplaceThenRestore(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("no ffmpeg")
+	}
+	root := t.TempDir()
+	library := filepath.Join(root, "Movies")
+	os.MkdirAll(filepath.Join(library, "Old"), 0o755)
+	saved := config.GlobalConfig
+	config.GlobalConfig = &config.Config{Media: config.MediaConfig{
+		Paths:      []config.MediaPath{{ID: "lib1", Name: "Movies", Path: library}},
+		RepairPath: filepath.Join(root, "repairs"), TrashPath: filepath.Join(root, "trash"),
+		ThumbnailPath: filepath.Join(root, "thumbnails"),
+	}}
+	repairIndex.mu.Lock()
+	repairIndex.loaded, repairIndex.entries = false, nil
+	repairIndex.mu.Unlock()
+	t.Cleanup(func() {
+		config.GlobalConfig = saved
+		repairIndex.mu.Lock()
+		repairIndex.loaded, repairIndex.entries = false, nil
+		repairIndex.mu.Unlock()
+	})
+	db, err := database.New(filepath.Join(root, "users.db"), filepath.Join(root, "media.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	_, made := damagedFLV(t, root)
+	damaged := filepath.Join(library, "Old", "Damaged Video.avi")
+	if err := os.Rename(made, damaged); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(damaged)
+	key := config.CacheKey(damaged)
+	size, length, err := fixVideo(context.Background(), damaged, key)
+	if err != nil {
+		t.Fatalf("fixing: %v", err)
+	}
+	repairIndex.mu.Lock()
+	loadRepairIndex()
+	repairIndex.entries[key] = repairEntry{Path: damaged, Size: info.Size(), ModTime: info.ModTime().Unix(),
+		State: RepairFixed, Reason: "test reason", FixedSize: size, Duration: length}
+	repairIndex.mu.Unlock()
+	thumb, _ := GetThumbnailPath(config.GlobalConfig.Media.ThumbnailPath, key, ".jpg")
+	os.MkdirAll(filepath.Dir(thumb), 0o755)
+	os.WriteFile(thumb, []byte("a thumbnail"), 0o644)
+	const user = 1
+	oldClient, newClient := "lib1/Old/Damaged Video.avi", "lib1/Old/Damaged Video.mkv"
+	if err := db.SavePlayback(user, oldClient, database.PlaybackUpdate{Position: 120, Duration: 300, UpdatedAt: time.Now()}, false); err != nil {
+		t.Fatal(err)
+	}
+	position := func(path string) float64 {
+		pb, err := db.UserPlayback(user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p := pb[path]; p != nil {
+			return p.Position
+		}
+		return -1
+	}
+
+	// Replaced (as the handler does: the file, then its progress)
+	newPath, err := ReplaceWithFixed(damaged)
+	if err != nil {
+		t.Fatalf("replacing: %v", err)
+	}
+	if err := db.MoveFile(damaged, oldClient, newClient); err != nil {
+		t.Fatal(err)
+	}
+	if position(newClient) != 120 || position(oldClient) != -1 {
+		t.Fatalf("progress after replacing: %v / %v", position(newClient), position(oldClient))
+	}
+	os.Remove(thumb) // the Cleanup job deletes the thumbnail of a file gone from the libraries
+	items, err := TrashItems()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("trash: %+v %v", items, err)
+	}
+	it := items[0]
+	if it.Name != "Damaged Video.avi" || it.Path != damaged || it.Replacement != newPath || it.Reason != "test reason" ||
+		it.Size != info.Size() || it.Thumbnail == "" || it.Deletes().Sub(it.At) != TrashDays*24*time.Hour {
+		t.Fatalf("trash item: %+v", it)
+	}
+	if got, _ := Trash(); got.Files != 1 || got.Bytes != info.Size() {
+		t.Fatalf("trash counts its notes: %+v", got)
+	}
+
+	// Refused while a file is in its place
+	os.WriteFile(damaged, []byte("another"), 0o644)
+	if _, err := RestoreFromTrash(it.ID); err != ErrPathTaken {
+		t.Fatalf("restoring over another file: %v", err)
+	}
+	os.Remove(damaged)
+	if _, err := RestoreFromTrash("../x"); err != ErrNoTrashItem {
+		t.Fatalf("restoring a bad ID: %v", err)
+	}
+
+	// Restored: the original back (its time kept), the replacement its fixed copy again
+	restored, err := RestoreFromTrash(it.ID)
+	if err != nil {
+		t.Fatalf("restoring: %v", err)
+	}
+	if err := db.MoveFile(restored.Replacement, newClient, oldClient); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.Stat(damaged); err != nil || got.Size() != info.Size() || got.ModTime().Unix() != info.ModTime().Unix() {
+		t.Fatalf("the original back: %v", err)
+	}
+	if fileExists(newPath) {
+		t.Fatal("the replacement is still in the library")
+	}
+	if got, err := os.Stat(fixedFile(key)); err != nil || got.Size() != size {
+		t.Fatalf("the fixed copy: %v", err)
+	}
+	if position(oldClient) != 120 || position(newClient) != -1 {
+		t.Fatalf("progress after restoring: %v / %v", position(oldClient), position(newClient))
+	}
+	if b, err := os.ReadFile(thumb); err != nil || string(b) != "a thumbnail" {
+		t.Fatalf("thumbnail back: %v", err)
+	}
+	if items, _ := TrashItems(); len(items) != 0 {
+		t.Fatalf("still in the trash: %+v", items)
+	}
+	got := DamagedVideos(func(string) bool { return true })
+	if len(got) != 1 || got[0].State != RepairFixed || got[0].Reason != "test reason" || got[0].FixedSize != size ||
+		Playable(damaged) != fixedFile(key) {
+		t.Fatalf("listed after restoring: %+v", got)
+	}
+	// And it can be replaced again
+	if _, err := ReplaceWithFixed(damaged); err != nil {
+		t.Fatalf("replacing again: %v", err)
+	}
+
+	// A file in the trash with no note (or whose replacement changed) isn't restored
+	items, _ = TrashItems()
+	os.WriteFile(newPath, []byte("changed"), 0o644)
+	if _, err := RestoreFromTrash(items[0].ID); err != ErrReplacementChanged {
+		t.Fatalf("restoring with the replacement changed: %v", err)
+	}
+	os.Remove(filepath.Join(trashDir(), items[0].ID, trashNoteFile))
+	if _, err := RestoreFromTrash(items[0].ID); err != ErrNotRestorable {
+		t.Fatalf("restoring with no note: %v", err)
 	}
 }

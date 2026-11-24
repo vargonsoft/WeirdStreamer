@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -335,8 +337,9 @@ func (j *RepairJob) runOnce(ctx context.Context) string {
 	}
 	// Videos gone from the libraries (or replaced): their fixed copies go too.
 	removed := 0
-	for key := range repairIndex.entries {
-		if !keep[key] {
+	for key, e := range repairIndex.entries {
+		// (one restored from the trash is kept until the next scan lists it)
+		if !keep[key] && (!fileExists(e.Path) || !j.InLibrary(e.Path)) {
 			os.Remove(fixedFile(key))
 			delete(repairIndex.entries, key)
 			removed++
@@ -566,7 +569,8 @@ var ErrNameTaken = errors.New("a file with the new name is already there")
 
 // ReplaceWithFixed puts a damaged video's fixed copy in its place, named as it with the .mkv
 // extension, with the original's time on disk (so it keeps its place in Recently Added), and moves
-// the original to the trash. It returns the new file's path.
+// the original to the trash, with a note of where it was (and a copy of its thumbnail) for
+// RestoreFromTrash. It returns the new file's path.
 func ReplaceWithFixed(path string) (string, error) {
 	key := config.CacheKey(path)
 	repairIndex.mu.Lock()
@@ -597,7 +601,13 @@ func ReplaceWithFixed(path string) (string, error) {
 		return "", fmt.Errorf("copying the fixed video into the library: %w", err)
 	}
 	os.Chtimes(part, info.ModTime(), info.ModTime())
-	if err := MoveToTrash(path); err != nil {
+	note := trashNote{Path: path, Replacement: target, Reason: e.Reason, Claimed: e.Claimed, Duration: e.Duration}
+	note.ClientPath, _ = config.ClientPath(path)
+	note.ReplacementClient, _ = config.ClientPath(target)
+	if pi, err := os.Stat(part); err == nil {
+		note.ReplacementSize = pi.Size()
+	}
+	if err := MoveToTrash(path, &note); err != nil {
 		os.Rename(part, fixed) // back where it was
 		return "", fmt.Errorf("moving the original to the trash: %w", err)
 	}
@@ -612,7 +622,8 @@ func ReplaceWithFixed(path string) (string, error) {
 	return target, nil
 }
 
-// moveFile renames a file, or copies it and removes the original when it's on another disk.
+// moveFile renames a file, or copies it (keeping its time on disk) and removes the original when
+// it's on another disk.
 func moveFile(from, to string) error {
 	if err := os.Rename(from, to); err == nil {
 		return nil
@@ -622,6 +633,10 @@ func moveFile(from, to string) error {
 		return err
 	}
 	defer in.Close()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
 	out, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return err
@@ -635,15 +650,46 @@ func moveFile(from, to string) error {
 		os.Remove(to)
 		return err
 	}
+	os.Chtimes(to, info.ModTime(), info.ModTime())
 	return os.Remove(from)
+}
+
+// copyFile copies a small file (a thumbnail).
+func copyFile(from, to string) error {
+	b, err := os.ReadFile(from)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(to, b, 0o600)
 }
 
 // ---------------------------------------------------------------------------------------------
 // The trash: library files replaced by fixed copies, each in a folder named by when it was put
-// there ("<unix time>-<n>/<its name>"), deleted after TrashDays or when an admin empties it.
+// there ("<unix time>-<n>/<its name>", the folder's name its ID), deleted after TrashDays or when
+// an admin empties it. Beside the file, trashNoteFile says where it was and what replaced it, and
+// trashThumb is a copy of its thumbnail (the Cleanup job deletes the thumbnails of files gone from
+// the libraries). RestoreFromTrash undoes a replace.
 
 // TrashDays is how long the trash keeps a file.
 const TrashDays = 30
+
+const (
+	trashNoteFile = ".trash.json"
+	trashThumb    = ".thumbnail" // + the thumbnail's extension
+)
+
+// trashNote is what the trash keeps about a replaced original.
+type trashNote struct {
+	Path              string  `json:"path"`        // where it was, on disk
+	ClientPath        string  `json:"client_path"` // and its client path (found again if its library's folder moved)
+	Replacement       string  `json:"replacement"` // the fixed copy that took its place
+	ReplacementClient string  `json:"replacement_client"`
+	ReplacementSize   int64   `json:"replacement_size"`
+	Reason            string  `json:"reason"` // what was wrong with it
+	Claimed           float64 `json:"claimed,omitempty"`
+	Duration          float64 `json:"duration,omitempty"`  // the fixed copy's real length
+	Thumbnail         string  `json:"thumbnail,omitempty"` // its thumbnail's copy, in the slot
+}
 
 func trashDir() string {
 	if config.GlobalConfig == nil {
@@ -654,8 +700,9 @@ func trashDir() string {
 
 var trashMu sync.Mutex
 
-// MoveToTrash moves a file into the trash.
-func MoveToTrash(path string) error {
+// MoveToTrash moves a file into the trash, with a note about it (nil: none), and a copy of its
+// thumbnail when it has one.
+func MoveToTrash(path string, note *trashNote) error {
 	dir := trashDir()
 	if dir == "" {
 		return errors.New("no trash folder (media.trashPath)")
@@ -678,6 +725,22 @@ func MoveToTrash(path string) error {
 	if err := moveFile(path, filepath.Join(slot, filepath.Base(path))); err != nil {
 		os.Remove(slot)
 		return err
+	}
+	if note == nil {
+		return nil
+	}
+	if thumbs := config.GlobalConfig.Media.ThumbnailPath; thumbs != "" {
+		for _, ext := range []string{".jpg", ".png"} {
+			thumb, _ := GetThumbnailPath(thumbs, config.CacheKey(path), ext)
+			if copyFile(thumb, filepath.Join(slot, trashThumb+ext)) == nil {
+				note.Thumbnail = trashThumb + ext
+				break
+			}
+		}
+	}
+	b, _ := json.Marshal(note)
+	if err := os.WriteFile(filepath.Join(slot, trashNoteFile), b, 0o600); err != nil {
+		log.Printf("trash: %s: writing its note (it can't be restored): %v", path, err)
 	}
 	return nil
 }
@@ -711,6 +774,212 @@ func trashSlots() (map[string]time.Time, error) {
 	return slots, nil
 }
 
+// TrashItem is a file in the trash.
+type TrashItem struct {
+	ID          string    // its slot's name
+	Name        string    // the file's name
+	Size        int64     //
+	At          time.Time // when it went in
+	Path        string    // where it was (on disk; "" when the trash has no note of it)
+	Replacement string    // what took its place (on disk)
+	Reason      string    // what was wrong with it
+	Thumbnail   string    // its thumbnail's copy (on disk), or ""
+}
+
+// Deletes is when the trash deletes it.
+func (t TrashItem) Deletes() time.Time { return t.At.Add(TrashDays * 24 * time.Hour) }
+
+// slotFile is the trashed file in a slot (its one file not the trash's own).
+func slotFile(slot string) (fs.FileInfo, bool) {
+	files, _ := os.ReadDir(slot)
+	for _, f := range files {
+		if f.IsDir() || strings.HasPrefix(f.Name(), trashNoteFile) || strings.HasPrefix(f.Name(), trashThumb) {
+			continue
+		}
+		if fi, err := f.Info(); err == nil {
+			return fi, true
+		}
+	}
+	return nil, false
+}
+
+// notedPath is where a noted file is now: its client path's disk path (its library's folder may
+// have moved since), else the disk path noted.
+func notedPath(client, disk string) string {
+	if client != "" {
+		if p, _, ok := config.DiskPath(client); ok {
+			return p
+		}
+	}
+	return disk
+}
+
+func readTrashItem(slot string, at time.Time) (TrashItem, bool) {
+	fi, ok := slotFile(slot)
+	if !ok {
+		return TrashItem{}, false
+	}
+	item := TrashItem{ID: filepath.Base(slot), Name: fi.Name(), Size: fi.Size(), At: at}
+	var note trashNote
+	if b, err := os.ReadFile(filepath.Join(slot, trashNoteFile)); err == nil && json.Unmarshal(b, &note) == nil && note.Path != "" {
+		item.Path = notedPath(note.ClientPath, note.Path)
+		item.Replacement = notedPath(note.ReplacementClient, note.Replacement)
+		item.Reason = note.Reason
+		if note.Thumbnail != "" {
+			item.Thumbnail = filepath.Join(slot, filepath.Base(note.Thumbnail))
+		}
+	}
+	return item, true
+}
+
+var trashID = regexp.MustCompile(`^[0-9]+-[0-9]+$`)
+
+// TrashItems lists what's in the trash, the newest first.
+func TrashItems() ([]TrashItem, error) {
+	if trashDir() == "" {
+		return nil, nil
+	}
+	trashMu.Lock()
+	defer trashMu.Unlock()
+	slots, err := trashSlots()
+	if err != nil {
+		return nil, err
+	}
+	var out []TrashItem
+	for slot, at := range slots {
+		if item, ok := readTrashItem(slot, at); ok {
+			out = append(out, item)
+		}
+	}
+	sort.Slice(out, func(a, b int) bool {
+		if !out[a].At.Equal(out[b].At) {
+			return out[a].At.After(out[b].At)
+		}
+		return out[a].ID > out[b].ID
+	})
+	return out, nil
+}
+
+// ErrNoTrashItem: the trash has no such file (emptied, or restored already).
+var ErrNoTrashItem = errors.New("the trash has no such file")
+
+// GetTrashItem is the file in the trash with that ID.
+func GetTrashItem(id string) (TrashItem, error) {
+	if trashDir() == "" || !trashID.MatchString(id) {
+		return TrashItem{}, ErrNoTrashItem
+	}
+	trashMu.Lock()
+	defer trashMu.Unlock()
+	return getTrashItem(id)
+}
+
+func getTrashItem(id string) (TrashItem, error) {
+	slot := filepath.Join(trashDir(), id)
+	at, err := strconv.ParseInt(strings.SplitN(id, "-", 2)[0], 10, 64)
+	if err != nil {
+		return TrashItem{}, ErrNoTrashItem
+	}
+	item, ok := readTrashItem(slot, time.Unix(at, 0))
+	if !ok {
+		return TrashItem{}, ErrNoTrashItem
+	}
+	return item, nil
+}
+
+// Why a restore is refused
+var (
+	ErrNotRestorable      = errors.New("the trash has no note of where it was")
+	ErrPathTaken          = errors.New("a file is in its place")
+	ErrReplacementChanged = errors.New("the file that replaced it has changed since")
+	ErrNoLibrary          = errors.New("it isn't in a library any more")
+)
+
+// RestoreFromTrash undoes a replace: the original goes back where it was, and the file that
+// replaced it goes back to the fixed copies as its fixed copy (it's listed as fixed again, to
+// replace again or play either way; listed as damaged when that file is gone). Its thumbnail comes
+// back if the Cleanup job deleted it. Refused when another file is in the original's place, or the
+// replacement changed. Moving the stored data back (database.MoveFile) is the caller's.
+func RestoreFromTrash(id string) (TrashItem, error) {
+	if trashDir() == "" || !trashID.MatchString(id) {
+		return TrashItem{}, ErrNoTrashItem
+	}
+	trashMu.Lock()
+	defer trashMu.Unlock()
+	item, err := getTrashItem(id)
+	if err != nil {
+		return item, err
+	}
+	if item.Path == "" {
+		return item, ErrNotRestorable
+	}
+	if _, ok := config.ClientPath(item.Path); !ok {
+		return item, ErrNoLibrary
+	}
+	slot := filepath.Join(trashDir(), id)
+	var note trashNote
+	if b, err := os.ReadFile(filepath.Join(slot, trashNoteFile)); err == nil {
+		json.Unmarshal(b, &note)
+	}
+	if item.Path != item.Replacement && fileExists(item.Path) {
+		return item, ErrPathTaken
+	}
+	hasCopy := false
+	if ri, err := os.Stat(item.Replacement); err == nil {
+		if ri.Size() != note.ReplacementSize {
+			return item, ErrReplacementChanged
+		}
+		hasCopy = true
+	}
+	key := config.CacheKey(item.Path)
+	fixed := fixedFile(key)
+	if hasCopy {
+		if err := os.MkdirAll(filepath.Dir(fixed), 0o700); err != nil {
+			return item, err
+		}
+		if err := moveFile(item.Replacement, fixed); err != nil {
+			return item, fmt.Errorf("moving the file that replaced it to the fixed copies: %w", err)
+		}
+	}
+	if err := moveFile(filepath.Join(slot, item.Name), item.Path); err != nil {
+		if hasCopy {
+			moveFile(fixed, item.Replacement) // back where it was
+		}
+		return item, fmt.Errorf("moving it back: %w", err)
+	}
+	if item.Thumbnail != "" {
+		if thumbs := config.GlobalConfig.Media.ThumbnailPath; thumbs != "" {
+			thumb, _ := GetThumbnailPath(thumbs, key, filepath.Ext(item.Thumbnail))
+			if !fileExists(thumb) && os.MkdirAll(filepath.Dir(thumb), 0o755) == nil {
+				copyFile(item.Thumbnail, thumb)
+			}
+		}
+	}
+	entry := repairEntry{Path: item.Path, State: RepairDamaged, Reason: note.Reason, Claimed: note.Claimed,
+		Checked: time.Now().Unix(), Version: repairChecks}
+	if info, err := os.Stat(item.Path); err == nil {
+		entry.Size, entry.ModTime = info.Size(), info.ModTime().Unix()
+	}
+	if hasCopy {
+		entry.State, entry.Duration = RepairFixed, note.Duration
+		if fi, err := os.Stat(fixed); err == nil {
+			entry.FixedSize = fi.Size()
+		}
+	}
+	repairIndex.mu.Lock()
+	loadRepairIndex()
+	repairIndex.entries[key] = entry
+	saveRepairIndex()
+	repairIndex.mu.Unlock()
+	if err := os.RemoveAll(slot); err != nil {
+		log.Printf("trash: %s: removing its folder: %v", id, err)
+	}
+	if !hasCopy {
+		item.Replacement = ""
+	}
+	log.Printf("repairs: restored %s from the trash", item.Path)
+	return item, nil
+}
+
 // Trash says what's in the trash.
 func Trash() (TrashInfo, error) {
 	var info TrashInfo
@@ -724,12 +993,9 @@ func Trash() (TrashInfo, error) {
 		return info, err
 	}
 	for slot, at := range slots {
-		files, _ := os.ReadDir(slot)
-		for _, f := range files {
-			if fi, err := f.Info(); err == nil && !f.IsDir() {
-				info.Files++
-				info.Bytes += fi.Size()
-			}
+		if fi, ok := slotFile(slot); ok {
+			info.Files++
+			info.Bytes += fi.Size()
 		}
 		if info.Oldest.IsZero() || at.Before(info.Oldest) {
 			info.Oldest = at
@@ -755,11 +1021,13 @@ func EmptyTrash(olderThan time.Duration) (int, error) {
 		if olderThan > 0 && time.Since(at) < olderThan {
 			continue
 		}
-		files, _ := os.ReadDir(slot)
+		_, has := slotFile(slot)
 		if err := os.RemoveAll(slot); err != nil {
 			return deleted, err
 		}
-		deleted += len(files)
+		if has {
+			deleted++
+		}
 	}
 	return deleted, nil
 }

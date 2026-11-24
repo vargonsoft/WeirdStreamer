@@ -3432,7 +3432,8 @@ async function backUpNow() {
 
 // Settings › Server › Damaged videos (GET /api/admin/damaged): videos with a broken seek index and
 // their fixed copies, each playable (the original as it is, or the fixed copy: POST
-// /api/admin/damaged/play) and replaceable by its fixed copy; and the trash of replaced originals.
+// /api/admin/damaged/play) and replaceable by its fixed copy; and the trash of replaced originals
+// (loadTrash).
 function clockText(seconds) {
     const s = Math.round(seconds || 0);
     return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -3440,13 +3441,12 @@ function clockText(seconds) {
 
 async function loadDamagedVideos() {
     const list = document.getElementById('damaged-list');
-    const trashStatus = document.getElementById('trash-status'), emptyBtn = document.getElementById('empty-trash-btn');
     let info;
     try {
         info = await api.request('/api/admin/damaged');
     } catch (e) {
         list.innerHTML = '';
-        trashStatus.textContent = "Couldn't read the damaged videos: " + e.message;
+        document.getElementById('damaged-message').textContent = "Couldn't read the damaged videos: " + e.message;
         return;
     }
     list.innerHTML = '';
@@ -3508,12 +3508,80 @@ async function loadDamagedVideos() {
     if (info.videos.some(v => v.state === 'fixing') && document.getElementById('damaged-list').isConnected) {
         loadDamagedVideos.timer = setTimeout(loadDamagedVideos, 3000);
     }
-    const t = info.trash;
+    loadTrash();
+}
+
+// The trash of replaced originals (GET /api/admin/trash), each with Restore (POST
+// /api/admin/trash/restore), which undoes its replace.
+async function loadTrash(t) {
+    const trashStatus = document.getElementById('trash-status'), emptyBtn = document.getElementById('empty-trash-btn');
+    const list = document.getElementById('trash-list');
+    if (!t) {
+        try {
+            t = await api.request('/api/admin/trash');
+        } catch (e) {
+            trashStatus.textContent = "Couldn't read the trash: " + e.message;
+            return;
+        }
+    }
     trashStatus.textContent = t.files
         ? `The trash holds ${t.files} replaced original${t.files === 1 ? '' : 's'} (${formatSize(t.bytes)}), each deleted ${t.days} days after it went in.`
         : `The trash is empty. Replaced originals are kept there ${t.days} days.`;
     emptyBtn.hidden = !t.files;
     emptyBtn.onclick = emptyTrash;
+    list.innerHTML = '';
+    const day = iso => new Date(iso).toLocaleDateString();
+    for (const item of t.items) {
+        const li = document.createElement('li');
+        const title = document.createElement('div');
+        title.className = 'damaged-name';
+        title.textContent = item.name;
+        const where = document.createElement('div');
+        where.className = 'settings-hint';
+        where.textContent = [item.library, item.folder].filter(Boolean).join(' › ') || 'Not in a library';
+        const sizes = document.createElement('div');
+        sizes.className = 'settings-hint';
+        sizes.textContent = `${formatSize(item.size)} · Replaced ${day(item.trashed_at)}`
+            + (item.replacement ? ` by ${item.replacement}` : '') + ` · Deleted ${day(item.deletes_at)}`;
+        const body = document.createElement('div');
+        body.className = 'damaged-body';
+        body.append(title, where, sizes);
+        if (item.restorable) {
+            const buttons = document.createElement('div');
+            buttons.className = 'damaged-buttons';
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'btn btn-secondary';
+            b.dataset.icon = 'replay';
+            b.innerHTML = '<span class="btn-label">Restore</span>';
+            b.onclick = () => restoreTrash(item);
+            buttons.appendChild(b);
+            body.append(buttons);
+        }
+        if (item.thumbnail_url) {
+            const img = document.createElement('img');
+            img.className = 'damaged-thumb';
+            img.src = item.thumbnail_url;
+            img.alt = '';
+            li.append(img);
+        }
+        li.append(body);
+        list.appendChild(li);
+    }
+    decorateIconButtons();
+}
+
+async function restoreTrash(item) {
+    const replaced = item.replacement ? `"${item.replacement}" goes back to the fixed copies, ` : '';
+    if (!confirm(`Restore "${item.name}"?\n\nIt goes back to its folder, ${replaced}and its watch progress goes back to it. It's listed with the damaged videos again.`)) return;
+    const message = document.getElementById('damaged-message');
+    try {
+        await api.request('/api/admin/trash/restore', { method: 'POST', body: JSON.stringify({ id: item.id }) });
+        message.textContent = `Restored: "${item.name}" is back in its folder.`;
+    } catch (e) {
+        message.textContent = e.message;
+    }
+    loadDamagedVideos();
 }
 
 async function playDamaged(v, original) {
@@ -3562,7 +3630,7 @@ async function emptyTrash() {
     } catch (e) {
         message.textContent = e.message;
     }
-    loadDamagedVideos();
+    loadTrash();
 }
 
 // Settings › Streaming › Hardware encoding: the server's GPUs and the encoders that passed its

@@ -15,7 +15,7 @@ import (
 )
 
 // Damaged videos (media/repair.go): Settings' list for admins, with Replace, and the trash of
-// replaced originals with Empty trash.
+// replaced originals, each with Restore, and Empty trash.
 
 // StartRepairs finds damaged videos and makes their fixed copies in the background, until ctx ends.
 func (h *MediaHandler) StartRepairs(ctx context.Context) {
@@ -44,31 +44,144 @@ type damagedVideo struct {
 	Error     string  `json:"error,omitempty"` // why it couldn't be fixed
 	Size      int64   `json:"size"`            // the original's
 	FixedSize int64   `json:"fixed_size,omitempty"`
-	Claimed   float64 `json:"claimed,omitempty"`  // the length the original says it has
-	Duration  float64 `json:"duration,omitempty"` // the fixed copy's real length
+	Claimed   float64 `json:"claimed,omitempty"`       // the length the original says it has
+	Duration  float64 `json:"duration,omitempty"`      // the fixed copy's real length
 	Thumbnail string  `json:"thumbnail_url,omitempty"` // its thumbnail, when the library has one
 }
 
-type trashReport struct {
-	Files  int    `json:"files"`
-	Bytes  int64  `json:"bytes"`
-	Oldest string `json:"oldest,omitempty"` // RFC 3339
-	Days   int    `json:"days"`             // how long it keeps a file
+// trashItem is a replaced original in the trash.
+type trashItem struct {
+	ID          string `json:"id"`                    // for restoring it
+	Name        string `json:"name"`                  // the file's name
+	Library     string `json:"library,omitempty"`     // its library's name
+	Folder      string `json:"folder"`                // the folder it was in ("" at its library's top)
+	Size        int64  `json:"size"`                  //
+	TrashedAt   string `json:"trashed_at"`            // RFC 3339
+	DeletesAt   string `json:"deletes_at"`            // when the trash deletes it
+	Reason      string `json:"reason,omitempty"`      // what was wrong with it
+	Replacement string `json:"replacement,omitempty"` // the name of the file that replaced it
+	Restorable  bool   `json:"restorable"`            // the trash knows where it goes back
+	Thumbnail   string `json:"thumbnail_url,omitempty"`
 }
 
+type trashReport struct {
+	Items []trashItem `json:"items"`
+	Files int         `json:"files"`
+	Bytes int64       `json:"bytes"`
+	Days  int         `json:"days"` // how long it keeps a file
+}
+
+const rfc3339 = "2006-01-02T15:04:05Z"
+
 func trashState() trashReport {
-	info, err := media.Trash()
+	items, err := media.TrashItems()
 	if err != nil {
 		log.Printf("trash: %v", err)
 	}
-	out := trashReport{Files: info.Files, Bytes: info.Bytes, Days: media.TrashDays}
-	if !info.Oldest.IsZero() {
-		out.Oldest = info.Oldest.UTC().Format("2006-01-02T15:04:05Z")
+	out := trashReport{Items: []trashItem{}, Days: media.TrashDays}
+	for _, t := range items {
+		item := trashItem{ID: t.ID, Name: t.Name, Size: t.Size, Reason: t.Reason,
+			TrashedAt: t.At.UTC().Format(rfc3339), DeletesAt: t.Deletes().UTC().Format(rfc3339)}
+		if t.Path != "" {
+			if lib, ok := libraryForPath(t.Path); ok {
+				item.Library, item.Restorable = lib.Name, true
+				if rel, err := filepath.Rel(lib.Path, filepath.Dir(t.Path)); err == nil && rel != "." {
+					item.Folder = filepath.ToSlash(rel)
+				}
+			}
+			item.Replacement = filepath.Base(t.Replacement)
+		}
+		if t.Thumbnail != "" {
+			item.Thumbnail = "/api/admin/trash/thumbnail?id=" + t.ID
+		}
+		out.Items = append(out.Items, item)
+		out.Files++
+		out.Bytes += t.Size
 	}
 	return out
 }
 
-// DamagedVideos lists the damaged videos and the trash (GET /api/admin/damaged).
+// TrashList lists the replaced originals in the trash (GET /api/admin/trash).
+func (h *MediaHandler) TrashList(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(w, r) {
+		return
+	}
+	respondJSON(w, http.StatusOK, trashState())
+}
+
+// TrashThumbnail serves the copy of a trashed original's thumbnail kept in the trash (GET
+// /api/admin/trash/thumbnail?id=), to admins only.
+func (h *MediaHandler) TrashThumbnail(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(w, r) {
+		return
+	}
+	item, err := media.GetTrashItem(r.URL.Query().Get("id"))
+	if err != nil || item.Thumbnail == "" {
+		respondError(w, http.StatusNotFound, "No thumbnail")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	http.ServeFile(w, r, item.Thumbnail)
+}
+
+// RestoreTrash undoes a replace (POST /api/admin/trash/restore with {"id"}): the original goes
+// back to its place in the library with its progress and the rest, and the file that replaced it
+// back to the fixed copies (listed as fixed again). Refused while another file is in its place, or
+// someone else is playing the file that replaced it. Answers {"path": the original's client path}.
+func (h *MediaHandler) RestoreTrash(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(w, r) {
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request")
+		return
+	}
+	item, err := media.GetTrashItem(req.ID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "It isn't in the trash any more")
+		return
+	}
+	me := ""
+	if claims := auth.GetClaims(r.Context()); claims != nil {
+		me = claims.Username
+	}
+	if item.Replacement != "" && playing(h.streams, item.Replacement, me) {
+		respondError(w, http.StatusConflict, "Someone is playing "+filepath.Base(item.Replacement)+": try again when they've stopped")
+		return
+	}
+	item, err = media.RestoreFromTrash(req.ID)
+	switch {
+	case errors.Is(err, media.ErrNoTrashItem):
+		respondError(w, http.StatusNotFound, "It isn't in the trash any more")
+		return
+	case errors.Is(err, media.ErrNotRestorable), errors.Is(err, media.ErrNoLibrary):
+		respondError(w, http.StatusConflict, "Can't restore it: "+err.Error())
+		return
+	case errors.Is(err, media.ErrPathTaken):
+		respondError(w, http.StatusConflict, "Can't restore it: a file named "+item.Name+" is in its place")
+		return
+	case errors.Is(err, media.ErrReplacementChanged):
+		respondError(w, http.StatusConflict, "Can't restore it: "+filepath.Base(item.Replacement)+" has changed since it replaced it")
+		return
+	case err != nil:
+		log.Printf("[REPAIRS] Restoring %s: %v", item.Path, err)
+		respondError(w, http.StatusInternalServerError, "Couldn't restore it: "+withoutDiskPath(withoutDiskPath(err.Error(), item.Path), item.Replacement))
+		return
+	}
+	if item.Replacement != "" && item.Replacement != item.Path {
+		if err := h.db.MoveFile(item.Replacement, clientPath(item.Replacement), clientPath(item.Path)); err != nil {
+			log.Printf("[REPAIRS] %s: moving its progress and the rest back: %v", item.Path, err)
+		}
+		h.thumbnailGenerator.Forget(item.Replacement)
+	}
+	go h.scan() // the original joins the library again (and the replacement leaves it)
+	respondJSON(w, http.StatusOK, map[string]any{"path": clientPath(item.Path)})
+}
+
+// DamagedVideos lists the damaged videos (GET /api/admin/damaged; the trash is GET /api/admin/trash).
 func (h *MediaHandler) DamagedVideos(w http.ResponseWriter, r *http.Request) {
 	if !isAdmin(w, r) {
 		return
@@ -85,7 +198,7 @@ func (h *MediaHandler) DamagedVideos(w http.ResponseWriter, r *http.Request) {
 			Size: v.Size, FixedSize: v.FixedSize, Claimed: v.Claimed, Duration: v.Duration,
 			Thumbnail: h.thumbnailOf(v.Path)})
 	}
-	respondJSON(w, http.StatusOK, map[string]any{"videos": list, "trash": trashState()})
+	respondJSON(w, http.StatusOK, map[string]any{"videos": list})
 }
 
 // ReplaceDamaged puts a damaged video's fixed copy in its place, as .mkv, its progress and the rest
@@ -132,7 +245,7 @@ func (h *MediaHandler) ReplaceDamaged(w http.ResponseWriter, r *http.Request) {
 	}
 	h.thumbnailGenerator.Forget(path)
 	go h.scan() // the new file joins the library (and the old one leaves it)
-	respondJSON(w, http.StatusOK, map[string]any{"path": clientPath(newPath), "trash": trashState()})
+	respondJSON(w, http.StatusOK, map[string]any{"path": clientPath(newPath)})
 }
 
 // playing says whether someone else is playing or streaming path now: not a stream gone idle (kept
@@ -179,7 +292,8 @@ func (h *MediaHandler) FixDamaged(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusAccepted, map[string]any{"state": "fixing"})
 }
 
-// EmptyTrash deletes every replaced original in the trash (POST /api/admin/trash/empty).
+// EmptyTrash deletes every replaced original in the trash (POST /api/admin/trash/empty), answering
+// the trash as GET /api/admin/trash does.
 func (h *MediaHandler) EmptyTrash(w http.ResponseWriter, r *http.Request) {
 	if !isAdmin(w, r) {
 		return
@@ -193,7 +307,7 @@ func (h *MediaHandler) EmptyTrash(w http.ResponseWriter, r *http.Request) {
 	if n > 0 {
 		log.Printf("trash: emptied by an admin (%d file(s))", n)
 	}
-	respondJSON(w, http.StatusOK, map[string]any{"trash": trashState()})
+	respondJSON(w, http.StatusOK, trashState())
 }
 
 // An admin comparing a damaged video's original with its fixed copy plays the original as it is

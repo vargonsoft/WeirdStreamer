@@ -673,23 +673,36 @@ data class DamagedVideo(
     val fixing get() = state == "fixing"
 }
 
-/** The trash of replaced originals: deleted [days] after they went in. */
+/** A replaced original in the trash (GET /api/admin/trash), which Restore puts back. */
+data class TrashItem(
+    @SerializedName("id") val id: String = "",
+    @SerializedName("name") val name: String = "",
+    @SerializedName("library") val library: String = "",
+    @SerializedName("folder") val folder: String = "",
+    @SerializedName("size") val size: Long = 0,
+    @SerializedName("trashed_at") val trashedAt: String = "", // RFC 3339
+    @SerializedName("deletes_at") val deletesAt: String = "",
+    @SerializedName("reason") val reason: String = "",
+    @SerializedName("replacement") val replacement: String = "", // the name of the file that replaced it
+    @SerializedName("restorable") val restorable: Boolean = false,
+    @SerializedName("thumbnail_url") val thumbnailUrl: String? = null,
+)
+
+/** The trash of replaced originals: deleted [days] after they went in (GET /api/admin/trash, and Empty's answer). */
 data class TrashReport(
+    @SerializedName("items") val items: List<TrashItem>? = null,
     @SerializedName("files") val files: Int = 0,
     @SerializedName("bytes") val bytes: Long = 0,
-    @SerializedName("oldest") val oldest: String? = null,
     @SerializedName("days") val days: Int = 30,
 )
 
 data class DamagedList(
     @SerializedName("videos") val videos: List<DamagedVideo>? = null,
-    @SerializedName("trash") val trash: TrashReport? = null,
 )
 
-/** Replace's answer (the new file's client path) and Empty trash's: the trash now. */
+/** Replace's and Restore's answer: the client path of the file now in the library. */
 data class DamagedReplaced(
     @SerializedName("path") val path: String? = null,
-    @SerializedName("trash") val trash: TrashReport? = null,
 )
 
 data class HardwareReport(
