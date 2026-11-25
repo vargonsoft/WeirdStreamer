@@ -224,6 +224,8 @@ func main() {
 	// Protected API routes
 	// Active stream count for tools on this machine (loopback only; no login, no file names)
 	r.HandleFunc("/local/streams", mediaHandler.LocalStreamSummary).Methods("GET")
+	r.HandleFunc("/local/stop", mediaHandler.LocalShutdown).Methods("POST")
+	r.HandleFunc("/local/restart", mediaHandler.LocalShutdown).Methods("POST")
 
 	api := r.PathPrefix("/api").Subrouter()
 	api.Use(authHandler.AuthMiddleware)
@@ -394,8 +396,29 @@ func main() {
 		}
 	}()
 
-	<-ctx.Done()
+	// cli server stop|restart (POST /local/stop|restart) ends it as a stop signal does.
+	restart := make(chan bool, 1)
+	handlers.Shutdown = func(again bool) {
+		select {
+		case restart <- again:
+		default:
+		}
+	}
+	again := false
+	select {
+	case <-ctx.Done():
+	case again = <-restart:
+		if again {
+			log.Printf("Restarting (cli server restart)")
+		} else {
+			log.Printf("Stopping (cli server stop)")
+		}
+	}
+	stop() // the background jobs stop as on a signal
 	shutdown(srv, db)
+	if again {
+		os.Exit(handlers.RestartExitCode)
+	}
 }
 
 // shutdown stops the server cleanly: requests get a few seconds to finish (streams, which never

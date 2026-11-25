@@ -3,7 +3,8 @@
 # server.logsPath folder of config.yml
 # (server-<start time>.log), and only the last 20 are kept. The server itself keeps auth.log and
 # access.log there (internal/logs).
-# When restart-live.sh stops it, it starts again with the new binary (bin/server); Ctrl-C (or a crash) ends it.
+# When restart-live.sh stops it, or it exits to restart (cli server restart: exit status 3), it
+# starts again with bin/server as it is then; Ctrl-C (or a crash) ends it.
 cd "$(dirname "$0")/.."
 umask 077 # the logs are for the server's account only
 # The server's own ffmpeg (scripts/build-ffmpeg.sh), when built, comes before the system's.
@@ -18,7 +19,8 @@ while true; do
     log="$logs/server-$(date '+%F_%H%M%S').log"
     ls -1t "$logs"/server-*.log 2>/dev/null | tail -n +20 | xargs -r rm -f
     ./bin/server 2>&1 | tee -a "$log"
-    if [ -e "$marker" ]; then
+    status=${PIPESTATUS[0]}
+    if [ -e "$marker" ] || [ "$status" = 3 ]; then
         rm -f "$marker"
         echo "=== restarting with the new server ($(date '+%F %T')) ===" | tee -a "$log"
         continue

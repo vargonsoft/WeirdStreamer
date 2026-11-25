@@ -59,6 +59,10 @@ func main() {
 		handleBackupCommand(os.Args[2:])
 		return
 	}
+	if os.Args[1] == "server" {
+		handleServerCommand(os.Args[2:], configPath)
+		return
+	}
 	// Ensure database directory exists
 	userDBDir := filepath.Dir(config.GlobalConfig.Database.UserPath)
 	if err := os.MkdirAll(userDBDir, 0755); err != nil {
@@ -121,6 +125,9 @@ func printUsage() {
 	fmt.Println("  cli config list-paths                                  - List media directories")
 	fmt.Println("  cli config set-cjk-font <path>                         - Set media.cjkFontPath (\"\" for the default)")
 	fmt.Println("  cli config set-subset-command <command>                - Set media.subsetCommand (\"\" for the default)")
+	fmt.Println("  cli server restart [--force]                           - Restart the server running here (no root needed;")
+	fmt.Println("                                                           --force even while someone is watching)")
+	fmt.Println("  cli server stop [--force]                              - Stop it (a service starts it again only when told)")
 	fmt.Println("  cli backup now                                         - Back up the databases and config.yml now")
 	fmt.Println("  cli backup list                                        - List the backups (database.backupPath)")
 	fmt.Println("  cli backup restore <file> [--with-config]              - Put a backup's databases back (the server")

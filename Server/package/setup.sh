@@ -134,6 +134,9 @@ ExecStart="$dir/bin/server"
 TimeoutStopSec=20
 Restart=on-failure
 RestartSec=5
+# cli server restart exits with status 3: a clean exit, started again
+SuccessExitStatus=3
+RestartForceExitStatus=3
 $hardening
 $caps
 
@@ -155,6 +158,7 @@ EOF
     echo "Its output: journalctl -u $service -f. Its auth and access logs are in config.yml's server.logsPath."
     service_running=1
     echo "Stop it with: sudo systemctl stop $service. Remove it with: ./setup.sh remove-service"
+    echo "Restart it (no sudo needed) with: bin/cli server restart"
 }
 
 # macOS: a launchd daemon in /Library/LaunchDaemons, run as this user, started at boot (before
@@ -192,7 +196,7 @@ install_launchd() {
     </dict>
     <key>RunAtLoad</key>
     <true/>
-    <!-- Started again if it stops on an error, not when it's stopped -->
+    <!-- Started again if it stops on an error or to restart (cli server restart: status 3), not when it's stopped -->
     <key>KeepAlive</key>
     <dict>
         <key>SuccessfulExit</key>
@@ -230,6 +234,7 @@ PLIST
     echo "login (Finder) aren't there at boot: until they're mounted, the libraries on them are empty."
     service_running=1
     echo "Stop it with: sudo launchctl bootout system/$label. Remove it with: ./setup.sh remove-service"
+    echo "Restart it (no sudo needed) with: bin/cli server restart"
 }
 
 remove_service() {

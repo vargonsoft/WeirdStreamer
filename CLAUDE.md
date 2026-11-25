@@ -147,6 +147,13 @@ for each TODO item are at the end of this file.
   the server writes to `local.key` beside config.yml at each start (`X-Local-Key`; 0600, so a proxy
   on this machine can't). It refuses if the server wasn't started by `live.sh`; then the user has to stop it
   and run `scripts/live.sh` in that tab.
+- `cli server restart|stop [--force]` (no root needed: the server's own account) asks the server
+  running with this config to restart or stop, through `POST /local/restart|stop` (loopback and
+  `local.key`, like `/local/streams`; refused with the streams, exit 2, while anyone is watching
+  unless `--force`). A restart shuts down cleanly and exits with status 3
+  (`handlers.RestartExitCode`): systemd's `Restart=on-failure` (setup.sh's unit also has
+  `SuccessExitStatus=3` and `RestartForceExitStatus=3`), launchd's `KeepAlive` and `live.sh` start it
+  again; a stop exits 0, which none of them restart.
 - Server tests: `cd Server/src && go vet ./internal/... ./cmd/... && go test ./internal/...`.
   Don't use `./...`: stray `main` files in `Server/src/` (`test_auth.go`, `test_login.go`) break it.
   The Go module is in `Server/src/`; binaries build into `Server/bin/` (`make build`, `scripts/build.sh`,

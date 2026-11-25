@@ -172,8 +172,6 @@ func (h *MediaHandler) ListStreams(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, list)
 }
 
-// LocalStreamSummary says how many streams are active, without what is playing, to tools on the
-// server itself (checking before a restart). It answers only loopback connections.
 var localKey string
 
 // WriteLocalKey makes a new random key for the /local endpoints and writes it to path, readable by
@@ -198,32 +196,77 @@ func LocalKeyMatches(r *http.Request) bool {
 	return localKey != "" && subtle.ConstantTimeCompare([]byte(got), []byte(localKey)) == 1
 }
 
-func (h *MediaHandler) LocalStreamSummary(w http.ResponseWriter, r *http.Request) {
-	// The connection's own address (a forwarded one could claim to be local), and the key only
-	// the server's account can read: a proxy on this machine makes every request local.
-	if ip := net.ParseIP(clientip.Peer(r)); ip == nil || !ip.IsLoopback() || !LocalKeyMatches(r) {
-		http.NotFound(w, r)
-		return
-	}
-	type entry struct {
-		User       string `json:"user"`
-		Client     string `json:"client"`
-		State      string `json:"state"`
-		Mode       string `json:"mode"`
-		SecondsAgo int    `json:"seconds_since_activity"`
-	}
-	summary := struct {
-		Active  int     `json:"active"` // playing, paused or streaming
-		Streams []entry `json:"streams"`
-	}{Streams: []entry{}}
+// localRequest says whether a request may use the /local endpoints: the connection's own address
+// is this machine's (a forwarded one could claim to be local), and it carries the key only the
+// server's account can read (a proxy on this machine makes every request local).
+func localRequest(r *http.Request) bool {
+	ip := net.ParseIP(clientip.Peer(r))
+	return ip != nil && ip.IsLoopback() && LocalKeyMatches(r)
+}
+
+// localStreams is the streams' summary the /local endpoints give, without what is playing.
+type localStreams struct {
+	Active  int               `json:"active"` // playing, paused or streaming
+	Streams []localStreamLine `json:"streams"`
+}
+
+type localStreamLine struct {
+	User       string `json:"user"`
+	Client     string `json:"client"`
+	State      string `json:"state"`
+	Mode       string `json:"mode"`
+	SecondsAgo int    `json:"seconds_since_activity"`
+}
+
+func (h *MediaHandler) localStreams() localStreams {
+	summary := localStreams{Streams: []localStreamLine{}}
 	for _, s := range h.streams.List() {
 		if s.State != "idle" {
 			summary.Active++
 		}
-		summary.Streams = append(summary.Streams, entry{User: s.User, Client: s.Client, State: s.State, Mode: s.Mode,
-			SecondsAgo: int(time.Since(s.LastActivity).Seconds())})
+		summary.Streams = append(summary.Streams, localStreamLine{User: s.User, Client: s.Client, State: s.State,
+			Mode: s.Mode, SecondsAgo: int(time.Since(s.LastActivity).Seconds())})
 	}
-	respondJSON(w, http.StatusOK, summary)
+	return summary
+}
+
+// LocalStreamSummary says how many streams are active, without what is playing, to tools on the
+// server itself (checking before a restart).
+func (h *MediaHandler) LocalStreamSummary(w http.ResponseWriter, r *http.Request) {
+	if !localRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+	respondJSON(w, http.StatusOK, h.localStreams())
+}
+
+// Shutdown, set by the server's main, stops the server cleanly; with restart, it exits with
+// RestartExitCode so whatever runs it (systemd, launchd, live.sh) starts it again.
+var Shutdown func(restart bool)
+
+// RestartExitCode is the server's exit status when it stops to be started again (cli server
+// restart): not 0, so systemd's Restart=on-failure and launchd's KeepAlive start it again.
+const RestartExitCode = 3
+
+// LocalShutdown stops (POST /local/stop) or restarts (POST /local/restart) the server, for
+// `cli server stop|restart` on the server itself. While anyone is watching it refuses (409, with
+// the streams) unless ?force=1.
+func (h *MediaHandler) LocalShutdown(w http.ResponseWriter, r *http.Request) {
+	if !localRequest(r) || Shutdown == nil {
+		http.NotFound(w, r)
+		return
+	}
+	streams := h.localStreams()
+	if streams.Active > 0 && r.URL.Query().Get("force") != "1" {
+		respondJSON(w, http.StatusConflict, streams)
+		return
+	}
+	restart := strings.HasSuffix(r.URL.Path, "/restart")
+	respondJSON(w, http.StatusAccepted, map[string]bool{"restart": restart})
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	go Shutdown(restart)
 }
 
 // GetDisc describes a DVD disc image's titles (chapters, angles, audio and subtitle tracks), for
