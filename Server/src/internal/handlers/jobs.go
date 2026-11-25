@@ -30,11 +30,15 @@ type trickplaySettings struct {
 	MaxRunners      int `json:"max_runners"`
 	MaxFrames       int `json:"max_frames"`
 	MaxProduct      int `json:"max_product"` // runners times frames per runner
+	// For the estimate beside the settings: runners × (process + frames × frame) for 4K videos, and
+	// the frames a 4K video's batch is cut to when that's more than the budget.
+	Memory media.TrickplayMemory `json:"memory"`
 }
 
 func currentTrickplaySettings() trickplaySettings {
 	return trickplaySettings{Runners: config.TrickplayRunners(), FramesPerRunner: config.TrickplayFramesPerRunner(),
-		MaxRunners: config.MaxTrickplayRunners, MaxFrames: config.MaxTrickplayFrames, MaxProduct: config.MaxTrickplayProduct}
+		MaxRunners: config.MaxTrickplayRunners, MaxFrames: config.MaxTrickplayFrames, MaxProduct: config.MaxTrickplayProduct,
+		Memory: media.CurrentTrickplayMemory()}
 }
 
 // ListJobs returns the background jobs' status (admins).

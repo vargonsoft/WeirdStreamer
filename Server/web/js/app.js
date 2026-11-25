@@ -6429,15 +6429,30 @@ function renderTrickplaySettings(tp) {
     trickplayHint();
 }
 
-// Each frame in a batch holds its own decoder: about 110 MB (25 frames took 2.8 GB).
 function trickplayHint() {
     const tp = jobsView && jobsView.data && jobsView.data.trickplay;
     if (!tp) return;
     const r = Number(document.getElementById('tp-runners').value) || 0;
     const f = Number(document.getElementById('tp-frames').value) || 0;
-    document.getElementById('tp-hint').textContent =
-        `${r} × ${f} = ${r * f} frames at once, about ${(r * f * 0.11).toFixed(1)} GB of memory at most. ` +
-        `Runners 1 to ${tp.max_runners}, frames per runner 1 to ${tp.max_frames}, and at most ${tp.max_product} frames at once.`;
+    document.getElementById('tp-hint').textContent = trickplayMemoryText(r, f, tp.memory) +
+        ` Runners 1 to ${tp.max_runners}, frames per runner 1 to ${tp.max_frames}, and at most ${tp.max_product} frames at once.`;
+}
+
+// The memory r runners of f frames take with 4K videos (each frame in a batch holds a decoder of its
+// own: about 230 MB at 4K), against the server's: past half of it, the server makes 4K videos
+// fewer frames at a time. As the apps' trickplayNote.
+function trickplayMemoryText(r, f, m) {
+    const gb = bytes => (bytes / 2 ** 30).toFixed(1);
+    let text = `${r} × ${f} = ${r * f} frames at once.`;
+    if (!m || !m.frame_bytes_4k) return text;
+    const estimate = r * (m.process_bytes_4k + f * m.frame_bytes_4k);
+    text += ` With 4K videos about ${gb(estimate)} GB of memory at most`;
+    if (!m.total_bytes) return text + '.';
+    if (estimate <= m.budget_bytes) return text + ` (this server has ${gb(m.total_bytes)} GB).`;
+    const fits = Math.max(1, Math.floor((m.budget_bytes / Math.max(r, 1) - m.process_bytes_4k) / m.frame_bytes_4k));
+    if (fits >= f) return text + `, more than half of this server's ${gb(m.total_bytes)} GB: fewer runners would fit.`;
+    return text + `, more than half of this server's ${gb(m.total_bytes)} GB: 4K videos are made ` +
+        `${fits} frame${fits === 1 ? '' : 's'} at a time instead (smaller videos more).`;
 }
 
 async function saveTrickplaySettings() {

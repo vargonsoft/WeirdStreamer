@@ -81,6 +81,20 @@ struct APIContractTests {
         #expect(a.languages == ["en", "fr"])
     }
 
+    @Test func trickplayMemory() throws {
+        // GET /api/admin/jobs: trickplay's settings with media.TrickplayMemory (4 GB server, 2 GB budget).
+        let jobs = try decode(JobsResponse.self, #"""
+        {"jobs":[],"trickplay":{"runners":3,"frames_per_runner":25,"max_runners":8,"max_frames":50,"max_product":100,
+         "memory":{"process_bytes_4k":62914560,"frame_bytes_4k":238814720,"total_bytes":4294967296,"budget_bytes":2147483648}}}
+        """#)
+        let m = try #require(jobs.trickplay?.memory)
+        #expect(m.frameBytes4K == 238_814_720 && m.totalBytes == 4_294_967_296 && m.budgetBytes == 2_147_483_648)
+        let text = trickplayMemoryText(3, 25, m)
+        #expect(text.contains("about 16.9 GB") && text.contains("made 2 frames at a time"))
+        #expect(trickplayMemoryText(1, 2, m).contains("(this server has 4.0 GB)"))
+        #expect(trickplayMemoryText(8, 1, m).hasSuffix("fewer runners would fit."))
+    }
+
     @Test func backupList() throws {
         // As the server writes it: Go's times have nanoseconds.
         let list = try decode(BackupList.self, #"{"folder":"/srv/ws/var/backups","next":"2026-11-24T04:00:00-05:00","backups":[{"name":"weirdstreamer-backup-20261123-184226.tar.gz","size":212664,"created":"2026-11-23T18:42:26.123456789-05:00"}]}"#)

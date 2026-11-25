@@ -556,11 +556,27 @@ internal const val JOBS_ABOUT = "Jobs run at low priority, so playback gets the 
     "is busy (or, with the setting under Streaming, while anyone is streaming). Pause holds a job until you resume it, " +
     "or the server restarts."
 
-/** The trickplay settings' sum: frames at once, their memory, and the limits. */
+/** The trickplay settings' sum: frames at once, their memory with 4K videos, and the limits. */
 internal fun trickplayNote(runners: Int, frames: Int, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings) =
-    // Each frame in a batch holds its own decoder: about 110 MB (25 frames took 2.8 GB).
-    "$runners × $frames = ${runners * frames} frames at once, about ${String.format(Locale.US, "%.1f", runners * frames * 0.11)} GB of memory at most. " +
-        "Runners 1 to ${tp.maxRunners}, frames per runner 1 to ${tp.maxFrames}, and at most ${tp.maxProduct} frames at once."
+    trickplayMemoryText(runners, frames, tp.memory) +
+        " Runners 1 to ${tp.maxRunners}, frames per runner 1 to ${tp.maxFrames}, and at most ${tp.maxProduct} frames at once."
+
+/** The memory [r] runners of [f] frames take with 4K videos (each frame in a batch holds a decoder of its own:
+ *  about 230 MB at 4K), against the server's: past half of it, the server makes 4K videos fewer frames at a
+ *  time. As the web's trickplayMemoryText. */
+internal fun trickplayMemoryText(r: Int, f: Int, m: com.vargon.weirdstreamer.api.models.TrickplayMemory?): String {
+    fun gb(bytes: Long) = String.format(Locale.US, "%.1f", bytes / 1073741824.0)
+    val text = "$r × $f = ${r * f} frames at once."
+    if (m == null || m.frameBytes4k <= 0) return text
+    val estimate = r * (m.processBytes4k + f * m.frameBytes4k)
+    val with4k = "$text With 4K videos about ${gb(estimate)} GB of memory at most"
+    if (m.totalBytes <= 0) return "$with4k."
+    if (estimate <= m.budgetBytes) return "$with4k (this server has ${gb(m.totalBytes)} GB)."
+    val fits = maxOf(1L, (m.budgetBytes / maxOf(r, 1) - m.processBytes4k) / m.frameBytes4k)
+    if (fits >= f) return "$with4k, more than half of this server's ${gb(m.totalBytes)} GB: fewer runners would fit."
+    return "$with4k, more than half of this server's ${gb(m.totalBytes)} GB: 4K videos are made " +
+        "$fits frame${if (fits == 1L) "" else "s"} at a time instead (smaller videos more)."
+}
 
 internal fun loadText(l: JobLoad): String {
     fun pct(f: Double) = "${(f * 100).roundToInt()}%"

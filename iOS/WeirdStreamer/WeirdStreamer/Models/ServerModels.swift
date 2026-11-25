@@ -608,6 +608,34 @@ struct TrickplaySettings: Decodable {
     let maxRunners: Int?
     let maxFrames: Int?
     let maxProduct: Int?
+    let memory: TrickplayMemory?
+}
+
+/// For the estimate beside the trickplay settings: an ffmpeg process and each frame of its batch for a 4K
+/// video, the server's memory and the half of it trickplay keeps within (0 when unknown).
+struct TrickplayMemory: Decodable {
+    let processBytes4K: Int64?
+    let frameBytes4K: Int64?
+    let totalBytes: Int64?
+    let budgetBytes: Int64?
+}
+
+/// The memory `r` runners of `f` frames take with 4K videos (each frame in a batch holds a decoder of its own:
+/// about 230 MB at 4K), against the server's: past half of it, the server makes 4K videos fewer frames at a
+/// time. As Android's trickplayMemoryText.
+func trickplayMemoryText(_ r: Int, _ f: Int, _ m: TrickplayMemory?) -> String {
+    func gb(_ bytes: Int64) -> String { String(format: "%.1f", Double(bytes) / 1_073_741_824) }
+    let text = "\(r) × \(f) = \(r * f) frames at once."
+    guard let m, let process = m.processBytes4K, let frame = m.frameBytes4K, frame > 0 else { return text }
+    let estimate = Int64(r) * (process + Int64(f) * frame)
+    let with4k = "\(text) With 4K videos about \(gb(estimate)) GB of memory at most"
+    guard let total = m.totalBytes, total > 0 else { return with4k + "." }
+    let budget = m.budgetBytes ?? 0
+    if estimate <= budget { return with4k + " (this server has \(gb(total)) GB)." }
+    let fits = max(1, (budget / Int64(max(r, 1)) - process) / frame)
+    if fits >= Int64(f) { return with4k + ", more than half of this server's \(gb(total)) GB: fewer runners would fit." }
+    return with4k + ", more than half of this server's \(gb(total)) GB: 4K videos are made " +
+        "\(fits) frame\(fits == 1 ? "" : "s") at a time instead (smaller videos more)."
 }
 
 struct JobsResponse: Decodable {

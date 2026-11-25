@@ -83,7 +83,8 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 	// A damaged video's frames come from its fixed copy (src); what's kept is keyed by videoPath.
 	src := Playable(videoPath)
 
-	duration, codec, err := tg.getVideoInfo(src)
+	info, err := tg.getVideoInfo(src)
+	duration, codec := info.Duration, info.Codec
 	if errors.Is(err, errUnreadableMedia) && ctx.Err() == nil && readable(videoPath) && ffmpegMissing() == "" {
 		// Every way of reading it failed, but the file is there and reads (so it's not the share):
 		// not a video (code named .ts, say, or a corrupt file). Marked done, it isn't tried again.
@@ -113,9 +114,10 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 		return err
 	}
 
-	// Generate frames every 10 seconds, in batches of config.TrickplayFramesPerRunner (one ffmpeg
-	// process each, read for every batch so a change applies at once). A frame a batch doesn't
-	// make is tried again on its own, so a failure is judged as it always was.
+	// Generate frames every 10 seconds, in batches of config.TrickplayFramesPerRunner, or fewer when
+	// that wouldn't fit in memory (one ffmpeg process each, read for every batch so a change applies
+	// at once). A frame a batch doesn't make is tried again on its own, so a failure is judged as it
+	// always was.
 	var pending []int
 	failures, lastGood := 0, -1
 	for i := 0; i <= int(duration)-1; i += 10 {
@@ -131,6 +133,12 @@ loop:
 			return ctx.Err()
 		}
 		n := min(config.TrickplayFramesPerRunner(), len(pending))
+		// No more than fit in memory with every runner making a batch like it (a 4K video gets far
+		// fewer frames at once than a 1080p one: each frame holds a decoder of its own).
+		if limit := trickplayBatchLimit(info.Width, info.Height, heavyDecoder(info.Codec, info.PixFmt),
+			config.TrickplayRunners(), trickplayBudget(SystemMemory())); limit > 0 {
+			n = min(n, limit)
+		}
 		batch := pending[:n]
 		pending = pending[n:]
 		made := tg.extractBatch(ctx, src, trickplayVideoDir, codec, batch)
@@ -264,12 +272,20 @@ func isSupportedVideo(path string) bool {
 	return config.IsVideo(path)
 }
 
-func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, error) {
+// videoInfo is what making a video's frames needs to know: its length (seconds), video codec, and
+// picture size and pixel format (for the memory a batch takes).
+type videoInfo struct {
+	Duration      float64
+	Codec, PixFmt string
+	Width, Height int
+}
+
+func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (videoInfo, error) {
 	cmd := backgroundCommand(context.Background(), "ffprobe",
 		"-v", "error",
 		"-select_streams", "v:0",
-		"-show_entries", "stream=codec_name,duration:format=duration",
-		"-of", "default=noprint_wrappers=1:nokey=1",
+		"-show_entries", "stream=codec_name,width,height,pix_fmt,duration:format=duration",
+		"-of", "default=noprint_wrappers=1",
 		videoPath,
 	)
 
@@ -279,35 +295,52 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (float64, string, e
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.Exited() {
 			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-			return 0, "", fmt.Errorf("%w: ffprobe failed: %s", errUnreadableMedia, lines[len(lines)-1]) // its summary
+			return videoInfo{}, fmt.Errorf("%w: ffprobe failed: %s", errUnreadableMedia, lines[len(lines)-1]) // its summary
 		}
-		return 0, "", fmt.Errorf("ffprobe failed: %v %s", err, string(output))
+		return videoInfo{}, fmt.Errorf("ffprobe failed: %v %s", err, string(output))
 	}
 
-	// The codec and the duration, in whatever order and with whatever repeats ffprobe prints them
-	// (a transport stream can list its video stream more than once). The duration is the shorter of
-	// the video's and the file's: the file's is its longest stream's, which can be an audio stream
-	// that runs on past the video, or whose header claims days.
-	var codec string
-	var duration float64
+	// key=value lines, in whatever order and with whatever repeats ffprobe prints them (a transport
+	// stream can list its video stream more than once). The duration is the shorter of the video's
+	// and the file's: the file's is its longest stream's, which can be an audio stream that runs on
+	// past the video, or whose header claims days.
+	var info videoInfo
 	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-		line = strings.TrimSpace(line)
-		if d, err := strconv.ParseFloat(line, 64); err == nil {
-			if d > 0 && (duration == 0 || d < duration) {
-				duration = d
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok || value == "" || value == "N/A" {
+			continue
+		}
+		switch key {
+		case "duration":
+			if d, err := strconv.ParseFloat(value, 64); err == nil && d > 0 && (info.Duration == 0 || d < info.Duration) {
+				info.Duration = d
 			}
-		} else if codec == "" && line != "" && line != "N/A" {
-			codec = line
+		case "codec_name":
+			if info.Codec == "" {
+				info.Codec = value
+			}
+		case "pix_fmt":
+			if info.PixFmt == "" {
+				info.PixFmt = value
+			}
+		case "width":
+			if info.Width == 0 {
+				info.Width, _ = strconv.Atoi(value)
+			}
+		case "height":
+			if info.Height == 0 {
+				info.Height, _ = strconv.Atoi(value)
+			}
 		}
 	}
-	if duration <= 0 {
-		duration = PacketDuration(videoPath) // a header without a length
+	if info.Duration <= 0 {
+		info.Duration = PacketDuration(videoPath) // a header without a length
 	}
-	if duration <= 0 {
-		return 0, "", fmt.Errorf("%w: ffprobe gave no duration, nor its packets", errUnreadableMedia)
+	if info.Duration <= 0 {
+		return videoInfo{}, fmt.Errorf("%w: ffprobe gave no duration, nor its packets", errUnreadableMedia)
 	}
 
-	return duration, codec, nil
+	return info, nil
 }
 
 // stillReadable says whether a video is the file it was when its frames were started (same size

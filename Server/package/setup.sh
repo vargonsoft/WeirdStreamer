@@ -134,6 +134,8 @@ ExecStart="$dir/bin/server"
 TimeoutStopSec=20
 Restart=on-failure
 RestartSec=5
+# A process the kernel kills for memory (an ffmpeg) is killed alone: the server stays up
+OOMPolicy=continue
 # cli server restart exits with status 3: a clean exit, started again
 SuccessExitStatus=3
 RestartForceExitStatus=3

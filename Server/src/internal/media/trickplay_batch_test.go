@@ -36,7 +36,8 @@ func TestBatchedFramesMatchPerFrame(t *testing.T) {
 	ctx := context.Background()
 	tg := &TrickplayGenerator{}
 
-	duration, codec, err := tg.getVideoInfo(clip)
+	vi, err := tg.getVideoInfo(clip)
+	duration, codec := vi.Duration, vi.Codec
 	if err != nil {
 		t.Fatal(err)
 	}

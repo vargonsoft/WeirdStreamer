@@ -898,7 +898,7 @@ private struct TrickplayBox: View {
                 PhoneTextField(label: "Runners", text: Binding(get: { runners }, set: { runners = $0.filter(\.isNumber); edited = true }), keyboard: .numberPad)
                 PhoneTextField(label: "Frames per runner", text: Binding(get: { frames }, set: { frames = $0.filter(\.isNumber); edited = true }), keyboard: .numberPad)
             }
-            Text("\(r) × \(f) = \(r * f) frames at once, about \(String(format: "%.1f", Double(r * f) * 0.11)) GB of memory at most. Runners 1 to \(settings.maxRunners ?? 8), frames per runner 1 to \(settings.maxFrames ?? 50), and at most \(settings.maxProduct ?? 100) frames at once.")
+            Text("\(trickplayMemoryText(r, f, settings.memory)) Runners 1 to \(settings.maxRunners ?? 8), frames per runner 1 to \(settings.maxFrames ?? 50), and at most \(settings.maxProduct ?? 100) frames at once.")
                 .font(.caption).foregroundStyle(Palette.muted)
             HStack(spacing: 12) {
                 Button("Save") {
