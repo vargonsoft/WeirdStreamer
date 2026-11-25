@@ -741,7 +741,7 @@ struct JobsTab: View {
             if let data {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Jobs run at low priority, so playback gets the CPU and disks first. They wait while a disk or a network share is busy (or, with the setting under Streaming, while anyone is streaming). Pause holds a job until you resume it, or the server restarts.")
+                        Text("Jobs run at low priority, so playback gets the CPU and disks first. They wait while a disk, network share or mergerfs pool is busy (or, with the setting under Streaming, while anyone is streaming). Pause holds a job until you resume it, or the server restarts.")
                             .font(.caption).foregroundStyle(Palette.muted)
                         if let load = data.load { Text(loadText(load)).font(.caption).foregroundStyle(Palette.muted) }
                         if let error { Text(error).font(.caption).foregroundStyle(Palette.error) }
@@ -790,7 +790,8 @@ struct JobsTab: View {
             parts += ["CPU \(pct(l.cpu))",
                       "Disk \(pct(l.disk)) (jobs wait above \(pct(l.maxDisk)) on a disk someone is playing from, \(pct(l.relaxedDisk)) otherwise)"]
             if let shares = l.shares, !shares.isEmpty {
-                parts.append("Shares \(shares.map { "\($0.library ?? "") \(Int(($0.ms ?? 0).rounded())) ms" }.joined(separator: ", ")) (above \(Int((l.maxShareMs ?? 0).rounded())) ms on a share someone is playing from, \(Int((l.relaxedShareMs ?? 0).rounded())) ms otherwise)")
+                // Libraries on network shares or FUSE pools (mergerfs), whose disks can't be told apart
+                parts.append("Read times \(shares.map { "\($0.library ?? "") \(Int(($0.ms ?? 0).rounded())) ms" }.joined(separator: ", ")) (above \(Int((l.maxShareMs ?? 0).rounded())) ms where someone is playing, \(Int((l.relaxedShareMs ?? 0).rounded())) ms otherwise)")
             }
         } else {
             parts.append("No load readings: jobs wait while anyone is streaming")

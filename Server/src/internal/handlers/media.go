@@ -92,7 +92,7 @@ func (h *MediaHandler) shareProbes() []media.ShareProbe {
 		if err != nil || p == "" {
 			continue
 		}
-		if real, err := filepath.EvalSymlinks(p); err == nil && media.IsNetworkShare(filepath.Dir(real)) {
+		if real, err := filepath.EvalSymlinks(p); err == nil && media.IsTimedMount(filepath.Dir(real)) {
 			out = append(out, media.ShareProbe{Library: lib.Name, Path: real})
 		}
 	}

@@ -451,6 +451,12 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   unread for the next scan. `backgroundCommand` runs a missing tool without nice, so the error is
   exec.ErrNotFound and not nice's exit status 127, which read like the file being turned down (a
   server started before ffmpeg was installed once marked every video done without frames).
+- **When jobs wait for the disks** (`media/load.go`, `disks.go`): above 50% busy on the disk someone is
+  playing from, 90% on one nobody is; a file whose disk can't be told counts the busiest disk at 50%.
+  Libraries on network shares (SMB, NFS) and FUSE mounts (a mergerfs pool, sshfs, rclone: no block
+  device, and a container's `/proc/diskstats` lists the host's disks) are judged by timing 64 KB reads
+  from a big file in each instead (`isTimedFS`, `IsTimedMount`; above 60 ms where someone is playing,
+  500 ms otherwise), shown as Read times on the Jobs page.
 - **Trickplay memory** (`media/memory.go`): each frame of a trickplay batch is an ffmpeg input with a
   decoder of its own, so a batch's memory grows with the picture: about 60 MB a process plus 228 MB a
   frame for 4K HEVC 10-bit, 84 MB for 1080p HEVC 10-bit, 45 MB for 1080p H.264 (measured, ffmpeg 8).

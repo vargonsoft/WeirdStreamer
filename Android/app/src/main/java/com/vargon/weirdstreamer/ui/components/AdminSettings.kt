@@ -552,7 +552,7 @@ fun rememberJobs(server: ServerRepository): JobsModel {
     return model
 }
 
-internal const val JOBS_ABOUT = "Jobs run at low priority, so playback gets the CPU and disks first. They wait while a disk or a network share " +
+internal const val JOBS_ABOUT = "Jobs run at low priority, so playback gets the CPU and disks first. They wait while a disk, network share or mergerfs pool " +
     "is busy (or, with the setting under Streaming, while anyone is streaming). Pause holds a job until you resume it, " +
     "or the server restarts."
 
@@ -589,8 +589,9 @@ internal fun loadText(l: JobLoad): String {
             "Disk ${pct(l.disk)} (jobs wait above ${pct(l.maxDisk)} on a disk someone is playing from, ${pct(l.relaxedDisk)} otherwise)")
         val shares = l.shares.orEmpty()
         if (shares.isNotEmpty()) {
-            parts += "Shares ${shares.joinToString(", ") { "${it.library} ${it.ms.roundToInt()} ms" }} " +
-                "(above ${l.maxShareMs.roundToInt()} ms on a share someone is playing from, ${l.relaxedShareMs.roundToInt()} ms otherwise)"
+            // Libraries on network shares or FUSE pools (mergerfs), whose disks can't be told apart
+            parts += "Read times ${shares.joinToString(", ") { "${it.library} ${it.ms.roundToInt()} ms" }} " +
+                "(above ${l.maxShareMs.roundToInt()} ms where someone is playing, ${l.relaxedShareMs.roundToInt()} ms otherwise)"
         }
     } else parts += "No load readings: jobs wait while anyone is streaming"
     if (l.streaming) parts += "Someone is streaming"

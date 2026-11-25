@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -26,8 +27,8 @@ func TestShareProbes(t *testing.T) {
 	if _, err := timeReads(filepath.Join(dir, "gone.mkv")); err == nil {
 		t.Error("a missing file was timed")
 	}
-	if IsNetworkShare(dir) {
-		t.Errorf("%s was taken for a network share", dir)
+	if IsTimedMount(dir) {
+		t.Errorf("%s was taken for a network share or FUSE mount", dir)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -47,4 +48,27 @@ func TestShareProbes(t *testing.T) {
 	if none.Shares() != nil {
 		t.Error("no monitor has share readings")
 	}
+}
+
+// A FUSE mount (a mergerfs pool of disks) is timed like a share: its device is no block device, so
+// /proc/diskstats can't say which disk it's on.
+func TestFUSEIsTimed(t *testing.T) {
+	b, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		t.Skip("no /proc/mounts")
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || !strings.HasPrefix(f[2], "fuse.") {
+			continue
+		}
+		if _, err := os.Stat(f[1]); err != nil {
+			continue
+		}
+		if !IsTimedMount(f[1]) {
+			t.Errorf("%s (%s) wasn't taken for a timed mount", f[1], f[2])
+		}
+		return
+	}
+	t.Skip("no FUSE mount here")
 }

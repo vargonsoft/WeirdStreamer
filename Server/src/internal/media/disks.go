@@ -144,7 +144,7 @@ func (d diskLoad) waitReason() (bool, string) {
 			limit = maxShareMs
 		}
 		if d.ms > limit {
-			return true, fmt.Sprintf("%s's share busy (reads take %.0f ms%s)", d.name, d.ms, also)
+			return true, fmt.Sprintf("%s busy (reads take %.0f ms%s)", d.name, d.ms, also)
 		}
 		return false, ""
 	}

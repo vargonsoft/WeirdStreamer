@@ -14,14 +14,13 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 )
 
 // LoadMonitor samples the machine's CPU and disk use (Linux /proc), so background jobs run only
 // with room to spare: busy above maxDisk of the busiest whole disk's time (the CPU is shown on
 // the Jobs page, but the jobs run at low priority instead of waiting for it),
-// smoothed over the last half-minute or so. Network shares' disks don't show in /proc, so it also
-// times small reads from a big file on each share: an idle hard disk answers in 10-20ms, a busy
+// smoothed over the last half-minute or so. The disks of network shares and FUSE pools (mergerfs)
+// can't be told from /proc, so it also times small reads from a big file in each library on one: an idle hard disk answers in 10-20ms, a busy
 // one queues them.
 type LoadMonitor struct {
 	mu        sync.Mutex
@@ -223,8 +222,9 @@ func (m *LoadMonitor) Shares() []ShareLoad {
 	return out
 }
 
-// IsNetworkShare says whether a folder is on an SMB or NFS mount.
-func IsNetworkShare(dir string) bool { return isNetworkFS(dir) }
+// IsTimedMount says whether a folder's load is judged by timing reads from it: on an SMB or NFS
+// share, or a FUSE file system such as a mergerfs pool (see isTimedFS).
+func IsTimedMount(dir string) bool { return isTimedFS(dir) }
 
 func (m *LoadMonitor) run(ctx context.Context) {
 	busy0, total0, err1 := readCPU()
