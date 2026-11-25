@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -29,7 +30,7 @@ func TestCheckReadable(t *testing.T) {
 	if p := CheckReadable(filepath.Join(dir, "gone.mp4")); p == nil || p.Status != http.StatusNotFound {
 		t.Errorf("missing file: %v", p)
 	}
-	if os.Geteuid() != 0 { // root reads it anyway
+	if os.Geteuid() != 0 && runtime.GOOS != "windows" { // root reads it anyway; Windows has no Unix modes
 		if p := CheckReadable(inLocked); p == nil || p.Status != http.StatusServiceUnavailable {
 			t.Errorf("refused folder: %v", p)
 		}

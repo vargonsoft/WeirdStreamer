@@ -3,7 +3,6 @@ package database
 import (
 	"database/sql"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -100,12 +99,11 @@ func (db *DB) DateMediaAdded() error {
 // NewestMedia lists the videos under root that arrived last: the newest day first, and within a
 // day by path, so a batch of episodes starts from its first.
 func (db *DB) NewestMedia(root string, limit int) ([]AddedMedia, error) {
-	root = strings.TrimRight(root, "/")
-	// Every path under root/ sorts between root/ and root0 ('0' follows '/').
+	lo, hi := under(root)
 	rows, err := db.mediaConn.Query(`SELECT a.path, a.added_at FROM media_added a
 		JOIN media_items m ON m.path = a.path
 		WHERE m.type = 'video' AND a.path >= ? AND a.path < ?
-		ORDER BY date(a.added_at, 'unixepoch', 'localtime') DESC, a.path LIMIT ?`, root+"/", root+"0", limit)
+		ORDER BY date(a.added_at, 'unixepoch', 'localtime') DESC, a.path LIMIT ?`, lo, hi, limit)
 	if err != nil {
 		return nil, err
 	}

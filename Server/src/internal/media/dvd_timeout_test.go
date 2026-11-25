@@ -27,6 +27,7 @@ func hangingFFprobe(t *testing.T) string {
 // one is missing) and empties the disc cache, with no store.
 func fakeFFprobe(t *testing.T, hang, ok string) string {
 	t.Helper()
+	skipOnWindows(t, "the fake ffprobe is a shell script")
 	dir := t.TempDir()
 	script := `#!/bin/sh
 title=""; prev=""
@@ -156,16 +157,18 @@ func TestReadsPacketGivesUpOnHang(t *testing.T) {
 func TestExitedCommandIsNotATimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "sh", "-c", "exit 1")
+	killed := trackKill(cmd)
 	cmd.Run()
 	cancel()
-	if killedAtDeadline(cmd, ctx) {
+	if killedAtDeadline(killed, ctx) {
 		t.Fatal("an exited command was taken for a killed one")
 	}
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel2()
 	cmd = exec.CommandContext(ctx2, "sleep", "30")
+	killed = trackKill(cmd)
 	cmd.Run()
-	if !killedAtDeadline(cmd, ctx2) {
+	if !killedAtDeadline(killed, ctx2) {
 		t.Fatal("a killed command wasn't seen as killed")
 	}
 }
@@ -300,6 +303,7 @@ func shortStallLimit(t *testing.T) {
 // A disc transcode whose ffmpeg makes nothing is stopped, and the request gets the error instead
 // of waiting forever.
 func TestDiscTranscodeWatchdog(t *testing.T) {
+	skipOnWindows(t, "MSYS sh's exec starts sleep as another process, which keeps the pipe open")
 	useSpools(t)
 	shortStallLimit(t)
 	r := httptest.NewRequest("GET", "/api/media/stream", nil)
@@ -339,6 +343,7 @@ func TestStallWatchPaused(t *testing.T) {
 
 // A disc's trickplay ffmpeg that prints nothing is stopped by the watchdog.
 func TestTrickplayDiscWatchdog(t *testing.T) {
+	skipOnWindows(t, "the fake ffmpeg is a shell script")
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "ffmpeg"), []byte("#!/bin/sh\nexec sleep 30\n"), 0755); err != nil {
 		t.Fatal(err)

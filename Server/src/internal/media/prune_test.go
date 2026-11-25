@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,7 @@ func TestPruneForgetsWhatIsGone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { db.Close() })
 	movies, shows, unmounted := filepath.Join(dir, "movies"), filepath.Join(dir, "shows"), filepath.Join(dir, "share")
 	for _, d := range []string{movies, shows} {
 		os.MkdirAll(d, 0o755)
@@ -39,7 +41,7 @@ func TestPruneForgetsWhatIsGone(t *testing.T) {
 	add(filepath.Join(dir, "old library", "Old.mkv"), true) // in no library any more
 	add(filepath.Join(unmounted, "Offline.mkv"), false)     // its library can't be read: kept
 	for i := 0; i < 30; i++ {                               // most of a library missing at once: kept
-		add(filepath.Join(shows, "Show", "E"+string(rune('a'+i))+".mkv"), i < 5)
+		add(filepath.Join(shows, "Show", fmt.Sprintf("E%02d.mkv", i)), i < 5)
 	}
 	db.SaveAnalysis("aaaaaaaa/Deleted.mkv", &database.Span{Start: 1, End: 2, Source: "chapters"}, nil, 1)
 

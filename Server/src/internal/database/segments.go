@@ -226,9 +226,9 @@ func (db *DB) VideosWithoutLength() (map[string]bool, error) {
 // LargestVideo returns the biggest video under a folder ("" if none).
 func (db *DB) LargestVideo(dir string) (string, error) {
 	var p string
-	// Paths from dir+"/" up to dir+"0" (the byte after '/') are the ones under it.
+	lo, hi := under(dir)
 	err := db.mediaConn.QueryRow(`SELECT path FROM media_items WHERE type = 'video' AND path >= ? AND path < ?
-		ORDER BY size DESC LIMIT 1`, dir+"/", dir+"0").Scan(&p)
+		ORDER BY size DESC LIMIT 1`, lo, hi).Scan(&p)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}

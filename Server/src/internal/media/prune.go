@@ -169,7 +169,7 @@ func libraryIndex(libraries []config.MediaPath, path string) int {
 		if err != nil {
 			continue
 		}
-		if abs == root || strings.HasPrefix(abs, root+string(filepath.Separator)) {
+		if config.InDir(abs, root) {
 			return i
 		}
 	}

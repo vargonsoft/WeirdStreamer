@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"path/filepath"
-	"strings"
 )
 
 // CacheKey names a media file in the caches (thumbnails, trickplay, ASS tracks, subtitle keys,
@@ -33,7 +32,7 @@ func LibraryRelative(path string) (id, rel string, ok bool) {
 		if err != nil || lib.ID == "" {
 			continue
 		}
-		if abs == root || strings.HasPrefix(abs, root+string(filepath.Separator)) {
+		if InDir(abs, root) {
 			r, err := filepath.Rel(root, abs)
 			if err != nil {
 				return "", "", false

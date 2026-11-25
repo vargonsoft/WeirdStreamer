@@ -98,6 +98,7 @@ func TestLoadForFindsTheShare(t *testing.T) {
 // Devices are remembered by folder (one entry for a folder's files), and a symlinked file by the
 // folder of the file it points to.
 func TestDeviceOfByFolder(t *testing.T) {
+	skipOnWindows(t, "disks aren't told apart on Windows")
 	devices.mu.Lock()
 	devices.byDir = nil
 	devices.mu.Unlock()

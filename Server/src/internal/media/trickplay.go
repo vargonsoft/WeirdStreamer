@@ -313,9 +313,10 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (videoInfo, error) 
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// ffprobe ran and turned the file down (rather than not running, or being stopped).
+		// ffprobe ran and turned the file down (rather than not running, or being stopped: killed
+		// by a signal, or on Windows, where that's an exit too, by StopChildren).
 		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.Exited() {
+		if errors.As(err, &exit) && exit.Exited() && !shuttingDown.Load() {
 			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 			return videoInfo{}, fmt.Errorf("%w: ffprobe failed: %s", errUnreadableMedia, lines[len(lines)-1]) // its summary
 		}

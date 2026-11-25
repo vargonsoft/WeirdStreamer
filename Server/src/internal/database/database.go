@@ -377,14 +377,14 @@ func (db *DB) FolderPreview(dir string) string {
 
 // FolderPreviewItem is FolderPreview with the file (a disk path) the thumbnail is of.
 func (db *DB) FolderPreviewItem(dir string) (url, path string) {
-	dir = strings.TrimSuffix(dir, "/")
+	lo, hi := under(dir)
 	err := db.mediaConn.QueryRow(`
 		SELECT thumbnail_url, path FROM (
 			SELECT path, thumbnail_url FROM media_items
 			WHERE path > ? AND path < ? AND thumbnail_url != '' AND type IN ('image', 'video')
 			ORDER BY path LIMIT 200)
-		ORDER BY length(path) - length(replace(path, '/', '')), path LIMIT 1
-	`, dir+"/", dir+"0").Scan(&url, &path) // '0' follows '/': the range is everything under dir
+		ORDER BY length(path) - length(replace(path, ?, '')), path LIMIT 1
+	`, lo, hi, sep).Scan(&url, &path) // nearest first: the fewest separators
 	if err != nil {
 		return "", ""
 	}

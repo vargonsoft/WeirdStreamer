@@ -15,6 +15,7 @@ func TestRotatingMovesFullFilesAside(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer r.Close()
 	line := []byte(strings.Repeat("x", 1<<20-1) + "\n")
 	for range 2*maxSize/len(line) + 1 {
 		if _, err := r.Write(line); err != nil {
@@ -37,7 +38,7 @@ func TestAccessLogsUserStatusAndSize(t *testing.T) {
 	if err := Open(dir); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { accessLog = nil }()
+	defer Close()
 	h := Access(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		SetUser(r, "ann")
 		w.WriteHeader(http.StatusPartialContent)
@@ -63,7 +64,7 @@ func TestAuthOnceSkipsRepeats(t *testing.T) {
 	if err := Open(dir); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { accessLog = nil }()
+	defer Close()
 	for range 3 {
 		AuthOnce("token|1.2.3.4", "Token refused from %s", "1.2.3.4")
 	}

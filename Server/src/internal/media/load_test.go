@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ func TestShareProbes(t *testing.T) {
 	small := filepath.Join(dir, "small.mkv")
 	os.WriteFile(small, make([]byte, 1000), 0o644)
 
-	if ms, err := timeReads(big); err != nil || ms <= 0 || ms > 1000 {
+	if ms, err := timeReads(big); err != nil || ms < 0 || ms > 1000 { // 0 on a fast disk with a coarse clock
 		t.Errorf("timeReads = %v ms, %v", ms, err)
 	}
 	if _, err := timeReads(small); err == nil {
@@ -31,6 +32,9 @@ func TestShareProbes(t *testing.T) {
 		t.Errorf("%s was taken for a network share or FUSE mount", dir)
 	}
 
+	if runtime.GOOS != "linux" {
+		return // the load monitor reads Linux's /proc
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	m := NewLoadMonitor(ctx, func() []ShareProbe {

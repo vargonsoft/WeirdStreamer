@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
@@ -168,11 +169,12 @@ func ffprobeOutputWithin(ctx context.Context, timeout time.Duration, args ...str
 	call, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(call, "ffprobe", args...)
+	killed := trackKill(cmd)
 	// Once killed, don't wait on its output for longer than this (a child it started could keep
 	// the pipe open).
 	cmd.WaitDelay = 5 * time.Second
 	out, err := cmd.Output()
-	if err != nil && killedAtDeadline(cmd, call) {
+	if err != nil && killedAtDeadline(killed, call) {
 		if ctx.Err() != nil {
 			return nil, errProbeBudget
 		}
@@ -181,11 +183,24 @@ func ffprobeOutputWithin(ctx context.Context, timeout time.Duration, args ...str
 	return out, err
 }
 
-// killedAtDeadline reports whether cmd was killed by exec for its context: it ended by a signal,
-// not by exiting, and its context is done. One that exited just as the deadline passed isn't.
-func killedAtDeadline(cmd *exec.Cmd, ctx context.Context) bool {
-	ps := cmd.ProcessState
-	return ps != nil && !ps.Exited() && ctx.Err() != nil
+// killedAtDeadline reports whether a command (killed, from trackKill) was killed by exec for its
+// context. One that exited just as the deadline passed isn't: there was nothing left to kill.
+func killedAtDeadline(killed *atomic.Bool, ctx context.Context) bool {
+	return killed.Load() && ctx.Err() != nil
+}
+
+// trackKill makes cmd's context note when it killed cmd. Exit statuses can't tell: on Windows a
+// killed process has exited too (status 1, as ffprobe's own errors).
+func trackKill(cmd *exec.Cmd) *atomic.Bool {
+	var killed atomic.Bool
+	cmd.Cancel = func() error {
+		err := cmd.Process.Kill()
+		if err == nil {
+			killed.Store(true)
+		}
+		return err
+	}
+	return &killed
 }
 
 // DiscTitle is one title (the feature, a bonus feature, an episode...).

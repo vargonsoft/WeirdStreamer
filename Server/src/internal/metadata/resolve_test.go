@@ -9,7 +9,7 @@ import (
 
 func TestResolveFileTV(t *testing.T) {
 	useVideoFormats(t, ".mkv", ".mp4")
-	root := "/media/tv"
+	root, _ := filepath.Abs(filepath.FromSlash("/media/tv"))
 	lib := config.MediaPath{Path: root, ID: "t", Type: config.LibraryTypeTV}
 	cases := []struct {
 		path            string
@@ -69,7 +69,7 @@ func TestResolveFileTV(t *testing.T) {
 
 func TestResolveFileMovie(t *testing.T) {
 	useVideoFormats(t, ".mkv", ".mp4")
-	root := "/media/movies"
+	root, _ := filepath.Abs(filepath.FromSlash("/media/movies"))
 	lib := config.MediaPath{Path: root, ID: "m", Type: config.LibraryTypeMovie}
 	cases := map[string]string{
 		// The file name is the source of truth; the folder only supplies a missing year

@@ -3401,43 +3401,46 @@ const folderPicker = { path: null };
 function openFolderPicker() {
     const typed = document.getElementById('new-path-input').value.trim();
     const paths = state.currentConfig?.media?.paths || [];
-    const last = paths.length ? paths[paths.length - 1].path.replace(/\/+$/, '') : '';
-    const start = typed.startsWith('/') ? typed : (last ? last.slice(0, last.lastIndexOf('/')) || '/' : '/');
+    const last = paths.length ? paths[paths.length - 1].path : '';
     document.getElementById('folder-modal').classList.add('active');
-    showFolder(start, true);
+    // The server's paths may be Windows' (C:\Videos): it says what's a full path and what's above one.
+    if (typed) showFolder(typed, true);
+    else if (last) showFolder(last, true, true);
+    else showFolder('', true);
 }
 
 function closeFolderPicker() {
     document.getElementById('folder-modal').classList.remove('active');
 }
 
-// Lists [path]; one that can't be listed keeps the folder shown (or, opening, the top).
-async function showFolder(path, opening = false) {
+// Lists [path] (its parent with [parent]; '' is the top: / or Windows' drives); one that can't be
+// listed keeps the folder shown (or, opening, the top).
+async function showFolder(path, opening = false, parent = false) {
     const info = document.getElementById('folder-info');
     const list = document.getElementById('folder-list');
     try {
-        const f = await api.listFolders(path);
+        const f = await api.listFolders(path, parent);
         folderPicker.path = f.path;
         document.getElementById('folder-path').value = f.path;
-        document.getElementById('folder-up').disabled = !f.parent;
+        document.getElementById('folder-up').disabled = f.top;
         document.getElementById('folder-up').onclick = () => showFolder(f.parent);
+        document.getElementById('folder-choose').disabled = !f.path;
         list.innerHTML = '';
-        f.folders.forEach(name => {
+        f.folders.forEach(entry => {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'folder-entry';
-            btn.innerHTML = iconSvg('folder') + `<span>${escapeHtml(name)}</span>`;
-            btn.addEventListener('click', () => showFolder((f.path === '/' ? '' : f.path) + '/' + name));
+            btn.innerHTML = iconSvg('folder') + `<span>${escapeHtml(entry.name)}</span>`;
+            btn.addEventListener('click', () => showFolder(entry.path));
             list.appendChild(btn);
         });
         if (!f.folders.length) list.innerHTML = '<div class="match-empty">No folders in here.</div>';
-        const library = (state.currentConfig?.media?.paths || []).find(mp => mp.path.replace(/\/+$/, '') === f.path);
         info.classList.remove('error');
-        info.textContent = library ? `Already the library “${library.name}”`
+        info.textContent = f.library ? `Already the library “${f.library}”`
             : f.videos ? `${f.videos} video${f.videos === 1 ? '' : 's'} in this folder` : '';
         list.scrollTop = 0;
     } catch (e) {
-        if (opening && path !== '/') return showFolder('/');
+        if (opening && path !== '') return showFolder('');
         if (folderPicker.path) document.getElementById('folder-path').value = folderPicker.path;
         info.classList.add('error');
         info.textContent = e.message || "Couldn't open that folder";
@@ -6441,14 +6444,33 @@ function trickplayHint() {
 }
 
 // The memory r runners of f frames take with 4K videos (each frame in a batch holds a decoder of its
-// own: about 230 MB at 4K), against the server's memory and swap. The server uses the settings as
-// they are. As the apps' trickplayMemoryText.
+// own), as the server measured it for the decoder it uses (m.decoder: the CPU, an Intel or AMD GPU
+// whose buffers are the server's memory, or an NVIDIA card with memory of its own), against the
+// server's memory and swap, and the card's. The server uses the settings as they are. As the apps'
+// trickplayMemoryText.
 function trickplayMemoryText(r, f, m) {
     const gb = bytes => (bytes / 2 ** 30).toFixed(1);
     const text = `${r} × ${f} = ${r * f} frames at once.`;
     if (!m || !m.frame_bytes_4k) return text;
     const estimate = r * (m.process_bytes_4k + f * m.frame_bytes_4k);
-    const with4k = `${text} With 4K videos about ${gb(estimate)} GB of memory at most`;
+    const decoded = { vaapi: ', decoded on the GPU (its buffers use the server\'s memory),', cuda: ', decoded on the graphics card,' }[m.decoder] || '';
+    const with4k = `${text} With 4K videos${decoded} about ${gb(estimate)} GB of memory at most`;
+    return trickplayRamText(with4k, estimate, m) + trickplayCardText(r, f, m);
+}
+
+// The NVIDIA card's part of the estimate ('' for other decoders).
+function trickplayCardText(r, f, m) {
+    if (!m.card_frame_bytes_4k) return '';
+    const gb = bytes => (bytes / 2 ** 30).toFixed(1);
+    const card = r * (m.card_process_bytes_4k + f * m.card_frame_bytes_4k);
+    if (!m.card_bytes) return ` The card needs about ${gb(card)} GB of its own memory.`;
+    if (card <= m.card_bytes) return ` The card needs about ${gb(card)} GB of its ${gb(m.card_bytes)} GB.`;
+    return ` The card needs about ${gb(card)} GB, more than its ${gb(m.card_bytes)} GB: batches are made smaller as it runs out.`;
+}
+
+// The server's memory and swap against the estimate.
+function trickplayRamText(with4k, estimate, m) {
+    const gb = bytes => (bytes / 2 ** 30).toFixed(1);
     if (!m.total_bytes) return with4k + '.';
     const swap = m.swap_bytes || 0;
     if (estimate <= m.total_bytes) {

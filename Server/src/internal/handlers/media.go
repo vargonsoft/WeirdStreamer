@@ -81,7 +81,7 @@ func (h *MediaHandler) shareProbes() []media.ShareProbe {
 		}
 		nested := false
 		for _, other := range libs {
-			if o, err := filepath.Abs(other.Path); err == nil && o != root && strings.HasPrefix(root, o+string(filepath.Separator)) {
+			if o, err := filepath.Abs(other.Path); err == nil && o != root && config.InDir(root, o) {
 				nested = true
 			}
 		}

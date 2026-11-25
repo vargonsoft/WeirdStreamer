@@ -26,6 +26,7 @@ func TestStatWaking(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads everything")
 	}
+	skipOnWindows(t, "a mode of 0 doesn't refuse a folder on Windows")
 	locked := filepath.Join(dir, "locked")
 	inner := filepath.Join(locked, "inner")
 	if err := os.MkdirAll(inner, 0o755); err != nil {

@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
@@ -460,15 +459,6 @@ var ErrFixing = errors.New("its fixed copy is being made already")
 
 // ErrNotDamaged: the video isn't listed as damaged (fine, gone, or changed since it was checked).
 var ErrNotDamaged = errors.New("it isn't listed as damaged (it may have changed: the next scan checks it again)")
-
-// freeSpace is how many bytes can still be written where dir is.
-func freeSpace(dir string) (int64, error) {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(dir, &st); err != nil {
-		return 0, err
-	}
-	return int64(st.Bavail) * int64(st.Bsize), nil
-}
 
 // spareSpace is left free on the fixed copies' disk: a fix that would leave less isn't started.
 const spareSpace = 2 << 30

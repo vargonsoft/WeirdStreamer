@@ -420,9 +420,9 @@ class MediaAPI {
         return this.request('/api/config');
     }
 
-    // A folder of the server's disk, for choosing a library's (admins): {path, parent, folders, videos}
-    async listFolders(path) {
-        return this.request(`/api/config/folders?path=${encodeURIComponent(path || '')}`);
+    // A folder of the server's disk, for choosing a library's (admins): {path, parent, top, folders: [{name, path}], videos, library}; parent=true lists the one above path
+    async listFolders(path, parent = false) {
+        return this.request(`/api/config/folders?path=${encodeURIComponent(path || '')}${parent ? '&parent=1' : ''}`);
     }
 
     async updateConfig(config) {

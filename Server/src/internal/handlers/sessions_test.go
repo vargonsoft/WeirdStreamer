@@ -192,7 +192,7 @@ func TestSettingsChangeOnlyTheirOwnFields(t *testing.T) {
 	body := `{"server":{"name":"Den","port":9000,"host":"0.0.0.0","certFile":"/etc/shadow"},
 		"auth":{"jwtSecret":"mine"},"groups":["everyone"],
 		"metadata":{"tmdbAccessToken":"tok","language":"de-DE"},
-		"media":{"subsetCommand":"/bin/sh","thumbnailPath":"/","paths":[{"name":"Films","path":"` + movies + `","id":"movies","groups":["normal"],"showNewAdditions":"on"}]}}`
+		"media":{"subsetCommand":"/bin/sh","thumbnailPath":"/","paths":[{"name":"Films","path":` + jsonString(movies) + `,"id":"movies","groups":["normal"],"showNewAdditions":"on"}]}}`
 	var u settingsUpdate
 	if err := json.Unmarshal([]byte(body), &u); err != nil {
 		t.Fatal(err)

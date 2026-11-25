@@ -16,6 +16,7 @@ func testDB(t *testing.T) *DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { db.Close() })
 	return db
 }
 
@@ -52,7 +53,7 @@ func TestMediaAdded(t *testing.T) {
 	saveVideo(t, db, found)
 	saveVideo(t, db, filepath.Join(dir, "library2", "other.mp4")) // another library, its name a prefix
 
-	got, err := db.NewestMedia(filepath.Join(dir, "lib")+"/", 10)
+	got, err := db.NewestMedia(filepath.Join(dir, "lib"), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,10 +93,10 @@ func TestNewestMediaByDay(t *testing.T) {
 	db := testDB(t)
 	day := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
 	dates := map[string]time.Time{
-		"/lib/S01E09.mkv": day.Add(time.Hour), // a day's files in order, whenever they arrived
-		"/lib/S01E10.mkv": day.Add(-time.Hour),
-		"/lib/S01E11.mkv": day.Add(-2 * time.Hour),
-		"/lib/S01E01.mkv": day.Add(-7 * 24 * time.Hour),
+		filepath.FromSlash("/lib/S01E09.mkv"): day.Add(time.Hour), // a day's files in order, whenever they arrived
+		filepath.FromSlash("/lib/S01E10.mkv"): day.Add(-time.Hour),
+		filepath.FromSlash("/lib/S01E11.mkv"): day.Add(-2 * time.Hour),
+		filepath.FromSlash("/lib/S01E01.mkv"): day.Add(-7 * 24 * time.Hour),
 	}
 	for path, at := range dates {
 		saveVideo(t, db, path)
@@ -103,11 +104,11 @@ func TestNewestMediaByDay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := db.NewestMedia("/lib", 10)
+	got, err := db.NewestMedia(filepath.FromSlash("/lib"), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"/lib/S01E09.mkv", "/lib/S01E10.mkv", "/lib/S01E11.mkv", "/lib/S01E01.mkv"}
+	want := []string{filepath.FromSlash("/lib/S01E09.mkv"), filepath.FromSlash("/lib/S01E10.mkv"), filepath.FromSlash("/lib/S01E11.mkv"), filepath.FromSlash("/lib/S01E01.mkv")}
 	if len(got) != len(want) {
 		t.Fatalf("got %+v", got)
 	}

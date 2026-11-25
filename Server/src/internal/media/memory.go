@@ -30,6 +30,8 @@ func SystemMemory() int64 {
 			}
 		})
 		return macMemory.bytes
+	case "windows":
+		return windowsMemory()
 	}
 	return 0
 }

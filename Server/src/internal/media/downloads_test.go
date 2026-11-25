@@ -116,7 +116,7 @@ func TestDownloadKeepsVideo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(string(out)); got != "hevc,hvc1\naac,mp4a,2" {
+	if got := strings.ReplaceAll(strings.TrimSpace(string(out)), "\r\n", "\n"); got != "hevc,hvc1\naac,mp4a,2" {
 		t.Errorf("streams = %q; want the HEVC kept (hvc1) and the default AC-3 track as stereo AAC", got)
 	}
 }

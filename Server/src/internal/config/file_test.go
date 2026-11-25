@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -77,7 +78,7 @@ func TestSaveKeepsComments(t *testing.T) {
 			t.Errorf("saved config still has %q:\n%s", gone, got)
 		}
 	}
-	if st, _ := os.Stat(path); st.Mode().Perm() != 0640 {
+	if st, _ := os.Stat(path); runtime.GOOS != "windows" && st.Mode().Perm() != 0640 { // Windows has no Unix modes
 		t.Errorf("mode %v, want 0640", st.Mode().Perm())
 	}
 	saved := *GlobalConfig
@@ -126,7 +127,7 @@ func TestSaveFromTemplate(t *testing.T) {
 	if strings.Contains(got, "Shows") || !strings.Contains(got, "myNote") || !strings.Contains(got, `jwtSecret: "" # quoted`) {
 		t.Errorf("kept the example's values:\n%s", got)
 	}
-	if st, _ := os.Stat(path); st.Mode().Perm() != 0600 {
+	if st, _ := os.Stat(path); runtime.GOOS != "windows" && st.Mode().Perm() != 0600 {
 		t.Errorf("new config mode %v, want 0600", st.Mode().Perm())
 	}
 }

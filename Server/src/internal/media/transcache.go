@@ -332,8 +332,11 @@ func (s *transcodeSpool) start(args, fallback []string) error {
 // to stdout ("pipe:1") goes to its own pipe (fd 3) instead: libraries ffmpeg uses print to stdout
 // too (libdvdread, on a damaged navigation packet), which landed in the middle of a stream. What
 // they print joins ffmpeg's messages. The caller closes both readers when ffmpeg is done.
+// Windows can't hand a child a pipe beyond stdout and stderr (exec's ExtraFiles), so there ffmpeg
+// writes to stdout as before (a disc's damaged navigation packet can put libdvdread's warning in
+// its stream there).
 func transcodePipes(cmd *exec.Cmd) (output, messages io.ReadCloser, err error) {
-	if n := len(cmd.Args); n < 2 || cmd.Args[n-1] != "pipe:1" {
+	if n := len(cmd.Args); n < 2 || cmd.Args[n-1] != "pipe:1" || !extraPipes {
 		if output, err = cmd.StdoutPipe(); err != nil {
 			return nil, nil, fmt.Errorf("failed to create stdout pipe: %w", err)
 		}

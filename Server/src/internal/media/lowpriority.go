@@ -10,8 +10,12 @@ import (
 // lowest CPU priority (nice 19) and idle disk priority (ionice -c3), so playback and anything else
 // the machine is doing come first; the jobs don't wait for the CPU themselves. ionice and nice
 // replace themselves with the command, so it keeps the same process (ctx still stops it). Where
-// either isn't installed, the command runs without it.
+// either isn't installed, the command runs without it. On Windows it's started in the idle
+// priority class instead (lowPriorityClass).
 func backgroundCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
+	if cmd := lowPriorityClass(ctx, name, args...); cmd != nil {
+		return cmd
+	}
 	prefix := lowPriorityPrefix()
 	if _, err := exec.LookPath(name); err != nil || len(prefix) == 0 {
 		// A tool that isn't installed runs as it is, so the error says so (exec.ErrNotFound): through

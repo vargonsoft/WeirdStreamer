@@ -44,7 +44,22 @@ func Open(dir string) error {
 	}
 	authLog = log.New(auth, "", log.LstdFlags)
 	accessLog = access
+	opened = []*rotating{auth, access}
 	return nil
+}
+
+// opened are the files Open opened, for Close.
+var opened []*rotating
+
+// Close closes the log files: auth lines go to the server's output again and requests aren't
+// logged. (Windows can't remove a folder holding an open file.)
+func Close() {
+	authLog = log.New(os.Stdout, "[AUTH] ", log.LstdFlags)
+	accessLog = nil
+	for _, r := range opened {
+		r.Close()
+	}
+	opened = nil
 }
 
 // Auth writes a line to the auth log.
@@ -107,6 +122,17 @@ func (r *rotating) open() error {
 	}
 	r.file, r.size = f, info.Size()
 	return nil
+}
+
+func (r *rotating) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.file == nil {
+		return nil
+	}
+	err := r.file.Close()
+	r.file = nil
+	return err
 }
 
 func (r *rotating) Write(p []byte) (int, error) {

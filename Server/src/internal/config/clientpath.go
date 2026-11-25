@@ -41,7 +41,7 @@ func LibraryOf(libs []MediaPath, path string) (MediaPath, bool) {
 		if err != nil || lib.Path == "" {
 			continue
 		}
-		if abs == root || strings.HasPrefix(abs, root+string(filepath.Separator)) {
+		if InDir(abs, root) {
 			return lib, true
 		}
 	}
@@ -94,6 +94,9 @@ func DiskPathIn(libs []MediaPath, client string) (string, MediaPath, bool) {
 		return "", MediaPath{}, false
 	}
 	if len(parts) == 2 {
+		if !clientPartsOK(path, parts[1]) {
+			return "", MediaPath{}, false
+		}
 		path = filepath.Join(path, filepath.FromSlash(parts[1]))
 	}
 	// It must stay inside the library it was addressed through.

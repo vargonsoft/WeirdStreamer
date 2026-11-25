@@ -3,6 +3,7 @@ package backup
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -45,6 +46,7 @@ func TestCreateAndRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { db.Close() })
 	if _, err := db.CreateUser("alice", "a-password-1", false, "parents"); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +62,7 @@ func TestCreateAndRestore(t *testing.T) {
 	if len(list) != 2 || list[0].Name != made[2].Name || list[1].Name != made[1].Name {
 		t.Fatalf("kept %v, want the newest two of %v", list, made)
 	}
-	if st, _ := os.Stat(filepath.Join(Dir(), list[0].Name)); st == nil || st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(filepath.Join(Dir(), list[0].Name)); st == nil || runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 { // Windows has no Unix modes
 		t.Errorf("backup's mode: %v, want 0600", st)
 	}
 	if m, err := ReadManifest(filepath.Join(Dir(), list[0].Name)); err != nil || m.Version != "test" {

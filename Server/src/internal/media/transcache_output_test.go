@@ -36,6 +36,9 @@ func TestReadOutputKeepsMessagesNotProgress(t *testing.T) {
 
 // What a library prints to stdout during a transcode stays out of the stream.
 func TestTranscodeOutputHasItsOwnPipe(t *testing.T) {
+	if !extraPipes {
+		t.Skip("no pipe beyond stdout and stderr on this platform")
+	}
 	cmd := exec.Command("sh", "-c", `echo "libdvdread: CHECK_VALUE failed"; printf video >&3`, "sh", "pipe:1")
 	output, messages, err := transcodePipes(cmd)
 	if err != nil {

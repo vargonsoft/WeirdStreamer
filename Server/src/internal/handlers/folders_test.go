@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/weirdstreamer/server/internal/config"
@@ -30,22 +31,47 @@ func TestListFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := listFolder(dir + "/")
+	got, err := listFolder(dir + string(filepath.Separator))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Path != dir || got.Parent != filepath.Dir(dir) {
-		t.Errorf("path %q parent %q", got.Path, got.Parent)
+	if got.Path != dir || got.Parent != filepath.Dir(dir) || got.Top {
+		t.Errorf("path %q parent %q top %v", got.Path, got.Parent, got.Top)
 	}
-	if want := []string{"anime", "linked", "movies", "TV Shows"}; !reflect.DeepEqual(got.Folders, want) {
-		t.Errorf("folders %v, want %v", got.Folders, want)
+	var names []string
+	for _, f := range got.Folders {
+		names = append(names, f.Name)
+		if f.Path != filepath.Join(dir, f.Name) {
+			t.Errorf("%s's path %q", f.Name, f.Path)
+		}
+	}
+	if want := []string{"anime", "linked", "movies", "TV Shows"}; !reflect.DeepEqual(names, want) {
+		t.Errorf("folders %v, want %v", names, want)
 	}
 	if got.Videos != 2 {
 		t.Errorf("videos %d, want 2", got.Videos)
 	}
 
-	if top, err := listFolder(""); err != nil || top.Path != "/" || top.Parent != "" {
-		t.Errorf("top: %+v, %v", top, err)
+	// The top: / (nothing above it), or on Windows its drives, each a folder to open.
+	top, err := listFolder("")
+	if err != nil || !top.Top || top.Parent != "" {
+		t.Fatalf("top: %+v, %v", top, err)
+	}
+	if runtime.GOOS == "windows" {
+		if top.Path != "" || len(top.Folders) == 0 || top.Folders[0].Path != filepath.VolumeName(top.Folders[0].Path)+`\` {
+			t.Errorf("drives: %+v", top)
+		}
+		if root, err := listFolder(`C:\`); err != nil || root.Top || root.Parent != "" {
+			t.Errorf(`C:\: %+v, %v`, root, err)
+		}
+	} else if top.Path != "/" {
+		t.Errorf("top: %+v", top)
+	}
+
+	// A library's own folder says so.
+	config.GlobalConfig.Media.Paths = []config.MediaPath{{ID: "m", Name: "Movies", Path: filepath.Join(dir, "movies")}}
+	if l, err := listFolder(filepath.Join(dir, "movies")); err != nil || l.Library != "Movies" {
+		t.Errorf("library: %+v, %v", l, err)
 	}
 	for _, bad := range []string{"relative/path", filepath.Join(dir, "a.mkv"), filepath.Join(dir, "missing")} {
 		if _, err := listFolder(bad); err == nil {
