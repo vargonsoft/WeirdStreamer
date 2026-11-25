@@ -13,11 +13,25 @@ import (
 // either isn't installed, the command runs without it.
 func backgroundCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	prefix := lowPriorityPrefix()
-	if len(prefix) == 0 {
+	if _, err := exec.LookPath(name); err != nil || len(prefix) == 0 {
+		// A tool that isn't installed runs as it is, so the error says so (exec.ErrNotFound): through
+		// nice it would be nice's exit status 127, which reads like the tool turning the file down.
 		return exec.CommandContext(ctx, name, args...)
 	}
 	all := append(append(append([]string{}, prefix[1:]...), name), args...)
 	return exec.CommandContext(ctx, prefix[0], all...)
+}
+
+// ffmpegMissing names ffmpeg or ffprobe when one isn't on the PATH ("" when both are). Background
+// jobs wait while it does (busyFor) and store nothing about a file then: a server started before
+// ffmpeg was installed once marked every video done without frames, intros or styled subtitles.
+func ffmpegMissing() string {
+	for _, tool := range []string{"ffprobe", "ffmpeg"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			return tool
+		}
+	}
+	return ""
 }
 
 var lowPriority struct {

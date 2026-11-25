@@ -188,9 +188,13 @@ func streaming(streams *StreamTracker) bool {
 
 // busyFor says whether a background job reading path should wait, and why: the disk or network
 // share the file is on too busy to share (see loadFor: lower limits while someone plays from the
-// same one), or, with no readings, anyone streaming. The CPU isn't waited for: the jobs run at
+// same one), or, with no readings, anyone streaming; and while ffmpeg or ffprobe isn't installed
+// (ffmpegMissing), whatever the load. The CPU isn't waited for: the jobs run at
 // low priority instead (backgroundCommand), so playback gets it first.
 func busyFor(path string, streams *StreamTracker) (bool, string) {
+	if tool := ffmpegMissing(); tool != "" {
+		return true, tool + " isn't installed (or not on the server's PATH)"
+	}
 	if pauseWhileStreaming() && streaming(streams) {
 		return true, "Someone is streaming (paused while streaming)"
 	}
@@ -336,6 +340,9 @@ func (a *SegmentAnalyzer) analyzeDir(ctx context.Context, paths []string) {
 		}
 	}
 
+	if ffmpegMissing() != "" {
+		return // gone part way through: nothing read is to be trusted, so it's analyzed again
+	}
 	for _, v := range videos {
 		if ctx.Err() != nil {
 			return

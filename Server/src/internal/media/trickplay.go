@@ -84,7 +84,7 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 	src := Playable(videoPath)
 
 	duration, codec, err := tg.getVideoInfo(src)
-	if errors.Is(err, errUnreadableMedia) && ctx.Err() == nil && readable(videoPath) {
+	if errors.Is(err, errUnreadableMedia) && ctx.Err() == nil && readable(videoPath) && ffmpegMissing() == "" {
 		// Every way of reading it failed, but the file is there and reads (so it's not the share):
 		// not a video (code named .ts, say, or a corrupt file). Marked done, it isn't tried again.
 		fmt.Printf("Not a video, no frames to make: %s (%v)\n", videoPath, err)

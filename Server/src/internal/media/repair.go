@@ -409,8 +409,8 @@ func (j *RepairJob) runOnce(ctx context.Context) string {
 		bad, reason, claimed, err := checkSeek(ctx, w.path)
 		switch {
 		case ctx.Err() != nil:
-		case statErr != nil || (err != nil && CheckReadable(w.path) != nil):
-			// Gone, or the disk or share failed: looked at again on the next run
+		case statErr != nil || (err != nil && (CheckReadable(w.path) != nil || ffmpegMissing() != "")):
+			// Gone, or the disk, share or ffmpeg failed: looked at again on the next run
 			j.job.SetRunner(0, "")
 			j.job.Step(1)
 			continue

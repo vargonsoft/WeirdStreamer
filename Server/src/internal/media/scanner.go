@@ -480,6 +480,9 @@ func videoFormat(path string) string {
 	}
 	out, err := backgroundCommand(context.Background(), "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", Playable(path)).Output()
 	if err != nil {
+		if ffmpegMissing() != "" {
+			return "" // read on a later scan, once ffprobe is there
+		}
 		return "?"
 	}
 	var fp formatProbe

@@ -372,8 +372,8 @@ func (j *AssJob) runOnce(ctx context.Context) string {
 		}
 		if err != nil || statErr != nil {
 			skipped++
-			if statErr != nil || CheckReadable(w.path) != nil {
-				continue // gone, or the disk or share failed: looked at again on the next run
+			if statErr != nil || CheckReadable(w.path) != nil || ffmpegMissing() != "" {
+				continue // gone, the disk or share failed, or ffmpeg did: looked at again on the next run
 			}
 			// The file reads, but isn't a video ffmpeg understands.
 			log.Printf("ass: %s: %v (not tried again until it changes)", w.path, err)
