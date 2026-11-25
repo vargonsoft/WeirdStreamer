@@ -620,8 +620,10 @@ private fun CreditLine(label: String, people: List<CreditInfo>) {
 
 @Composable
 private fun CastRow(viewModel: MediaViewModel, cast: List<CreditInfo>, onFocused: () -> Unit) {
-    // Focusable so the whole cast can be scrolled through with the D-pad; nothing happens on click.
+    // Focusable so the whole cast can be scrolled through with the D-pad; OK opens a person's window.
     var hadFocus by remember { mutableStateOf(false) }
+    var opened by remember { mutableStateOf<CreditInfo?>(null) }
+    opened?.let { TvPersonDialog(viewModel, it, onDismiss = { opened = null }) }
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(horizontal = FocusBleed, vertical = 6.dp),
@@ -638,7 +640,7 @@ private fun CastRow(viewModel: MediaViewModel, cast: List<CreditInfo>, onFocused
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .width(120.dp)
-                    .tvClickable(shape = MaterialTheme.shapes.medium, focusedScale = 1.05f, borderWidth = 2.dp, onClick = {})
+                    .tvClickable(shape = MaterialTheme.shapes.medium, focusedScale = 1.05f, borderWidth = 2.dp, onClick = { opened = person })
                     .padding(6.dp)
             ) {
                 Box(

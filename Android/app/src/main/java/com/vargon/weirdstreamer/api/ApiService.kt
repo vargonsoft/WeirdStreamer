@@ -308,6 +308,9 @@ interface ApiService {
 
     // Collections admins make: {"lib", "name", "description", "titles"} to create; {"lib", "id", "name"?,
     // "description"?, "add"?, "remove"?} to change
+    @GET("/api/library/person")
+    suspend fun getPerson(@Query("lib") libraryId: String, @Query("id") id: Int): Response<com.vargon.weirdstreamer.api.models.PersonDetail>
+
     @GET("/api/library/usercollection")
     suspend fun getUserCollection(@Query("lib") libraryId: String, @Query("id") id: Long): Response<com.vargon.weirdstreamer.api.models.UserCollectionDetail>
 

@@ -122,6 +122,43 @@ type MovieDetails struct {
 	BelongsToCollection *CollectionRef `json:"belongs_to_collection"`
 }
 
+// PersonDetails is a person's TMDB record with their credits (movies and shows, as cast and crew).
+type PersonDetails struct {
+	ID                 int    `json:"id"`
+	Name               string `json:"name"`
+	Biography          string `json:"biography"`
+	Birthday           string `json:"birthday"`
+	Deathday           string `json:"deathday"`
+	PlaceOfBirth       string `json:"place_of_birth"`
+	KnownForDepartment string `json:"known_for_department"`
+	ProfilePath        string `json:"profile_path"`
+	CombinedCredits    struct {
+		Cast []PersonCreditEntry `json:"cast"`
+		Crew []PersonCreditEntry `json:"crew"`
+	} `json:"combined_credits"`
+}
+
+// PersonCreditEntry is one of a person's credits: a movie or a show, and their part or job in it.
+type PersonCreditEntry struct {
+	ID           int    `json:"id"`
+	MediaType    string `json:"media_type"` // "movie" or "tv"
+	Title        string `json:"title"`      // movies
+	Name         string `json:"name"`       // shows
+	ReleaseDate  string `json:"release_date"`
+	FirstAirDate string `json:"first_air_date"`
+	PosterPath   string `json:"poster_path"`
+	Character    string `json:"character"`
+	Job          string `json:"job"`
+	EpisodeCount int    `json:"episode_count"`
+}
+
+// Person is a person's details and credits.
+func (c *Client) Person(ctx context.Context, id int) (*PersonDetails, error) {
+	var p PersonDetails
+	err := c.get(ctx, fmt.Sprintf("/person/%d", id), url.Values{"append_to_response": {"combined_credits"}}, &p)
+	return &p, err
+}
+
 // CollectionRef names a movie's collection, as a movie's details give it.
 type CollectionRef struct {
 	ID           int    `json:"id"`

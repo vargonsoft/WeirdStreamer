@@ -545,6 +545,16 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   repairs folder as its fixed copy (listed as fixed again), the thumbnail back if it's gone, and `db.MoveFile`
   the other way; refused while a file is in its place, the replacement has changed, or someone else plays it.
   The job keeps a restored video's index entry until a scan lists it. Both folders are on the Jobs page's storage list.
+- **People** (a title page's cast: a tap, a click or OK opens a person's window): `GET /api/library/person?lib=&id=`
+  (`metadata/people.go`) gives a larger photo (`artwork/person/<id>large.jpg`, h632), their TMDB details
+  (biography, birth and death, place of birth, known for), the library's titles they're credited in (as its
+  titles, with progress and their `role`) and their whole TMDB filmography (cast and crew merged per title,
+  newest first, announced ones at the top; `poster` a TMDB image URL, `in_library` those here, which open as
+  title pages). Fetched from TMDB (`/person/<id>?append_to_response=combined_credits`) when first opened and kept
+  in `person_details` (refreshed after 30 days, the stored one used when TMDB can't be reached); only people a
+  stored title credits can be opened. The web's policy allows images from `https://image.tmdb.org` for these
+  and the Fix dialog's search results. Clients: web `openPersonDialog`, phone `PhonePersonDialog` and TV
+  `TvPersonDialog` (`PersonDialogs.kt`, `TvPersonDialog.kt`), iPhone `PersonSheet`.
 - **Collections** (movie libraries, admins make them; `database/collections.go`): a name, an optional description
   and the library's titles (by kind and TMDB ID, `user_collections` / `user_collection_titles` in the media
   database), seen by everyone who sees the library and changed only by admins. `GET /api/library` gives

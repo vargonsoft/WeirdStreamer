@@ -64,6 +64,39 @@ func (h *MediaHandler) GetLibrary(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, listing)
 }
 
+// GetLibraryPerson returns a person's page, opened from a title page's cast: GET
+// /api/library/person?lib=<id>&id=<tmdb person id>. Their details, the library's titles they're
+// credited in, and their TMDB filmography (fetched once, then kept).
+func (h *MediaHandler) GetLibraryPerson(w http.ResponseWriter, r *http.Request) {
+	lib, ok := h.libraryFromRequest(w, r)
+	if !ok {
+		return
+	}
+	id, err := strconv.Atoi(r.URL.Query().Get("id"))
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	listing, err := h.meta.Library(r.Context(), lib, h.libraryFileInfo)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list library")
+		return
+	}
+	annotateListing(listing, h.requestPlayback(r))
+	person, err := h.meta.Person(r.Context(), listing, id)
+	switch {
+	case errors.Is(err, metadata.ErrUnknownPerson):
+		respondError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, metadata.ErrNoToken):
+		respondError(w, http.StatusServiceUnavailable, err.Error())
+	case err != nil:
+		log.Printf("[LIBRARY] person %d: %v", id, err)
+		respondError(w, http.StatusBadGateway, "Couldn't get their details from TMDB")
+	default:
+		respondJSON(w, http.StatusOK, person)
+	}
+}
+
 // Collections admins make (database/collections.go): a name, a description and movies of the
 // library, everyone who sees the library sees them.
 

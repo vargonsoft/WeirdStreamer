@@ -207,8 +207,10 @@ type LibraryTitle struct {
 	// Movies: the TMDB collection it belongs to (0 for none)
 	CollectionID int `json:"collection_id,omitempty"`
 	// On a collection's page: a film of it the library doesn't have (not playable)
-	Missing bool     `json:"missing,omitempty"`
-	Paths   []string `json:"-"`
+	Missing bool `json:"missing,omitempty"`
+	// On a person's page: their part in it (a character, or a job)
+	Role  string   `json:"role,omitempty"`
+	Paths []string `json:"-"`
 }
 
 // LibraryFile is a playable file on a title page or in the Unmatched section.
@@ -250,4 +252,31 @@ type LibraryEpisode struct {
 	Runtime  int           `json:"runtime,omitempty"`
 	Still    string        `json:"still,omitempty"`
 	Files    []LibraryFile `json:"files"`
+}
+
+// PersonDetail is a person's page, opened from a title page's cast: a larger photo, their details,
+// their titles in the library (with progress) and their whole filmography on TMDB, newest first.
+type PersonDetail struct {
+	ID           int            `json:"id"`
+	Name         string         `json:"name"`
+	Photo        string         `json:"photo,omitempty"` // artwork URL
+	Biography    string         `json:"biography,omitempty"`
+	Birthday     string         `json:"birthday,omitempty"` // "1964-09-02"
+	Deathday     string         `json:"deathday,omitempty"`
+	PlaceOfBirth string         `json:"place_of_birth,omitempty"`
+	KnownFor     string         `json:"known_for,omitempty"` // "Acting", "Directing"…
+	InLibrary    []LibraryTitle `json:"in_library"`
+	Filmography  []PersonCredit `json:"filmography"`
+}
+
+// PersonCredit is a title in a person's filmography: Poster is a TMDB image URL; InLibrary marks
+// those the library has (opened as its titles).
+type PersonCredit struct {
+	Kind      string `json:"kind"` // "movie" or "show"
+	TMDBID    int    `json:"tmdb_id"`
+	Title     string `json:"title"`
+	Year      int    `json:"year,omitempty"`
+	Poster    string `json:"poster,omitempty"`
+	Role      string `json:"role,omitempty"`
+	InLibrary bool   `json:"in_library,omitempty"`
 }

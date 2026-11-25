@@ -168,6 +168,18 @@ struct APIContractTests {
         #expect(page.parts.first?.ref == CollectionTitle(kind: "movie", tmdbId: 10138))
     }
 
+    /// GET /api/library/person (models.PersonDetail with LibraryTitle and PersonCredit).
+    @Test func personReadsTheServersNames() throws {
+        let p = try decode(PersonDetail.self, #"""
+            {"id":3223,"name":"Robert Downey Jr.","photo":"/artwork/person/3223large.jpg","biography":"Actor.",
+             "birthday":"1965-04-04","place_of_birth":"New York City","known_for":"Acting",
+             "in_library":[{"kind":"movie","tmdb_id":10138,"title":"Iron Man 2","year":2010,"file_count":1,"role":"Tony Stark"}],
+             "filmography":[{"kind":"show","tmdb_id":1,"title":"Ally McBeal","year":1997,"poster":"https://image.tmdb.org/t/p/w185/a.jpg","role":"Larry Paul","in_library":false}]}
+            """#)
+        #expect(p.placeOfBirth == "New York City" && p.knownFor == "Acting")
+        #expect(p.inLibrary.first?.role == "Tony Stark" && p.filmography.first?.inLibrary == false)
+    }
+
     // MARK: Fixing matches
 
     /// GET /api/media/match (metadata.MatchInfo with models.ItemMetadata and EpisodeInfo).

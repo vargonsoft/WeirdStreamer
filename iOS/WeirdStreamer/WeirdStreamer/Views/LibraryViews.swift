@@ -319,11 +319,13 @@ struct CreditLine: View {
 
 struct CastRow: View {
     let cast: [CreditInfo]
+    @State private var opened: CreditInfo?   // a tap opens their window
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(alignment: .top, spacing: 12) {
                 ForEach(Array(cast.enumerated()), id: \.offset) { _, person in
+                    Button { if person.tmdbId != nil { opened = person } } label: {
                     VStack(spacing: 2) {
                         ZStack {
                             Palette.raised
@@ -338,11 +340,22 @@ struct CastRow: View {
                         }
                     }
                     .frame(width: 84)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
         }
+        .sheet(item: Binding(get: { opened.map(PersonRef.init) }, set: { if $0 == nil { opened = nil } })) { ref in
+            PersonSheet(cast: ref.cast)
+        }
     }
+}
+
+/// A cast member to open in a sheet (Identifiable by their TMDB ID).
+struct PersonRef: Identifiable {
+    let cast: CreditInfo
+    var id: Int { cast.tmdbId ?? 0 }
 }
 
 struct SectionHeader: View {

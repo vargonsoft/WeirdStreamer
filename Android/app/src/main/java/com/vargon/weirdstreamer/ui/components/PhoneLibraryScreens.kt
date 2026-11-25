@@ -349,12 +349,16 @@ private fun PhoneCreditLine(label: String, people: List<CreditInfo>) {
 
 @Composable
 private fun PhoneCastRow(viewModel: MediaViewModel, cast: List<CreditInfo>) {
+    // A tap opens a person's window
+    var opened by remember { mutableStateOf<CreditInfo?>(null) }
+    opened?.let { PhonePersonDialog(viewModel, it, onDismiss = { opened = null }) }
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
     ) {
         itemsIndexed(cast, key = { i, person -> "$i:${person.tmdbId}" }) { _, person ->
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(84.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.width(84.dp).clip(RoundedCornerShape(8.dp)).clickable { opened = person }) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier

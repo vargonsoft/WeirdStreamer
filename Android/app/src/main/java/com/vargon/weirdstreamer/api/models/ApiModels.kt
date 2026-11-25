@@ -227,7 +227,9 @@ data class LibraryTitle(
     @SerializedName("progress") val progress: Double = 0.0,
     @SerializedName("collection_id") val collectionId: Int = 0,
     // On a collection's page: a film of it the library doesn't have (not playable)
-    @SerializedName("missing") val missing: Boolean = false
+    @SerializedName("missing") val missing: Boolean = false,
+    // On a person's page: their part in it
+    @SerializedName("role") val role: String? = null
 ) {
     val allWatched: Boolean get() = fileCount > 0 && watched >= if (kind == "movie") 1 else fileCount
 }
@@ -836,4 +838,32 @@ data class TmdbEpisode(
     @SerializedName("number") val number: Int = 0,
     @SerializedName("name") val name: String? = null,
     @SerializedName("air_date") val airDate: String? = null,
+)
+
+/**
+ * A person's page (GET /api/library/person), opened from a title page's cast: a larger photo, their
+ * details, their titles in the library and their TMDB filmography, newest first.
+ */
+data class PersonDetail(
+    @SerializedName("id") val id: Int,
+    @SerializedName("name") val name: String,
+    @SerializedName("photo") val photo: String? = null,
+    @SerializedName("biography") val biography: String? = null,
+    @SerializedName("birthday") val birthday: String? = null,
+    @SerializedName("deathday") val deathday: String? = null,
+    @SerializedName("place_of_birth") val placeOfBirth: String? = null,
+    @SerializedName("known_for") val knownFor: String? = null,
+    @SerializedName("in_library") val inLibrary: List<LibraryTitle> = emptyList(),
+    @SerializedName("filmography") val filmography: List<PersonFilm> = emptyList()
+)
+
+/** A title in a person's filmography: [poster] a TMDB image URL; [inLibrary] those the library has. */
+data class PersonFilm(
+    @SerializedName("kind") val kind: String,
+    @SerializedName("tmdb_id") val tmdbId: Int,
+    @SerializedName("title") val title: String,
+    @SerializedName("year") val year: Int? = null,
+    @SerializedName("poster") val poster: String? = null,
+    @SerializedName("role") val role: String? = null,
+    @SerializedName("in_library") val inLibrary: Boolean = false
 )

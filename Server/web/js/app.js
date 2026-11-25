@@ -5560,8 +5560,12 @@ function createTitleHero(t) {
         const cast = document.createElement('div');
         cast.className = 'title-cast';
         t.cast.slice(0, 10).forEach(c => {
-            const person = document.createElement('div');
+            // Opens their window: a larger photo, their details and filmography
+            const person = document.createElement('button');
+            person.type = 'button';
             person.className = 'cast-member';
+            person.title = `About ${c.name}`;
+            person.onclick = () => openPersonDialog(state.libraryId, c);
             const face = document.createElement('div');
             face.className = 'cast-face';
             if (c.profile) {
@@ -5586,6 +5590,109 @@ function createTitleHero(t) {
     }
     hero.appendChild(info);
     return hero;
+}
+
+// A person's window, from a title page's cast: a larger photo, their details and biography, their
+// titles in this library (opened as title pages) and their whole TMDB filmography (those here open too).
+async function openPersonDialog(libId, cast) {
+    const modal = document.createElement('div');
+    modal.className = 'modal active';
+    modal.innerHTML = `<div class="modal-content person-dialog" role="dialog" aria-modal="true">
+        <span class="match-close" aria-label="Close" role="button" tabindex="0">&times;</span>
+        <div class="person-head"><div class="person-photo"></div><div class="person-facts"><h2></h2></div></div>
+        <div class="person-body"><p class="library-empty">Loading…</p></div></div>`;
+    const $ = sel => modal.querySelector(sel);
+    $('h2').textContent = cast.name;
+    if (cast.profile) $('.person-photo').innerHTML = `<img alt="" src="${API_BASE + cast.profile}">`;
+    const close = () => modal.remove();
+    $('.match-close').onclick = close;
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    modal.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    document.body.appendChild(modal);
+    $('.match-close').focus();
+
+    let p;
+    try {
+        p = await api.request(`/api/library/person?lib=${encodeURIComponent(libId)}&id=${cast.tmdb_id}`);
+    } catch (error) {
+        $('.person-body').textContent = 'Could not load their details: ' + error.message;
+        return;
+    }
+    if (p.photo) $('.person-photo').innerHTML = `<img alt="" src="${API_BASE + p.photo}">`;
+    const facts = $('.person-facts');
+    const line = (label, text) => {
+        if (!text) return;
+        const el = document.createElement('p');
+        el.className = 'person-fact';
+        el.innerHTML = '<strong></strong> ';
+        el.querySelector('strong').textContent = label;
+        el.appendChild(document.createTextNode(text));
+        facts.appendChild(el);
+    };
+    const date = d => d ? new Date(d + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+    const age = (from, to) => {
+        if (!from) return '';
+        const a = new Date(from + 'T00:00:00'), b = to ? new Date(to + 'T00:00:00') : new Date();
+        let years = b.getFullYear() - a.getFullYear();
+        if (b < new Date(b.getFullYear(), a.getMonth(), a.getDate())) years--;
+        return ` (${to ? 'aged' : 'age'} ${years})`;
+    };
+    line('Known for', p.known_for);
+    line('Born', p.birthday ? date(p.birthday) + (p.deathday ? '' : age(p.birthday)) : '');
+    line('Died', p.deathday ? date(p.deathday) + age(p.birthday, p.deathday) : '');
+    line('Place of birth', p.place_of_birth);
+    const body = $('.person-body');
+    body.innerHTML = '';
+    if (p.biography) {
+        const bio = document.createElement('p');
+        bio.className = 'person-bio';
+        bio.textContent = p.biography;
+        body.appendChild(bio);
+    }
+    const openTitle = (kind, id) => { close(); showTitle(libId, kind, id); };
+    if (p.in_library.length) {
+        const h = document.createElement('h3');
+        h.textContent = `In ${state.libraryName || 'this library'} (${p.in_library.length})`;
+        body.appendChild(h);
+        const grid = document.createElement('div');
+        grid.className = 'poster-grid person-grid';
+        p.in_library.forEach(t => {
+            const card = createPosterCard(t);
+            card.onclick = () => openTitle(t.kind, t.tmdb_id);
+            if (t.role) card.querySelector('.poster-year').textContent = [t.year, t.role].filter(Boolean).join(' · ');
+            grid.appendChild(card);
+        });
+        body.appendChild(grid);
+    }
+    if (p.filmography.length) {
+        const h = document.createElement('h3');
+        h.textContent = `Filmography (${p.filmography.length})`;
+        body.appendChild(h);
+        const list = document.createElement('div');
+        list.className = 'person-films';
+        p.filmography.forEach(f => {
+            const row = document.createElement(f.in_library ? 'button' : 'div');
+            row.className = 'person-film' + (f.in_library ? ' here' : '');
+            if (f.in_library) {
+                row.type = 'button';
+                row.onclick = () => openTitle(f.kind, f.tmdb_id);
+            }
+            const thumb = document.createElement('div');
+            thumb.className = 'person-film-poster';
+            if (f.poster) thumb.innerHTML = `<img alt="" loading="lazy" src="${f.poster}">`;
+            const text = document.createElement('div');
+            const title = document.createElement('div');
+            title.className = 'person-film-title';
+            title.textContent = f.title + (f.kind === 'show' ? ' (TV)' : '');
+            const meta = document.createElement('div');
+            meta.className = 'person-film-meta';
+            meta.textContent = [f.year || 'Upcoming', f.role, f.in_library ? 'In this library' : ''].filter(Boolean).join(' · ');
+            text.append(title, meta);
+            row.append(thumb, text);
+            list.appendChild(row);
+        });
+        body.appendChild(list);
+    }
 }
 
 // The square video thumbnails with a Play button under each (clicking the thumbnail plays too).

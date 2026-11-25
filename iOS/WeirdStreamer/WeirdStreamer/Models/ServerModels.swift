@@ -132,6 +132,7 @@ struct LibraryTitle: Decodable, Identifiable, Hashable {
     let progress: Double?
     var collectionId: Int? = nil   // movies: the TMDB collection it belongs to
     var missing: Bool? = nil       // on a collection's page: a film the library doesn't have
+    var role: String? = nil        // on a person's page: their part in it
 
     var id: String { "\(kind)-\(tmdbId)" }
 
@@ -683,4 +684,31 @@ struct TmdbEpisode: Decodable, Identifiable {
     var name: String?
     var airDate: String?
     var id: Int { number }
+}
+
+/// A person's page (GET /api/library/person), opened from a title page's cast: a larger photo,
+/// their details, their titles in the library and their TMDB filmography, newest first.
+struct PersonDetail: Decodable {
+    let id: Int
+    let name: String
+    let photo: String?
+    let biography: String?
+    let birthday: String?
+    let deathday: String?
+    let placeOfBirth: String?
+    let knownFor: String?
+    let inLibrary: [LibraryTitle]
+    let filmography: [PersonFilm]
+}
+
+/// A title in a person's filmography: `poster` a TMDB image URL; `inLibrary` those the library has.
+struct PersonFilm: Decodable, Identifiable {
+    let kind: String
+    let tmdbId: Int
+    let title: String
+    let year: Int?
+    let poster: String?
+    let role: String?
+    let inLibrary: Bool?
+    var id: String { "\(kind)-\(tmdbId)" }
 }

@@ -237,6 +237,7 @@ func main() {
 	api.HandleFunc("/library/title", mediaHandler.GetLibraryTitle).Methods("GET")
 	api.HandleFunc("/library/collection", mediaHandler.GetLibraryCollection).Methods("GET")
 	api.HandleFunc("/library/usercollection", mediaHandler.GetUserCollection).Methods("GET")
+	api.HandleFunc("/library/person", mediaHandler.GetLibraryPerson).Methods("GET")
 	api.HandleFunc("/library/usercollections", mediaHandler.ChangeUserCollection).Methods("POST", "PUT", "DELETE")
 	api.HandleFunc("/library/new", mediaHandler.NewAdditions).Methods("GET")
 	api.HandleFunc("/playback/watched", mediaHandler.SetWatched).Methods("POST")
@@ -435,10 +436,10 @@ func securityHeaders(next http.Handler) http.Handler {
 
 // contentPolicy lets the web UI load and run only the server's own files: no inline or other
 // sites' scripts, so text slipped into a page can't run. Styles may be inline (the pages app.js
-// builds have style attributes); images and media may also be blob: and data: URLs. WebAssembly
-// (JASSUB's libass) is allowed, and no site may frame the pages.
+// builds have style attributes); images and media may also be blob: and data: URLs, and images
+// TMDB's (search results' and filmographies' posters). WebAssembly (JASSUB's libass) is allowed, and no site may frame the pages.
 const contentPolicy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; " +
-	"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; " +
+	"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://image.tmdb.org; media-src 'self' blob:; " +
 	"font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; " +
 	"form-action 'self'; frame-ancestors 'none'"
 
