@@ -626,7 +626,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   `media.themePath` (default `themes` beside the thumbnails, on the Jobs page's storage list), named by a hash of
   the file, its size and time and the part cut, faded in and out, up to 2 minutes; the first request makes one
   (a few seconds for a movie's search). A title with neither has none. Settings (each device's, on by default):
-  "Play theme music on title pages" and its volume, Low, Medium or High (15%, 30%, 50% of the device's volume):
+  "Play theme music on title pages" and its volume, Low, Medium or High (15%, 30%, 50% of the device's volume;
+  the TV has one picker row for both, Off | Low | Medium | High, `TvSettingsRow`'s `stepValue`/`onStep`):
   web My Account › Playback (`localStorage` `themeMusic`, `themeVolume`; `playThemeMusic`, `stopThemeMusic`),
   Android `ThemeMusic.kt` (`TitleThemeMusic` on the phone's and TV's title pages; downloaded through the app's
   client, then `MediaPlayer`), iPhone `ThemeMusic.swift` (`AVAudioPlayer`, the ambient session: it mixes and

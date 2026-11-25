@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -60,7 +61,6 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     val hiddenFilesFocus = remember { FocusRequester() }
     val rewindFocus = remember { FocusRequester() }
     val themeMusicFocus = remember { FocusRequester() }
-    val themeVolumeFocus = remember { FocusRequester() }
     val clearCacheFocus = remember { FocusRequester() }
     val updateFocus = remember { FocusRequester() }
     val subtitleStyleFocus = remember { FocusRequester() }
@@ -187,20 +187,22 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         onClick = { viewModel.updateRewindOnResume(!viewModel.rewindOnResume) }) {
                         Switch(checked = viewModel.rewindOnResume, onCheckedChange = null, colors = tvSwitchColors())
                     }
-                    TvSettingsRow("Play theme music on title pages", focus = themeMusicFocus, up = rewindFocus, down = themeVolumeFocus,
-                        onClick = { viewModel.updateThemeMusic(!viewModel.themeMusic) }) {
-                        Switch(checked = viewModel.themeMusic, onCheckedChange = null, colors = tvSwitchColors())
+                    // Off, Low, Medium or High: Left and Right step, OK goes round
+                    val themeChoices = listOf("Off") + THEME_VOLUMES.map { it.second }
+                    val themeChoice = if (!viewModel.themeMusic) 0
+                        else 1 + THEME_VOLUMES.indexOfFirst { it.first == viewModel.themeVolume }.coerceAtLeast(0)
+                    fun pickTheme(i: Int) {
+                        if (i == 0) { viewModel.updateThemeMusic(false); return }
+                        viewModel.updateThemeVolume(THEME_VOLUMES[i - 1].first)
+                        viewModel.updateThemeMusic(true)
                     }
-                    // Its volume: OK steps Low → Medium → High
-                    TvSettingsRow("Theme music volume", THEME_VOLUMES.firstOrNull { it.first == viewModel.themeVolume }?.second ?: "Medium",
-                        themeVolumeFocus, up = themeMusicFocus, down = subtitleStyleFocus,
-                        onClick = {
-                            val n = THEME_VOLUMES.indexOfFirst { it.first == viewModel.themeVolume }
-                            viewModel.updateThemeVolume(THEME_VOLUMES[(n + 1).mod(THEME_VOLUMES.size)].first)
-                        }) {}
+                    TvSettingsRow("Theme music on title pages", focus = themeMusicFocus, up = rewindFocus, down = subtitleStyleFocus,
+                        stepValue = themeChoices[themeChoice],
+                        onStep = { by -> pickTheme((themeChoice + by).coerceIn(0, themeChoices.lastIndex)) },
+                        onClick = { pickTheme((themeChoice + 1) % themeChoices.size) }) {}
                     // Subtitle style: Android's caption settings, or our own
                     TvSettingsRow("Subtitle style", subtitleStyleSummary(SubtitleStyleStore.get(context)), subtitleStyleFocus,
-                        up = themeVolumeFocus, down = clearCacheFocus, onClick = { showSubtitleStyle = true }) {
+                        up = themeMusicFocus, down = clearCacheFocus, onClick = { showSubtitleStyle = true }) {
                         Icon(Icons.Default.ClosedCaption, contentDescription = null)
                     }
                     TvSettingsRow("Clear thumbnail cache", focus = clearCacheFocus, up = subtitleStyleFocus, down = updateFocus,
@@ -328,9 +330,14 @@ internal fun TvSettingsRow(
     up: FocusRequester? = null,
     down: FocusRequester? = null,
     titleColor: Color = Color.Unspecified,
+    stepValue: String? = null,
+    onStep: ((Int) -> Unit)? = null,
     onClick: () -> Unit,
     trailing: @Composable () -> Unit
 ) {
+    // A row with [stepValue] is a picker (as the Languages dialog's): the value at the end, between
+    // ‹ › when focused, and Left and Right call [onStep] with -1 or 1
+    var focused by remember { mutableStateOf(false) }
     Surface(
         onClick = onClick,
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
@@ -353,6 +360,12 @@ internal fun TvSettingsRow(
                 up?.let { this.up = it }
                 down?.let { this.down = it }
             }
+            .onFocusChanged { focused = it.isFocused }
+            .then(if (onStep == null) Modifier else Modifier.onPreviewKeyEvent { e ->
+                val by = when (e.key) { Key.DirectionRight -> 1; Key.DirectionLeft -> -1; else -> 0 }
+                if (by != 0 && e.type == KeyEventType.KeyDown) onStep(by)
+                by != 0
+            })
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -363,6 +376,9 @@ internal fun TvSettingsRow(
                 if (detail != null) {
                     Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+            if (stepValue != null) {
+                Text(if (focused) "‹  $stepValue  ›" else stepValue, style = MaterialTheme.typography.titleMedium)
             }
             trailing()
         }
