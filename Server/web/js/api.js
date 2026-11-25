@@ -353,6 +353,28 @@ class MediaAPI {
         return this.request(`/api/library?lib=${encodeURIComponent(libId)}`);
     }
 
+    // Collections admins make in a movie library (titles are { kind, tmdb_id })
+    async getUserCollection(libId, id) {
+        return this.request(`/api/library/usercollection?lib=${encodeURIComponent(libId)}&id=${id}`);
+    }
+
+    async createUserCollection(libId, name, description, titles) {
+        return this.request('/api/library/usercollections', {
+            method: 'POST', body: JSON.stringify({ lib: libId, name, description, titles }),
+        });
+    }
+
+    // changes: { name?, description?, add?: [titles], remove?: [titles] }
+    async updateUserCollection(libId, id, changes) {
+        return this.request('/api/library/usercollections', {
+            method: 'PUT', body: JSON.stringify({ lib: libId, id, ...changes }),
+        });
+    }
+
+    async deleteUserCollection(libId, id) {
+        return this.request(`/api/library/usercollections?lib=${encodeURIComponent(libId)}&id=${id}`, { method: 'DELETE' });
+    }
+
     // A movie collection's page: every film TMDB lists in it, the library's and the missing ones
     async getLibraryCollection(libId, id) {
         return this.request(`/api/library/collection?lib=${encodeURIComponent(libId)}&id=${id}`);

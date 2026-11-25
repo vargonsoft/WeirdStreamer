@@ -63,6 +63,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         when {
             viewModel.openTitle != null -> viewModel.closeLibraryTitle()
             viewModel.openCollection != null -> viewModel.closeCollection()
+            viewModel.openUserCollection != null -> viewModel.closeUserCollection()
             viewModel.isLibraryView -> viewModel.leaveLibrary()
             else -> viewModel.navigateUp()
         }
@@ -96,7 +97,9 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                             val display = when {
                                 viewModel.openTitle != null -> viewModel.openTitle!!.title
                                 viewModel.openCollection != null -> viewModel.openCollection!!.name
-                                viewModel.isCollectionsView -> (viewModel.libraryListing?.libraryName ?: "Library") + " · Collections"
+                                viewModel.openUserCollection != null -> viewModel.openUserCollection!!.name
+                                viewModel.isUserCollectionsView -> (viewModel.libraryListing?.libraryName ?: "Library") + " · Collections"
+                                viewModel.isCollectionsView -> (viewModel.libraryListing?.libraryName ?: "Library") + " · TMDB Collections"
                                 viewModel.isLibraryView -> viewModel.libraryListing?.libraryName ?: "Library"
                                 else -> viewModel.currentPathDisplayName ?: if (viewModel.currentPath.isNotEmpty()) viewModel.currentPath else "/"
                             }
@@ -129,8 +132,9 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         // Shows the mode it switches to: list -> grid -> library (movie/tv libraries) -> list
                         Icon(
                             when {
-                                viewModel.isLibraryView && viewModel.libraryType == "movie" && !viewModel.isCollectionsView ->
-                                    Icons.Default.CollectionsBookmark
+                                viewModel.isLibraryView && viewModel.libraryType == "movie" && !viewModel.isUserCollectionsView &&
+                                    !viewModel.isCollectionsView -> Icons.Default.Collections
+                                viewModel.isUserCollectionsView -> Icons.Default.CollectionsBookmark
                                 viewModel.isLibraryView -> Icons.AutoMirrored.Filled.ViewList
                                 !viewModel.isGridView -> Icons.Default.GridView
                                 viewModel.libraryType != null -> Icons.Default.VideoLibrary
@@ -244,8 +248,11 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 viewModel.isLibraryView -> {
                     val title = viewModel.openTitle
                     val collection = viewModel.openCollection
+                    val userCollection = viewModel.openUserCollection
                     when {
                         title != null -> PhoneTitleScreen(viewModel, title)
+                        viewModel.isUserCollectionsView ->
+                            if (userCollection != null) PhoneUserCollectionScreen(viewModel, userCollection) else PhoneUserCollectionsScreen(viewModel)
                         !viewModel.isCollectionsView -> PhoneLibraryScreen(viewModel)
                         collection != null -> PhoneCollectionScreen(viewModel, collection)
                         else -> PhoneCollectionsScreen(viewModel)

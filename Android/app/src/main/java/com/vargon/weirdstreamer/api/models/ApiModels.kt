@@ -163,7 +163,34 @@ data class LibraryListing(
     @SerializedName("titles") val titles: List<LibraryTitle> = emptyList(),
     @SerializedName("unmatched") val unmatched: List<LibraryFile> = emptyList(),
     // Movie libraries: the TMDB collections (film series) its movies belong to, by name
-    @SerializedName("collections") val collections: List<LibraryCollection>? = null
+    @SerializedName("collections") val collections: List<LibraryCollection>? = null,
+    // Movie libraries: the collections admins made, by name
+    @SerializedName("user_collections") val userCollections: List<UserCollectionSummary>? = null
+)
+
+/** A library title by kind ("movie", or "show" for a TV movie) and TMDB ID, as collections name them. */
+data class CollectionTitle(
+    @SerializedName("kind") val kind: String,
+    @SerializedName("tmdb_id") val tmdbId: Int
+)
+
+/** A collection admins made: its titles here and the posters of its first four by release date (its collage). */
+data class UserCollectionSummary(
+    @SerializedName("id") val id: Long,
+    @SerializedName("name") val name: String,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("count") val count: Int = 0,
+    @SerializedName("posters") val posters: List<String> = emptyList(),
+    @SerializedName("titles") val titles: List<CollectionTitle> = emptyList()
+)
+
+/** A made collection's page: its titles by release date, with progress. */
+data class UserCollectionDetail(
+    @SerializedName("id") val id: Long,
+    @SerializedName("name") val name: String,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("posters") val posters: List<String> = emptyList(),
+    @SerializedName("parts") val parts: List<LibraryTitle> = emptyList()
 )
 
 /** A collection (a film series) in a movie library: its movies here ([count]) of its films on TMDB ([total]). */

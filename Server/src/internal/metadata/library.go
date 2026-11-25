@@ -359,3 +359,88 @@ func (s *Service) Collection(listing *models.LibraryListing, id int) (*models.Co
 	detail.Parts = append(detail.Parts, rest...)
 	return detail, nil
 }
+
+// releaseDate is when a title came out ("2012-04-25"), for ordering a collection; "" if unknown.
+func (s *Service) releaseDate(kind string, id int) string {
+	if kind == "show" {
+		if sh, err := s.db.GetShow(id); err == nil && sh != nil {
+			return sh.FirstAirDate
+		}
+		return ""
+	}
+	if m, err := s.db.GetMovie(id); err == nil && m != nil {
+		return m.ReleaseDate
+	}
+	return ""
+}
+
+// collectionParts are a made collection's titles that are still in the listing, by release date.
+func (s *Service) collectionParts(listing *models.LibraryListing, c database.UserCollection) []models.LibraryTitle {
+	byKey := map[titleKey]models.LibraryTitle{}
+	for _, t := range listing.Titles {
+		byKey[titleKey{t.Kind, t.TMDBID}] = t
+	}
+	type dated struct {
+		t    models.LibraryTitle
+		date string
+	}
+	var parts []dated
+	for _, ct := range c.Titles {
+		if t, ok := byKey[titleKey{ct.Kind, ct.TMDBID}]; ok {
+			parts = append(parts, dated{t, s.releaseDate(t.Kind, t.TMDBID)})
+		}
+	}
+	sort.SliceStable(parts, func(i, j int) bool {
+		a, b := parts[i], parts[j]
+		if (a.date == "") != (b.date == "") {
+			return b.date == "" // undated last
+		}
+		if a.date != b.date {
+			return a.date < b.date
+		}
+		return SortTitle(a.t.Title) < SortTitle(b.t.Title)
+	})
+	out := make([]models.LibraryTitle, len(parts))
+	for i, p := range parts {
+		out[i] = p.t
+	}
+	return out
+}
+
+// collagePosters are the posters of a collection's first four titles that have one.
+func collagePosters(parts []models.LibraryTitle) []string {
+	posters := []string{}
+	for _, t := range parts {
+		if t.Poster != "" && len(posters) < 4 {
+			posters = append(posters, t.Poster)
+		}
+	}
+	return posters
+}
+
+// UserCollections are the library's made collections for its listing, by name.
+func (s *Service) UserCollections(listing *models.LibraryListing, cols []database.UserCollection) []models.UserCollectionSummary {
+	out := []models.UserCollectionSummary{}
+	for _, c := range cols {
+		parts := s.collectionParts(listing, c)
+		titles := make([]models.CollectionTitle, len(parts))
+		for i, t := range parts {
+			titles[i] = models.CollectionTitle{Kind: t.Kind, TMDBID: t.TMDBID}
+		}
+		out = append(out, models.UserCollectionSummary{ID: c.ID, Name: c.Name, Description: c.Description,
+			Count: len(parts), Posters: collagePosters(parts), Titles: titles})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return SortTitle(out[i].Name) < SortTitle(out[j].Name) })
+	return out
+}
+
+// UserCollection builds a made collection's page from the library's listing (annotated with the
+// user's progress): its titles still in the library, by release date.
+func (s *Service) UserCollection(listing *models.LibraryListing, c database.UserCollection) *models.UserCollectionDetail {
+	parts := s.collectionParts(listing, c)
+	if parts == nil {
+		parts = []models.LibraryTitle{}
+	}
+	return &models.UserCollectionDetail{ID: c.ID, Name: c.Name, Description: c.Description,
+		Posters: collagePosters(parts), Parts: parts}
+}

@@ -198,6 +198,7 @@ internal fun PhonePosterTile(
     watched: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     dimmed: Boolean = false, // a collection's film the library doesn't have: not clickable
+    collage: List<String>? = null, // a made collection's: up to four posters instead of one
     onClick: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()
@@ -212,7 +213,7 @@ internal fun PhonePosterTile(
         ) {
             Icon(placeholder, contentDescription = null, modifier = Modifier.size(40.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            posterUrl?.let { RemoteImage(it, Modifier.fillMaxSize()) }
+            if (collage != null) Collage(collage, Modifier.fillMaxSize()) else posterUrl?.let { RemoteImage(it, Modifier.fillMaxSize()) }
             WatchProgressOverlay(progress, watched)
         }
         Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
@@ -289,6 +290,13 @@ private fun PhoneTitleHeader(viewModel: MediaViewModel, title: TitleDetail) {
                 titleFixFile(title)?.let { f ->
                     if (viewModel.canFixMatches) PhoneSecondaryButton(onClick = { viewModel.openMatch(f.path, false, title.title, wholeTitle = true) },
                         modifier = Modifier.padding(top = 8.dp)) { Text("Fix match") }
+                }
+                // Admins add a movie library's title to their collections
+                if (viewModel.canEditCollections) {
+                    var adding by remember { mutableStateOf(false) }
+                    PhoneSecondaryButton(onClick = { adding = true }, modifier = Modifier.padding(top = 8.dp)) { Text("Add to collection") }
+                    if (adding) PhoneAddToCollectionDialog(viewModel, com.vargon.weirdstreamer.api.models.CollectionTitle(title.kind, title.tmdbId),
+                        title.title, onDismiss = { adding = false })
                 }
             }
         }
@@ -636,7 +644,7 @@ private fun episodeDownloads(viewModel: MediaViewModel, title: TitleDetail, seas
     seasons.flatMap { s -> s.episodes.flatMap { e -> e.files.map { DownloadRequest.of(viewModel, it, episodeLabel(title.title, e), e.still) } } }
 
 @Composable
-private fun PhoneMessage(text: String) {
+internal fun PhoneMessage(text: String) {
     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center)

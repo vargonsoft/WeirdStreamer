@@ -310,27 +310,32 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         credentialManager.setGridView(key, grid)
     }
 
-    // ---- Collection view: a movie library's films by TMDB collection (series), after Library view ----
+    // ---- Collections: a movie library's Library view can show the collections admins made, or
+    // TMDB's (film series), instead of its posters ----
 
-    private var collectionsModeMap by mutableStateOf(mapOf<String, Boolean>())
+    private var subViewMap by mutableStateOf(mapOf<String, String>())
 
-    /** Library view shows the library's collections rather than its posters (movie libraries). */
-    val isCollectionsView: Boolean
+    /** What Library view shows in a movie library: "posters", "collections" or "tmdb". */
+    private val librarySubView: String
         get() {
-            if (!isLibraryView || libraryType != "movie") return false
+            if (!isLibraryView || libraryType != "movie") return "posters"
             val key = libraryModeKey
-            return collectionsModeMap[key] ?: credentialManager.isCollectionsMode(key).also {
-                collectionsModeMap = collectionsModeMap + (key to it)
-            }
+            return subViewMap[key] ?: credentialManager.librarySubView(key).also { subViewMap = subViewMap + (key to it) }
         }
 
-    private fun setCollectionsMode(enabled: Boolean) {
+    private fun setLibrarySubView(mode: String) {
         val key = libraryModeKey
-        collectionsModeMap = collectionsModeMap + (key to enabled)
-        credentialManager.setCollectionsMode(key, enabled)
+        subViewMap = subViewMap + (key to mode)
+        credentialManager.setLibrarySubView(key, mode)
     }
 
-    /** The collection page being shown (Collection view), if any; a title opened from it shows over it. */
+    /** Library view shows the collections admins made. */
+    val isUserCollectionsView: Boolean get() = librarySubView == "collections"
+
+    /** Library view shows TMDB's collections (film series). */
+    val isCollectionsView: Boolean get() = librarySubView == "tmdb"
+
+    /** The TMDB collection page shown, if any; a title opened from it shows over it. */
     var openCollection by mutableStateOf<com.vargon.weirdstreamer.api.models.CollectionDetail?>(null)
         private set
 
@@ -347,25 +352,119 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** The made collection page shown, if any; a title opened from it shows over it. */
+    var openUserCollection by mutableStateOf<com.vargon.weirdstreamer.api.models.UserCollectionDetail?>(null)
+        private set
+
+    fun openUserCollection(id: Long) {
+        toolbarKeepsFocus = false
+        val api = serverRepository?.api ?: return
+        val libraryId = currentLibraryId ?: return
+        viewModelScope.launch {
+            val (got, err) = com.vargon.weirdstreamer.ui.components.attempt { api.getUserCollection(libraryId, id) }
+            if (got != null) openUserCollection = got else libraryError = err
+        }
+    }
+
+    fun closeUserCollection() {
+        openUserCollection = null
+    }
+
+    /** Admins can make and change collections (in a movie library). */
+    val canEditCollections: Boolean
+        get() = libraryType == "movie" && serverRepository?.signedInAs()?.second == true
+
+    /** The last change to a collection failed: its reason, for the screen to show. */
+    var collectionError by mutableStateOf<String?>(null)
+
+    private fun titlesJson(titles: Collection<com.vargon.weirdstreamer.api.models.CollectionTitle>) = com.google.gson.JsonArray().apply {
+        titles.forEach { t -> add(com.google.gson.JsonObject().apply { addProperty("kind", t.kind); addProperty("tmdb_id", t.tmdbId) }) }
+    }
+
+    /** Makes a collection with these titles; [open] shows its page after. */
+    fun createUserCollection(name: String, description: String, titles: Collection<com.vargon.weirdstreamer.api.models.CollectionTitle>,
+                             open: Boolean = true) {
+        val api = serverRepository?.api ?: return
+        val libraryId = currentLibraryId ?: return
+        val body = com.google.gson.JsonObject().apply {
+            addProperty("lib", libraryId); addProperty("name", name); addProperty("description", description)
+            add("titles", titlesJson(titles))
+        }
+        viewModelScope.launch {
+            val (got, err) = com.vargon.weirdstreamer.ui.components.attempt { api.createUserCollection(body) }
+            collectionError = err
+            if (got != null) {
+                if (open) openUserCollection = got
+                reloadLibraryListing()
+            }
+        }
+    }
+
+    /** Changes a collection: its name and description when given, and adds and removes titles. */
+    fun updateUserCollection(id: Long, name: String? = null, description: String? = null,
+                             add: Collection<com.vargon.weirdstreamer.api.models.CollectionTitle> = emptyList(),
+                             remove: Collection<com.vargon.weirdstreamer.api.models.CollectionTitle> = emptyList()) {
+        val api = serverRepository?.api ?: return
+        val libraryId = currentLibraryId ?: return
+        val body = com.google.gson.JsonObject().apply {
+            addProperty("lib", libraryId); addProperty("id", id)
+            name?.let { addProperty("name", it) }
+            description?.let { addProperty("description", it) }
+            if (add.isNotEmpty()) add("add", titlesJson(add))
+            if (remove.isNotEmpty()) add("remove", titlesJson(remove))
+        }
+        viewModelScope.launch {
+            val (got, err) = com.vargon.weirdstreamer.ui.components.attempt { api.updateUserCollection(body) }
+            collectionError = err
+            if (got != null) {
+                if (openUserCollection?.id == got.id) openUserCollection = got
+                reloadLibraryListing()
+            }
+        }
+    }
+
+    fun deleteUserCollection(id: Long) {
+        val api = serverRepository?.api ?: return
+        val libraryId = currentLibraryId ?: return
+        viewModelScope.launch {
+            val (_, err) = com.vargon.weirdstreamer.ui.components.attempt { api.deleteUserCollection(libraryId, id) }
+            collectionError = err
+            if (err == null) {
+                if (openUserCollection?.id == id) openUserCollection = null
+                reloadLibraryListing()
+            }
+        }
+    }
+
+    /** The library's listing again, quietly (its collections changed). */
+    private suspend fun reloadLibraryListing() {
+        val repo = serverRepository ?: return
+        val libraryId = currentLibraryId ?: return
+        repo.library(libraryId).getOrNull()?.let { if (libraryListing?.libraryId == it.libraryId) libraryListing = it }
+    }
+
     fun closeCollection() {
         openCollection = null
     }
 
     /** TV: the collection last opened and the title last opened from one, focused again on the way back. */
     var collectionReturn: Int? = null
+    var userCollectionReturn: Long? = null
     var collectionTitleReturn: Int? = null
 
-    /** Cycles list -> grid -> library (movie/tv libraries only) -> collections (movie libraries) -> list. */
+    /** Cycles list -> grid -> library (movie/tv libraries only) -> collections -> TMDB collections (movie libraries) -> list. */
     fun toggleViewMode() {
         toolbarKeepsFocus = true
         when {
-            isLibraryView && libraryType == "movie" && !isCollectionsView -> {
-                setCollectionsMode(true)
+            isLibraryView && libraryType == "movie" && librarySubView != "tmdb" -> {
+                setLibrarySubView(if (librarySubView == "posters") "collections" else "tmdb")
                 openTitle = null
+                openUserCollection = null
             }
             isLibraryView -> {
-                setCollectionsMode(false)
+                if (libraryType == "movie") setLibrarySubView("posters")
                 openCollection = null
+                openUserCollection = null
                 setLibraryMode(false)
                 setGridView(false)
             }
@@ -416,6 +515,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val repo = currentRepository ?: return
         openTitle = null
         openCollection = null
+        openUserCollection = null
         currentPathDisplayName = null
         loadPath(source, repo.getInitialPath())
     }
@@ -693,6 +793,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     if (openTitle?.tmdbId == fresh.tmdbId) openTitle = fresh
                 }
             }
+            openUserCollection?.let { c ->
+                if (libraryId != null) runCatching { repo.api.getUserCollection(libraryId, c.id).body() }.getOrNull()?.let { fresh ->
+                    if (openUserCollection?.id == fresh.id) openUserCollection = fresh
+                }
+            }
             openCollection?.let { c ->
                 if (libraryId != null) repo.libraryCollection(libraryId, c.id).getOrNull()?.let { fresh ->
                     if (openCollection?.id == fresh.id) openCollection = fresh
@@ -871,6 +976,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                         libraryListing = null
                         openTitle = null
                         openCollection = null
+                        openUserCollection = null
                     }
                     libraryType = newLibraryType
                     if (isLibraryView && libraryListing == null) loadLibrary()
@@ -997,6 +1103,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         libraryListing = null
         openTitle = null
         openCollection = null
+        openUserCollection = null
         discardItemUpdates()
         stopThumbnailUpdates()
     }

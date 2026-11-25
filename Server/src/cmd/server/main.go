@@ -236,6 +236,8 @@ func main() {
 	api.HandleFunc("/library", mediaHandler.GetLibrary).Methods("GET")
 	api.HandleFunc("/library/title", mediaHandler.GetLibraryTitle).Methods("GET")
 	api.HandleFunc("/library/collection", mediaHandler.GetLibraryCollection).Methods("GET")
+	api.HandleFunc("/library/usercollection", mediaHandler.GetUserCollection).Methods("GET")
+	api.HandleFunc("/library/usercollections", mediaHandler.ChangeUserCollection).Methods("POST", "PUT", "DELETE")
 	api.HandleFunc("/library/new", mediaHandler.NewAdditions).Methods("GET")
 	api.HandleFunc("/playback/watched", mediaHandler.SetWatched).Methods("POST")
 	api.HandleFunc("/playback/sync", mediaHandler.SyncPlayback).Methods("POST")

@@ -143,6 +143,34 @@ type LibraryListing struct {
 	Unmatched   []LibraryFile  `json:"unmatched"` // files (or, for TV, shows) without a match
 	// Movie libraries: the TMDB collections (film series) its movies belong to, by name
 	Collections []LibraryCollection `json:"collections,omitempty"`
+	// Movie libraries: the collections admins made, by name
+	UserCollections []UserCollectionSummary `json:"user_collections,omitempty"`
+}
+
+// UserCollectionSummary is a collection an admin made, in its library's listing: its titles
+// (those still in the library) and the posters of its first four by release date, for its collage.
+type UserCollectionSummary struct {
+	ID          int64             `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Count       int               `json:"count"`
+	Posters     []string          `json:"posters"`
+	Titles      []CollectionTitle `json:"titles"`
+}
+
+// CollectionTitle names a library title: "movie" (or "show", a TV movie in a movie library) and its TMDB ID.
+type CollectionTitle struct {
+	Kind   string `json:"kind"`
+	TMDBID int    `json:"tmdb_id"`
+}
+
+// UserCollectionDetail is a made collection's page: its titles by release date, with progress.
+type UserCollectionDetail struct {
+	ID          int64          `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Posters     []string       `json:"posters"`
+	Parts       []LibraryTitle `json:"parts"`
 }
 
 // LibraryCollection is a collection (a film series) in a movie library's listing.
@@ -174,8 +202,8 @@ type LibraryTitle struct {
 	Poster    string `json:"poster,omitempty"`
 	FileCount int    `json:"file_count"`
 	// The signed-in user's progress: files watched, and for a movie, how far into it they are
-	Watched  int      `json:"watched,omitempty"`
-	Progress float64  `json:"progress,omitempty"` // 0..1
+	Watched  int     `json:"watched,omitempty"`
+	Progress float64 `json:"progress,omitempty"` // 0..1
 	// Movies: the TMDB collection it belongs to (0 for none)
 	CollectionID int `json:"collection_id,omitempty"`
 	// On a collection's page: a film of it the library doesn't have (not playable)

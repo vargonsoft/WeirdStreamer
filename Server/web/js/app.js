@@ -1,7 +1,7 @@
 // Application State
 console.log('app.js loaded');
 // Views of a movie or tv library (the URL's view=), as against folders.
-const LIBRARY_VIEWS = ['library', 'title', 'collections', 'collection'];
+const LIBRARY_VIEWS = ['library', 'title', 'collections', 'collection', 'tmdbcollections', 'tmdbcollection'];
 
 const state = {
     currentType: 'all',
@@ -190,6 +190,14 @@ function setupEventListeners() {
             }
             if (e.state.view === 'collection') {
                 showCollection(e.state.lib, e.state.id, false);
+                return;
+            }
+            if (e.state.view === 'tmdbcollections') {
+                showTmdbCollections(e.state.lib, false);
+                return;
+            }
+            if (e.state.view === 'tmdbcollection') {
+                showTmdbCollection(e.state.lib, e.state.id, false);
                 return;
             }
             state.currentPath = e.state.path || '';
@@ -407,6 +415,10 @@ function showMainScreen() {
             showCollections(lib, false);
         } else if (urlView === 'collection') {
             showCollection(lib, Number(url.searchParams.get('id')), false);
+        } else if (urlView === 'tmdbcollections') {
+            showTmdbCollections(lib, false);
+        } else if (urlView === 'tmdbcollection') {
+            showTmdbCollection(lib, Number(url.searchParams.get('id')), false);
         } else {
             showLibrary(lib, false);
         }
@@ -671,12 +683,17 @@ function createDirectoryElement(dir) {
     div.dataset.path = dir.path; // for live updates of its icon's picture
     div.onclick = () => {
         const mode = !state.currentPath && dir.library_type ? getLibraryMode(dir.path) : 'folders';
-        if (mode === 'library' || (mode === 'collections' && dir.library_type !== 'movie')) {
+        const moviesOnly = mode === 'collections' || mode === 'tmdb';
+        if (mode === 'library' || (moviesOnly && dir.library_type !== 'movie')) {
             showLibrary(dir.path);
             return;
         }
         if (mode === 'collections') {
             showCollections(dir.path);
+            return;
+        }
+        if (mode === 'tmdb') {
+            showTmdbCollections(dir.path);
             return;
         }
         state.currentPath = dir.path;
@@ -4720,6 +4737,8 @@ function refreshCurrentView() {
     else if (state.view === 'title') showTitle(state.libraryId, state.titleRef.kind, state.titleRef.id, false, true);
     else if (state.view === 'collections') showCollections(state.libraryId, false, true);
     else if (state.view === 'collection') showCollection(state.libraryId, state.collectionId, false, true);
+    else if (state.view === 'tmdbcollections') showTmdbCollections(state.libraryId, false, true);
+    else if (state.view === 'tmdbcollection') showTmdbCollection(state.libraryId, state.collectionId, false, true);
     else loadMedia(false);
 }
 
@@ -4755,8 +4774,9 @@ function createViewToggle() {
     toggle.setAttribute('aria-label', 'View');
     // Movie libraries also show their films by collection (series).
     const modes = [['folders', 'Folders'], ['library', 'Library']];
-    if (state.libraryType === 'movie') modes.push(['collections', 'Collections']);
-    const viewMode = { folders: 'folders', library: 'library', title: 'library', collections: 'collections', collection: 'collections' };
+    if (state.libraryType === 'movie') modes.push(['collections', 'Collections'], ['tmdb', 'TMDB Collections']);
+    const viewMode = { folders: 'folders', library: 'library', title: 'library', collections: 'collections', collection: 'collections',
+                       tmdbcollections: 'tmdb', tmdbcollection: 'tmdb' };
     modes.forEach(([mode, label]) => {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -4771,6 +4791,8 @@ function createViewToggle() {
                 showLibrary(state.libraryId);
             } else if (mode === 'collections') {
                 showCollections(state.libraryId);
+            } else if (mode === 'tmdb') {
+                showTmdbCollections(state.libraryId);
             } else {
                 state.currentPath = state.libraryId;
                 loadMedia();
@@ -4782,7 +4804,7 @@ function createViewToggle() {
 }
 
 // The bar: the view switch, Home / the library / (a collection, or Collections) / the title.
-function libraryBreadcrumb(titleName, collections = false) {
+function libraryBreadcrumb(titleName, back = null) {
     breadcrumb.innerHTML = '';
     breadcrumb.appendChild(createViewToggle());
     const home = document.createElement('a');
@@ -4800,7 +4822,7 @@ function libraryBreadcrumb(titleName, collections = false) {
     lib.textContent = state.libraryName || 'Library';
     lib.onclick = (e) => {
         e.preventDefault();
-        if (collections) showCollections(state.libraryId); else showLibrary(state.libraryId);
+        if (back) back(); else showLibrary(state.libraryId);
     };
     breadcrumb.appendChild(lib);
     if (titleName) {
@@ -4865,8 +4887,36 @@ async function showLibrary(libId, push = true, keepScroll = false) {
     restorePendingScroll();
 }
 
-// Collection view (movie libraries): the TMDB collections (film series) the library's movies
-// belong to, each opening its page.
+// Collections view (movie libraries): the collections admins made, each a collage of its first
+// four posters; admins create, edit and delete them, and add the library's movies to them.
+
+function isAdminUser() {
+    try {
+        return !!JSON.parse(localStorage.getItem('user') || '{}').is_admin;
+    } catch (e) {
+        return false;
+    }
+}
+
+// A collage of up to four posters: one fills it, two side by side, three one tall and two stacked, four 2×2.
+function createCollage(posters) {
+    const box = document.createElement('div');
+    box.className = `poster collage collage-${Math.min(posters.length, 4)}`;
+    if (!posters.length) {
+        box.classList.add('no-poster');
+        box.innerHTML = placeholderIcon('movie');
+        return box;
+    }
+    posters.slice(0, 4).forEach(src => {
+        const img = document.createElement('img');
+        img.src = API_BASE + src;
+        img.alt = '';
+        img.loading = 'lazy';
+        box.appendChild(img);
+    });
+    return box;
+}
+
 async function showCollections(libId, push = true, keepScroll = false) {
     const container = document.getElementById('library-view');
     const scroll = window.scrollY;
@@ -4874,6 +4924,325 @@ async function showCollections(libId, push = true, keepScroll = false) {
     state.libraryId = libId;
     state.titleRef = null;
     if (push) pushLibraryHistory({ view: 'collections', lib: libId });
+    if (!keepScroll) container.innerHTML = '<p class="library-empty">Loading…</p>';
+    let data;
+    try {
+        data = await api.getLibrary(libId);
+    } catch (error) {
+        container.textContent = 'Could not load library: ' + error.message;
+        return;
+    }
+    state.libraryType = data.library_type;
+    state.libraryName = data.library_name;
+    state.libraryTitles = data.titles;
+    state.userCollections = data.user_collections || [];
+    state.mediaItems = [];
+    libraryBreadcrumb(null, () => showCollections(libId));
+    container.innerHTML = '';
+    if (isAdminUser()) {
+        const bar = document.createElement('div');
+        bar.className = 'collection-actions';
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'btn';
+        add.textContent = 'New collection';
+        add.onclick = () => openCollectionEditor(null, []);
+        bar.appendChild(add);
+        container.appendChild(bar);
+    }
+    if (!state.userCollections.length) {
+        const empty = document.createElement('p');
+        empty.className = 'library-empty';
+        empty.textContent = isAdminUser() ? 'No collections yet. Make one with New collection, or from a movie’s page.'
+            : 'No collections yet.';
+        container.appendChild(empty);
+        return;
+    }
+    const grid = document.createElement('div');
+    grid.className = 'poster-grid';
+    state.userCollections.forEach(c => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'poster-card';
+        card.title = c.name;
+        card.appendChild(createCollage(c.posters || []));
+        const title = document.createElement('div');
+        title.className = 'poster-title';
+        title.textContent = c.name;
+        const count = document.createElement('div');
+        count.className = 'poster-year';
+        count.textContent = `${c.count} movie${c.count === 1 ? '' : 's'}`;
+        card.appendChild(title);
+        card.appendChild(count);
+        card.onclick = () => showCollection(libId, c.id);
+        grid.appendChild(card);
+    });
+    container.appendChild(grid);
+    const cards = container.querySelectorAll('.poster-card');
+    setAzIndex([...cards].map(el => ({ el, label: azLabel(el.querySelector('.poster-title')?.textContent || '', true), run: 0 })));
+    if (keepScroll) window.scrollTo(0, scroll);
+    restorePendingScroll();
+}
+
+// A made collection's page: its name, description and movies by release date; admins can edit
+// it (name, description and movies), take a movie out, or delete it.
+async function showCollection(libId, id, push = true, keepScroll = false) {
+    const container = document.getElementById('library-view');
+    const scroll = window.scrollY;
+    setView('collection');
+    state.libraryId = libId;
+    state.collectionId = id;
+    state.titleRef = null;
+    if (push) pushLibraryHistory({ view: 'collection', lib: libId, id });
+    if (!keepScroll) {
+        container.innerHTML = '<p class="library-empty">Loading…</p>';
+        window.scrollTo(0, 0);
+    }
+    let c;
+    try {
+        if (!state.libraryName || state.libraryType !== 'movie' || !state.libraryTitles) {
+            const lib = await api.getLibrary(libId);
+            state.libraryName = lib.library_name;
+            state.libraryType = lib.library_type;
+            state.libraryTitles = lib.titles;
+        }
+        c = await api.getUserCollection(libId, id);
+    } catch (error) {
+        container.textContent = 'Could not load collection: ' + error.message;
+        return;
+    }
+    state.mediaItems = [];
+    libraryBreadcrumb(c.name, () => showCollections(libId));
+    container.innerHTML = '';
+    const head = document.createElement('div');
+    head.className = 'collection-head';
+    const name = document.createElement('h2');
+    name.className = 'library-section';
+    name.textContent = c.name;
+    head.appendChild(name);
+    const count = document.createElement('p');
+    count.className = 'collection-count';
+    count.textContent = `${c.parts.length} movie${c.parts.length === 1 ? '' : 's'}`;
+    head.appendChild(count);
+    if (c.description) {
+        const description = document.createElement('p');
+        description.className = 'collection-overview';
+        description.textContent = c.description;
+        head.appendChild(description);
+    }
+    if (isAdminUser()) {
+        const actions = document.createElement('div');
+        actions.className = 'collection-actions';
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'btn';
+        edit.textContent = 'Edit';
+        edit.onclick = () => openCollectionEditor(c, c.parts.map(t => ({ kind: t.kind, tmdb_id: t.tmdb_id })));
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn btn-danger';
+        del.textContent = 'Delete collection';
+        del.onclick = async () => {
+            if (!confirm(`Delete the collection “${c.name}”? Its movies stay in the library.`)) return;
+            try {
+                await api.deleteUserCollection(libId, c.id);
+                showCollections(libId);
+            } catch (error) {
+                alert('Could not delete it: ' + error.message);
+            }
+        };
+        actions.appendChild(edit);
+        actions.appendChild(del);
+        head.appendChild(actions);
+    }
+    container.appendChild(head);
+    if (!c.parts.length) {
+        const empty = document.createElement('p');
+        empty.className = 'library-empty';
+        empty.textContent = 'No movies in it yet.';
+        container.appendChild(empty);
+    }
+    const grid = document.createElement('div');
+    grid.className = 'poster-grid';
+    c.parts.forEach(t => {
+        const card = createPosterCard(t);
+        if (isAdminUser()) {
+            // Take it out: a small × over the poster
+            const remove = document.createElement('span');
+            remove.className = 'collection-remove';
+            remove.setAttribute('role', 'button');
+            remove.tabIndex = 0;
+            remove.title = 'Remove from this collection';
+            remove.setAttribute('aria-label', `Remove ${t.title} from this collection`);
+            remove.innerHTML = iconSvg('close');
+            const take = async (e) => {
+                e.stopPropagation();
+                try {
+                    await api.updateUserCollection(libId, c.id, { remove: [{ kind: t.kind, tmdb_id: t.tmdb_id }] });
+                    showCollection(libId, c.id, false, true);
+                } catch (error) {
+                    alert('Could not remove it: ' + error.message);
+                }
+            };
+            remove.onclick = take;
+            remove.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') take(e); };
+            card.querySelector('.poster').appendChild(remove);
+        }
+        grid.appendChild(card);
+    });
+    container.appendChild(grid);
+    if (keepScroll) window.scrollTo(0, scroll);
+    restorePendingScroll();
+}
+
+// The collection editor (admins): a name, an optional description and the library's movies to
+// tick, with a filter. collection null makes a new one; checked are the titles ticked to start.
+// done(collection) runs after saving (by default, the collection's page opens).
+function openCollectionEditor(collection, checked, done) {
+    const titles = (state.libraryTitles || []).slice();
+    const ticked = new Set(checked.map(t => `${t.kind}:${t.tmdb_id}`));
+    const start = new Set(ticked);
+    const modal = document.createElement('div');
+    modal.className = 'modal active';
+    modal.innerHTML = `<div class="modal-content collection-editor" role="dialog" aria-modal="true">
+        <span class="match-close" aria-label="Close" role="button" tabindex="0">&times;</span>
+        <h2></h2>
+        <label>Name<input class="settings-input" name="name" maxlength="200" required></label>
+        <label>Description (optional)<textarea class="settings-input" name="description" rows="3" maxlength="4000"></textarea></label>
+        <div class="collection-picker-head"><strong>Movies</strong><span class="collection-picked"></span>
+            <input class="settings-input" name="filter" type="search" placeholder="Filter"></div>
+        <div class="collection-picker"></div>
+        <p class="collection-message"></p>
+        <div class="collection-buttons"><button type="button" class="btn btn-secondary" data-act="cancel">Cancel</button>
+            <button type="button" class="btn" data-act="save">Save</button></div>
+    </div>`;
+    const $ = sel => modal.querySelector(sel);
+    $('h2').textContent = collection ? 'Edit collection' : 'New collection';
+    $('[name=name]').value = collection ? collection.name : '';
+    $('[name=description]').value = collection ? (collection.description || '') : '';
+    const picker = $('.collection-picker');
+    const picked = () => { $('.collection-picked').textContent = `${ticked.size} chosen`; };
+    titles.forEach(t => {
+        const key = `${t.kind}:${t.tmdb_id}`;
+        const row = document.createElement('label');
+        row.className = 'collection-pick';
+        row.dataset.name = (t.title || '').toLowerCase();
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = ticked.has(key);
+        box.onchange = () => { if (box.checked) ticked.add(key); else ticked.delete(key); picked(); };
+        const text = document.createElement('span');
+        text.textContent = t.title + (t.year ? ` (${t.year})` : '');
+        row.appendChild(box);
+        row.appendChild(text);
+        picker.appendChild(row);
+    });
+    picked();
+    $('[name=filter]').oninput = (e) => {
+        const q = e.target.value.trim().toLowerCase();
+        picker.querySelectorAll('.collection-pick').forEach(r => { r.hidden = q && !r.dataset.name.includes(q); });
+    };
+    const close = () => modal.remove();
+    $('.match-close').onclick = close;
+    $('[data-act=cancel]').onclick = close;
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    modal.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    const toTitle = key => { const [kind, id] = key.split(':'); return { kind, tmdb_id: Number(id) }; };
+    $('[data-act=save]').onclick = async () => {
+        const name = $('[name=name]').value.trim();
+        const description = $('[name=description]').value.trim();
+        if (!name) {
+            $('.collection-message').textContent = 'A collection needs a name.';
+            $('[name=name]').focus();
+            return;
+        }
+        try {
+            let saved;
+            if (collection) {
+                saved = await api.updateUserCollection(state.libraryId, collection.id, {
+                    name, description,
+                    add: [...ticked].filter(k => !start.has(k)).map(toTitle),
+                    remove: [...start].filter(k => !ticked.has(k)).map(toTitle),
+                });
+            } else {
+                saved = await api.createUserCollection(state.libraryId, name, description, [...ticked].map(toTitle));
+            }
+            close();
+            if (done) done(saved); else showCollection(state.libraryId, saved.id, !collection);
+        } catch (error) {
+            $('.collection-message').textContent = 'Could not save: ' + error.message;
+        }
+    };
+    document.body.appendChild(modal);
+    $('[name=name]').focus();
+}
+
+// A title page's "Add to collection" (admins, movie libraries): tick the collections it's in, or make a new one.
+async function openAddToCollection(t) {
+    let data;
+    try {
+        data = await api.getLibrary(state.libraryId);
+    } catch (error) {
+        alert('Could not load the collections: ' + error.message);
+        return;
+    }
+    state.libraryTitles = data.titles;
+    const me = { kind: t.kind, tmdb_id: t.tmdb_id };
+    const modal = document.createElement('div');
+    modal.className = 'modal active';
+    modal.innerHTML = `<div class="modal-content collection-editor" role="dialog" aria-modal="true">
+        <span class="match-close" aria-label="Close" role="button" tabindex="0">&times;</span>
+        <h2>Add to collection</h2><p class="match-target"></p>
+        <div class="collection-picker"></div><p class="collection-message"></p>
+        <div class="collection-buttons"><button type="button" class="btn btn-secondary" data-act="new">New collection…</button>
+            <button type="button" class="btn" data-act="done">Done</button></div></div>`;
+    const $ = sel => modal.querySelector(sel);
+    $('.match-target').textContent = t.title;
+    const picker = $('.collection-picker');
+    const cols = data.user_collections || [];
+    if (!cols.length) picker.innerHTML = '<p class="library-empty">No collections yet.</p>';
+    cols.forEach(c => {
+        const row = document.createElement('label');
+        row.className = 'collection-pick';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = (c.titles || []).some(x => x.kind === me.kind && x.tmdb_id === me.tmdb_id);
+        box.onchange = async () => {
+            try {
+                await api.updateUserCollection(state.libraryId, c.id, box.checked ? { add: [me] } : { remove: [me] });
+                $('.collection-message').textContent = box.checked ? `Added to ${c.name}.` : `Removed from ${c.name}.`;
+            } catch (error) {
+                box.checked = !box.checked;
+                $('.collection-message').textContent = 'Could not save: ' + error.message;
+            }
+        };
+        const text = document.createElement('span');
+        text.textContent = `${c.name} (${c.count})`;
+        row.appendChild(box);
+        row.appendChild(text);
+        picker.appendChild(row);
+    });
+    const close = () => modal.remove();
+    $('.match-close').onclick = close;
+    $('[data-act=done]').onclick = close;
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    modal.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    $('[data-act=new]').onclick = () => {
+        close();
+        openCollectionEditor(null, [me], () => {}); // stays on the movie's page
+    };
+    document.body.appendChild(modal);
+}
+
+// TMDB Collections view (movie libraries): the TMDB collections (film series) the library's movies
+// belong to, each opening its page.
+async function showTmdbCollections(libId, push = true, keepScroll = false) {
+    const container = document.getElementById('library-view');
+    const scroll = window.scrollY;
+    setView('tmdbcollections');
+    state.libraryId = libId;
+    state.titleRef = null;
+    if (push) pushLibraryHistory({ view: 'tmdbcollections', lib: libId });
     if (!keepScroll) container.innerHTML = '<p class="library-empty">Loading…</p>';
 
     let data;
@@ -4886,7 +5255,7 @@ async function showCollections(libId, push = true, keepScroll = false) {
     state.libraryType = data.library_type;
     state.libraryName = data.library_name;
     state.mediaItems = [];
-    libraryBreadcrumb(null, true);
+    libraryBreadcrumb(null, () => showTmdbCollections(libId));
     const collections = data.collections || [];
     container.innerHTML = '';
     if (!collections.length) {
@@ -4895,7 +5264,7 @@ async function showCollections(libId, push = true, keepScroll = false) {
     }
     const grid = document.createElement('div');
     grid.className = 'poster-grid';
-    collections.forEach(c => grid.appendChild(createCollectionCard(c)));
+    collections.forEach(c => grid.appendChild(createTmdbCollectionCard(c)));
     container.appendChild(grid);
     const cards = container.querySelectorAll('.poster-card');
     setAzIndex([...cards].map(el => ({ el, label: azLabel(el.querySelector('.poster-title')?.textContent || '', true), run: 0 })));
@@ -4903,7 +5272,7 @@ async function showCollections(libId, push = true, keepScroll = false) {
     restorePendingScroll();
 }
 
-function createCollectionCard(c) {
+function createTmdbCollectionCard(c) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'poster-card';
@@ -4929,20 +5298,20 @@ function createCollectionCard(c) {
     card.appendChild(poster);
     card.appendChild(title);
     card.appendChild(count);
-    card.onclick = () => showCollection(state.libraryId, c.id);
+    card.onclick = () => showTmdbCollection(state.libraryId, c.id);
     return card;
 }
 
 // A collection's page: every film TMDB lists in it, by release date; those the library doesn't
 // have are dimmed and open nothing.
-async function showCollection(libId, id, push = true, keepScroll = false) {
+async function showTmdbCollection(libId, id, push = true, keepScroll = false) {
     const container = document.getElementById('library-view');
     const scroll = window.scrollY;
-    setView('collection');
+    setView('tmdbcollection');
     state.libraryId = libId;
     state.collectionId = id;
     state.titleRef = null;
-    if (push) pushLibraryHistory({ view: 'collection', lib: libId, id });
+    if (push) pushLibraryHistory({ view: 'tmdbcollection', lib: libId, id });
     if (!keepScroll) {
         container.innerHTML = '<p class="library-empty">Loading…</p>';
         window.scrollTo(0, 0);
@@ -4960,7 +5329,7 @@ async function showCollection(libId, id, push = true, keepScroll = false) {
         return;
     }
     state.mediaItems = [];
-    libraryBreadcrumb(c.name, true);
+    libraryBreadcrumb(c.name, () => showTmdbCollections(libId));
     container.innerHTML = '';
     const head = document.createElement('div');
     head.className = 'collection-head';
@@ -5108,6 +5477,15 @@ async function showTitle(libId, kind, id, push = true, keepScroll = false) {
         if ((t.other_files || []).length) {
             container.appendChild(createFilesSection('Other files', t.other_files));
         }
+    }
+    // Admins add a movie library's title to their collections
+    if (isAdminUser() && state.libraryType === 'movie') {
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'btn btn-secondary collection-add-btn';
+        add.textContent = 'Add to collection';
+        add.onclick = () => openAddToCollection({ kind, tmdb_id: id, title: t.title });
+        hero.querySelector('.title-info').appendChild(add);
     }
     // A movie with several files (versions, editions) marks them all at once; each file has its own too.
     const titleItems = kind === 'movie' || (t.files || []).length ? state.mediaItems : [];

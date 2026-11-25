@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FilterList
@@ -103,6 +104,7 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
         when {
             viewModel.openTitle != null -> viewModel.closeLibraryTitle()
             viewModel.openCollection != null -> viewModel.closeCollection()
+            viewModel.openUserCollection != null -> viewModel.closeUserCollection()
             viewModel.isLibraryView -> viewModel.leaveLibrary()
             else -> viewModel.navigateUp()
         }
@@ -178,7 +180,9 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         val display = when {
                             viewModel.openTitle != null -> viewModel.openTitle!!.title
                             viewModel.openCollection != null -> viewModel.openCollection!!.name
-                            viewModel.isCollectionsView -> (viewModel.libraryListing?.libraryName ?: "Library") + " · Collections"
+                            viewModel.openUserCollection != null -> viewModel.openUserCollection!!.name
+                            viewModel.isUserCollectionsView -> (viewModel.libraryListing?.libraryName ?: "Library") + " · Collections"
+                            viewModel.isCollectionsView -> (viewModel.libraryListing?.libraryName ?: "Library") + " · TMDB Collections"
                             viewModel.isLibraryView -> viewModel.libraryListing?.libraryName ?: "Library"
                             else -> viewModel.currentPathDisplayName ?: if (viewModel.currentPath.isNotEmpty()) viewModel.currentPath else "/"
                         }
@@ -224,8 +228,9 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         // Shows the mode it switches to: list -> grid -> library (movie/tv libraries) -> list
                         Icon(
                             when {
-                                viewModel.isLibraryView && viewModel.libraryType == "movie" && !viewModel.isCollectionsView ->
-                                    Icons.Default.CollectionsBookmark
+                                viewModel.isLibraryView && viewModel.libraryType == "movie" && !viewModel.isUserCollectionsView &&
+                                    !viewModel.isCollectionsView -> Icons.Default.Collections
+                                viewModel.isUserCollectionsView -> Icons.Default.CollectionsBookmark
                                 viewModel.isLibraryView -> Icons.AutoMirrored.Filled.ViewList
                                 !viewModel.isGridView -> Icons.Default.GridView
                                 viewModel.libraryType != null -> Icons.Default.VideoLibrary
@@ -309,8 +314,12 @@ fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 viewModel.isLibraryView -> {
                     val title = viewModel.openTitle
                     val collection = viewModel.openCollection
+                    val userCollection = viewModel.openUserCollection
                     when {
                         title != null -> TitleScreen(viewModel, title)
+                        viewModel.isUserCollectionsView ->
+                            if (userCollection != null) TvUserCollectionScreen(viewModel, userCollection, upFocusRequester, contentEntry)
+                            else TvUserCollectionsScreen(viewModel, upFocusRequester, contentEntry)
                         !viewModel.isCollectionsView -> LibraryScreen(viewModel, upFocusRequester, contentEntry)
                         collection != null -> TvCollectionScreen(viewModel, collection, upFocusRequester, contentEntry)
                         else -> TvCollectionsScreen(viewModel, upFocusRequester, contentEntry)

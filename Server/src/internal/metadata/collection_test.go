@@ -109,6 +109,21 @@ func TestCollections(t *testing.T) {
 		t.Errorf("a collection the library has nothing of: %v", err)
 	}
 
+	// A made collection: the library's titles by release date (undated last, gone ones left out),
+	// the collage the first four posters
+	listing.Titles = append(listing.Titles,
+		models.LibraryTitle{Kind: "movie", TMDBID: 777, Title: "Undated", Poster: "/artwork/movie/777/poster.jpg"})
+	made := database.UserCollection{ID: 1, Name: "Mine", Titles: []database.CollectionTitle{
+		{Kind: "movie", TMDBID: 777}, {Kind: "movie", TMDBID: 603}, {Kind: "movie", TMDBID: 404}}}
+	summaries := s.UserCollections(listing, []database.UserCollection{made})
+	if len(summaries) != 1 || summaries[0].Count != 2 || len(summaries[0].Posters) != 2 ||
+		summaries[0].Titles[0].TMDBID != 603 || summaries[0].Titles[1].TMDBID != 777 {
+		t.Fatalf("made collection: %+v", summaries)
+	}
+	if page := s.UserCollection(listing, made); len(page.Parts) != 2 || page.Parts[0].TMDBID != 603 {
+		t.Fatalf("made collection's page: %+v", page.Parts)
+	}
+
 	// A movie stored before collections were is looked up again by its light details request only
 	before := movieDetails.Load()
 	db.SetMovieCollection(603, -1)

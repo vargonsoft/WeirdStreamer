@@ -105,7 +105,7 @@ import com.vargon.weirdstreamer.api.models.TitleDetail
 import kotlinx.coroutines.android.awaitFrame
 import java.util.Locale
 
-private const val POSTER_COLUMNS = 6
+internal const val POSTER_COLUMNS = 6
 
 /**
  * Library view: a movie or TV library as posters (sorted by title), with an Unmatched section
@@ -433,6 +433,7 @@ fun PosterTile(
     watched: Boolean = false,
     onHold: (() -> Unit)? = null,
     dimmed: Boolean = false, // a collection's film the library doesn't have: focusable, opens nothing
+    collage: List<String>? = null, // a made collection's: up to four posters instead of one
     onClick: () -> Unit
 ) {
     Column(modifier = modifier.fillMaxWidth().then(if (dimmed) Modifier.alpha(0.4f) else Modifier)) {
@@ -448,7 +449,9 @@ fun PosterTile(
         ) {
             Icon(placeholder, contentDescription = null, modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (posterUrl != null) {
+            if (collage != null) {
+                Collage(collage, Modifier.fillMaxSize())
+            } else if (posterUrl != null) {
                 RemoteImage(posterUrl, Modifier.fillMaxSize())
             }
             WatchProgressOverlay(progress, watched, barHeight = 5.dp, badgeSize = 28.dp)
@@ -562,6 +565,13 @@ private fun TitleHero(
         titleFixFile(title)?.let { f ->
             if (viewModel.canFixMatches) TvSecondaryButton(onClick = { viewModel.openMatch(f.path, false, title.title, wholeTitle = true) },
                 modifier = Modifier.fillMaxWidth()) { Text("Fix match") }
+        }
+        // Admins add a movie library's title to their collections
+        if (viewModel.canEditCollections) {
+            var adding by remember { mutableStateOf(false) }
+            TvSecondaryButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth()) { Text("Add to collection") }
+            if (adding) TvAddToCollectionDialog(viewModel, com.vargon.weirdstreamer.api.models.CollectionTitle(title.kind, title.tmdbId),
+                title.title, onDismiss = { adding = false })
         }
         }
         Spacer(Modifier.width(28.dp))

@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -52,7 +54,188 @@ func (h *MediaHandler) GetLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 	annotateListing(listing, h.requestPlayback(r))
 	clientFiles(listing.Unmatched)
+	if lib.Type == config.LibraryTypeMovie {
+		cols, err := h.db.UserCollections(lib.ID)
+		if err != nil {
+			log.Printf("[LIBRARY] %s: collections: %v", lib.Name, err)
+		}
+		listing.UserCollections = h.meta.UserCollections(listing, cols)
+	}
 	respondJSON(w, http.StatusOK, listing)
+}
+
+// Collections admins make (database/collections.go): a name, a description and movies of the
+// library, everyone who sees the library sees them.
+
+// movieLibraryListing is a movie library's listing with the user's progress, for collections.
+func (h *MediaHandler) movieLibraryListing(w http.ResponseWriter, r *http.Request, lib config.MediaPath) (*models.LibraryListing, bool) {
+	if lib.Type != config.LibraryTypeMovie {
+		respondError(w, http.StatusBadRequest, "Collections are for movie libraries")
+		return nil, false
+	}
+	listing, err := h.meta.Library(r.Context(), lib, h.libraryFileInfo)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list library")
+		return nil, false
+	}
+	annotateListing(listing, h.requestPlayback(r))
+	return listing, true
+}
+
+// respondUserCollection answers with a made collection's page.
+func (h *MediaHandler) respondUserCollection(w http.ResponseWriter, lib config.MediaPath, listing *models.LibraryListing, id int64, status int) {
+	c, err := h.db.UserCollection(lib.ID, id)
+	if errors.Is(err, database.ErrNoUserCollection) {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load collection")
+		return
+	}
+	respondJSON(w, status, h.meta.UserCollection(listing, *c))
+}
+
+// GetUserCollection returns a made collection's page: GET /api/library/usercollection?lib=<id>&id=<collection id>
+func (h *MediaHandler) GetUserCollection(w http.ResponseWriter, r *http.Request) {
+	lib, ok := h.libraryFromRequest(w, r)
+	if !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	listing, ok := h.movieLibraryListing(w, r, lib)
+	if !ok {
+		return
+	}
+	h.respondUserCollection(w, lib, listing, id, http.StatusOK)
+}
+
+type userCollectionRequest struct {
+	Library     string                   `json:"lib"`
+	ID          int64                    `json:"id"`
+	Name        *string                  `json:"name"`
+	Description *string                  `json:"description"`
+	Titles      []models.CollectionTitle `json:"titles"` // creating: its titles
+	Add         []models.CollectionTitle `json:"add"`
+	Remove      []models.CollectionTitle `json:"remove"`
+}
+
+const (
+	maxCollectionName        = 200
+	maxCollectionDescription = 4000
+)
+
+// ChangeUserCollection creates (POST, {"lib", "name", "description", "titles"}), edits (PUT, {"lib",
+// "id", "name"?, "description"?, "add"?, "remove"?}) or deletes (DELETE ?lib=&id=) a made collection
+// (admins): /api/library/usercollections. Answers with the collection's page (DELETE: 204).
+func (h *MediaHandler) ChangeUserCollection(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(w, r) {
+		return
+	}
+	var req userCollectionRequest
+	if r.Method == http.MethodDelete {
+		req.Library = r.URL.Query().Get("lib")
+		req.ID, _ = strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	} else if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request")
+		return
+	}
+	q := r.URL.Query()
+	q.Set("lib", req.Library)
+	r.URL.RawQuery = q.Encode()
+	lib, ok := h.libraryFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost && req.ID <= 0 {
+		respondError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	if r.Method == http.MethodDelete {
+		err := h.db.DeleteUserCollection(lib.ID, req.ID)
+		if errors.Is(err, database.ErrNoUserCollection) {
+			respondError(w, http.StatusNotFound, err.Error())
+		} else if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to delete collection")
+		} else {
+			w.WriteHeader(http.StatusNoContent)
+		}
+		return
+	}
+	if req.Name != nil {
+		if n := strings.TrimSpace(*req.Name); n == "" || len(n) > maxCollectionName {
+			respondError(w, http.StatusBadRequest, "A collection needs a name (up to 200 characters)")
+			return
+		}
+	}
+	if req.Description != nil && len(*req.Description) > maxCollectionDescription {
+		respondError(w, http.StatusBadRequest, "The description is too long")
+		return
+	}
+	listing, ok := h.movieLibraryListing(w, r, lib)
+	if !ok {
+		return
+	}
+	// Only the library's titles can go in
+	inLibrary := map[models.CollectionTitle]bool{}
+	for _, t := range listing.Titles {
+		inLibrary[models.CollectionTitle{Kind: t.Kind, TMDBID: t.TMDBID}] = true
+	}
+	titles := func(list []models.CollectionTitle) ([]database.CollectionTitle, bool) {
+		out := make([]database.CollectionTitle, 0, len(list))
+		for _, t := range list {
+			if !inLibrary[t] {
+				return nil, false
+			}
+			out = append(out, database.CollectionTitle{Kind: t.Kind, TMDBID: t.TMDBID})
+		}
+		return out, true
+	}
+	if r.Method == http.MethodPost {
+		if req.Name == nil {
+			respondError(w, http.StatusBadRequest, "A collection needs a name (up to 200 characters)")
+			return
+		}
+		add, ok := titles(req.Titles)
+		if !ok {
+			respondError(w, http.StatusBadRequest, "Only the library's titles can be in its collections")
+			return
+		}
+		desc := ""
+		if req.Description != nil {
+			desc = *req.Description
+		}
+		id, err := h.db.CreateUserCollection(lib.ID, *req.Name, desc, add)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to create collection")
+			return
+		}
+		h.respondUserCollection(w, lib, listing, id, http.StatusCreated)
+		return
+	}
+	add, ok := titles(req.Add)
+	if !ok {
+		respondError(w, http.StatusBadRequest, "Only the library's titles can be in its collections")
+		return
+	}
+	remove := make([]database.CollectionTitle, 0, len(req.Remove))
+	for _, t := range req.Remove { // a title gone from the library can still be taken out
+		remove = append(remove, database.CollectionTitle{Kind: t.Kind, TMDBID: t.TMDBID})
+	}
+	err := h.db.UpdateUserCollection(lib.ID, req.ID, req.Name, req.Description, add, remove)
+	if errors.Is(err, database.ErrNoUserCollection) {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to change collection")
+		return
+	}
+	h.respondUserCollection(w, lib, listing, req.ID, http.StatusOK)
 }
 
 // GetLibraryTitle returns a title page: GET /api/library/title?lib=<id>&kind=movie|show&id=<tmdb id>

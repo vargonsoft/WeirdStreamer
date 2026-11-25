@@ -306,6 +306,20 @@ interface ApiService {
     @GET("/api/library")
     suspend fun getLibrary(@Query("lib") libraryId: String): Response<LibraryListing>
 
+    // Collections admins make: {"lib", "name", "description", "titles"} to create; {"lib", "id", "name"?,
+    // "description"?, "add"?, "remove"?} to change
+    @GET("/api/library/usercollection")
+    suspend fun getUserCollection(@Query("lib") libraryId: String, @Query("id") id: Long): Response<com.vargon.weirdstreamer.api.models.UserCollectionDetail>
+
+    @POST("/api/library/usercollections")
+    suspend fun createUserCollection(@Body body: com.google.gson.JsonObject): Response<com.vargon.weirdstreamer.api.models.UserCollectionDetail>
+
+    @PUT("/api/library/usercollections")
+    suspend fun updateUserCollection(@Body body: com.google.gson.JsonObject): Response<com.vargon.weirdstreamer.api.models.UserCollectionDetail>
+
+    @DELETE("/api/library/usercollections")
+    suspend fun deleteUserCollection(@Query("lib") libraryId: String, @Query("id") id: Long): Response<Unit>
+
     @GET("/api/library/collection")
     suspend fun getLibraryCollection(@Query("lib") libraryId: String, @Query("id") id: Int): Response<com.vargon.weirdstreamer.api.models.CollectionDetail>
 
