@@ -235,6 +235,7 @@ func main() {
 	api.HandleFunc("/media/details", mediaHandler.GetMediaDetails).Methods("GET")
 	api.HandleFunc("/library", mediaHandler.GetLibrary).Methods("GET")
 	api.HandleFunc("/library/title", mediaHandler.GetLibraryTitle).Methods("GET")
+	api.HandleFunc("/library/collection", mediaHandler.GetLibraryCollection).Methods("GET")
 	api.HandleFunc("/library/new", mediaHandler.NewAdditions).Methods("GET")
 	api.HandleFunc("/playback/watched", mediaHandler.SetWatched).Methods("POST")
 	api.HandleFunc("/playback/sync", mediaHandler.SyncPlayback).Methods("POST")
@@ -319,10 +320,10 @@ func main() {
 	trickplay.Use(authHandler.AuthMiddleware)
 	trickplay.HandleFunc("/{hash}/{frame}", mediaHandler.ServeTrickplayFrame).Methods("GET", "HEAD")
 
-	// Downloaded TMDB artwork: /artwork/{movie|tv}/{id}/{file} and /artwork/person/{file}
+	// Downloaded TMDB artwork: /artwork/{movie|tv|collection}/{id}/{file} and /artwork/person/{file}
 	artwork := r.PathPrefix("/artwork").Subrouter()
 	artwork.Use(authHandler.AuthMiddleware)
-	artwork.HandleFunc("/{kind:movie|tv}/{id:[0-9]+}/{file}", mediaHandler.ServeArtwork).Methods("GET", "HEAD")
+	artwork.HandleFunc("/{kind:movie|tv|collection}/{id:[0-9]+}/{file}", mediaHandler.ServeArtwork).Methods("GET", "HEAD")
 	artwork.HandleFunc("/{kind:person}/{file}", mediaHandler.ServeArtwork).Methods("GET", "HEAD")
 
 	webDir := "./web"

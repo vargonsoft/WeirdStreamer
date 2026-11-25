@@ -3587,3 +3587,10 @@ body.has-az #main-screen .content { padding-right: 28px; }
 
 /* A setting that is a single checkbox (Settings › My Account › Playback) */
 .settings-check { display: flex; gap: 10px; align-items: center; }
+
+/* Collection view: a collection's films the library doesn't have */
+.poster-card.missing { opacity: 0.4; cursor: default; }
+.poster-card.missing:hover, .poster-card.missing:focus-visible { transform: none; }
+.collection-head { margin-bottom: 16px; }
+.collection-count { color: var(--muted-text); margin: 4px 0; }
+.collection-overview { max-width: 70ch; line-height: 1.5; }

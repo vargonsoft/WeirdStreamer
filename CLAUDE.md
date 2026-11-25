@@ -545,6 +545,20 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   repairs folder as its fixed copy (listed as fixed again), the thumbnail back if it's gone, and `db.MoveFile`
   the other way; refused while a file is in its place, the replacement has changed, or someone else plays it.
   The job keeps a restored video's index entry until a scan lists it. Both folders are on the Jobs page's storage list.
+- **Collection view** (movie libraries, after Library view): TMDB's collections (film series). A movie's
+  details name its collection (`belongs_to_collection`, stored as `movies.collection_id`: 0 none, -1 not looked
+  up yet), and `ensureCollection` stores the collection (`collections`: name, overview, poster, backdrop) and
+  its films (`collection_parts`, each poster downloaded) under `artwork/collection/<id>/`, refreshed every 30
+  days like the titles; movies stored before ask only `client.MovieCollection` (`ensureMovieCollection`,
+  `needsWork` counts them due), and unused collections go with the artwork cleanup. `GET /api/library` gives
+  each movie's `collection_id` and the library's `collections` (name, poster, `count` here of `total`);
+  `GET /api/library/collection?lib=&id=` is a collection's page: every film by release date, the library's as
+  its titles (with progress) and the rest `missing`. Collection artwork is served to whoever can see one of its
+  movies (`canAccessCollection`). Clients: the web's switch (Folders | Library | Collections, `showCollections`,
+  `showCollection`, `?view=collections|collection`), the apps' view button (list → grid → library →
+  collections → list; `isCollectionsView`, `openCollection`; Back goes from a title to its collection, then the
+  collections): phone `PhoneCollectionsScreen`/`PhoneCollectionScreen`, TV `TvCollectionsScreen`/
+  `TvCollectionScreen`, iPhone `CollectionsScreen`/`CollectionScreen`. Missing films are dimmed and open nothing.
 - **Fixing TMDB matches** (admins, movie and TV libraries; `handlers/match.go`, `/api/media/match…`): the web's Fix
   dialog (`openMatchDialog`) and the apps' (Android `MatchModel.kt` with `PhoneMatchSheet.kt` and `TvMatchDialog.kt`,
   iPhone `MatchSheet.swift`) show the current match, search TMDB (Movies or TV shows where the library allows

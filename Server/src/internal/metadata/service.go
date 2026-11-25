@@ -386,8 +386,11 @@ func (s *Service) markActive(key string, on bool) {
 // ensureMovie fetches and stores a movie's details and artwork unless they are fresh.
 func (s *Service) ensureMovie(ctx context.Context, client *Client, id int) (bool, error) {
 	existing, err := s.db.GetMovie(id)
-	if err != nil || movieFresh(existing) {
+	if err != nil {
 		return false, err
+	}
+	if movieFresh(existing) {
+		return s.ensureMovieCollection(ctx, client, existing)
 	}
 	s.markActive(fmt.Sprintf("movie:%d", id), true)
 	defer s.markActive(fmt.Sprintf("movie:%d", id), false)
@@ -410,6 +413,12 @@ func (s *Service) ensureMovie(ctx context.Context, client *Client, id int) (bool
 		Backdrop:  s.download(ctx, client, "w1280", d.BackdropPath, dir+"/backdrop"),
 		Logo:      s.download(ctx, client, "w500", pickLogo(d.Images.Logos, client.language), dir+"/logo"),
 		UpdatedAt: time.Now(),
+	}
+	if d.BelongsToCollection != nil && d.BelongsToCollection.ID > 0 {
+		m.CollectionID = d.BelongsToCollection.ID
+		if err := s.ensureCollection(ctx, client, m.CollectionID); err != nil {
+			log.Printf("[METADATA] Collection %d of movie %d: %v", m.CollectionID, id, err)
+		}
 	}
 
 	var credits []database.Credit
@@ -534,6 +543,69 @@ func (s *Service) runSeason(ctx context.Context, client *Client, showID, number 
 		s.notify(notifyPath)
 	}
 	return nil
+}
+
+// ensureMovieCollection fills in the collection of a movie stored before collections were (a light
+// details request), and refreshes its collection when that's due.
+func (s *Service) ensureMovieCollection(ctx context.Context, client *Client, m *database.Movie) (bool, error) {
+	changed := false
+	if m.CollectionID < 0 {
+		ref, err := client.MovieCollection(ctx, m.TMDBID)
+		if err != nil {
+			return false, err
+		}
+		m.CollectionID = 0
+		if ref != nil && ref.ID > 0 {
+			m.CollectionID = ref.ID
+		}
+		if err := s.db.SetMovieCollection(m.TMDBID, m.CollectionID); err != nil {
+			return false, err
+		}
+		changed = m.CollectionID > 0
+	}
+	if m.CollectionID > 0 {
+		c, err := s.db.GetCollection(m.CollectionID)
+		if err != nil {
+			return changed, err
+		}
+		if !collectionFresh(c) {
+			if err := s.ensureCollection(ctx, client, m.CollectionID); err != nil {
+				return changed, err
+			}
+			changed = true
+		}
+	}
+	return changed, nil
+}
+
+// ensureCollection fetches and stores a collection (its name, poster, backdrop and films with their
+// posters) unless it's fresh.
+func (s *Service) ensureCollection(ctx context.Context, client *Client, id int) error {
+	existing, err := s.db.GetCollection(id)
+	if err != nil || collectionFresh(existing) {
+		return err
+	}
+	s.markActive(fmt.Sprintf("collection:%d", id), true)
+	defer s.markActive(fmt.Sprintf("collection:%d", id), false)
+	d, err := client.Collection(ctx, id)
+	if err != nil {
+		return err
+	}
+	dir := fmt.Sprintf("collection/%d", id)
+	c := &database.Collection{TMDBID: id, Name: d.Name, Overview: d.Overview,
+		Poster:    s.download(ctx, client, "w500", d.PosterPath, dir+"/poster"),
+		Backdrop:  s.download(ctx, client, "w1280", d.BackdropPath, dir+"/backdrop"),
+		UpdatedAt: time.Now()}
+	for _, p := range d.Parts {
+		c.Parts = append(c.Parts, database.CollectionPart{TMDBID: p.ID, Title: p.Title, ReleaseDate: p.ReleaseDate,
+			Poster: s.download(ctx, client, "w342", p.PosterPath, fmt.Sprintf("%s/%d", dir, p.ID))})
+	}
+	return s.db.SaveCollection(c)
+}
+
+// collectionFresh reports whether a stored collection needs no refresh.
+func collectionFresh(c *database.Collection) bool {
+	return c != nil && time.Since(c.UpdatedAt) < refreshDetails && (c.Poster == "" || artworkPresent(c.Poster))
 }
 
 // movieFresh reports whether a stored movie needs no refresh: recent, with its artwork on disk.
@@ -830,7 +902,14 @@ func (s *Service) needsWork(l *database.Lookup, seasons []int) bool {
 	}
 	if existing.MatchKind() == config.LibraryTypeMovie {
 		m, err := s.db.GetMovie(existing.TMDBID)
-		return err != nil || !movieFresh(m)
+		if err != nil || !movieFresh(m) || m.CollectionID < 0 {
+			return true
+		}
+		if m.CollectionID > 0 {
+			c, err := s.db.GetCollection(m.CollectionID)
+			return err != nil || !collectionFresh(c)
+		}
+		return false
 	}
 	if sh, err := s.db.GetShow(existing.TMDBID); err != nil || !showFresh(sh) {
 		return true
@@ -1111,6 +1190,20 @@ func (s *Service) cleanupArtwork() {
 		}
 		if removed > 0 {
 			log.Printf("[METADATA] Removed %d unused %s titles and their artwork", removed, kind)
+		}
+	}
+	// Collections no stored movie belongs to any more
+	if ids, err := s.db.UnusedCollections(); err == nil {
+		for _, id := range ids {
+			s.mu.Lock()
+			busy := s.active[fmt.Sprintf("collection:%d", id)]
+			s.mu.Unlock()
+			if busy {
+				continue
+			}
+			if err := os.RemoveAll(filepath.Join(artworkDir(), "collection", strconv.Itoa(id))); err == nil {
+				s.db.DeleteCollection(id)
+			}
 		}
 	}
 }

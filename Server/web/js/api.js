@@ -353,6 +353,11 @@ class MediaAPI {
         return this.request(`/api/library?lib=${encodeURIComponent(libId)}`);
     }
 
+    // A movie collection's page: every film TMDB lists in it, the library's and the missing ones
+    async getLibraryCollection(libId, id) {
+        return this.request(`/api/library/collection?lib=${encodeURIComponent(libId)}&id=${id}`);
+    }
+
     async getLibraryTitle(libId, kind, id) {
         return this.request(`/api/library/title?lib=${encodeURIComponent(libId)}&kind=${kind}&id=${id}`);
     }

@@ -306,6 +306,9 @@ interface ApiService {
     @GET("/api/library")
     suspend fun getLibrary(@Query("lib") libraryId: String): Response<LibraryListing>
 
+    @GET("/api/library/collection")
+    suspend fun getLibraryCollection(@Query("lib") libraryId: String, @Query("id") id: Int): Response<com.vargon.weirdstreamer.api.models.CollectionDetail>
+
     @GET("/api/library/title")
     suspend fun getLibraryTitle(
         @Query("lib") libraryId: String,

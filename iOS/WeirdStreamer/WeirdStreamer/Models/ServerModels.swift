@@ -130,6 +130,8 @@ struct LibraryTitle: Decodable, Identifiable, Hashable {
     let fileCount: Int?
     let watched: Int?
     let progress: Double?
+    var collectionId: Int? = nil   // movies: the TMDB collection it belongs to
+    var missing: Bool? = nil       // on a collection's page: a film the library doesn't have
 
     var id: String { "\(kind)-\(tmdbId)" }
 
@@ -174,6 +176,27 @@ struct LibraryListing: Decodable {
     let libraryType: String
     let titles: [LibraryTitle]?
     let unmatched: [LibraryFile]?
+    var collections: [LibraryCollection]? = nil   // movie libraries: their movies' TMDB collections, by name
+}
+
+/// A collection (a film series) in a movie library: its movies here (`count`) of its films on TMDB (`total`).
+struct LibraryCollection: Decodable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let poster: String?
+    let count: Int?
+    let total: Int?
+}
+
+/// A collection's page (GET /api/library/collection): every film TMDB lists in it, by release date,
+/// the library's as its titles and the rest `missing`.
+struct CollectionDetail: Decodable {
+    let id: Int
+    let name: String
+    let overview: String?
+    let poster: String?
+    let backdrop: String?
+    let parts: [LibraryTitle]
 }
 
 struct LibraryEpisode: Decodable, Identifiable, Hashable {

@@ -90,10 +90,11 @@ struct PosterTile: View {
     let placeholder: String
     var progress: Double = 0
     var watched = false
+    var dimmed = false   // a collection's film the library doesn't have: opens nothing
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button(action: { if !dimmed { action() } }) {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack {
                     Palette.raised
@@ -110,8 +111,85 @@ struct PosterTile: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(dimmed ? 0.4 : 1)
         }
         .buttonStyle(.plain)
+        .disabled(dimmed)
+    }
+}
+
+/// "2 of 6 films", or "6 films" without a count.
+func collectionCount(_ count: Int, total: Int? = nil) -> String {
+    let n = total ?? count
+    let films = "\(n) film\(n == 1 ? "" : "s")"
+    return total == nil ? films : "\(count) of \(films)"
+}
+
+/// Collection view (Android's PhoneCollectionsScreen): a movie library's TMDB collections (film
+/// series) as posters, by name.
+struct CollectionsScreen: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let listing = model.libraryListing {
+            let collections = listing.collections ?? []
+            if collections.isEmpty {
+                PhoneMessage(text: "No movies in collections yet. Collections appear here as movies are looked up.")
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 108), spacing: 12)], spacing: 14) {
+                        ForEach(collections) { c in
+                            PosterTile(title: c.name, subtitle: collectionCount(c.count ?? 0, total: c.total ?? 0),
+                                       poster: c.poster, placeholder: "film") {
+                                model.openLibraryCollection(id: c.id)
+                            }
+                        }
+                    }
+                    .padding(12)
+                }
+                .refreshable { model.loadLibrary() }
+            }
+        } else if let error = model.libraryError {
+            PhoneMessage(text: "Error: \(error)")
+        } else {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// A collection's page (Android's PhoneCollectionScreen): its name, how many of its films the
+/// library has and its overview, then every film by release date; missing ones dimmed.
+struct CollectionScreen: View {
+    @Environment(AppModel.self) private var model
+    let collection: CollectionDetail
+
+    var body: some View {
+        let have = collection.parts.filter { $0.missing != true }.count
+        ScrollView {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(collection.name).font(.title2.weight(.semibold))
+                Text("\(have) of \(collectionCount(collection.parts.count)) in this library")
+                    .font(.subheadline).foregroundStyle(Palette.muted)
+                if let overview = collection.overview, !overview.isEmpty {
+                    Text(overview).font(.subheadline)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12).padding(.top, 12)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 108), spacing: 12)], spacing: 14) {
+                ForEach(collection.parts) { t in
+                    let missing = t.missing == true
+                    PosterTile(title: t.title,
+                               subtitle: missing ? [t.year.map(String.init), "Not in this library"].compactMap { $0 }.joined(separator: " · ")
+                                   : t.year.map(String.init),
+                               poster: t.poster, placeholder: "film",
+                               progress: t.progress ?? 0, watched: t.allWatched, dimmed: missing) {
+                        model.openLibraryTitle(kind: t.kind, tmdbId: t.tmdbId)
+                    }
+                }
+            }
+            .padding(12)
+        }
     }
 }
 

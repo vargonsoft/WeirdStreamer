@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
@@ -188,7 +189,7 @@ fun PhoneLibraryScreen(viewModel: MediaViewModel) {
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun PhonePosterTile(
+internal fun PhonePosterTile(
     title: String,
     subtitle: String?,
     posterUrl: String?,
@@ -196,9 +197,11 @@ private fun PhonePosterTile(
     progress: Float = 0f,
     watched: Boolean = false,
     onLongClick: (() -> Unit)? = null,
+    dimmed: Boolean = false, // a collection's film the library doesn't have: not clickable
     onClick: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
+    Column(modifier = Modifier.fillMaxWidth()
+        .then(if (dimmed) Modifier.alpha(0.4f) else Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick))) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -688,4 +691,75 @@ private fun PhoneTitleWatched(viewModel: MediaViewModel, title: TitleDetail) {
     val files = title.files.orEmpty()
     if (files.size < 2) return
     Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { PhoneGroupWatchedButton(viewModel, files, "Mark All Watched") }
+}
+
+/** Phone Collection view: a movie library's TMDB collections (film series) as posters, by name. */
+@Composable
+fun PhoneCollectionsScreen(viewModel: MediaViewModel) {
+    val listing = viewModel.libraryListing
+    val collections = listing?.collections.orEmpty()
+    when {
+        listing == null && viewModel.libraryError != null -> PhoneMessage("Error: ${viewModel.libraryError}")
+        listing == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        collections.isEmpty() -> PhoneMessage("No movies in collections yet. Collections appear here as movies are looked up.")
+        else -> LazyVerticalGrid(
+            columns = GridCells.Adaptive(108.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            items(collections, key = { it.id }) { c ->
+                PhonePosterTile(
+                    title = c.name,
+                    subtitle = collectionCount(c.count, c.total),
+                    posterUrl = viewModel.serverUrl(c.poster),
+                    placeholder = Icons.Default.Movie,
+                ) { viewModel.openLibraryCollection(c.id) }
+            }
+        }
+    }
+}
+
+/**
+ * Phone collection page: its name, how many of its films the library has and its overview, then
+ * every film by release date; those the library doesn't have are dimmed and open nothing.
+ */
+@Composable
+fun PhoneCollectionScreen(viewModel: MediaViewModel, collection: com.vargon.weirdstreamer.api.models.CollectionDetail) {
+    val have = collection.parts.count { !it.missing }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(108.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }, key = "head") {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(collection.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text("$have of ${collectionCount(collection.parts.size)} in this library", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                collection.overview?.takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            }
+        }
+        items(collection.parts, key = { it.tmdbId }) { t ->
+            PhonePosterTile(
+                title = t.title,
+                subtitle = if (t.missing) listOfNotNull(t.year?.toString(), "Not in this library").joinToString(" · ") else t.year?.toString(),
+                posterUrl = viewModel.serverUrl(t.poster),
+                placeholder = Icons.Default.Movie,
+                progress = t.progress.toFloat(),
+                watched = t.allWatched,
+                dimmed = t.missing,
+            ) { viewModel.openLibraryTitle(t.kind, t.tmdbId) }
+        }
+    }
+}
+
+/** "2 of 6 films", or "6 films" without a count. */
+internal fun collectionCount(count: Int, total: Int? = null): String {
+    val n = total ?: count
+    val films = "$n film${if (n == 1) "" else "s"}"
+    return if (total == null) films else "$count of $films"
 }

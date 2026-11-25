@@ -141,6 +141,28 @@ type LibraryListing struct {
 	LibraryType string         `json:"library_type"`
 	Titles      []LibraryTitle `json:"titles"`
 	Unmatched   []LibraryFile  `json:"unmatched"` // files (or, for TV, shows) without a match
+	// Movie libraries: the TMDB collections (film series) its movies belong to, by name
+	Collections []LibraryCollection `json:"collections,omitempty"`
+}
+
+// LibraryCollection is a collection (a film series) in a movie library's listing.
+type LibraryCollection struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Poster string `json:"poster,omitempty"`
+	Count  int    `json:"count"` // its movies in the library
+	Total  int    `json:"total"` // its films on TMDB
+}
+
+// CollectionDetail is a collection's page: every film TMDB lists in it, by release date, those the
+// library has as its titles (with progress), the rest marked missing.
+type CollectionDetail struct {
+	ID       int            `json:"id"`
+	Name     string         `json:"name"`
+	Overview string         `json:"overview,omitempty"`
+	Poster   string         `json:"poster,omitempty"`
+	Backdrop string         `json:"backdrop,omitempty"`
+	Parts    []LibraryTitle `json:"parts"`
 }
 
 // LibraryTitle is one movie or show in a library listing.
@@ -154,7 +176,11 @@ type LibraryTitle struct {
 	// The signed-in user's progress: files watched, and for a movie, how far into it they are
 	Watched  int      `json:"watched,omitempty"`
 	Progress float64  `json:"progress,omitempty"` // 0..1
-	Paths    []string `json:"-"`
+	// Movies: the TMDB collection it belongs to (0 for none)
+	CollectionID int `json:"collection_id,omitempty"`
+	// On a collection's page: a film of it the library doesn't have (not playable)
+	Missing bool     `json:"missing,omitempty"`
+	Paths   []string `json:"-"`
 }
 
 // LibraryFile is a playable file on a title page or in the Unmatched section.

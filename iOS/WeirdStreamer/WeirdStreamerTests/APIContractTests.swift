@@ -134,6 +134,25 @@ struct APIContractTests {
         ])
     }
 
+    // MARK: Collections
+
+    /// GET /api/library (models.LibraryListing's collections) and /api/library/collection (CollectionDetail).
+    @Test func collectionsReadTheServersNames() throws {
+        let listing = try decode(LibraryListing.self, #"""
+            {"library_id":"m","library_name":"Movies","library_type":"movie",
+             "titles":[{"kind":"movie","tmdb_id":24428,"title":"The Avengers","year":2012,"file_count":1,"collection_id":86311}],
+             "unmatched":[],"collections":[{"id":86311,"name":"The Avengers Collection","poster":"/artwork/collection/86311/poster.jpg","count":1,"total":6}]}
+            """#)
+        #expect(listing.titles?.first?.collectionId == 86311)
+        #expect(listing.collections?.first?.count == 1 && listing.collections?.first?.total == 6)
+        let page = try decode(CollectionDetail.self, #"""
+            {"id":86311,"name":"The Avengers Collection","overview":"Assemble.","parts":[
+             {"kind":"movie","tmdb_id":24428,"title":"The Avengers","year":2012,"file_count":1,"collection_id":86311},
+             {"kind":"movie","tmdb_id":99861,"title":"Avengers: Age of Ultron","year":2015,"file_count":0,"collection_id":86311,"missing":true}]}
+            """#)
+        #expect(page.parts.map { $0.missing == true } == [false, true])
+    }
+
     // MARK: Fixing matches
 
     /// GET /api/media/match (metadata.MatchInfo with models.ItemMetadata and EpisodeInfo).

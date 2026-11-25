@@ -229,6 +229,17 @@ class ServerRepository(
         }
     }
 
+    suspend fun libraryCollection(libraryId: String, id: Int): Result<com.vargon.weirdstreamer.api.models.CollectionDetail> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.getLibraryCollection(libraryId, id)
+            val body = response.body()
+            if (response.isSuccessful && body != null) Result.success(body)
+            else Result.failure(Exception("Server error: ${response.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     override suspend fun browse(path: String): Result<List<FileItem>> = withContext(Dispatchers.IO) {
         try {
             val response = apiService.browse(path)

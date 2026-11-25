@@ -1,5 +1,8 @@
 // Application State
 console.log('app.js loaded');
+// Views of a movie or tv library (the URL's view=), as against folders.
+const LIBRARY_VIEWS = ['library', 'title', 'collections', 'collection'];
+
 const state = {
     currentType: 'all',
     currentPath: '',
@@ -179,6 +182,14 @@ function setupEventListeners() {
             }
             if (e.state.view === 'title') {
                 showTitle(e.state.lib, e.state.kind, e.state.id, false);
+                return;
+            }
+            if (e.state.view === 'collections') {
+                showCollections(e.state.lib, false);
+                return;
+            }
+            if (e.state.view === 'collection') {
+                showCollection(e.state.lib, e.state.id, false);
                 return;
             }
             state.currentPath = e.state.path || '';
@@ -382,16 +393,20 @@ function showMainScreen() {
     }
     if (!history.state) {
         // So Back to this first page has a state to restore it from.
-        const initial = urlView === 'library' || urlView === 'title'
+        const initial = LIBRARY_VIEWS.includes(urlView)
             ? Object.fromEntries(['view', 'lib', 'kind', 'id'].filter(k => url.searchParams.has(k)).map(k => [k, url.searchParams.get(k)]))
             : { path: urlPath || '', type: urlType || 'all' };
         if (initial.id !== undefined) initial.id = Number(initial.id);
         history.replaceState(initial, '');
     }
-    if (urlView === 'library' || urlView === 'title') {
+    if (LIBRARY_VIEWS.includes(urlView)) {
         const lib = url.searchParams.get('lib');
         if (urlView === 'title') {
             showTitle(lib, url.searchParams.get('kind'), Number(url.searchParams.get('id')), false);
+        } else if (urlView === 'collections') {
+            showCollections(lib, false);
+        } else if (urlView === 'collection') {
+            showCollection(lib, Number(url.searchParams.get('id')), false);
         } else {
             showLibrary(lib, false);
         }
@@ -655,8 +670,13 @@ function createDirectoryElement(dir) {
     div.className = 'media-item directory-item';
     div.dataset.path = dir.path; // for live updates of its icon's picture
     div.onclick = () => {
-        if (!state.currentPath && dir.library_type && getLibraryMode(dir.path) === 'library') {
+        const mode = !state.currentPath && dir.library_type ? getLibraryMode(dir.path) : 'folders';
+        if (mode === 'library' || (mode === 'collections' && dir.library_type !== 'movie')) {
             showLibrary(dir.path);
+            return;
+        }
+        if (mode === 'collections') {
+            showCollections(dir.path);
             return;
         }
         state.currentPath = dir.path;
@@ -4698,6 +4718,8 @@ window.addEventListener('scroll', () => {
 function refreshCurrentView() {
     if (state.view === 'library') showLibrary(state.libraryId, false, true);
     else if (state.view === 'title') showTitle(state.libraryId, state.titleRef.kind, state.titleRef.id, false, true);
+    else if (state.view === 'collections') showCollections(state.libraryId, false, true);
+    else if (state.view === 'collection') showCollection(state.libraryId, state.collectionId, false, true);
     else loadMedia(false);
 }
 
@@ -4731,10 +4753,14 @@ function createViewToggle() {
     toggle.className = 'view-toggle';
     toggle.setAttribute('role', 'group');
     toggle.setAttribute('aria-label', 'View');
-    [['folders', 'Folders'], ['library', 'Library']].forEach(([mode, label]) => {
+    // Movie libraries also show their films by collection (series).
+    const modes = [['folders', 'Folders'], ['library', 'Library']];
+    if (state.libraryType === 'movie') modes.push(['collections', 'Collections']);
+    const viewMode = { folders: 'folders', library: 'library', title: 'library', collections: 'collections', collection: 'collections' };
+    modes.forEach(([mode, label]) => {
         const btn = document.createElement('button');
         btn.type = 'button';
-        const active = mode === 'folders' ? state.view === 'folders' : state.view !== 'folders';
+        const active = viewMode[state.view] === mode;
         btn.innerHTML = (active ? iconSvg('check') : '') + `<span>${label}</span>`; // a check on the current view
         btn.className = active ? 'active' : '';
         btn.setAttribute('aria-pressed', String(active));
@@ -4743,6 +4769,8 @@ function createViewToggle() {
             setLibraryMode(state.libraryId, mode);
             if (mode === 'library') {
                 showLibrary(state.libraryId);
+            } else if (mode === 'collections') {
+                showCollections(state.libraryId);
             } else {
                 state.currentPath = state.libraryId;
                 loadMedia();
@@ -4753,7 +4781,8 @@ function createViewToggle() {
     return toggle;
 }
 
-function libraryBreadcrumb(titleName) {
+// The bar: the view switch, Home / the library / (a collection, or Collections) / the title.
+function libraryBreadcrumb(titleName, collections = false) {
     breadcrumb.innerHTML = '';
     breadcrumb.appendChild(createViewToggle());
     const home = document.createElement('a');
@@ -4771,7 +4800,7 @@ function libraryBreadcrumb(titleName) {
     lib.textContent = state.libraryName || 'Library';
     lib.onclick = (e) => {
         e.preventDefault();
-        showLibrary(state.libraryId);
+        if (collections) showCollections(state.libraryId); else showLibrary(state.libraryId);
     };
     breadcrumb.appendChild(lib);
     if (titleName) {
@@ -4832,6 +4861,138 @@ async function showLibrary(libId, push = true, keepScroll = false) {
         el, label: azLabel(el.querySelector('.poster-title')?.textContent || '', true),
         run: el.classList.contains('unmatched') ? 1 : 0,
     })));
+    if (keepScroll) window.scrollTo(0, scroll);
+    restorePendingScroll();
+}
+
+// Collection view (movie libraries): the TMDB collections (film series) the library's movies
+// belong to, each opening its page.
+async function showCollections(libId, push = true, keepScroll = false) {
+    const container = document.getElementById('library-view');
+    const scroll = window.scrollY;
+    setView('collections');
+    state.libraryId = libId;
+    state.titleRef = null;
+    if (push) pushLibraryHistory({ view: 'collections', lib: libId });
+    if (!keepScroll) container.innerHTML = '<p class="library-empty">Loading…</p>';
+
+    let data;
+    try {
+        data = await api.getLibrary(libId);
+    } catch (error) {
+        container.textContent = 'Could not load library: ' + error.message;
+        return;
+    }
+    state.libraryType = data.library_type;
+    state.libraryName = data.library_name;
+    state.mediaItems = [];
+    libraryBreadcrumb(null, true);
+    const collections = data.collections || [];
+    container.innerHTML = '';
+    if (!collections.length) {
+        container.innerHTML = '<p class="library-empty">No movies in collections yet. Collections appear here as movies are looked up.</p>';
+        return;
+    }
+    const grid = document.createElement('div');
+    grid.className = 'poster-grid';
+    collections.forEach(c => grid.appendChild(createCollectionCard(c)));
+    container.appendChild(grid);
+    const cards = container.querySelectorAll('.poster-card');
+    setAzIndex([...cards].map(el => ({ el, label: azLabel(el.querySelector('.poster-title')?.textContent || '', true), run: 0 })));
+    if (keepScroll) window.scrollTo(0, scroll);
+    restorePendingScroll();
+}
+
+function createCollectionCard(c) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'poster-card';
+    card.title = c.name;
+    const poster = document.createElement('div');
+    poster.className = 'poster';
+    if (c.poster) {
+        const img = document.createElement('img');
+        img.src = API_BASE + c.poster;
+        img.alt = '';
+        img.loading = 'lazy';
+        poster.appendChild(img);
+    } else {
+        poster.classList.add('no-poster');
+        poster.innerHTML = placeholderIcon('movie');
+    }
+    const title = document.createElement('div');
+    title.className = 'poster-title';
+    title.textContent = c.name;
+    const count = document.createElement('div');
+    count.className = 'poster-year';
+    count.textContent = `${c.count} of ${c.total} film${c.total === 1 ? '' : 's'}`;
+    card.appendChild(poster);
+    card.appendChild(title);
+    card.appendChild(count);
+    card.onclick = () => showCollection(state.libraryId, c.id);
+    return card;
+}
+
+// A collection's page: every film TMDB lists in it, by release date; those the library doesn't
+// have are dimmed and open nothing.
+async function showCollection(libId, id, push = true, keepScroll = false) {
+    const container = document.getElementById('library-view');
+    const scroll = window.scrollY;
+    setView('collection');
+    state.libraryId = libId;
+    state.collectionId = id;
+    state.titleRef = null;
+    if (push) pushLibraryHistory({ view: 'collection', lib: libId, id });
+    if (!keepScroll) {
+        container.innerHTML = '<p class="library-empty">Loading…</p>';
+        window.scrollTo(0, 0);
+    }
+    let c;
+    try {
+        if (!state.libraryName || state.libraryType !== 'movie') {
+            const lib = await api.getLibrary(libId);
+            state.libraryName = lib.library_name;
+            state.libraryType = lib.library_type;
+        }
+        c = await api.getLibraryCollection(libId, id);
+    } catch (error) {
+        container.textContent = 'Could not load collection: ' + error.message;
+        return;
+    }
+    state.mediaItems = [];
+    libraryBreadcrumb(c.name, true);
+    container.innerHTML = '';
+    const head = document.createElement('div');
+    head.className = 'collection-head';
+    const name = document.createElement('h2');
+    name.className = 'library-section';
+    name.textContent = c.name;
+    head.appendChild(name);
+    const have = c.parts.filter(p => !p.missing).length;
+    const count = document.createElement('p');
+    count.className = 'collection-count';
+    count.textContent = `${have} of ${c.parts.length} film${c.parts.length === 1 ? '' : 's'} in this library`;
+    head.appendChild(count);
+    if (c.overview) {
+        const overview = document.createElement('p');
+        overview.className = 'collection-overview';
+        overview.textContent = c.overview;
+        head.appendChild(overview);
+    }
+    container.appendChild(head);
+    const grid = document.createElement('div');
+    grid.className = 'poster-grid';
+    c.parts.forEach(t => {
+        const card = createPosterCard(t);
+        if (t.missing) {
+            card.classList.add('missing');
+            card.disabled = true;
+            card.title += ' — not in this library';
+            card.querySelector('.poster-year').textContent = [t.year, 'Not in this library'].filter(Boolean).join(' · ');
+        }
+        grid.appendChild(card);
+    });
+    container.appendChild(grid);
     if (keepScroll) window.scrollTo(0, scroll);
     restorePendingScroll();
 }

@@ -107,8 +107,12 @@ struct RootView: View {
                 } else if model.isLibraryView {
                     if let title = model.openTitle {
                         TitleScreen(title: title)
-                    } else {
+                    } else if !model.isCollectionsView {
                         LibraryScreen()
+                    } else if let collection = model.openCollection {
+                        CollectionScreen(collection: collection)
+                    } else {
+                        CollectionsScreen()
                     }
                 } else {
                     FileBrowserScreen()

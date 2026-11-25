@@ -100,6 +100,9 @@ func (s *Service) Library(ctx context.Context, lib config.MediaPath, info FileIn
 				continue
 			}
 			t.Title, t.Year, t.Poster = m.Title, m.Year, ArtworkURL(m.Poster, m.UpdatedAt)
+			if m.CollectionID > 0 {
+				t.CollectionID = m.CollectionID
+			}
 		} else {
 			sh, err := s.db.GetShow(tk.id)
 			if err != nil || sh == nil {
@@ -117,6 +120,8 @@ func (s *Service) Library(ctx context.Context, lib config.MediaPath, info FileIn
 		}
 		return a.Year < b.Year
 	})
+
+	listing.Collections = s.libraryCollections(listing.Titles)
 
 	for _, key := range unmatchedKeys {
 		files := idx.files[key]
@@ -287,4 +292,70 @@ func SortTitle(title string) string {
 		}
 	}
 	return t
+}
+
+// libraryCollections lists the stored collections the titles' movies belong to, by name.
+func (s *Service) libraryCollections(titles []models.LibraryTitle) []models.LibraryCollection {
+	counts := map[int]int{}
+	for _, t := range titles {
+		if t.Kind == "movie" && t.CollectionID > 0 {
+			counts[t.CollectionID]++
+		}
+	}
+	var out []models.LibraryCollection
+	for id, n := range counts {
+		c, err := s.db.GetCollection(id)
+		if err != nil || c == nil {
+			continue // still being fetched
+		}
+		out = append(out, models.LibraryCollection{ID: id, Name: c.Name, Poster: ArtworkURL(c.Poster, c.UpdatedAt),
+			Count: n, Total: len(c.Parts)})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if a, b := SortTitle(out[i].Name), SortTitle(out[j].Name); a != b {
+			return a < b
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// ErrNoCollection is returned for a collection none of the library's movies belong to.
+var ErrNoCollection = errors.New("no movie in this library belongs to that collection")
+
+// Collection builds a collection's page from a library's listing (its titles already annotated
+// with the user's progress): every film TMDB lists in it, by release date, the library's titles
+// where it has them, the others marked missing; films of the library TMDB doesn't list come last.
+func (s *Service) Collection(listing *models.LibraryListing, id int) (*models.CollectionDetail, error) {
+	owned := map[int]models.LibraryTitle{}
+	for _, t := range listing.Titles {
+		if t.Kind == "movie" && t.CollectionID == id {
+			owned[t.TMDBID] = t
+		}
+	}
+	c, err := s.db.GetCollection(id)
+	if err != nil {
+		return nil, err
+	}
+	if c == nil || len(owned) == 0 {
+		return nil, ErrNoCollection
+	}
+	detail := &models.CollectionDetail{ID: id, Name: c.Name, Overview: c.Overview,
+		Poster: ArtworkURL(c.Poster, c.UpdatedAt), Backdrop: ArtworkURL(c.Backdrop, c.UpdatedAt), Parts: []models.LibraryTitle{}}
+	for _, p := range c.Parts {
+		if t, ok := owned[p.TMDBID]; ok {
+			detail.Parts = append(detail.Parts, t)
+			delete(owned, p.TMDBID)
+			continue
+		}
+		detail.Parts = append(detail.Parts, models.LibraryTitle{Kind: "movie", TMDBID: p.TMDBID, Title: p.Title,
+			Year: yearOf(p.ReleaseDate), Poster: ArtworkURL(p.Poster, c.UpdatedAt), CollectionID: id, Missing: true})
+	}
+	var rest []models.LibraryTitle
+	for _, t := range owned {
+		rest = append(rest, t)
+	}
+	sort.Slice(rest, func(i, j int) bool { return rest[i].Year < rest[j].Year })
+	detail.Parts = append(detail.Parts, rest...)
+	return detail, nil
 }

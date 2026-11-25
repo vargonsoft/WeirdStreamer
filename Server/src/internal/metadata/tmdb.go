@@ -118,6 +118,31 @@ type MovieDetails struct {
 		Crew []Person `json:"crew"`
 	} `json:"credits"`
 	Images Images `json:"images"`
+	// The collection (a film series) it belongs to, if any
+	BelongsToCollection *CollectionRef `json:"belongs_to_collection"`
+}
+
+// CollectionRef names a movie's collection, as a movie's details give it.
+type CollectionRef struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	PosterPath   string `json:"poster_path"`
+	BackdropPath string `json:"backdrop_path"`
+}
+
+// CollectionDetails is a collection (a film series) and its films.
+type CollectionDetails struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Overview     string `json:"overview"`
+	PosterPath   string `json:"poster_path"`
+	BackdropPath string `json:"backdrop_path"`
+	Parts        []struct {
+		ID          int    `json:"id"`
+		Title       string `json:"title"`
+		ReleaseDate string `json:"release_date"`
+		PosterPath  string `json:"poster_path"`
+	} `json:"parts"`
 }
 
 type AggregateCast struct {
@@ -204,6 +229,23 @@ func (c *Client) Movie(ctx context.Context, id int) (*MovieDetails, error) {
 		"include_image_language": {c.imageLanguages()},
 	}, &m)
 	return &m, err
+}
+
+// MovieCollection is the collection a movie belongs to (nil for none), from its details without
+// the credits and images Movie asks for.
+func (c *Client) MovieCollection(ctx context.Context, id int) (*CollectionRef, error) {
+	var m struct {
+		BelongsToCollection *CollectionRef `json:"belongs_to_collection"`
+	}
+	err := c.get(ctx, fmt.Sprintf("/movie/%d", id), url.Values{}, &m)
+	return m.BelongsToCollection, err
+}
+
+// Collection is a collection (a film series) with its films.
+func (c *Client) Collection(ctx context.Context, id int) (*CollectionDetails, error) {
+	var d CollectionDetails
+	err := c.get(ctx, fmt.Sprintf("/collection/%d", id), url.Values{}, &d)
+	return &d, err
 }
 
 func (c *Client) TV(ctx context.Context, id int) (*TVDetails, error) {

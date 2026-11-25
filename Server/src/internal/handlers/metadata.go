@@ -84,6 +84,14 @@ func (h *MediaHandler) ServeArtwork(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		path = filepath.Join(artworkRoot, "person", file)
+	case "collection":
+		// Seen by those who can see one of its movies
+		id, err := strconv.Atoi(vars["id"])
+		if err != nil || id <= 0 || !h.canAccessCollection(r, id) {
+			respondError(w, http.StatusNotFound, "Not found")
+			return
+		}
+		path = filepath.Join(artworkRoot, kind, strconv.Itoa(id), file)
 	case config.LibraryTypeMovie, config.LibraryTypeTV:
 		id, err := strconv.Atoi(vars["id"])
 		if err != nil || id <= 0 || !h.canAccessTitle(r, kind, id) {
@@ -115,6 +123,20 @@ func (h *MediaHandler) canAccessTitle(r *http.Request, kind string, tmdbID int) 
 			if lib.ID == id && h.canAccessLibrary(r, lib) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// canAccessCollection reports whether the user can access a library holding one of a collection's movies.
+func (h *MediaHandler) canAccessCollection(r *http.Request, collectionID int) bool {
+	ids, err := h.db.CollectionMovies(collectionID)
+	if err != nil {
+		return false
+	}
+	for _, id := range ids {
+		if h.canAccessTitle(r, config.LibraryTypeMovie, id) {
+			return true
 		}
 	}
 	return false

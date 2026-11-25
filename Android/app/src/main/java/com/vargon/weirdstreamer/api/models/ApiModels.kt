@@ -161,7 +161,31 @@ data class LibraryListing(
     @SerializedName("library_name") val libraryName: String,
     @SerializedName("library_type") val libraryType: String,
     @SerializedName("titles") val titles: List<LibraryTitle> = emptyList(),
-    @SerializedName("unmatched") val unmatched: List<LibraryFile> = emptyList()
+    @SerializedName("unmatched") val unmatched: List<LibraryFile> = emptyList(),
+    // Movie libraries: the TMDB collections (film series) its movies belong to, by name
+    @SerializedName("collections") val collections: List<LibraryCollection>? = null
+)
+
+/** A collection (a film series) in a movie library: its movies here ([count]) of its films on TMDB ([total]). */
+data class LibraryCollection(
+    @SerializedName("id") val id: Int,
+    @SerializedName("name") val name: String,
+    @SerializedName("poster") val poster: String? = null,
+    @SerializedName("count") val count: Int = 0,
+    @SerializedName("total") val total: Int = 0
+)
+
+/**
+ * A collection's page (GET /api/library/collection): every film TMDB lists in it, by release date,
+ * the library's as its titles and the rest [LibraryTitle.missing].
+ */
+data class CollectionDetail(
+    @SerializedName("id") val id: Int,
+    @SerializedName("name") val name: String,
+    @SerializedName("overview") val overview: String? = null,
+    @SerializedName("poster") val poster: String? = null,
+    @SerializedName("backdrop") val backdrop: String? = null,
+    @SerializedName("parts") val parts: List<LibraryTitle> = emptyList()
 )
 
 data class LibraryTitle(
@@ -173,7 +197,10 @@ data class LibraryTitle(
     @SerializedName("file_count") val fileCount: Int = 0,
     // The user's progress: files watched, and a movie's place in it (0..1)
     @SerializedName("watched") val watched: Int = 0,
-    @SerializedName("progress") val progress: Double = 0.0
+    @SerializedName("progress") val progress: Double = 0.0,
+    @SerializedName("collection_id") val collectionId: Int = 0,
+    // On a collection's page: a film of it the library doesn't have (not playable)
+    @SerializedName("missing") val missing: Boolean = false
 ) {
     val allWatched: Boolean get() = fileCount > 0 && watched >= if (kind == "movie") 1 else fileCount
 }

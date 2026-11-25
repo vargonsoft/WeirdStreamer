@@ -50,6 +50,24 @@ CREATE TABLE IF NOT EXISTS movies (
 	updated_at DATETIME NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS collections (
+	tmdb_id INTEGER PRIMARY KEY,
+	name TEXT NOT NULL,
+	overview TEXT NOT NULL DEFAULT '',
+	poster TEXT NOT NULL DEFAULT '',
+	backdrop TEXT NOT NULL DEFAULT '',
+	updated_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS collection_parts (
+	collection_id INTEGER NOT NULL,
+	tmdb_id INTEGER NOT NULL,
+	title TEXT NOT NULL,
+	release_date TEXT NOT NULL DEFAULT '',
+	poster TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (collection_id, tmdb_id)
+);
+
 CREATE TABLE IF NOT EXISTS shows (
 	tmdb_id INTEGER PRIMARY KEY,
 	name TEXT NOT NULL,
@@ -169,7 +187,26 @@ type Movie struct {
 	Logo          string
 	PosterSource  string // the TMDB image path the poster was downloaded from
 	PosterManual  bool   // PosterSource was picked by hand and survives refreshes
+	CollectionID  int    // the TMDB collection it belongs to: 0 none, -1 not looked up yet
 	UpdatedAt     time.Time
+}
+
+// Collection is a TMDB collection (a film series); Parts are its films, by release date.
+type Collection struct {
+	TMDBID    int
+	Name      string
+	Overview  string
+	Poster    string // artwork paths, as movies'
+	Backdrop  string
+	UpdatedAt time.Time
+	Parts     []CollectionPart
+}
+
+type CollectionPart struct {
+	TMDBID      int
+	Title       string
+	ReleaseDate string
+	Poster      string
 }
 
 type Show struct {
@@ -243,6 +280,8 @@ func (db *DB) initMetadataSchema() error {
 		_, _ = db.mediaConn.Exec("ALTER TABLE " + table + " ADD COLUMN poster_source TEXT NOT NULL DEFAULT ''")
 		_, _ = db.mediaConn.Exec("ALTER TABLE " + table + " ADD COLUMN poster_manual INTEGER NOT NULL DEFAULT 0")
 	}
+	// -1: not looked up yet (movies stored before collections were), 0: none
+	_, _ = db.mediaConn.Exec("ALTER TABLE movies ADD COLUMN collection_id INTEGER NOT NULL DEFAULT -1")
 	return nil
 }
 
@@ -397,9 +436,9 @@ func (db *DB) FolderKeys(libraryID string, folders []string) (map[string]string,
 func (db *DB) GetMovie(id int) (*Movie, error) {
 	m := &Movie{}
 	err := db.mediaConn.QueryRow(`SELECT tmdb_id, title, original_title, year, release_date, overview, tagline,
-		runtime, genres, imdb_id, poster, backdrop, logo, poster_source, poster_manual, updated_at FROM movies WHERE tmdb_id = ?`, id).
+		runtime, genres, imdb_id, poster, backdrop, logo, poster_source, poster_manual, collection_id, updated_at FROM movies WHERE tmdb_id = ?`, id).
 		Scan(&m.TMDBID, &m.Title, &m.OriginalTitle, &m.Year, &m.ReleaseDate, &m.Overview, &m.Tagline,
-			&m.Runtime, &m.Genres, &m.IMDBID, &m.Poster, &m.Backdrop, &m.Logo, &m.PosterSource, &m.PosterManual, &m.UpdatedAt)
+			&m.Runtime, &m.Genres, &m.IMDBID, &m.Poster, &m.Backdrop, &m.Logo, &m.PosterSource, &m.PosterManual, &m.CollectionID, &m.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -450,10 +489,10 @@ func (db *DB) SaveMovie(m *Movie, credits []Credit) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`INSERT OR REPLACE INTO movies (tmdb_id, title, original_title, year, release_date,
-		overview, tagline, runtime, genres, imdb_id, poster, backdrop, logo, poster_source, poster_manual, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		overview, tagline, runtime, genres, imdb_id, poster, backdrop, logo, poster_source, poster_manual, collection_id, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.TMDBID, m.Title, m.OriginalTitle, m.Year, m.ReleaseDate, m.Overview, m.Tagline, m.Runtime,
-		m.Genres, m.IMDBID, m.Poster, m.Backdrop, m.Logo, m.PosterSource, m.PosterManual, m.UpdatedAt); err != nil {
+		m.Genres, m.IMDBID, m.Poster, m.Backdrop, m.Logo, m.PosterSource, m.PosterManual, m.CollectionID, m.UpdatedAt); err != nil {
 		return err
 	}
 	if err := replaceCredits(tx, MovieOwner(m.TMDBID), credits); err != nil {
@@ -721,4 +760,106 @@ func placeholders(n int) string {
 
 func itoa(n int) string {
 	return strconv.Itoa(n)
+}
+
+// SetMovieCollection records the collection a stored movie belongs to (0 for none).
+func (db *DB) SetMovieCollection(movieID, collectionID int) error {
+	_, err := db.mediaConn.Exec(`UPDATE movies SET collection_id = ? WHERE tmdb_id = ?`, collectionID, movieID)
+	return err
+}
+
+// GetCollection returns a stored collection with its films by release date, or nil.
+func (db *DB) GetCollection(id int) (*Collection, error) {
+	c := &Collection{}
+	err := db.mediaConn.QueryRow(`SELECT tmdb_id, name, overview, poster, backdrop, updated_at FROM collections WHERE tmdb_id = ?`, id).
+		Scan(&c.TMDBID, &c.Name, &c.Overview, &c.Poster, &c.Backdrop, &c.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.mediaConn.Query(`SELECT tmdb_id, title, release_date, poster FROM collection_parts
+		WHERE collection_id = ? ORDER BY release_date = '', release_date, title`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p CollectionPart
+		if err := rows.Scan(&p.TMDBID, &p.Title, &p.ReleaseDate, &p.Poster); err != nil {
+			return nil, err
+		}
+		c.Parts = append(c.Parts, p)
+	}
+	return c, rows.Err()
+}
+
+// SaveCollection stores a collection and replaces its films.
+func (db *DB) SaveCollection(c *Collection) error {
+	tx, err := db.mediaConn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO collections (tmdb_id, name, overview, poster, backdrop, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`, c.TMDBID, c.Name, c.Overview, c.Poster, c.Backdrop, c.UpdatedAt); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM collection_parts WHERE collection_id = ?`, c.TMDBID); err != nil {
+		return err
+	}
+	for _, p := range c.Parts {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO collection_parts (collection_id, tmdb_id, title, release_date, poster)
+			VALUES (?, ?, ?, ?, ?)`, c.TMDBID, p.TMDBID, p.Title, p.ReleaseDate, p.Poster); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// UnusedCollections lists stored collections no stored movie belongs to.
+func (db *DB) UnusedCollections() ([]int, error) {
+	rows, err := db.mediaConn.Query(`SELECT tmdb_id FROM collections
+		WHERE tmdb_id NOT IN (SELECT collection_id FROM movies WHERE collection_id > 0)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// DeleteCollection removes a stored collection and its films.
+func (db *DB) DeleteCollection(id int) error {
+	if _, err := db.mediaConn.Exec(`DELETE FROM collection_parts WHERE collection_id = ?`, id); err != nil {
+		return err
+	}
+	_, err := db.mediaConn.Exec(`DELETE FROM collections WHERE tmdb_id = ?`, id)
+	return err
+}
+
+// CollectionMovies lists the stored movies that belong to a collection.
+func (db *DB) CollectionMovies(collectionID int) ([]int, error) {
+	rows, err := db.mediaConn.Query(`SELECT tmdb_id FROM movies WHERE collection_id = ?`, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

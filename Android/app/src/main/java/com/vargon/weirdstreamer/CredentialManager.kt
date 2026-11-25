@@ -146,6 +146,15 @@ class CredentialManager(context: Context) {
         return sharedPreferences.getBoolean("library_mode_$key", true)
     }
 
+    // Collection view (a movie library's films by collection, after Library view); off unless chosen
+    fun setCollectionsMode(key: String, enabled: Boolean) {
+        sharedPreferences.edit().putBoolean("collections_mode_$key", enabled).apply()
+    }
+
+    fun isCollectionsMode(key: String): Boolean {
+        return sharedPreferences.getBoolean("collections_mode_$key", false)
+    }
+
     fun setGridView(path: String, isGrid: Boolean) {
         sharedPreferences.edit().putBoolean("grid_view_$path", isGrid).apply()
     }

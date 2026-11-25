@@ -86,6 +86,35 @@ func (h *MediaHandler) GetLibraryTitle(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, detail)
 }
 
+// GetLibraryCollection returns a collection's page: GET /api/library/collection?lib=<id>&id=<tmdb id>
+func (h *MediaHandler) GetLibraryCollection(w http.ResponseWriter, r *http.Request) {
+	lib, ok := h.libraryFromRequest(w, r)
+	if !ok {
+		return
+	}
+	id, err := strconv.Atoi(r.URL.Query().Get("id"))
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	listing, err := h.meta.Library(r.Context(), lib, h.libraryFileInfo)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list library")
+		return
+	}
+	annotateListing(listing, h.requestPlayback(r))
+	detail, err := h.meta.Collection(listing, id)
+	if errors.Is(err, metadata.ErrNoCollection) {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load collection")
+		return
+	}
+	respondJSON(w, http.StatusOK, detail)
+}
+
 const newAdditionsLimit = 10
 
 // NewAdditions lists the videos that arrived last, newest first, for the Recently Added rows: in a

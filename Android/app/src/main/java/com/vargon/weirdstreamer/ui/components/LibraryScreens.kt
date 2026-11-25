@@ -432,9 +432,10 @@ fun PosterTile(
     progress: Float = 0f,
     watched: Boolean = false,
     onHold: (() -> Unit)? = null,
+    dimmed: Boolean = false, // a collection's film the library doesn't have: focusable, opens nothing
     onClick: () -> Unit
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().then(if (dimmed) Modifier.alpha(0.4f) else Modifier)) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -976,4 +977,119 @@ internal fun formatBytes(size: Long): String {
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
     val group = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
     return String.format(Locale.US, "%.1f %s", size / Math.pow(1024.0, group.toDouble()), units[group])
+}
+
+/** TV Collection view: a movie library's TMDB collections (film series) as posters, by name. */
+@Composable
+fun TvCollectionsScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequester, contentEntry: ContentEntry) {
+    val listing = viewModel.libraryListing
+    val collections = listing?.collections.orEmpty()
+    when {
+        listing == null && viewModel.libraryError != null -> CenteredMessage("Error: ${viewModel.libraryError}")
+        listing == null -> CenteredMessage("Loading…")
+        collections.isEmpty() -> CenteredMessage("No movies in collections yet. Collections appear here as movies are looked up.")
+        else -> {
+            // Back from a collection focuses the one opened
+            val returnTo = remember(listing.libraryId) { viewModel.collectionReturn }
+            val start = collections.indexOfFirst { it.id == returnTo }.coerceAtLeast(0)
+            val gridState = rememberLazyGridState(start)
+            val first = remember { FocusRequester() }
+            DisposableEffect(contentEntry) {
+                val focusTop = { runCatching { first.requestFocus() }.isSuccess }
+                contentEntry.focusTop = focusTop
+                onDispose { if (contentEntry.focusTop === focusTop) contentEntry.focusTop = null }
+            }
+            LaunchedEffect(listing.libraryId) {
+                if (viewModel.toolbarKeepsFocus) return@LaunchedEffect
+                awaitFrame()
+                runCatching { first.requestFocus() }
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(POSTER_COLUMNS),
+                state = gridState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                itemsIndexed(collections, key = { _, c -> c.id }) { i, c ->
+                    PosterTile(
+                        title = c.name,
+                        subtitle = collectionCount(c.count, c.total),
+                        posterUrl = viewModel.serverUrl(c.poster),
+                        placeholder = Icons.Default.Movie,
+                        modifier = Modifier
+                            .then(if (i == start) Modifier.focusRequester(first) else Modifier)
+                            .then(if (i < POSTER_COLUMNS) Modifier.focusProperties { up = toolbarFocusRequester } else Modifier),
+                    ) {
+                        viewModel.collectionReturn = c.id
+                        viewModel.openLibraryCollection(c.id)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * TV collection page: its name, how many of its films the library has and its overview, then every
+ * film by release date; those the library doesn't have are dimmed and open nothing.
+ */
+@Composable
+fun TvCollectionScreen(viewModel: MediaViewModel, collection: com.vargon.weirdstreamer.api.models.CollectionDetail,
+                       toolbarFocusRequester: FocusRequester, contentEntry: ContentEntry) {
+    val have = collection.parts.count { !it.missing }
+    // Back from a title focuses the one opened, else the first the library has
+    val start = remember(collection.id) {
+        collection.parts.indexOfFirst { it.tmdbId == viewModel.collectionTitleReturn }.takeIf { it >= 0 }
+            ?: collection.parts.indexOfFirst { !it.missing }.coerceAtLeast(0)
+    }
+    val first = remember { FocusRequester() }
+    val gridState = rememberLazyGridState(if (start >= POSTER_COLUMNS) start + 1 else 0)
+    DisposableEffect(contentEntry) {
+        val focusTop = { runCatching { first.requestFocus() }.isSuccess }
+        contentEntry.focusTop = focusTop
+        onDispose { if (contentEntry.focusTop === focusTop) contentEntry.focusTop = null }
+    }
+    LaunchedEffect(collection.id) {
+        awaitFrame()
+        runCatching { first.requestFocus() }
+    }
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(POSTER_COLUMNS),
+        state = gridState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }, key = "head") {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("$have of ${collectionCount(collection.parts.size)} in this library", style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                collection.overview?.takeIf { it.isNotEmpty() }?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        itemsIndexed(collection.parts, key = { _, t -> t.tmdbId }) { i, t ->
+            PosterTile(
+                title = t.title,
+                subtitle = if (t.missing) listOfNotNull(t.year?.toString(), "Missing").joinToString(" · ") else t.year?.toString(),
+                posterUrl = viewModel.serverUrl(t.poster),
+                placeholder = Icons.Default.Movie,
+                progress = t.progress.toFloat(),
+                watched = t.allWatched,
+                dimmed = t.missing,
+                modifier = Modifier
+                    .then(if (i == start) Modifier.focusRequester(first) else Modifier)
+                    .then(if (i < POSTER_COLUMNS) Modifier.focusProperties { up = toolbarFocusRequester } else Modifier),
+            ) {
+                if (!t.missing) {
+                    viewModel.collectionTitleReturn = t.tmdbId
+                    viewModel.openLibraryTitle(t.kind, t.tmdbId)
+                }
+            }
+        }
+    }
 }

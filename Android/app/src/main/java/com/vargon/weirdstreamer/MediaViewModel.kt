@@ -310,11 +310,62 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         credentialManager.setGridView(key, grid)
     }
 
-    /** Cycles list -> grid -> library (movie/tv libraries only) -> list. */
+    // ---- Collection view: a movie library's films by TMDB collection (series), after Library view ----
+
+    private var collectionsModeMap by mutableStateOf(mapOf<String, Boolean>())
+
+    /** Library view shows the library's collections rather than its posters (movie libraries). */
+    val isCollectionsView: Boolean
+        get() {
+            if (!isLibraryView || libraryType != "movie") return false
+            val key = libraryModeKey
+            return collectionsModeMap[key] ?: credentialManager.isCollectionsMode(key).also {
+                collectionsModeMap = collectionsModeMap + (key to it)
+            }
+        }
+
+    private fun setCollectionsMode(enabled: Boolean) {
+        val key = libraryModeKey
+        collectionsModeMap = collectionsModeMap + (key to enabled)
+        credentialManager.setCollectionsMode(key, enabled)
+    }
+
+    /** The collection page being shown (Collection view), if any; a title opened from it shows over it. */
+    var openCollection by mutableStateOf<com.vargon.weirdstreamer.api.models.CollectionDetail?>(null)
+        private set
+
+    fun openLibraryCollection(id: Int) {
+        toolbarKeepsFocus = false
+        val repo = serverRepository ?: return
+        val libraryId = currentLibraryId ?: return
+        viewModelScope.launch {
+            titleLoading = true
+            val result = repo.libraryCollection(libraryId, id)
+            openCollection = result.getOrNull()
+            if (result.isFailure) libraryError = result.exceptionOrNull()?.localizedMessage
+            titleLoading = false
+        }
+    }
+
+    fun closeCollection() {
+        openCollection = null
+    }
+
+    /** TV: the collection last opened and the title last opened from one, focused again on the way back. */
+    var collectionReturn: Int? = null
+    var collectionTitleReturn: Int? = null
+
+    /** Cycles list -> grid -> library (movie/tv libraries only) -> collections (movie libraries) -> list. */
     fun toggleViewMode() {
         toolbarKeepsFocus = true
         when {
+            isLibraryView && libraryType == "movie" && !isCollectionsView -> {
+                setCollectionsMode(true)
+                openTitle = null
+            }
             isLibraryView -> {
+                setCollectionsMode(false)
+                openCollection = null
                 setLibraryMode(false)
                 setGridView(false)
             }
@@ -364,6 +415,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val source = currentSource ?: return
         val repo = currentRepository ?: return
         openTitle = null
+        openCollection = null
         currentPathDisplayName = null
         loadPath(source, repo.getInitialPath())
     }
@@ -641,6 +693,11 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     if (openTitle?.tmdbId == fresh.tmdbId) openTitle = fresh
                 }
             }
+            openCollection?.let { c ->
+                if (libraryId != null) repo.libraryCollection(libraryId, c.id).getOrNull()?.let { fresh ->
+                    if (openCollection?.id == fresh.id) openCollection = fresh
+                }
+            }
             if (isLibraryView && libraryId != null) {
                 repo.library(libraryId).getOrNull()?.let { if (libraryListing?.libraryId == it.libraryId) libraryListing = it }
             } else {
@@ -813,6 +870,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     if (newLibraryType == null || libraryListing?.libraryId != (repository as ServerRepository).libraryIdOf(path)) {
                         libraryListing = null
                         openTitle = null
+                        openCollection = null
                     }
                     libraryType = newLibraryType
                     if (isLibraryView && libraryListing == null) loadLibrary()
@@ -938,6 +996,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         libraryType = null
         libraryListing = null
         openTitle = null
+        openCollection = null
         discardItemUpdates()
         stopThumbnailUpdates()
     }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
@@ -61,6 +62,7 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     BackHandler(enabled = currentSource != null) {
         when {
             viewModel.openTitle != null -> viewModel.closeLibraryTitle()
+            viewModel.openCollection != null -> viewModel.closeCollection()
             viewModel.isLibraryView -> viewModel.leaveLibrary()
             else -> viewModel.navigateUp()
         }
@@ -93,6 +95,8 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         if (currentSource != null) {
                             val display = when {
                                 viewModel.openTitle != null -> viewModel.openTitle!!.title
+                                viewModel.openCollection != null -> viewModel.openCollection!!.name
+                                viewModel.isCollectionsView -> (viewModel.libraryListing?.libraryName ?: "Library") + " · Collections"
                                 viewModel.isLibraryView -> viewModel.libraryListing?.libraryName ?: "Library"
                                 else -> viewModel.currentPathDisplayName ?: if (viewModel.currentPath.isNotEmpty()) viewModel.currentPath else "/"
                             }
@@ -125,6 +129,8 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                         // Shows the mode it switches to: list -> grid -> library (movie/tv libraries) -> list
                         Icon(
                             when {
+                                viewModel.isLibraryView && viewModel.libraryType == "movie" && !viewModel.isCollectionsView ->
+                                    Icons.Default.CollectionsBookmark
                                 viewModel.isLibraryView -> Icons.AutoMirrored.Filled.ViewList
                                 !viewModel.isGridView -> Icons.Default.GridView
                                 viewModel.libraryType != null -> Icons.Default.VideoLibrary
@@ -237,7 +243,13 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
                 }
                 viewModel.isLibraryView -> {
                     val title = viewModel.openTitle
-                    if (title != null) PhoneTitleScreen(viewModel, title) else PhoneLibraryScreen(viewModel)
+                    val collection = viewModel.openCollection
+                    when {
+                        title != null -> PhoneTitleScreen(viewModel, title)
+                        !viewModel.isCollectionsView -> PhoneLibraryScreen(viewModel)
+                        collection != null -> PhoneCollectionScreen(viewModel, collection)
+                        else -> PhoneCollectionsScreen(viewModel)
+                    }
                 }
                 else -> {
                     PhoneFileBrowserScreen(viewModel)

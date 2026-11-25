@@ -385,6 +385,8 @@ final class AppModel {
     /// The title in the bar: the title page's, the library's, else the folder's ("/" at the top).
     var barTitle: String {
         if let openTitle { return openTitle.title }
+        if let openCollection { return openCollection.name }
+        if isCollectionsView { return (libraryListing?.libraryName ?? "Library") + " · Collections" }
         if isLibraryView { return libraryListing?.libraryName ?? "Library" }
         return pathDisplayName ?? (path.isEmpty ? "/" : path)
     }
@@ -394,6 +396,7 @@ final class AppModel {
         path = newPath
         pathDisplayName = displayName ?? (newPath.isEmpty ? nil : libraryNames[newPath] ?? newPath.components(separatedBy: "/").last)
         openTitle = nil
+        openCollection = nil
         errorMessage = nil
         isLoading = true
         loadToken += 1
@@ -490,6 +493,7 @@ final class AppModel {
     /// Back: closes a title page, then leaves Library view for the libraries, else goes up.
     func navigateBack() {
         if openTitle != nil { openTitle = nil; return }
+        if openCollection != nil { openCollection = nil; return }
         if isLibraryView { leaveLibrary(); return }
         guard currentAddress != nil else { return }
         if path.isEmpty { returnToSourceSelection(); return }
@@ -522,12 +526,25 @@ final class AppModel {
         setSetting("content_filter", filter.rawValue)
     }
 
-    /// Cycles list → grid → library (movie and TV libraries) → list.
+    /// Collection view: Library view shows a movie library's collections rather than its posters.
+    var isCollectionsView: Bool {
+        _ = settingsVersion
+        guard isLibraryView, libraryType == "movie", let lib = currentLibraryId, let address = currentAddress else { return false }
+        return setting("collections_mode_\(address)|\(lib)") == "true"
+    }
+
+    /// Cycles list → grid → library (movie and TV libraries) → collections (movie libraries) → list.
     func toggleViewMode() {
         guard let address = currentAddress else { return }
         let libraryKey = "library_mode_\(address)|\(currentLibraryId ?? "")"
+        let collectionsKey = "collections_mode_\(address)|\(currentLibraryId ?? "")"
         let gridKey = "grid_view_\(address)|\(path)"
-        if isLibraryView {
+        if isLibraryView && libraryType == "movie" && !isCollectionsView {
+            setSetting(collectionsKey, "true")
+            openTitle = nil
+        } else if isLibraryView {
+            setSetting(collectionsKey, "false")
+            openCollection = nil
             setSetting(libraryKey, "false")
             setSetting(gridKey, "false")
         } else if !isGridView {
@@ -543,6 +560,7 @@ final class AppModel {
 
     /// The bar's view button shows the mode it switches to.
     var viewModeIcon: String {
+        if isLibraryView && libraryType == "movie" && !isCollectionsView { return "square.stack.3d.up" }
         if isLibraryView { return "list.bullet" }
         if !isGridView { return "square.grid.2x2" }
         if libraryType != nil { return "film.stack" }
@@ -578,6 +596,21 @@ final class AppModel {
         }
     }
 
+    /// The collection page shown (Collection view), if any; a title opened from it shows over it.
+    var openCollection: CollectionDetail?
+
+    func openLibraryCollection(id: Int) {
+        guard let client, let lib = currentLibraryId else { return }
+        Task {
+            do {
+                openCollection = try await client.get("/api/library/collection", query: [("lib", lib), ("id", String(id))])
+            } catch {
+                handle(error)
+                libraryError = error.localizedDescription
+            }
+        }
+    }
+
     func reloadTitle() {
         guard let title = openTitle else { return }
         openLibraryTitle(kind: title.kind, tmdbId: title.tmdbId)
@@ -586,6 +619,7 @@ final class AppModel {
     /// Leaves Library view for the server's list of libraries.
     func leaveLibrary() {
         openTitle = nil
+        openCollection = nil
         loadPath("")
     }
 
