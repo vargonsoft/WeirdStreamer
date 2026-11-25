@@ -177,6 +177,32 @@ struct LibraryListing: Decodable {
     let titles: [LibraryTitle]?
     let unmatched: [LibraryFile]?
     var collections: [LibraryCollection]? = nil   // movie libraries: their movies' TMDB collections, by name
+    var userCollections: [UserCollectionSummary]? = nil   // movie libraries: the collections admins made, by name
+}
+
+/// A library title as collections name it: "movie" (or "show", a TV movie) and its TMDB ID.
+struct CollectionTitle: Codable, Hashable {
+    let kind: String
+    let tmdbId: Int
+}
+
+/// A collection admins made: its titles here and the posters of its first four by release date (its collage).
+struct UserCollectionSummary: Decodable, Identifiable, Hashable {
+    let id: Int64
+    let name: String
+    let description: String?
+    let count: Int?
+    let posters: [String]?
+    let titles: [CollectionTitle]?
+}
+
+/// A made collection's page: its titles by release date, with progress.
+struct UserCollectionDetail: Decodable {
+    let id: Int64
+    let name: String
+    let description: String?
+    let posters: [String]?
+    let parts: [LibraryTitle]
 }
 
 /// A collection (a film series) in a movie library: its movies here (`count`) of its films on TMDB (`total`).

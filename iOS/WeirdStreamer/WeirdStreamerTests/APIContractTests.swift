@@ -153,6 +153,21 @@ struct APIContractTests {
         #expect(page.parts.map { $0.missing == true } == [false, true])
     }
 
+    /// The listing's user_collections and GET /api/library/usercollection (models.UserCollectionSummary, UserCollectionDetail).
+    @Test func userCollectionsReadTheServersNames() throws {
+        let listing = try decode(LibraryListing.self, #"""
+            {"library_id":"m","library_name":"Movies","library_type":"movie","titles":[],"unmatched":[],
+             "user_collections":[{"id":3,"name":"Marvel Night","description":"Heroes.","count":2,
+               "posters":["/artwork/movie/1/poster.jpg"],"titles":[{"kind":"movie","tmdb_id":10138}]}]}
+            """#)
+        let c = try #require(listing.userCollections?.first)
+        #expect(c.id == 3 && c.count == 2 && c.titles?.first == CollectionTitle(kind: "movie", tmdbId: 10138))
+        let page = try decode(UserCollectionDetail.self, #"""
+            {"id":3,"name":"Marvel Night","posters":[],"parts":[{"kind":"movie","tmdb_id":10138,"title":"Iron Man 2","year":2010,"file_count":1}]}
+            """#)
+        #expect(page.parts.first?.ref == CollectionTitle(kind: "movie", tmdbId: 10138))
+    }
+
     // MARK: Fixing matches
 
     /// GET /api/media/match (metadata.MatchInfo with models.ItemMetadata and EpisodeInfo).

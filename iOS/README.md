@@ -38,7 +38,9 @@ together.
   cast, files with Resume / Play / watched; seasons with their rings, watched buttons for a season
   and the whole show, Auto Skip, episode rows and their details). For admins, Fix match (`MatchSheet.swift`):
   from a title page, a file or episode row, an Unmatched file, or holding a video or a title's folder.
-  Collection view (movie libraries, after Library view): collections, then a collection's films, missing ones dimmed.
+  Collections (movie libraries, after Library view): collections admins make (a name, a description, movies by
+  release date, a collage of the first four posters; admins create, edit, delete and add from a movie's page), then
+  TMDB Collections: TMDB's collections, then a collection's films, missing ones dimmed.
 - **Player:** controls (Back and title, Transcode menu with its nine modes and what the
   stream does, Rotate; −10 s / play / +30 s and frame steps; trickplay frames, aspect ratio, speed,
   seek bar), pinch to zoom, Skip Intro / Skip Credits, the next episode at the end, progress every

@@ -91,6 +91,7 @@ struct PosterTile: View {
     var progress: Double = 0
     var watched = false
     var dimmed = false   // a collection's film the library doesn't have: opens nothing
+    var collage: [String]? = nil   // a made collection's: up to four posters instead of one
     let action: () -> Void
 
     var body: some View {
@@ -99,7 +100,7 @@ struct PosterTile: View {
                 ZStack {
                     Palette.raised
                     Image(systemName: placeholder).font(.system(size: 34)).foregroundStyle(Palette.muted)
-                    RemoteImage(relative: poster)
+                    if let collage { Collage(posters: collage) } else { RemoteImage(relative: poster) }
                     WatchProgressOverlay(fraction: progress, watched: watched)
                 }
                 .aspectRatio(2.0 / 3.0, contentMode: .fit)
@@ -236,6 +237,7 @@ struct TitleScreen: View {
 struct TitleHeader: View {
     @Environment(AppModel.self) private var model
     let title: TitleDetail
+    @State private var addingToCollection = false
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 16) {
@@ -260,10 +262,18 @@ struct TitleHeader: View {
                     Button("Fix match") { model.openMatch(path: f.path, isDir: false, name: title.title, wholeTitle: true) }
                         .buttonStyle(PhoneSecondaryButtonStyle()).padding(.top, 8)
                 }
+                // Admins add a movie library's title to their collections
+                if model.canEditCollections {
+                    Button("Add to collection") { addingToCollection = true }
+                        .buttonStyle(PhoneSecondaryButtonStyle()).padding(.top, 4)
+                }
             }
             Spacer(minLength: 0)
         }
         .padding(16)
+        .sheet(isPresented: $addingToCollection) {
+            AddToCollectionSheet(title: CollectionTitle(kind: title.kind, tmdbId: title.tmdbId), name: title.title)
+        }
         .background {
             if title.backdrop != nil {
                 ZStack {

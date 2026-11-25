@@ -386,7 +386,9 @@ final class AppModel {
     var barTitle: String {
         if let openTitle { return openTitle.title }
         if let openCollection { return openCollection.name }
-        if isCollectionsView { return (libraryListing?.libraryName ?? "Library") + " · Collections" }
+        if let openUserCollection { return openUserCollection.name }
+        if isUserCollectionsView { return (libraryListing?.libraryName ?? "Library") + " · Collections" }
+        if isCollectionsView { return (libraryListing?.libraryName ?? "Library") + " · TMDB Collections" }
         if isLibraryView { return libraryListing?.libraryName ?? "Library" }
         return pathDisplayName ?? (path.isEmpty ? "/" : path)
     }
@@ -397,6 +399,7 @@ final class AppModel {
         pathDisplayName = displayName ?? (newPath.isEmpty ? nil : libraryNames[newPath] ?? newPath.components(separatedBy: "/").last)
         openTitle = nil
         openCollection = nil
+        openUserCollection = nil
         errorMessage = nil
         isLoading = true
         loadToken += 1
@@ -494,6 +497,7 @@ final class AppModel {
     func navigateBack() {
         if openTitle != nil { openTitle = nil; return }
         if openCollection != nil { openCollection = nil; return }
+        if openUserCollection != nil { openUserCollection = nil; return }
         if isLibraryView { leaveLibrary(); return }
         guard currentAddress != nil else { return }
         if path.isEmpty { returnToSourceSelection(); return }
@@ -526,25 +530,33 @@ final class AppModel {
         setSetting("content_filter", filter.rawValue)
     }
 
-    /// Collection view: Library view shows a movie library's collections rather than its posters.
-    var isCollectionsView: Bool {
+    /// What a movie library's Library view shows: "posters", "collections" (made ones) or "tmdb".
+    private var librarySubView: String {
         _ = settingsVersion
-        guard isLibraryView, libraryType == "movie", let lib = currentLibraryId, let address = currentAddress else { return false }
-        return setting("collections_mode_\(address)|\(lib)") == "true"
+        guard isLibraryView, libraryType == "movie", let lib = currentLibraryId, let address = currentAddress else { return "posters" }
+        return setting("library_subview_\(address)|\(lib)") ?? "posters"
     }
 
-    /// Cycles list → grid → library (movie and TV libraries) → collections (movie libraries) → list.
+    /// Library view shows the collections admins made.
+    var isUserCollectionsView: Bool { librarySubView == "collections" }
+
+    /// Library view shows TMDB's collections (film series).
+    var isCollectionsView: Bool { librarySubView == "tmdb" }
+
+    /// Cycles list → grid → library (movie and TV libraries) → collections → TMDB collections (movie libraries) → list.
     func toggleViewMode() {
         guard let address = currentAddress else { return }
         let libraryKey = "library_mode_\(address)|\(currentLibraryId ?? "")"
-        let collectionsKey = "collections_mode_\(address)|\(currentLibraryId ?? "")"
+        let subViewKey = "library_subview_\(address)|\(currentLibraryId ?? "")"
         let gridKey = "grid_view_\(address)|\(path)"
-        if isLibraryView && libraryType == "movie" && !isCollectionsView {
-            setSetting(collectionsKey, "true")
+        if isLibraryView && libraryType == "movie" && librarySubView != "tmdb" {
+            setSetting(subViewKey, librarySubView == "posters" ? "collections" : "tmdb")
             openTitle = nil
+            openUserCollection = nil
         } else if isLibraryView {
-            setSetting(collectionsKey, "false")
+            if libraryType == "movie" { setSetting(subViewKey, "posters") }
             openCollection = nil
+            openUserCollection = nil
             setSetting(libraryKey, "false")
             setSetting(gridKey, "false")
         } else if !isGridView {
@@ -560,7 +572,8 @@ final class AppModel {
 
     /// The bar's view button shows the mode it switches to.
     var viewModeIcon: String {
-        if isLibraryView && libraryType == "movie" && !isCollectionsView { return "square.stack.3d.up" }
+        if isLibraryView && libraryType == "movie" && !isUserCollectionsView && !isCollectionsView { return "rectangle.stack" }
+        if isUserCollectionsView { return "square.stack.3d.up" }
         if isLibraryView { return "list.bullet" }
         if !isGridView { return "square.grid.2x2" }
         if libraryType != nil { return "film.stack" }
@@ -611,6 +624,83 @@ final class AppModel {
         }
     }
 
+    // MARK: Collections admins make (a movie library's: a name, a description and its movies)
+
+    /// The made collection page shown, if any; a title opened from it shows over it.
+    var openUserCollection: UserCollectionDetail?
+    /// The last change to a collection failed: why.
+    var collectionError: String?
+
+    /// Admins can make and change collections (in a movie library).
+    var canEditCollections: Bool { libraryType == "movie" && isAdmin }
+
+    func showUserCollection(id: Int64) {
+        guard let client, let lib = currentLibraryId else { return }
+        Task {
+            do {
+                openUserCollection = try await client.get("/api/library/usercollection", query: [("lib", lib), ("id", String(id))])
+            } catch {
+                handle(error)
+                libraryError = error.localizedDescription
+            }
+        }
+    }
+
+    private func titlesJSON(_ titles: [CollectionTitle]) -> [[String: Any]] {
+        titles.map { ["kind": $0.kind, "tmdb_id": $0.tmdbId] }
+    }
+
+    /// Makes a collection with these titles; `open` shows its page after.
+    func createUserCollection(name: String, description: String, titles: [CollectionTitle], open: Bool = true) {
+        guard let client, let lib = currentLibraryId else { return }
+        Task {
+            do {
+                let got: UserCollectionDetail = try await client.sendJSON("POST", "/api/library/usercollections",
+                    body: ["lib": lib, "name": name, "description": description, "titles": titlesJSON(titles)])
+                collectionError = nil
+                if open { openUserCollection = got }
+                loadLibrary()
+            } catch {
+                collectionError = errorText(error)
+            }
+        }
+    }
+
+    /// Changes a collection: its name and description when given, and adds and removes titles.
+    func updateUserCollection(id: Int64, name: String? = nil, description: String? = nil,
+                              add: [CollectionTitle] = [], remove: [CollectionTitle] = []) {
+        guard let client, let lib = currentLibraryId else { return }
+        var body: [String: Any] = ["lib": lib, "id": id]
+        if let name { body["name"] = name }
+        if let description { body["description"] = description }
+        if !add.isEmpty { body["add"] = titlesJSON(add) }
+        if !remove.isEmpty { body["remove"] = titlesJSON(remove) }
+        Task {
+            do {
+                let got: UserCollectionDetail = try await client.sendJSON("PUT", "/api/library/usercollections", body: body)
+                collectionError = nil
+                if openUserCollection?.id == got.id { openUserCollection = got }
+                loadLibrary()
+            } catch {
+                collectionError = errorText(error)
+            }
+        }
+    }
+
+    func deleteUserCollection(id: Int64) {
+        guard let client, let lib = currentLibraryId else { return }
+        Task {
+            do {
+                try await client.execute("DELETE", "/api/library/usercollections", query: [("lib", lib), ("id", String(id))])
+                collectionError = nil
+                if openUserCollection?.id == id { openUserCollection = nil }
+                loadLibrary()
+            } catch {
+                collectionError = errorText(error)
+            }
+        }
+    }
+
     func reloadTitle() {
         guard let title = openTitle else { return }
         openLibraryTitle(kind: title.kind, tmdbId: title.tmdbId)
@@ -620,6 +710,7 @@ final class AppModel {
     func leaveLibrary() {
         openTitle = nil
         openCollection = nil
+        openUserCollection = nil
         loadPath("")
     }
 

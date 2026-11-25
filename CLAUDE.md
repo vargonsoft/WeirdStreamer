@@ -545,7 +545,20 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   repairs folder as its fixed copy (listed as fixed again), the thumbnail back if it's gone, and `db.MoveFile`
   the other way; refused while a file is in its place, the replacement has changed, or someone else plays it.
   The job keeps a restored video's index entry until a scan lists it. Both folders are on the Jobs page's storage list.
-- **Collection view** (movie libraries, after Library view): TMDB's collections (film series). A movie's
+- **Collections** (movie libraries, admins make them; `database/collections.go`): a name, an optional description
+  and the library's titles (by kind and TMDB ID, `user_collections` / `user_collection_titles` in the media
+  database), seen by everyone who sees the library and changed only by admins. `GET /api/library` gives
+  `user_collections` (each one's titles still in the library, `count`, and the posters of its first four by release
+  date for its collage); `GET /api/library/usercollection?lib=&id=` is its page (titles by release date with
+  progress); `POST|PUT|DELETE /api/library/usercollections` create (`lib`, `name`, `description`, `titles`), change
+  (`id`, `name`?, `description`?, `add`?, `remove`?) and delete one; only the library's titles go in. Clients: the
+  web's Collections (`showCollections`, `showCollection`, `openCollectionEditor`, a title page's Add to collection,
+  `openAddToCollection`; × takes a movie out), the apps' view button (posters → collections → TMDB collections,
+  `isUserCollectionsView`, `openUserCollection`): phone `PhoneUserCollections.kt` (editor, long press takes a movie
+  out), TV `TvUserCollections.kt` (New collection and Edit collection tiles, the movie picker, hold OK takes one out),
+  iPhone `UserCollections.swift`. The collage: one poster fills it, two side by side, three one tall and two
+  stacked, four 2×2.
+- **TMDB Collections view** (movie libraries, after Collections): TMDB's collections (film series). A movie's
   details name its collection (`belongs_to_collection`, stored as `movies.collection_id`: 0 none, -1 not looked
   up yet), and `ensureCollection` stores the collection (`collections`: name, overview, poster, backdrop) and
   its films (`collection_parts`, each poster downloaded) under `artwork/collection/<id>/`, refreshed every 30
@@ -554,9 +567,9 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   each movie's `collection_id` and the library's `collections` (name, poster, `count` here of `total`);
   `GET /api/library/collection?lib=&id=` is a collection's page: every film by release date, the library's as
   its titles (with progress) and the rest `missing`. Collection artwork is served to whoever can see one of its
-  movies (`canAccessCollection`). Clients: the web's switch (Folders | Library | Collections, `showCollections`,
-  `showCollection`, `?view=collections|collection`), the apps' view button (list → grid → library →
-  collections → list; `isCollectionsView`, `openCollection`; Back goes from a title to its collection, then the
+  movies (`canAccessCollection`). Clients: the web's switch (Folders | Library | Collections | TMDB Collections,
+  `showTmdbCollections`, `showTmdbCollection`, `?view=tmdbcollections|tmdbcollection`), the apps' view button (list → grid → library →
+  collections → TMDB collections → list; `isCollectionsView`, `openCollection`; Back goes from a title to its collection, then the
   collections): phone `PhoneCollectionsScreen`/`PhoneCollectionScreen`, TV `TvCollectionsScreen`/
   `TvCollectionScreen`, iPhone `CollectionsScreen`/`CollectionScreen`. Missing films are dimmed and open nothing.
 - **Fixing TMDB matches** (admins, movie and TV libraries; `handlers/match.go`, `/api/media/match…`): the web's Fix
