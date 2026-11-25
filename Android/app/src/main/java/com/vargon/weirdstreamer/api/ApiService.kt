@@ -143,6 +143,42 @@ interface ApiService {
     @POST("/api/admin/backups")
     suspend fun backUpNow(): Response<com.vargon.weirdstreamer.api.models.BackupInfo>
 
+    // Fixing TMDB matches (admins): a file's by its base64 client path, or a folder's by its client
+    // path (dir); the same as the web's Fix dialog
+    @GET("/api/media/match")
+    suspend fun getMatch(@Query("path") path: String? = null, @Query("dir") dir: String? = null): Response<com.vargon.weirdstreamer.api.models.MatchInfo>
+
+    /** kind is "movie" or "tv"; year may be left out */
+    @GET("/api/media/match/search")
+    suspend fun searchMatch(@Query("kind") kind: String, @Query("query") query: String, @Query("year") year: String? = null): Response<List<com.vargon.weirdstreamer.api.models.MatchHit>>
+
+    /** {"path" or "dir", "tmdb_id" (0: no match), "kind": what tmdb_id is} */
+    @PUT("/api/media/match")
+    suspend fun setMatch(@Body body: com.google.gson.JsonObject): Response<com.vargon.weirdstreamer.api.models.MatchInfo>
+
+    @DELETE("/api/media/match")
+    suspend fun resetMatch(@Query("path") path: String? = null, @Query("dir") dir: String? = null): Response<com.vargon.weirdstreamer.api.models.MatchInfo>
+
+    @GET("/api/media/match/posters")
+    suspend fun matchPosters(@Query("path") path: String? = null, @Query("dir") dir: String? = null): Response<com.vargon.weirdstreamer.api.models.PosterList>
+
+    /** {"path" or "dir", "poster": a TMDB image path, "" for the default} */
+    @PUT("/api/media/match/poster")
+    suspend fun setMatchPoster(@Body body: com.google.gson.JsonObject): Response<com.vargon.weirdstreamer.api.models.MatchInfo>
+
+    @GET("/api/media/match/seasons")
+    suspend fun matchSeasons(@Query("show") show: Int): Response<List<com.vargon.weirdstreamer.api.models.TmdbSeason>>
+
+    @GET("/api/media/match/episodes")
+    suspend fun matchEpisodes(@Query("show") show: Int, @Query("season") season: Int): Response<List<com.vargon.weirdstreamer.api.models.TmdbEpisode>>
+
+    /** {"path", "season", "episode", "whole_season"} */
+    @PUT("/api/media/match/episode")
+    suspend fun setEpisodeMapping(@Body body: com.google.gson.JsonObject): Response<com.vargon.weirdstreamer.api.models.MatchInfo>
+
+    @DELETE("/api/media/match/episode")
+    suspend fun clearEpisodeMapping(@Query("path") path: String, @Query("whole_season") wholeSeason: Int? = null): Response<com.vargon.weirdstreamer.api.models.MatchInfo>
+
     // Damaged videos (a broken seek index) and their fixed copies, and the trash (admins)
     @GET("/api/admin/damaged")
     suspend fun getDamaged(): Response<com.vargon.weirdstreamer.api.models.DamagedList>

@@ -84,6 +84,10 @@ import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun MediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
+    // Fix match (admins), opened by holding OK on a file or folder, or from a title page
+    viewModel.matchTarget?.let { target ->
+        viewModel.connectedServer?.let { server -> TvMatchDialog(server, target) { changed -> viewModel.closeMatch(changed) } }
+    }
     var showMainAddDialog by remember { mutableStateOf(false) }
     var showAuthDialog by remember { mutableStateOf(false) }
     var showRegenerateThumbnailsDialog by remember { mutableStateOf(false) }
@@ -640,6 +644,9 @@ private fun FileBrowserScreen(
             val playback = if (item.isDirectory) null else viewModel.playbackFor(item.path)
             // Videos have filmstrip edges, telling them from photos in the same folder.
             val filmstrip = !item.isDirectory && viewModel.isVideo(item)
+            // Holding OK: Fix match (admins; videos, and folders standing for one title)
+            val modifier = fixMatchTarget(viewModel, item, isParent = item.name == ".." || item.path == "UP")
+                ?.let { (path, isDir) -> modifier.onHoldOk { viewModel.openMatch(path, isDir, item.name) } } ?: modifier
             if (isGridView) {
                 FileTileItem(item, thumbnailUrl, modifier = modifier, playback = playback, filmstrip = filmstrip) { onItemClick(item) }
             } else {

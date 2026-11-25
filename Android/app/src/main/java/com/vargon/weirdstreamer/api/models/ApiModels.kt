@@ -149,7 +149,9 @@ data class Directory(
     @SerializedName("library_type") val libraryType: String? = null,
     // A picture to show inside the folder's icon (folders without a poster): its thumbnail.png, else
     // a photo's or video's from inside it
-    @SerializedName("thumbnail_url") val thumbnailUrl: String? = null
+    @SerializedName("thumbnail_url") val thumbnailUrl: String? = null,
+    // The folder stands for one title (a movie's or a show's folder), so its match can be fixed
+    @SerializedName("fixable") val fixable: Boolean = false
 )
 
 // Library view: a movie or TV library as titles instead of folders
@@ -710,4 +712,74 @@ data class HardwareReport(
     @SerializedName("gpus") val gpus: List<HardwareGpu>? = null,
     @SerializedName("encoders") val encoders: List<HardwareEncoder>? = null,
     @SerializedName("problems") val problems: List<HardwareProblem>? = null
+)
+
+// ---- Fixing TMDB matches (admins; the web's Fix dialog) ----
+
+/** What a file or folder is matched to (GET /api/media/match), and what the dialog may search. */
+data class MatchInfo(
+    @SerializedName("kind") val kind: String = "movie", // the library's: "movie" or "tv"
+    @SerializedName("match_kind") val matchKind: String? = null, // what it's matched to (a movie library's can be a show)
+    @SerializedName("kinds") val kinds: List<String>? = null, // what may be searched
+    @SerializedName("query") val query: String? = null,
+    @SerializedName("year") val year: Int? = null,
+    @SerializedName("status") val status: String = "", // "matched", "not_found", "error" or "pending"
+    @SerializedName("manual") val manual: Boolean = false,
+    @SerializedName("current") val current: MatchTitle? = null,
+    @SerializedName("episode") val episode: MatchEpisodeInfo? = null, // TV episode files
+)
+
+/** The title matched (the server's item metadata). poster is a server artwork URL. */
+data class MatchTitle(
+    @SerializedName("kind") val kind: String = "", // "movie", "show", "season" or "episode"
+    @SerializedName("tmdb_id") val tmdbId: Int = 0,
+    @SerializedName("title") val title: String = "",
+    @SerializedName("year") val year: Int? = null,
+    @SerializedName("overview") val overview: String? = null,
+    @SerializedName("poster") val poster: String? = null,
+)
+
+/** Which TMDB episode an episode file shows as, and why ("file", "season" or "manual"). */
+data class MatchEpisodeInfo(
+    @SerializedName("file_season") val fileSeason: Int = 0,
+    @SerializedName("file_episode") val fileEpisode: Int = 0,
+    @SerializedName("season") val season: Int = 0,
+    @SerializedName("episode") val episode: Int = 0,
+    @SerializedName("source") val source: String = "file",
+    @SerializedName("title") val title: String? = null,
+)
+
+/** A TMDB search result. poster is a TMDB image URL, posterPath its TMDB path (to use as a poster). */
+data class MatchHit(
+    @SerializedName("tmdb_id") val tmdbId: Int = 0,
+    @SerializedName("title") val title: String = "",
+    @SerializedName("year") val year: Int? = null,
+    @SerializedName("overview") val overview: String? = null,
+    @SerializedName("poster") val poster: String? = null,
+    @SerializedName("poster_path") val posterPath: String? = null,
+)
+
+/** The matched title's TMDB posters (GET /api/media/match/posters). */
+data class PosterList(
+    @SerializedName("current") val current: String = "", // TMDB path of the one in use
+    @SerializedName("manual") val manual: Boolean = false,
+    @SerializedName("posters") val posters: List<PosterOption> = emptyList(),
+)
+
+data class PosterOption(
+    @SerializedName("path") val path: String = "",
+    @SerializedName("url") val url: String = "",
+    @SerializedName("language") val language: String = "", // "" for posters without text
+)
+
+data class TmdbSeason(
+    @SerializedName("number") val number: Int = 0,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("episode_count") val episodeCount: Int = 0,
+)
+
+data class TmdbEpisode(
+    @SerializedName("number") val number: Int = 0,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("air_date") val airDate: String? = null,
 )

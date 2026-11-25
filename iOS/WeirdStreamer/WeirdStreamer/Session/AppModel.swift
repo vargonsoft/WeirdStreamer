@@ -17,6 +17,7 @@ struct FileEntry: Identifiable, Hashable {
     var thumbnailUrl: String? = nil
     var playback: Playback? = nil
     var liveVideo: String? = nil   // an Apple Live Photo's .MOV (client path)
+    var fixable = false            // a folder standing for one title, whose match an admin can fix
 
     var id: String { path }
     var isVideo: Bool { type == "video" }
@@ -409,7 +410,7 @@ final class AppModel {
                 } else if let type = directory.libraryType, let lib = currentLibraryId {
                     libraryTypes[lib] = type
                 }
-                entries = (directory.dirs ?? []).map { FileEntry(name: $0.name, path: $0.id, isDirectory: true, thumbnailUrl: $0.thumbnailUrl) }
+                entries = (directory.dirs ?? []).map { FileEntry(name: $0.name, path: $0.id, isDirectory: true, thumbnailUrl: $0.thumbnailUrl, fixable: $0.fixable ?? false) }
                     .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                     + (directory.items ?? []).map {
                         FileEntry(name: $0.name, path: $0.path, isDirectory: false, type: $0.type, size: $0.size ?? 0,
@@ -430,6 +431,37 @@ final class AppModel {
 
     /// Whether the open account is an administrator (its sign-in's claims: a change counts from the next sign-in).
     var isAdmin: Bool { client?.claims.isAdmin ?? false }
+
+    // MARK: Fixing TMDB matches (MatchSheet.swift)
+
+    /// The file or folder whose Fix sheet is open, if any.
+    var matchTarget: MatchTarget?
+
+    /// Fix is offered: an admin's account, in a library with a type (movies or TV).
+    var canFixMatches: Bool { libraryType != nil && isAdmin }
+
+    /// Opens Fix for a file (its client path) or a folder standing for one title; `wholeTitle` for a
+    /// title page's whole title (through its first file), without its episode.
+    func openMatch(path: String, isDir: Bool, name: String, wholeTitle: Bool = false) {
+        matchTarget = MatchTarget(path: path, isDir: isDir, name: name, wholeTitle: wholeTitle)
+    }
+
+    /// After a change in Fix: what's on screen is loaded again (a title page that's gone closes).
+    func matchChanged() {
+        guard let client else { return }
+        Task {
+            if let title = openTitle, let lib = currentLibraryId {
+                let fresh: TitleDetail? = try? await client.get("/api/library/title",
+                                                                query: [("lib", lib), ("kind", title.kind), ("id", String(title.tmdbId))])
+                if openTitle?.tmdbId == title.tmdbId { openTitle = fresh } // nil: matched to another title
+            }
+            if isLibraryView {
+                loadLibrary()
+            } else if openTitle == nil {
+                loadPath(path, displayName: pathDisplayName)
+            }
+        }
+    }
 
     var showHiddenFiles: Bool {
         _ = settingsVersion

@@ -52,6 +52,11 @@ struct LibraryScreen: View {
                                                        watched: f.playback?.watched == true) {
                                                 if playable { model.playLibraryFile(f) }
                                             }
+                                            .contextMenu {
+                                                if model.canFixMatches {
+                                                    Button("Fix match") { model.openMatch(path: f.path, isDir: false, name: f.name) }
+                                                }
+                                            }
                                             .id(titles.count + i)
                                         }
                                     }
@@ -151,6 +156,7 @@ struct TitleScreen: View {
 }
 
 struct TitleHeader: View {
+    @Environment(AppModel.self) private var model
     let title: TitleDetail
 
     var body: some View {
@@ -170,6 +176,11 @@ struct TitleHeader: View {
                 }
                 if let genres = title.genres, !genres.isEmpty {
                     Text(genres.joined(separator: ", ")).font(.caption).foregroundStyle(Palette.muted)
+                }
+                // Fix the whole title's match (through its first file, which every file of it follows)
+                if model.canFixMatches, let f = titleFixFile(title) {
+                    Button("Fix match") { model.openMatch(path: f.path, isDir: false, name: title.title, wholeTitle: true) }
+                        .buttonStyle(PhoneSecondaryButtonStyle()).padding(.top, 8)
                 }
             }
             Spacer(minLength: 0)
@@ -311,6 +322,11 @@ struct LibraryFileRow: View {
                     DownloadButton(request: DownloadRequest(path: file.path, name: file.name,
                                                             title: file.match?.label ?? titleLabel,
                                                             thumb: file.thumbnailUrl, size: file.size ?? 0))
+                    if model.canFixMatches {
+                        IconButton(system: "pencil", label: "Fix match") {
+                            model.openMatch(path: file.path, isDir: false, name: file.name)
+                        }
+                    }
                 }
             }
             Spacer(minLength: 0)
@@ -523,6 +539,12 @@ struct EpisodeRow: View {
                         WatchedButton(files: files)
                         DownloadButton(request: DownloadRequest(path: first.path, name: first.name, title: label,
                                                                 thumb: episode.still ?? first.thumbnailUrl, size: first.size ?? 0))
+                        if model.canFixMatches {
+                            Spacer()
+                            IconButton(system: "pencil", label: "Fix match") {
+                                model.openMatch(path: first.path, isDir: false, name: first.name)
+                            }
+                        }
                         Spacer()
                     }
                 }

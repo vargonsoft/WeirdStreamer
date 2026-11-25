@@ -44,6 +44,12 @@ struct RootView: View {
                 }
             }
         }
+        // Fix match (admins), from a file's or folder's menu or a title page
+        .sheet(item: Binding(get: { model.matchTarget }, set: { model.matchTarget = $0 })) { target in
+            if let client = model.client {
+                MatchSheet(client: client, target: target) { changed in if changed { model.matchChanged() } }
+            }
+        }
         .fullScreenCover(isPresented: $showSettings) {
             SettingsView(startTab: settingsTab) { showSettings = false; settingsTab = "App" }
                 .environment(model)

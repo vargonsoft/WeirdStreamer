@@ -134,6 +134,42 @@ struct APIContractTests {
         ])
     }
 
+    // MARK: Fixing matches
+
+    /// GET /api/media/match (metadata.MatchInfo with models.ItemMetadata and EpisodeInfo).
+    @Test func matchInfoReadsTheServersNames() throws {
+        let info = try decode(MatchInfo.self, #"""
+            {"kind":"tv","match_kind":"tv","kinds":["tv"],"query":"Spartacus","year":2010,"status":"matched","manual":true,
+             "current":{"kind":"show","tmdb_id":46296,"title":"Spartacus","year":2010,"poster":"/artwork/p.jpg"},
+             "episode":{"file_season":1,"file_episode":3,"season":1,"episode":5,"source":"manual","title":"Shadow Games"}}
+            """#)
+        #expect(info.matchKind == "tv" && info.manual == true && info.current?.tmdbId == 46296)
+        #expect(info.episode?.fileEpisode == 3 && info.episode?.episode == 5 && info.episode?.source == "manual")
+        let hits = try decode([MatchHit].self, #"[{"tmdb_id":1,"title":"8MM","year":1999,"poster":"https://img/p.jpg","poster_path":"/p.jpg"}]"#)
+        #expect(hits.first?.posterPath == "/p.jpg")
+        let posters = try decode(PosterList.self, #"{"current":"/p.jpg","manual":false,"posters":[{"path":"/p.jpg","url":"https://img/p.jpg","language":""}]}"#)
+        #expect(posters.posters?.first?.language == "")
+        let seasons = try decode([TmdbSeason].self, #"[{"number":1,"name":"Blood and Sand","episode_count":13}]"#)
+        #expect(seasons.first?.episodeCount == 13)
+        let episodes = try decode([TmdbEpisode].self, #"[{"number":5,"name":"Shadow Games","air_date":"2010-02-19"}]"#)
+        #expect(episodes.first?.airDate == "2010-02-19")
+    }
+
+    /// PUT /api/media/match, /poster and /episode (handlers' matchRequest and episodeMappingRequest):
+    /// a file by its base64 path, a folder by its client path.
+    @Test func matchRequestsNameTheirTarget() throws {
+        let file = MatchTarget(path: "01c6653f/A/a.mkv", isDir: false, name: "a.mkv")
+        let folder = MatchTarget(path: "01c6653f/A", isDir: true, name: "A")
+        #expect(file.query.map { $0.0 } == ["path"] && file.query[0].1 == ServerClient.encodePath("01c6653f/A/a.mkv"))
+        #expect(folder.query.map { $0.0 } == ["dir"] && folder.query[0].1 == "01c6653f/A")
+        let body = file.body(["tmdb_id": 603, "kind": "movie"])
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: body, options: .sortedKeys), as: UTF8.self)
+        #expect(text == #"{"kind":"movie","path":"MDFjNjY1M2YvQS9hLm1rdg==","tmdb_id":603}"#)
+        #expect(folder.body(["poster": ""])["dir"] as? String == "01c6653f/A")
+        let mapping = file.body(["season": 2, "episode": 5, "whole_season": true])
+        #expect(Set(mapping.keys) == ["path", "season", "episode", "whole_season"])
+    }
+
     // MARK: Addresses and paths
 
     @Test func addressesAreNormalized() {

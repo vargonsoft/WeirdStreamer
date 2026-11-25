@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.runtime.Composable
@@ -328,6 +329,8 @@ fun LibraryScreen(viewModel: MediaViewModel, toolbarFocusRequester: FocusRequest
                                 .onFocusChanged { if (it.isFocused) focusedPosition[0] = listing.titles.size + index }
                                 .registered("file:${f.path}", requesters)
                                 .then(if (listing.titles.isEmpty() && index == 0) Modifier.focusRequester(firstRequester) else Modifier),
+                            // Holding OK: Fix (admins)
+                            onHold = if (viewModel.canFixMatches) ({ viewModel.openMatch(f.path, false, f.name) }) else null,
                             onClick = { if (playable) viewModel.playLibraryFile(f, listOf(f)) }
                         )
                     }
@@ -428,6 +431,7 @@ fun PosterTile(
     modifier: Modifier = Modifier,
     progress: Float = 0f,
     watched: Boolean = false,
+    onHold: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -436,6 +440,7 @@ fun PosterTile(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
+                .onHoldOk(onHold)
                 .tvClickable(shape = MaterialTheme.shapes.medium, focusedScale = 1.06f, borderWidth = 3.dp, onClick = onClick)
                 .clip(MaterialTheme.shapes.medium)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -552,6 +557,11 @@ private fun TitleHero(
         // A movie with several files (versions, editions) marks them all at once; each file has its own too.
         val files = title.files.orEmpty()
         if (files.size > 1) TvWatchedButton(viewModel, files, label = "Mark All Watched", modifier = Modifier.fillMaxWidth())
+        // The whole title's match, through its first file (which every file of it follows)
+        titleFixFile(title)?.let { f ->
+            if (viewModel.canFixMatches) TvSecondaryButton(onClick = { viewModel.openMatch(f.path, false, title.title, wholeTitle = true) },
+                modifier = Modifier.fillMaxWidth()) { Text("Fix match") }
+        }
         }
         Spacer(Modifier.width(28.dp))
         // The screen header already shows the title, so the hero starts with the details.
@@ -709,6 +719,11 @@ private fun FileRow(
                             }
                         }
                         TvWatchedButton(viewModel, listOf(file))
+                        if (viewModel.canFixMatches) {
+                            Button(shape = tvButtonShape(), colors = tvButtonColors(), onClick = { viewModel.openMatch(file.path, false, file.name) }) {
+                                Icon(Icons.Default.Edit, contentDescription = "Fix match")
+                            }
+                        }
                     }
                 }
             }
@@ -857,6 +872,8 @@ private fun EpisodeRow(
             .fillMaxWidth()
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
             .then(if (up != null) Modifier.focusProperties { this.up = up } else Modifier)
+            // Holding OK: Fix its episode or match (admins)
+            .onHoldOk(if (viewModel.canFixMatches) ({ viewModel.openMatch(first.path, false, first.name) }) else null)
             .tvClickable(shape = MaterialTheme.shapes.medium, focusedScale = 1.02f, borderWidth = 2.dp,
                 onClick = { viewModel.playLibraryFile(first, queue) })
             .padding(8.dp)

@@ -19,6 +19,11 @@ import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
@@ -87,4 +92,41 @@ fun Modifier.focusBleed(bleed: Dp = FocusBleed): Modifier = layout { measurable,
     } else constraints
     val placeable = measurable.measure(wider)
     layout(placeable.width - 2 * px, placeable.height) { placeable.place(-px, 0) }
+}
+
+/**
+ * Holding OK runs [onHold] (when given), as Continue Watching's menu opens: the key repeats while
+ * held, the first repeat runs it, and the release that follows is swallowed so it doesn't also
+ * press. Goes before the item's tvClickable.
+ */
+@Composable
+fun Modifier.onHoldOk(onHold: (() -> Unit)?): Modifier {
+    if (onHold == null) return this
+    var held by remember { mutableStateOf(false) }
+    return onPreviewKeyEvent { e ->
+        val select = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+        when {
+            !select -> false
+            e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount > 0 -> {
+                if (!held) { held = true; onHold() }
+                true
+            }
+            e.type == KeyEventType.KeyUp && held -> { held = false; true }
+            else -> false
+        }
+    }
+}
+
+/**
+ * For a dialog opened by holding OK: OK counts only after a fresh press, so the held key's repeats
+ * and release don't press what's focused in it.
+ */
+@Composable
+fun Modifier.okAfterFreshPress(): Modifier {
+    var armed by remember { mutableStateOf(false) }
+    return onPreviewKeyEvent { e ->
+        val select = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+        if (!select || armed) return@onPreviewKeyEvent false
+        if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) { armed = true; false } else true
+    }
 }

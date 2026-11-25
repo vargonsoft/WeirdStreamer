@@ -2,6 +2,7 @@ package com.vargon.weirdstreamer.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -165,7 +167,9 @@ fun PhoneLibraryScreen(viewModel: MediaViewModel) {
                             posterUrl = null,
                             placeholder = if (isTv) Icons.Default.Tv else Icons.Default.Theaters,
                             progress = f.playback?.fraction(f.duration) ?: 0f,
-                            watched = f.playback?.watched == true
+                            watched = f.playback?.watched == true,
+                            // Long press: Fix (admins)
+                            onLongClick = if (viewModel.canFixMatches) ({ viewModel.openMatch(f.path, false, f.name) }) else null
                         ) { if (playable) viewModel.playLibraryFile(f, listOf(f)) }
                     }
                 }
@@ -182,6 +186,7 @@ fun PhoneLibraryScreen(viewModel: MediaViewModel) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun PhonePosterTile(
     title: String,
@@ -190,9 +195,10 @@ private fun PhonePosterTile(
     placeholder: ImageVector,
     progress: Float = 0f,
     watched: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    Column(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -276,8 +282,22 @@ private fun PhoneTitleHeader(viewModel: MediaViewModel, title: TitleDetail) {
                     Text(it.joinToString(", "), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                // Fix the whole title's match (through its first file, which every file of it follows)
+                titleFixFile(title)?.let { f ->
+                    if (viewModel.canFixMatches) PhoneSecondaryButton(onClick = { viewModel.openMatch(f.path, false, title.title, wholeTitle = true) },
+                        modifier = Modifier.padding(top = 8.dp)) { Text("Fix match") }
+                }
             }
         }
+    }
+}
+
+/** A file's Fix button (admins): its match, or its episode for an episode file. */
+@Composable
+private fun PhoneFixButton(viewModel: MediaViewModel, file: LibraryFile) {
+    if (!viewModel.canFixMatches) return
+    IconButton(onClick = { viewModel.openMatch(file.path, false, file.name) }) {
+        Icon(Icons.Default.Edit, contentDescription = "Fix match")
     }
 }
 
@@ -406,6 +426,7 @@ private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: Li
                 WatchedButton(viewModel, listOf(file))
                 val label = file.match?.let { m -> m.title + (m.year?.let { " ($it)" } ?: "") } ?: titleLabel
                 DownloadButton(viewModel, DownloadRequest.of(viewModel, file, label))
+                PhoneFixButton(viewModel, file)
             }
         }
     }
@@ -541,6 +562,7 @@ private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, 
             }
             WatchedButton(viewModel, episode.files)
             episode.files.forEach { f -> DownloadButton(viewModel, DownloadRequest.of(viewModel, f, episodeLabel(showTitle, episode), episode.still)) }
+            PhoneFixButton(viewModel, first)
         }
         }
         Spacer(Modifier.width(12.dp))

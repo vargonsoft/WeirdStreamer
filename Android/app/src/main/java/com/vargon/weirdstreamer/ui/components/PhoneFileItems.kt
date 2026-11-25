@@ -64,6 +64,7 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
     val viewModel: MediaViewModel = viewModel()
     var menuOpen by remember { mutableStateOf(false) }
     val playback = if (item.isDirectory || isParent) null else viewModel.playbackFor(item.path)
+    val fixTarget = fixMatchTarget(viewModel, item, isParent)
 
     LaunchedEffect(item.path) {
         if (!item.isDirectory && !isParent && (item.duration == null || item.duration <= 0) && viewModel.isVideo(item)) {
@@ -134,8 +135,8 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                     Box(Modifier.matchParentSize().clip(RoundedCornerShape(4.dp)).filmstrip())
                 }
                 PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 14.dp)
-                // Long press: Play from start, and Mark watched (server videos).
-                if (playback != null || (item.originalPath != null && viewModel.isVideo(item))) {
+                // Long press: Play from start, and Mark watched (server videos); Fix match (admins).
+                if (playback != null || (item.originalPath != null && viewModel.isVideo(item)) || fixTarget != null) {
                     DropdownMenu(border = phoneMenuBorder(), expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         if ((playback?.resumeAt ?: 0.0) > 0) {
                             DropdownMenuItem(text = { Text("Play from start") }, onClick = {
@@ -150,16 +151,23 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                                 viewModel.setWatched(listOf(original), !watched)
                             })
                         }
+                        fixTarget?.let { (path, isDir) ->
+                            DropdownMenuItem(text = { Text("Fix match") }, onClick = {
+                                menuOpen = false
+                                viewModel.openMatch(path, isDir, item.name)
+                            })
+                        }
                     }
                 }
             }
         },
         modifier = modifier.combinedClickable(onClick = onClick, onLongClick = {
-            if (!item.isDirectory && !isParent && item.originalPath != null && viewModel.isVideo(item)) menuOpen = true
+            if ((!item.isDirectory && !isParent && item.originalPath != null && viewModel.isVideo(item)) || fixTarget != null) menuOpen = true
         })
     )
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val isParent = item.name == ".." || item.path == "UP"
@@ -178,11 +186,14 @@ fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: ()
         else -> Icons.Default.Description
     }
 
+    // Long press: Fix match (admins)
+    val fixTarget = fixMatchTarget(viewModel, item, isParent)
+    var menuOpen by remember { mutableStateOf(false) }
     Card(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = { if (fixTarget != null) menuOpen = true }),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
     ) {
         Column(
@@ -228,6 +239,14 @@ fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: ()
                     Box(Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)).filmstrip())
                 }
                 PlaybackOverlay(playback, item.duration, barHeight = 3.dp, badgeSize = 18.dp)
+                fixTarget?.let { (path, isDir) ->
+                    DropdownMenu(border = phoneMenuBorder(), expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(text = { Text("Fix match") }, onClick = {
+                            menuOpen = false
+                            viewModel.openMatch(path, isDir, item.name)
+                        })
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -275,4 +294,12 @@ private fun formatDuration(durationInSeconds: Double): String {
     } else {
         String.format(Locale.US, "%d:%02d", minutes, seconds)
     }
+}
+
+/** What Fix match opens for a folder-view item (its client path, and whether it's a folder), or null. */
+internal fun fixMatchTarget(viewModel: MediaViewModel, item: FileItem, isParent: Boolean): Pair<String, Boolean>? = when {
+    isParent || !viewModel.canFixMatches -> null
+    item.isDirectory -> if (item.fixable) item.path to true else null
+    item.originalPath != null && viewModel.isVideo(item) -> item.originalPath to false
+    else -> null
 }

@@ -368,6 +368,45 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         loadPath(source, repo.getInitialPath())
     }
 
+    // ---- Fixing TMDB matches (admins; MatchModel.kt) ----
+
+    /** The file or folder whose Fix dialog is open, if any. */
+    var matchTarget by mutableStateOf<com.vargon.weirdstreamer.ui.components.MatchTarget?>(null)
+        private set
+
+    /** Fix is offered: an admin's account, in a library with a type (movies or TV). */
+    val canFixMatches: Boolean
+        get() = libraryType != null && serverRepository?.signedInAs()?.second == true
+
+    /** Opens Fix for a file (its client path) or a folder standing for one title. */
+    fun openMatch(path: String, isDir: Boolean, name: String, wholeTitle: Boolean = false) {
+        matchTarget = com.vargon.weirdstreamer.ui.components.MatchTarget(path, isDir, name, wholeTitle)
+    }
+
+    /** Closes Fix; after a change, what's on screen is loaded again (a title page that's gone closes). */
+    fun closeMatch(changed: Boolean) {
+        matchTarget = null
+        if (!changed) return
+        val repo = serverRepository ?: return
+        viewModelScope.launch {
+            val libraryId = currentLibraryId
+            openTitle?.let { t ->
+                val fresh = libraryId?.let { repo.libraryTitle(it, t.kind, t.tmdbId).getOrNull() }
+                if (openTitle?.tmdbId == t.tmdbId) openTitle = fresh // null: matched to another title
+            }
+            if (isLibraryView && libraryId != null) {
+                repo.library(libraryId).getOrNull()?.let { if (libraryListing?.libraryId == it.libraryId) libraryListing = it }
+            } else if (openTitle == null) {
+                val path = currentPath
+                repo.browse(path).getOrNull()?.let { fresh ->
+                    if (currentPath != path) return@let
+                    fileList = fresh
+                    updateSortedList()
+                }
+            }
+        }
+    }
+
     /** Server-relative artwork and thumbnail URLs as absolute URLs. */
     fun serverUrl(url: String?): String? = serverRepository?.absoluteUrl(url)
 

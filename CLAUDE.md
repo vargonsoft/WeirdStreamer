@@ -545,6 +545,17 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   repairs folder as its fixed copy (listed as fixed again), the thumbnail back if it's gone, and `db.MoveFile`
   the other way; refused while a file is in its place, the replacement has changed, or someone else plays it.
   The job keeps a restored video's index entry until a scan lists it. Both folders are on the Jobs page's storage list.
+- **Fixing TMDB matches** (admins, movie and TV libraries; `handlers/match.go`, `/api/media/match…`): the web's Fix
+  dialog (`openMatchDialog`) and the apps' (Android `MatchModel.kt` with `PhoneMatchSheet.kt` and `TvMatchDialog.kt`,
+  iPhone `MatchSheet.swift`) show the current match, search TMDB (Movies or TV shows where the library allows
+  both) and match a result, mark no match or reset, pick a poster, and map an episode file to another TMDB episode
+  for that file or its whole season. A file is sent by its base64 path, a folder standing for one title (the browse
+  response's `fixable`) by its client path (`dir`). The apps open it from a title page (Fix match: the whole title,
+  through its first file, `wholeTitle`, without the episode part; a file or episode row's pencil), a Library view
+  Unmatched file and a folder view video or `fixable` folder (long press on the phone and iPhone, holding OK on
+  the TV, `onHoldOk`; the TV dialog takes OK only after a fresh press, `okAfterFreshPress`); after a change the
+  screen behind reloads (`closeMatch` / `matchChanged`; a title page matched to another title closes). The TV
+  starts the search from the title the server took from the file's name, so the keyboard is rarely needed.
 - **3D videos marked twice** (`media/stereo.go`): an H.264 side-by-side (or other 3D) video whose
   layout is marked in both the container (Matroska's StereoMode) and the stream's SEI can't be decoded
   by ffmpeg 8: each frame gets the marker twice ("File exists" from the filter graph), so no thumbnail,

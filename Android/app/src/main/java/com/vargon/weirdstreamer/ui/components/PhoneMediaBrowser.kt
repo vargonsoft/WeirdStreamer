@@ -52,6 +52,10 @@ fun PhoneMediaBrowser(viewModel: MediaViewModel, onOpenSettings: () -> Unit) {
     var showDownloadFolder by remember { mutableStateOf(false) }
     val currentSource = viewModel.currentSource
     PhoneSourceDialog(viewModel) // download or stream, for a video downloaded here
+    // Fix match (admins), opened from a file's or folder's menu or a title page
+    viewModel.matchTarget?.let { target ->
+        viewModel.connectedServer?.let { server -> PhoneMatchSheet(server, target) { changed -> viewModel.closeMatch(changed) } }
+    }
 
     // Back closes a title page, then leaves Library view for the server's libraries, else goes up.
     BackHandler(enabled = currentSource != null) {

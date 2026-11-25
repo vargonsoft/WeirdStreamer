@@ -244,7 +244,7 @@ class ServerRepository(
                             shareMap[dir.id] = dir.name
                             dir.libraryType?.let { libraryTypes[dir.id] = it }
                         }
-                        items.add(FileItem(name = dir.name, path = dir.id, isDirectory = true,
+                        items.add(FileItem(name = dir.name, path = dir.id, isDirectory = true, fixable = dir.fixable,
                             thumbnailUrl = dir.thumbnailUrl?.let { if (it.startsWith("http")) it else "$requestBase$it" }))
                     }
                     

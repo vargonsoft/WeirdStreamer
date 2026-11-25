@@ -36,7 +36,8 @@ together.
   as they're made.
 - **Library view:** posters with progress, Unmatched files, title pages (backdrop, poster, details,
   cast, files with Resume / Play / watched; seasons with their rings, watched buttons for a season
-  and the whole show, Auto Skip, episode rows and their details).
+  and the whole show, Auto Skip, episode rows and their details). For admins, Fix match (`MatchSheet.swift`):
+  from a title page, a file or episode row, an Unmatched file, or holding a video or a title's folder.
 - **Player:** controls (Back and title, Transcode menu with its nine modes and what the
   stream does, Rotate; −10 s / play / +30 s and frame steps; trickplay frames, aspect ratio, speed,
   seek bar), pinch to zoom, Skip Intro / Skip Credits, the next episode at the end, progress every

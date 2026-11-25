@@ -91,7 +91,10 @@ struct FileRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu { if item.isVideo { VideoMenu(item: item) } }
+        .contextMenu {
+            if item.isVideo { VideoMenu(item: item) }
+            FixMatchMenuItem(item: item)
+        }
     }
 }
 
@@ -130,7 +133,10 @@ struct FileTile: View {
             .background(Palette.raised.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
-        .contextMenu { if item.isVideo { VideoMenu(item: item) } }
+        .contextMenu {
+            if item.isVideo { VideoMenu(item: item) }
+            FixMatchMenuItem(item: item)
+        }
     }
 }
 
@@ -145,6 +151,18 @@ struct VideoMenu: View {
         }
         let watched = item.playback?.watched == true
         Button(watched ? "Mark unwatched" : "Mark watched") { model.setWatched([item.path], !watched) }
+    }
+}
+
+/// Holding a video, or a folder standing for one title: Fix match (admins).
+struct FixMatchMenuItem: View {
+    @Environment(AppModel.self) private var model
+    let item: FileEntry
+
+    var body: some View {
+        if model.canFixMatches && (item.isVideo || (item.isDirectory && item.fixable)) {
+            Button("Fix match") { model.openMatch(path: item.path, isDir: item.isDirectory, name: item.name) }
+        }
     }
 }
 

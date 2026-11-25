@@ -62,8 +62,10 @@ final class Directory: Decodable {
     /// A picture for inside the folder's icon (folders without a poster): its thumbnail.png, else a
     /// photo's or video's from inside it.
     let thumbnailUrl: String?
+    /// The folder stands for one title (a movie's or a show's folder), so an admin can fix its match.
+    let fixable: Bool?
 
-    enum CodingKeys: String, CodingKey { case id = "path", name, items, dirs, libraryType, thumbnailUrl }
+    enum CodingKeys: String, CodingKey { case id = "path", name, items, dirs, libraryType, thumbnailUrl, fixable }
 }
 
 struct ContinueMetadata: Decodable, Hashable {
@@ -560,4 +562,76 @@ struct JobsResponse: Decodable {
     let load: JobLoad?
     let storage: [StorageUse]?
     let trickplay: TrickplaySettings?
+}
+
+// MARK: Fixing TMDB matches (admins; the web's Fix dialog)
+
+/// What a file or folder is matched to (GET /api/media/match), and what may be searched.
+struct MatchInfo: Decodable {
+    var kind: String?            // the library's: "movie" or "tv"
+    var matchKind: String?       // what it's matched to (a movie library's can be a show)
+    var kinds: [String]?         // what may be searched
+    var query: String?
+    var year: Int?
+    var status: String?          // "matched", "not_found", "error" or "pending"
+    var manual: Bool?
+    var current: MatchTitle?
+    var episode: MatchEpisodeInfo?   // TV episode files
+}
+
+/// The title matched. `poster` is a server artwork URL.
+struct MatchTitle: Decodable {
+    var kind: String?            // "movie", "show", "season" or "episode"
+    var tmdbId: Int
+    var title: String
+    var year: Int?
+    var poster: String?
+}
+
+/// Which TMDB episode an episode file shows as, and why ("file", "season" or "manual").
+struct MatchEpisodeInfo: Decodable {
+    var fileSeason: Int
+    var fileEpisode: Int
+    var season: Int
+    var episode: Int
+    var source: String
+    var title: String?
+}
+
+/// A TMDB search result: `poster` a TMDB image URL, `posterPath` its TMDB path (to use as a poster).
+struct MatchHit: Decodable, Identifiable {
+    var tmdbId: Int
+    var title: String
+    var year: Int?
+    var overview: String?
+    var poster: String?
+    var posterPath: String?
+    var id: Int { tmdbId }
+}
+
+/// The matched title's TMDB posters (GET /api/media/match/posters).
+struct PosterList: Decodable {
+    var current: String?         // TMDB path of the one in use
+    var manual: Bool?
+    var posters: [PosterOption]?
+}
+
+struct PosterOption: Decodable {
+    var path: String
+    var url: String
+    var language: String?        // "" for posters without text
+}
+
+struct TmdbSeason: Decodable, Identifiable {
+    var number: Int
+    var name: String?
+    var episodeCount: Int?
+    var id: Int { number }
+}
+
+struct TmdbEpisode: Decodable, Identifiable {
+    var number: Int
+    var name: String?
+    var airDate: String?
+    var id: Int { number }
 }

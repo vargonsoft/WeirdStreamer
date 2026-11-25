@@ -318,6 +318,17 @@ final class ServerClient: Sendable {
         try decode(T.self, from: try await perform(try request("GET", path, query: query)))
     }
 
+    /// A request with no body whose reply is read (a DELETE that answers with the new state).
+    func fetch<T: Decodable>(_ method: String, _ path: String, query: [(String, String)] = []) async throws -> T {
+        try decode(T.self, from: try await perform(try request(method, path, query: query)))
+    }
+
+    /// A request whose body is plain JSON (keys as the server names them) and whose reply is read.
+    func sendJSON<T: Decodable>(_ method: String, _ path: String, body: [String: Any]) async throws -> T {
+        let data = try JSONSerialization.data(withJSONObject: body, options: .sortedKeys)
+        return try decode(T.self, from: try await perform(try request(method, path, body: data)))
+    }
+
     /// A request with no body and no reply to read (such as DELETE).
     func execute(_ method: String, _ path: String, query: [(String, String)] = []) async throws {
         _ = try await perform(try request(method, path, query: query))
