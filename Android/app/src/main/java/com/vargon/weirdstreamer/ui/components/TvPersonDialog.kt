@@ -1,6 +1,20 @@
 package com.vargon.weirdstreamer.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.vargon.weirdstreamer.MediaViewModel
+import kotlinx.coroutines.launch
 import com.vargon.weirdstreamer.api.models.CreditInfo
 
 /**
@@ -41,7 +56,14 @@ fun TvPersonDialog(viewModel: MediaViewModel, cast: CreditInfo, onDismiss: () ->
     val (person, error) = rememberPerson(viewModel, cast.tmdbId)
     val first = remember { FocusRequester() }
     fun open(kind: String, id: Int) { onDismiss(); viewModel.openLibraryTitle(kind, id) }
-    LaunchedEffect(person != null) { if (person != null) runCatching { first.requestFocus() } }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(person != null) {
+        if (person == null) return@LaunchedEffect
+        runCatching { first.requestFocus() }
+        kotlinx.coroutines.android.awaitFrame()
+        list.scrollToItem(0) // the heading over the first posters shows too
+    }
     TvDialogFrame(cast.name, onDismiss, width = 1040) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Box(Modifier.width(100.dp).height(150.dp).clip(RoundedCornerShape(8.dp))
@@ -60,12 +82,20 @@ fun TvPersonDialog(viewModel: MediaViewModel, cast: CreditInfo, onDismiss: () ->
             }
         }
         val p = person ?: return@TvDialogFrame
-        LazyColumn(Modifier.heightIn(max = 520.dp)) {
+        LazyColumn(Modifier.heightIn(max = 520.dp), state = list) {
             if (p.inLibrary.isNotEmpty()) {
+                item(key = "lib-head") {
+                    TvSectionTitle("In ${viewModel.libraryListing?.libraryName ?: "this library"} (${p.inLibrary.size})")
+                }
                 item(key = "lib") {
                     Column {
-                        TvSectionTitle("In ${viewModel.libraryListing?.libraryName ?: "this library"} (${p.inLibrary.size})")
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        // Room around the posters for the focused one's frame (as the cast row); with
+                        // focus on them, the list is back at its top, their heading shown
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = FocusBleed, vertical = 10.dp),
+                            modifier = Modifier.focusBleed().onFocusChanged {
+                                if (it.hasFocus) scope.launch { list.animateScrollToItem(0) }
+                            }) {
                             itemsIndexed(p.inLibrary, key = { _, t -> "${t.kind}:${t.tmdbId}" }) { i, t ->
                                 Box(Modifier.width(120.dp)) {
                                     PosterTile(title = t.title, subtitle = listOfNotNull(t.year?.toString(), t.role).joinToString(" · "),
@@ -81,12 +111,50 @@ fun TvPersonDialog(viewModel: MediaViewModel, cast: CreditInfo, onDismiss: () ->
             if (p.filmography.isNotEmpty()) {
                 item(key = "films-head") { TvSectionTitle("Filmography (${p.filmography.size})") }
                 itemsIndexed(p.filmography, key = { _, f -> "film:${f.kind}:${f.tmdbId}" }) { i, f ->
-                    TvValueRow(f.title + (if (f.kind == "show") " (TV)" else ""), filmLine(f),
-                        focus = if (i == 0 && p.inLibrary.isEmpty()) first else null) {
+                    TvFilmRow(viewModel, f, focus = if (i == 0 && p.inLibrary.isEmpty()) first else null) {
                         if (f.inLibrary) open(f.kind, f.tmdbId)
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * A filmography row: the title's poster (TMDB's), its title, and the year and their part, filled
+ * with the focus color when focused (as TvValueRow). Those in the library are in the heading color;
+ * OK opens them.
+ */
+@Composable
+private fun TvFilmRow(viewModel: MediaViewModel, f: com.vargon.weirdstreamer.api.models.PersonFilm,
+                      focus: FocusRequester?, onClick: () -> Unit) {
+    val spec = com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme.spec
+    var focused by remember { mutableStateOf(false) }
+    val text = if (focused) spec.focusLabel.takeOrElse { Color.Black } else MaterialTheme.colorScheme.onSurface
+    Row(
+        Modifier.fillMaxWidth()
+            .then(if (focus != null) Modifier.focusRequester(focus) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { e ->
+                val ok = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+                if (ok && e.type == KeyEventType.KeyDown) { onClick(); true } else false
+            }
+            .focusable()
+            .background(if (focused) spec.focusColor.takeOrElse { Color.White } else Color.Transparent, RoundedCornerShape(8.dp))
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(40.dp).height(60.dp).clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))) {
+            f.poster?.let { RemoteImage(it, Modifier.fillMaxSize()) }
+        }
+        Column(Modifier.weight(1f)) {
+            Text(f.title + (if (f.kind == "show") " (TV)" else ""), style = MaterialTheme.typography.titleMedium, maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (!focused && f.inLibrary) spec.headingColor.takeOrElse { text } else text)
+            Text(filmLine(f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (focused) text else MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
