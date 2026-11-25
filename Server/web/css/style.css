@@ -3626,7 +3626,9 @@ body.has-az #main-screen .content { padding-right: 28px; }
 .collection-editor .collection-picker { min-height: 160px; }
 
 /* A person's window (from a title page's cast) */
-button.cast-member { background: none; border: none; color: inherit; font: inherit; cursor: pointer; padding: 4px; border-radius: 8px; }
+/* A button that looks as the cast's plain boxes did: their size of text, laid out from the top */
+button.cast-member { background: none; border: none; color: inherit; font-family: inherit; font-size: 12px; line-height: inherit;
+    cursor: pointer; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
 button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face { outline: 3px solid var(--primary-color); outline-offset: 2px; }
 .person-dialog { width: min(860px, 94vw); gap: 14px; }
 .person-head { display: flex; gap: 20px; align-items: flex-start; }
