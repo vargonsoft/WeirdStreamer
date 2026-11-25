@@ -114,9 +114,9 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 		return err
 	}
 
-	// Generate frames every 10 seconds, in batches of config.TrickplayFramesPerRunner, or fewer when
-	// that wouldn't fit in memory (one ffmpeg process each, read for every batch so a change applies
-	// at once). A frame a batch doesn't make is tried again on its own, so a failure is judged as it
+	// Generate frames every 10 seconds, in batches of config.TrickplayFramesPerRunner (one ffmpeg
+	// process each, read for every batch so a change applies at once; the Jobs page shows the memory
+	// that takes). A frame a batch doesn't make is tried again on its own, so a failure is judged as it
 	// always was.
 	var pending []int
 	failures, lastGood := 0, -1
@@ -133,12 +133,6 @@ loop:
 			return ctx.Err()
 		}
 		n := min(config.TrickplayFramesPerRunner(), len(pending))
-		// No more than fit in memory with every runner making a batch like it (a 4K video gets far
-		// fewer frames at once than a 1080p one: each frame holds a decoder of its own).
-		if limit := trickplayBatchLimit(info.Width, info.Height, heavyDecoder(info.Codec, info.PixFmt),
-			config.TrickplayRunners(), trickplayBudget(SystemMemory())); limit > 0 {
-			n = min(n, limit)
-		}
 		batch := pending[:n]
 		pending = pending[n:]
 		made := tg.extractBatch(ctx, src, trickplayVideoDir, codec, batch)
@@ -272,19 +266,17 @@ func isSupportedVideo(path string) bool {
 	return config.IsVideo(path)
 }
 
-// videoInfo is what making a video's frames needs to know: its length (seconds), video codec, and
-// picture size and pixel format (for the memory a batch takes).
+// videoInfo is what making a video's frames needs to know: its length (seconds) and video codec.
 type videoInfo struct {
-	Duration      float64
-	Codec, PixFmt string
-	Width, Height int
+	Duration float64
+	Codec    string
 }
 
 func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (videoInfo, error) {
 	cmd := backgroundCommand(context.Background(), "ffprobe",
 		"-v", "error",
 		"-select_streams", "v:0",
-		"-show_entries", "stream=codec_name,width,height,pix_fmt,duration:format=duration",
+		"-show_entries", "stream=codec_name,duration:format=duration",
 		"-of", "default=noprint_wrappers=1",
 		videoPath,
 	)
@@ -318,18 +310,6 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (videoInfo, error) 
 		case "codec_name":
 			if info.Codec == "" {
 				info.Codec = value
-			}
-		case "pix_fmt":
-			if info.PixFmt == "" {
-				info.PixFmt = value
-			}
-		case "width":
-			if info.Width == 0 {
-				info.Width, _ = strconv.Atoi(value)
-			}
-		case "height":
-			if info.Height == 0 {
-				info.Height, _ = strconv.Atoi(value)
 			}
 		}
 	}

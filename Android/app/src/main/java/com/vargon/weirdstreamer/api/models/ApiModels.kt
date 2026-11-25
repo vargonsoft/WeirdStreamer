@@ -321,12 +321,12 @@ data class TrickplaySettings(
 )
 
 /** For the estimate beside the trickplay settings: an ffmpeg process and each frame of its batch for a 4K
- *  video, the server's memory and the half of it trickplay keeps within (0 when unknown). */
+ *  video, and the server's memory and swap (0 when unknown). */
 data class TrickplayMemory(
     @SerializedName("process_bytes_4k") val processBytes4k: Long = 0,
     @SerializedName("frame_bytes_4k") val frameBytes4k: Long = 0,
     @SerializedName("total_bytes") val totalBytes: Long = 0,
-    @SerializedName("budget_bytes") val budgetBytes: Long = 0
+    @SerializedName("swap_bytes") val swapBytes: Long = 0
 )
 
 data class TrickplaySettingsRequest(

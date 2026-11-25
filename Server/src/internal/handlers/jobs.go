@@ -30,8 +30,8 @@ type trickplaySettings struct {
 	MaxRunners      int `json:"max_runners"`
 	MaxFrames       int `json:"max_frames"`
 	MaxProduct      int `json:"max_product"` // runners times frames per runner
-	// For the estimate beside the settings: runners × (process + frames × frame) for 4K videos, and
-	// the frames a 4K video's batch is cut to when that's more than the budget.
+	// For the estimate beside the settings: runners × (process + frames × frame) for 4K videos,
+	// against the server's memory and swap.
 	Memory media.TrickplayMemory `json:"memory"`
 }
 

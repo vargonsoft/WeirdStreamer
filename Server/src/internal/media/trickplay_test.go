@@ -116,7 +116,7 @@ func TestTrickplayStopsAtTheVideosEnd(t *testing.T) {
 	config.GlobalConfig = &config.Config{Media: config.MediaConfig{TrickplayPath: filepath.Join(dir, "trickplay")}}
 
 	tg := NewTrickplayGenerator(nil)
-	if vi, err := tg.getVideoInfo(src); err != nil || vi.Duration > 31 || vi.Codec != "h264" || vi.Width == 0 {
+	if vi, err := tg.getVideoInfo(src); err != nil || vi.Duration > 31 || vi.Codec != "h264" {
 		d, codec := vi.Duration, vi.Codec
 		t.Errorf("video info: %.1fs %q %v, want about 30s of h264", d, codec, err)
 	}

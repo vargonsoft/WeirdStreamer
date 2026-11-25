@@ -562,8 +562,8 @@ internal fun trickplayNote(runners: Int, frames: Int, tp: com.vargon.weirdstream
         " Runners 1 to ${tp.maxRunners}, frames per runner 1 to ${tp.maxFrames}, and at most ${tp.maxProduct} frames at once."
 
 /** The memory [r] runners of [f] frames take with 4K videos (each frame in a batch holds a decoder of its own:
- *  about 230 MB at 4K), against the server's: past half of it, the server makes 4K videos fewer frames at a
- *  time. As the web's trickplayMemoryText. */
+ *  about 230 MB at 4K), against the server's memory and swap. The server uses the settings as they are. As the
+ *  web's trickplayMemoryText. */
 internal fun trickplayMemoryText(r: Int, f: Int, m: com.vargon.weirdstreamer.api.models.TrickplayMemory?): String {
     fun gb(bytes: Long) = String.format(Locale.US, "%.1f", bytes / 1073741824.0)
     val text = "$r × $f = ${r * f} frames at once."
@@ -571,11 +571,13 @@ internal fun trickplayMemoryText(r: Int, f: Int, m: com.vargon.weirdstreamer.api
     val estimate = r * (m.processBytes4k + f * m.frameBytes4k)
     val with4k = "$text With 4K videos about ${gb(estimate)} GB of memory at most"
     if (m.totalBytes <= 0) return "$with4k."
-    if (estimate <= m.budgetBytes) return "$with4k (this server has ${gb(m.totalBytes)} GB)."
-    val fits = maxOf(1L, (m.budgetBytes / maxOf(r, 1) - m.processBytes4k) / m.frameBytes4k)
-    if (fits >= f) return "$with4k, more than half of this server's ${gb(m.totalBytes)} GB: fewer runners would fit."
-    return "$with4k, more than half of this server's ${gb(m.totalBytes)} GB: 4K videos are made " +
-        "$fits frame${if (fits == 1L) "" else "s"} at a time instead (smaller videos more)."
+    val swap = m.swapBytes
+    val andSwap = if (swap > 0) " and ${gb(swap)} GB of swap" else ""
+    return when {
+        estimate <= m.totalBytes -> "$with4k (this server has ${gb(m.totalBytes)} GB$andSwap)."
+        estimate <= m.totalBytes + swap -> "$with4k, more than this server's ${gb(m.totalBytes)} GB: the rest comes from its ${gb(swap)} GB of swap."
+        else -> "$with4k, more than this server's ${gb(m.totalBytes)} GB$andSwap: ffmpeg may run out of memory, and those frames are then made one at a time."
+    }
 }
 
 internal fun loadText(l: JobLoad): String {

@@ -6439,20 +6439,24 @@ function trickplayHint() {
 }
 
 // The memory r runners of f frames take with 4K videos (each frame in a batch holds a decoder of its
-// own: about 230 MB at 4K), against the server's: past half of it, the server makes 4K videos
-// fewer frames at a time. As the apps' trickplayNote.
+// own: about 230 MB at 4K), against the server's memory and swap. The server uses the settings as
+// they are. As the apps' trickplayMemoryText.
 function trickplayMemoryText(r, f, m) {
     const gb = bytes => (bytes / 2 ** 30).toFixed(1);
-    let text = `${r} × ${f} = ${r * f} frames at once.`;
+    const text = `${r} × ${f} = ${r * f} frames at once.`;
     if (!m || !m.frame_bytes_4k) return text;
     const estimate = r * (m.process_bytes_4k + f * m.frame_bytes_4k);
-    text += ` With 4K videos about ${gb(estimate)} GB of memory at most`;
-    if (!m.total_bytes) return text + '.';
-    if (estimate <= m.budget_bytes) return text + ` (this server has ${gb(m.total_bytes)} GB).`;
-    const fits = Math.max(1, Math.floor((m.budget_bytes / Math.max(r, 1) - m.process_bytes_4k) / m.frame_bytes_4k));
-    if (fits >= f) return text + `, more than half of this server's ${gb(m.total_bytes)} GB: fewer runners would fit.`;
-    return text + `, more than half of this server's ${gb(m.total_bytes)} GB: 4K videos are made ` +
-        `${fits} frame${fits === 1 ? '' : 's'} at a time instead (smaller videos more).`;
+    const with4k = `${text} With 4K videos about ${gb(estimate)} GB of memory at most`;
+    if (!m.total_bytes) return with4k + '.';
+    const swap = m.swap_bytes || 0;
+    if (estimate <= m.total_bytes) {
+        return with4k + ` (this server has ${gb(m.total_bytes)} GB${swap ? ` and ${gb(swap)} GB of swap` : ''}).`;
+    }
+    if (estimate <= m.total_bytes + swap) {
+        return with4k + `, more than this server's ${gb(m.total_bytes)} GB: the rest comes from its ${gb(swap)} GB of swap.`;
+    }
+    return with4k + `, more than this server's ${gb(m.total_bytes)} GB${swap ? ` and ${gb(swap)} GB of swap` : ''}: ` +
+        'ffmpeg may run out of memory, and those frames are then made one at a time.';
 }
 
 async function saveTrickplaySettings() {

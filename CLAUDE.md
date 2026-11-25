@@ -453,14 +453,14 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   server started before ffmpeg was installed once marked every video done without frames).
 - **Trickplay memory** (`media/memory.go`): each frame of a trickplay batch is an ffmpeg input with a
   decoder of its own, so a batch's memory grows with the picture: about 60 MB a process plus 228 MB a
-  frame for 4K HEVC 10-bit, 84 MB for 1080p HEVC 10-bit, 45 MB for 1080p H.264 (measured, ffmpeg 8;
-  `trickplayFrameBytes`). Runners keep within half the server's memory (`SystemMemory`: MemTotal, or
-  the cgroup's limit when lower; `sysctl hw.memsize` on macOS), so a big video's batches are cut
-  (`trickplayBatchLimit`: on a 4 GB server, 3 runners make 4K 2 frames at a time). The Jobs page's
-  trickplay note shows what the settings take with 4K videos and what 4K is cut to (the jobs reply's
-  `trickplay.memory`; web `trickplayMemoryText`, Android `trickplayMemoryText` in `AdminSettings.kt`,
-  iPhone in `ServerModels.swift`). setup.sh's systemd unit has `OOMPolicy=continue`: by default an
-  ffmpeg the kernel kills for memory made systemd stop and restart the whole server.
+  frame for 4K HEVC 10-bit, 84 MB for 1080p HEVC 10-bit, 45 MB for 1080p H.264 (measured, ffmpeg 8).
+  The settings are used as they are (the user sizes them, swap included); the Jobs page's trickplay
+  note shows what they take with 4K videos against the server's memory and swap (the jobs reply's
+  `trickplay.memory`: `SystemMemory`, MemTotal or the cgroup's limit when lower, `hw.memsize` on macOS;
+  `SystemSwap`; web `trickplayMemoryText`, Android `trickplayMemoryText` in `AdminSettings.kt`, iPhone
+  in `ServerModels.swift`). A batch the kernel kills is made again a frame at a time, and setup.sh's
+  systemd unit has `OOMPolicy=continue`: by default an ffmpeg killed for memory made systemd stop and
+  restart the whole server.
 - **Streams with track options:** file transcodes take `audio=N` (index among the audio tracks)
   and `subtitle=N` (burn in that subtitle track, scaled to the video), in `TrackOptions`
   (`media/codecs.go`).
