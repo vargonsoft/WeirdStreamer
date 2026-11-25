@@ -3,7 +3,7 @@ package config
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"path/filepath"
+	"strings"
 )
 
 // CacheKey names a media file in the caches (thumbnails, trickplay, ASS tracks, subtitle keys,
@@ -23,24 +23,15 @@ func LibraryRelative(path string) (id, rel string, ok bool) {
 	if GlobalConfig == nil {
 		return "", "", false
 	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
+	client, ok := ClientPath(path) // its library: the innermost holding it
+	if !ok {
 		return "", "", false
 	}
-	for _, lib := range GlobalConfig.Media.Paths {
-		root, err := filepath.Abs(lib.Path)
-		if err != nil || lib.ID == "" {
-			continue
-		}
-		if InDir(abs, root) {
-			r, err := filepath.Rel(root, abs)
-			if err != nil {
-				return "", "", false
-			}
-			return lib.ID, filepath.ToSlash(r), true
-		}
+	id, rel, _ = strings.Cut(client, "/")
+	if rel == "" {
+		rel = "." // the library's own folder
 	}
-	return "", "", false
+	return id, rel, true
 }
 
 // TextHash is the hex SHA-256 of s, for names that aren't a media path (a transcode's viewer and arguments).

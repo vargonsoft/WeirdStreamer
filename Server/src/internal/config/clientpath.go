@@ -29,23 +29,26 @@ func DiskPath(client string) (string, MediaPath, bool) {
 	return DiskPathIn(GlobalConfig.Media.Paths, client)
 }
 
-// LibraryOf returns the library of libs that holds a disk path (the first that does), compared by
-// directory boundary, so "/media/movies-private/x" isn't in "/media/movies".
+// LibraryOf returns the library of libs that holds a disk path, compared by directory boundary, so
+// "/media/movies-private/x" isn't in "/media/movies". A library inside another's folder holds its
+// own files (the innermost wins, whatever the order): they're never reached through the outer one.
 func LibraryOf(libs []MediaPath, path string) (MediaPath, bool) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return MediaPath{}, false
 	}
+	var found MediaPath
+	deepest := -1
 	for _, lib := range libs {
 		root, err := filepath.Abs(lib.Path)
 		if err != nil || lib.Path == "" {
 			continue
 		}
-		if InDir(abs, root) {
-			return lib, true
+		if InDir(abs, root) && len(root) > deepest {
+			found, deepest = lib, len(root)
 		}
 	}
-	return MediaPath{}, false
+	return found, deepest >= 0
 }
 
 // ClientPathIn is ClientPath with the given libraries (the conversion tool's, from a config file).

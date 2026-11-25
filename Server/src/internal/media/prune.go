@@ -160,16 +160,12 @@ func (p *Pruner) Prune(ctx context.Context, force bool) (int, error) {
 }
 
 func libraryIndex(libraries []config.MediaPath, path string) int {
-	abs, err := filepath.Abs(path)
-	if err != nil {
+	lib, ok := config.LibraryOf(libraries, path) // the innermost holding it
+	if !ok {
 		return -1
 	}
-	for i, lib := range libraries {
-		root, err := filepath.Abs(lib.Path)
-		if err != nil {
-			continue
-		}
-		if config.InDir(abs, root) {
+	for i := range libraries {
+		if libraries[i].ID == lib.ID && libraries[i].Path == lib.Path {
 			return i
 		}
 	}

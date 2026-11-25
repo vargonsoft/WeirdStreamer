@@ -520,26 +520,9 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Browse within a specific media path
-	var targetPath string
-	var targetLib config.MediaPath
-	pathParts := strings.Split(strings.Trim(relativePath, "/"), "/")
-
-	// Find which root this belongs to. Match only by the stable ID.
-	found := false
-	for _, mediaPath := range config.GlobalConfig.Media.Paths {
-		if mediaPath.ID != "" && mediaPath.ID == pathParts[0] {
-			if len(pathParts) > 1 {
-				targetPath = filepath.Join(mediaPath.Path, filepath.Join(pathParts[1:]...))
-			} else {
-				targetPath = mediaPath.Path
-			}
-			targetLib = mediaPath
-			found = true
-			break
-		}
-	}
-
+	// Browse within a library: its ID and the path below it (diskPath keeps it inside that library)
+	relativePath = strings.Trim(relativePath, "/")
+	targetPath, targetLib, found := diskPath(relativePath)
 	if !found {
 		respondError(w, http.StatusNotFound, "Path not found")
 		return
@@ -547,13 +530,6 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 
 	// Check access
 	if !h.canAccessLibrary(r, targetLib) {
-		respondError(w, http.StatusForbidden, "Access denied")
-		return
-	}
-
-	// The resolved path must stay inside the library it was addressed through ("../" can't
-	// escape into another library or outside the media paths).
-	if lib, ok := libraryForPath(targetPath); !ok || lib.ID != targetLib.ID {
 		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
@@ -569,7 +545,7 @@ func (h *MediaHandler) BrowseDirectory(w http.ResponseWriter, r *http.Request) {
 
 	for _, entry := range entries {
 		entryPath := filepath.Join(targetPath, entry.Name())
-		relPath := filepath.Join(relativePath, entry.Name())
+		relPath := relativePath + "/" + entry.Name() // a client path: always "/"
 
 		// Skip Mac-specific files if configured to ignore them
 		if media.IgnoredMacFile(entry.Name()) {

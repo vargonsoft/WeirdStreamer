@@ -45,17 +45,25 @@ func TestDiskPathNestedLibrary(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(inner, "x.mkv"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	libs := []MediaPath{{ID: "inner", Path: inner}, {ID: "outer", Path: outer}}
-	if p, lib, ok := DiskPathIn(libs, "inner/x.mkv"); !ok || lib.ID != "inner" || p != filepath.Join(inner, "x.mkv") {
-		t.Fatalf("inner/x.mkv: %q %q %v", p, lib.ID, ok)
-	}
-	for _, client := range []string{"outer/Private/x.mkv", "outer/private/x.mkv", "outer/PRIVATE/x.mkv", "outer/Private./x.mkv", "outer/x/../Private/x.mkv"} {
-		if p, lib, ok := DiskPathIn(libs, client); ok && InDir(p, inner) {
-			t.Errorf("%s reached %q through library %q", client, p, lib.ID)
+	// In either order: the innermost library holds its files.
+	for _, libs := range [][]MediaPath{
+		{{ID: "inner", Path: inner}, {ID: "outer", Path: outer}},
+		{{ID: "outer", Path: outer}, {ID: "inner", Path: inner}},
+	} {
+		if p, lib, ok := DiskPathIn(libs, "inner/x.mkv"); !ok || lib.ID != "inner" || p != filepath.Join(inner, "x.mkv") {
+			t.Fatalf("inner/x.mkv: %q %q %v", p, lib.ID, ok)
 		}
-	}
-	if c, ok := ClientPathIn(libs, filepath.Join(inner, "x.mkv")); !ok || c != "inner/x.mkv" {
-		t.Errorf("ClientPathIn = %q %v", c, ok)
+		for _, client := range []string{"outer/Private/x.mkv", "outer/private/x.mkv", "outer/PRIVATE/x.mkv", "outer/Private./x.mkv", "outer/x/../Private/x.mkv", "outer/Private"} {
+			if p, lib, ok := DiskPathIn(libs, client); ok && InDir(p, inner) {
+				t.Errorf("%s reached %q through library %q", client, p, lib.ID)
+			}
+		}
+		if c, ok := ClientPathIn(libs, filepath.Join(inner, "x.mkv")); !ok || c != "inner/x.mkv" {
+			t.Errorf("ClientPathIn = %q %v", c, ok)
+		}
+		if lib, ok := LibraryOf(libs, filepath.Join(outer, "y.mkv")); !ok || lib.ID != "outer" {
+			t.Errorf("outer's own file: %q %v", lib.ID, ok)
+		}
 	}
 }
 
