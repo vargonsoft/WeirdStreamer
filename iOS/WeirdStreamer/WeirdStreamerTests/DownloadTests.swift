@@ -100,7 +100,7 @@ struct DownloadTests {
         #expect(choices.last?.1.contains("not working") == true)
         #expect(r.encoders?.first?.sessions == 8)
         #expect(HardwareSettings.note(r, chosen: "nvenc|").contains("allows 8 encodes at once"))
-        #expect(HardwareSettings.note(r, chosen: "") == "Transcodes and downloads are encoded by the CPU.")
+        #expect(HardwareSettings.note(r, chosen: "") == "Transcodes and downloads are encoded by the CPU, and trickplay frames decoded by it.")
 
         let none = HardwareReport(checking: false, gpus: nil, encoders: nil, problems: nil)
         #expect(HardwareSettings.status(none) == "No graphics hardware was found, so transcodes are encoded by the CPU (x264).")

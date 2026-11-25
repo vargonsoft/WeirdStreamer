@@ -611,32 +611,55 @@ struct TrickplaySettings: Decodable {
     let memory: TrickplayMemory?
 }
 
-/// For the estimate beside the trickplay settings: an ffmpeg process and each frame of its batch for a 4K
-/// video, and the server's memory and swap (0 when unknown).
+/// For the estimate beside the trickplay settings, for the decoder trickplay uses (`decoder`: cpu, vaapi or
+/// cuda): an ffmpeg process and each frame of its batch for a 4K video, the server's memory and swap, and for
+/// cuda the same in the card's own memory (0 when unknown).
 struct TrickplayMemory: Decodable {
+    let decoder: String?
     let processBytes4K: Int64?
     let frameBytes4K: Int64?
     let totalBytes: Int64?
     let swapBytes: Int64?
+    let cardProcessBytes4K: Int64?
+    let cardFrameBytes4K: Int64?
+    let cardBytes: Int64?
 }
 
-/// The memory `r` runners of `f` frames take with 4K videos (each frame in a batch holds a decoder of its own:
-/// about 230 MB at 4K), against the server's memory and swap. The server uses the settings as they are. As
-/// Android's trickplayMemoryText.
+/// The memory `r` runners of `f` frames take with 4K videos (each frame in a batch holds a decoder of its own),
+/// as the server measured it for the decoder it uses (the CPU, an Intel or AMD GPU whose buffers are the
+/// server's memory, or an NVIDIA card with memory of its own), against the server's memory and swap, and the
+/// card's. The server uses the settings as they are. As Android's trickplayMemoryText.
 func trickplayMemoryText(_ r: Int, _ f: Int, _ m: TrickplayMemory?) -> String {
     func gb(_ bytes: Int64) -> String { String(format: "%.1f", Double(bytes) / 1_073_741_824) }
     let text = "\(r) × \(f) = \(r * f) frames at once."
     guard let m, let process = m.processBytes4K, let frame = m.frameBytes4K, frame > 0 else { return text }
     let estimate = Int64(r) * (process + Int64(f) * frame)
-    let with4k = "\(text) With 4K videos about \(gb(estimate)) GB of memory at most"
-    guard let total = m.totalBytes, total > 0 else { return with4k + "." }
+    let decoded = switch m.decoder {
+    case "vaapi": ", decoded on the GPU (its buffers use the server's memory),"
+    case "cuda": ", decoded on the graphics card,"
+    default: ""
+    }
+    let with4k = "\(text) With 4K videos\(decoded) about \(gb(estimate)) GB of memory at most"
+    var out: String
     let swap = m.swapBytes ?? 0
     let andSwap = swap > 0 ? " and \(gb(swap)) GB of swap" : ""
-    if estimate <= total { return with4k + " (this server has \(gb(total)) GB\(andSwap))." }
-    if estimate <= total + swap {
-        return with4k + ", more than this server's \(gb(total)) GB: the rest comes from its \(gb(swap)) GB of swap."
+    if let total = m.totalBytes, total > 0 {
+        if estimate <= total {
+            out = with4k + " (this server has \(gb(total)) GB\(andSwap))."
+        } else if estimate <= total + swap {
+            out = with4k + ", more than this server's \(gb(total)) GB: the rest comes from its \(gb(swap)) GB of swap."
+        } else {
+            out = with4k + ", more than this server's \(gb(total)) GB\(andSwap): ffmpeg may run out of memory, and those frames are then made one at a time."
+        }
+    } else {
+        out = with4k + "."
     }
-    return with4k + ", more than this server's \(gb(total)) GB\(andSwap): ffmpeg may run out of memory, and those frames are then made one at a time."
+    guard let cardFrame = m.cardFrameBytes4K, cardFrame > 0 else { return out }
+    let card = Int64(r) * ((m.cardProcessBytes4K ?? 0) + Int64(f) * cardFrame)
+    let cardTotal = m.cardBytes ?? 0
+    if cardTotal <= 0 { return out + " The card needs about \(gb(card)) GB of its own memory." }
+    if card <= cardTotal { return out + " The card needs about \(gb(card)) GB of its \(gb(cardTotal)) GB." }
+    return out + " The card needs about \(gb(card)) GB, more than its \(gb(cardTotal)) GB: batches are made smaller as it runs out."
 }
 
 struct JobsResponse: Decodable {

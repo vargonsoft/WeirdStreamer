@@ -476,6 +476,10 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 - **Trickplay memory** (`media/memory.go`): each frame of a trickplay batch is an ffmpeg input with a
   decoder of its own, so a batch's memory grows with the picture: about 60 MB a process plus 228 MB a
   frame for 4K HEVC 10-bit, 84 MB for 1080p HEVC 10-bit, 45 MB for 1080p H.264 (measured, ffmpeg 8).
+  On the GPU it's more: VA-API (Intel, measured on a Core Ultra 5) about 40 MB plus 370 MB a 4K frame,
+  its decoders' pictures taken from the server's memory (not in ffmpeg's RSS, only its cgroup's); CUDA
+  (a GTX 1060) 175 MB plus 124 MB of the server's memory and 60 MB plus 540 MB of the card's. The jobs
+  reply's `trickplay.memory` carries the figures for the decoder in use (`decoder`, and `card_…` for CUDA).
   The settings are used as they are (the user sizes them, swap included); the Jobs page's trickplay
   note shows what they take with 4K videos against the server's memory and swap (the jobs reply's
   `trickplay.memory`: `SystemMemory`, MemTotal or the cgroup's limit when lower, `hw.memsize` on macOS;

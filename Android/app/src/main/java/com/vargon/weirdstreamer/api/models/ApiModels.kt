@@ -320,9 +320,14 @@ data class TrickplaySettings(
     @SerializedName("memory") val memory: TrickplayMemory? = null
 )
 
-/** For the estimate beside the trickplay settings: an ffmpeg process and each frame of its batch for a 4K
- *  video, and the server's memory and swap (0 when unknown). */
+/** For the estimate beside the trickplay settings, for the decoder trickplay uses ([decoder]: cpu, vaapi or
+ *  cuda): an ffmpeg process and each frame of its batch for a 4K video, the server's memory and swap, and for
+ *  cuda the same in the card's own memory (0 when unknown). */
 data class TrickplayMemory(
+    @SerializedName("decoder") val decoder: String = "cpu",
+    @SerializedName("card_process_bytes_4k") val cardProcessBytes4k: Long = 0,
+    @SerializedName("card_frame_bytes_4k") val cardFrameBytes4k: Long = 0,
+    @SerializedName("card_bytes") val cardBytes: Long = 0,
     @SerializedName("process_bytes_4k") val processBytes4k: Long = 0,
     @SerializedName("frame_bytes_4k") val frameBytes4k: Long = 0,
     @SerializedName("total_bytes") val totalBytes: Long = 0,

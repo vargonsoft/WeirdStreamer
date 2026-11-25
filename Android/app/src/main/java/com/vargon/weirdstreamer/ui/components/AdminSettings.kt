@@ -561,22 +561,35 @@ internal fun trickplayNote(runners: Int, frames: Int, tp: com.vargon.weirdstream
     trickplayMemoryText(runners, frames, tp.memory) +
         " Runners 1 to ${tp.maxRunners}, frames per runner 1 to ${tp.maxFrames}, and at most ${tp.maxProduct} frames at once."
 
-/** The memory [r] runners of [f] frames take with 4K videos (each frame in a batch holds a decoder of its own:
- *  about 230 MB at 4K), against the server's memory and swap. The server uses the settings as they are. As the
- *  web's trickplayMemoryText. */
+/** The memory [r] runners of [f] frames take with 4K videos (each frame in a batch holds a decoder of its own),
+ *  as the server measured it for the decoder it uses ([m].decoder: the CPU, an Intel or AMD GPU whose buffers are
+ *  the server's memory, or an NVIDIA card with memory of its own), against the server's memory and swap, and the
+ *  card's. The server uses the settings as they are. As the web's trickplayMemoryText. */
 internal fun trickplayMemoryText(r: Int, f: Int, m: com.vargon.weirdstreamer.api.models.TrickplayMemory?): String {
     fun gb(bytes: Long) = String.format(Locale.US, "%.1f", bytes / 1073741824.0)
     val text = "$r × $f = ${r * f} frames at once."
     if (m == null || m.frameBytes4k <= 0) return text
     val estimate = r * (m.processBytes4k + f * m.frameBytes4k)
-    val with4k = "$text With 4K videos about ${gb(estimate)} GB of memory at most"
-    if (m.totalBytes <= 0) return "$with4k."
+    val decoded = when (m.decoder) {
+        "vaapi" -> ", decoded on the GPU (its buffers use the server's memory),"
+        "cuda" -> ", decoded on the graphics card,"
+        else -> ""
+    }
+    val with4k = "$text With 4K videos$decoded about ${gb(estimate)} GB of memory at most"
     val swap = m.swapBytes
     val andSwap = if (swap > 0) " and ${gb(swap)} GB of swap" else ""
-    return when {
+    val ram = when {
+        m.totalBytes <= 0 -> "$with4k."
         estimate <= m.totalBytes -> "$with4k (this server has ${gb(m.totalBytes)} GB$andSwap)."
         estimate <= m.totalBytes + swap -> "$with4k, more than this server's ${gb(m.totalBytes)} GB: the rest comes from its ${gb(swap)} GB of swap."
         else -> "$with4k, more than this server's ${gb(m.totalBytes)} GB$andSwap: ffmpeg may run out of memory, and those frames are then made one at a time."
+    }
+    if (m.cardFrameBytes4k <= 0) return ram
+    val card = r * (m.cardProcessBytes4k + f * m.cardFrameBytes4k)
+    return ram + when {
+        m.cardBytes <= 0 -> " The card needs about ${gb(card)} GB of its own memory."
+        card <= m.cardBytes -> " The card needs about ${gb(card)} GB of its ${gb(m.cardBytes)} GB."
+        else -> " The card needs about ${gb(card)} GB, more than its ${gb(m.cardBytes)} GB: batches are made smaller as it runs out."
     }
 }
 

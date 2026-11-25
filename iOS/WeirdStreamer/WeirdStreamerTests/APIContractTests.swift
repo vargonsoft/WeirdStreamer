@@ -92,6 +92,16 @@ struct APIContractTests {
         #expect(trickplayMemoryText(1, 20, m).hasSuffix("about 4.5 GB of memory at most, more than this server's 4.0 GB: the rest comes from its 2.0 GB of swap."))
         #expect(trickplayMemoryText(1, 10, m).hasSuffix("(this server has 4.0 GB and 2.0 GB of swap)."))
         #expect(trickplayMemoryText(3, 25, m).hasSuffix("those frames are then made one at a time."))
+
+        // An NVIDIA card: the server's memory, and the card's own.
+        let gpu = try decode(TrickplayMemory.self, #"""
+        {"decoder":"cuda","process_bytes_4k":183500800,"frame_bytes_4k":130023424,"total_bytes":49392123904,"swap_bytes":0,
+         "card_process_bytes_4k":62914560,"card_frame_bytes_4k":566231040,"card_bytes":6442450944}
+        """#)
+        #expect(gpu.decoder == "cuda" && gpu.cardFrameBytes4K == 566_231_040 && gpu.cardBytes == 6_442_450_944)
+        let text = trickplayMemoryText(1, 20, gpu)
+        #expect(text.contains(", decoded on the graphics card, about 2.6 GB"))
+        #expect(text.hasSuffix("The card needs about 10.6 GB, more than its 6.0 GB: batches are made smaller as it runs out."))
     }
 
     @Test func backupList() throws {
