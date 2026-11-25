@@ -237,6 +237,8 @@ type TitleDetail struct {
 	Seasons    []LibrarySeason `json:"seasons,omitempty"`     // shows: seasons with episodes on disk
 	OtherFiles []LibraryFile   `json:"other_files,omitempty"` // shows: files that aren't episodes
 	AutoSkip   bool            `json:"auto_skip,omitempty"`   // shows: the user has intros and credits skipped by themselves
+	// It has theme music for its page (GET /api/library/theme)
+	Theme bool `json:"theme,omitempty"`
 }
 
 type LibrarySeason struct {

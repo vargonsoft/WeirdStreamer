@@ -882,6 +882,7 @@ let playRequest = 0; // the latest playVideo call: an older one still checking c
 // itself (a Continue Watching card for the same file is another object), and what plays next
 // passes it on.
 async function playVideo(item, forceTranscode = false, startAt = 0, fromFolder = folderVideos().includes(item)) {
+    stopThemeMusic(800); // a title page's theme fades as its video starts
     closeSubtitleSearch();
     const request = ++playRequest;
     resetPlayer();
@@ -2283,6 +2284,7 @@ function resetPlayer() {
 }
 
 async function playDisc(item, startAt = 0, fromFolder = false) {
+    stopThemeMusic(800);
     disc = { item, info: null, title: 0, angle: 1, audio: 0, subtitle: -1, offset: 0, fromFolder };
     openPlayer(item.name + ' — reading disc…');
     document.getElementById('player-controls').hidden = true;
@@ -2520,6 +2522,73 @@ function setupPlaybackSettings() {
     box.onchange = () => {
         try { localStorage.setItem('rewindOnResume', String(box.checked)); } catch (e) { /* not kept */ }
     };
+    const theme = document.getElementById('theme-music');
+    theme.checked = themeMusicOn();
+    theme.onchange = () => {
+        try { localStorage.setItem('themeMusic', String(theme.checked)); } catch (e) { /* not kept */ }
+        if (!theme.checked) stopThemeMusic();
+        volume.disabled = !theme.checked;
+    };
+    const volume = document.getElementById('theme-volume');
+    volume.value = themeVolumeLevel();
+    volume.disabled = !theme.checked;
+    volume.onchange = () => {
+        try { localStorage.setItem('themeVolume', volume.value); } catch (e) { /* not kept */ }
+        if (themeAudio) themeAudio.volume = themeVolume();
+    };
+}
+
+// Theme music on title pages (Settings › My Account › Playback, this browser's; on by default, at
+// Low, Medium or High): a
+// show's or movie's theme (GET /api/library/theme) plays once, quietly, while its page is open, and
+// fades out when the page closes or a video plays. A browser may keep it silent until the page has
+// been clicked (a title opened from a link).
+const THEME_VOLUMES = { low: 0.15, medium: 0.3, high: 0.5 };
+let themeAudio = null;
+
+function themeVolumeLevel() {
+    let level = null;
+    try { level = localStorage.getItem('themeVolume'); } catch (e) { /* default */ }
+    return THEME_VOLUMES[level] ? level : 'medium';
+}
+
+function themeVolume() {
+    return THEME_VOLUMES[themeVolumeLevel()];
+}
+
+function themeMusicOn() {
+    try { return localStorage.getItem('themeMusic') !== 'false'; } catch (e) { return true; }
+}
+
+function playThemeMusic(libId, kind, id) {
+    stopThemeMusic(0);
+    // Not over a video that's playing
+    if (!themeMusicOn() || document.getElementById('player-modal')?.classList.contains('active')) return;
+    const audio = new Audio(`${API_BASE}/api/library/theme?lib=${encodeURIComponent(libId)}&kind=${kind}&id=${id}`);
+    audio.volume = themeVolume();
+    audio.dataset.title = `${libId}/${kind}/${id}`;
+    themeAudio = audio;
+    audio.addEventListener('ended', () => { if (themeAudio === audio) themeAudio = null; });
+    audio.play().catch(() => { /* not allowed yet, or none: stays quiet */ });
+}
+
+// Fades the theme out over fadeMs (0 stops it at once).
+function stopThemeMusic(fadeMs = 1500) {
+    const audio = themeAudio;
+    themeAudio = null;
+    if (!audio) return;
+    if (!fadeMs || audio.paused) {
+        audio.pause();
+        return;
+    }
+    const from = audio.volume, start = performance.now();
+    const step = (now) => {
+        const left = 1 - (now - start) / fadeMs;
+        if (left <= 0) { audio.pause(); return; }
+        audio.volume = from * left;
+        requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
 }
 
 // Settings › My Account › Language: the account's languages for audio and for subtitles, and
@@ -4630,6 +4699,7 @@ function setLibraryMode(libId, mode) {
 
 // Shows the folders grid or the library container, and the type tabs only for folders.
 function setView(view) {
+    if (view !== 'title') stopThemeMusic();
     state.view = view;
     const library = view !== 'folders';
     document.getElementById('library-view').hidden = !library;
@@ -5462,6 +5532,10 @@ async function showTitle(libId, kind, id, push = true, keepScroll = false) {
         return;
     }
     if (!state.libraryType) state.libraryType = kind === 'show' ? 'tv' : 'movie';
+    // Its theme music, unless it's already playing (a refresh of the same page)
+    const themeId = `${libId}/${kind}/${id}`;
+    if (!t.theme) stopThemeMusic();
+    else if (!themeAudio || themeAudio.dataset.title !== themeId) playThemeMusic(libId, kind, id);
     libraryBreadcrumb(t.title);
     container.innerHTML = '';
     const hero = createTitleHero(t);

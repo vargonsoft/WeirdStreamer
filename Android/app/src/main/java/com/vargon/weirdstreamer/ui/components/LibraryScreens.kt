@@ -471,6 +471,7 @@ fun PosterTile(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
+    TitleThemeMusic(viewModel, title)
     val playRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()

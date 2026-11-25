@@ -230,6 +230,7 @@ internal fun PhonePosterTile(
  */
 @Composable
 fun PhoneTitleScreen(viewModel: MediaViewModel, title: TitleDetail) {
+    TitleThemeMusic(viewModel, title)
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "header") { PhoneTitleHeader(viewModel, title) }
         item(key = "details") { PhoneTitleDetails(title) }

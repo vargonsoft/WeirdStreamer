@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -95,6 +96,118 @@ func (h *MediaHandler) GetLibraryPerson(w http.ResponseWriter, r *http.Request) 
 	default:
 		respondJSON(w, http.StatusOK, person)
 	}
+}
+
+// Theme music (media/themes.go) for title pages.
+
+// titleTheme finds a title's theme music: a theme file in its folder (a show's, or a movie's own),
+// else a show's intro (its first episode that has one) or a movie's theme from its credits. With
+// make, the file to send (cut or converted when needed), else only whether there is one ("" or
+// not). detail's files have disk paths.
+func (h *MediaHandler) titleTheme(ctx context.Context, lib config.MediaPath, detail *models.TitleDetail, make bool) string {
+	var files []models.LibraryFile
+	files = append(files, detail.Files...)
+	seasons := append([]models.LibrarySeason(nil), detail.Seasons...)
+	sort.SliceStable(seasons, func(i, j int) bool { // specials (season 0) last
+		return seasons[i].Season != 0 && seasons[j].Season == 0
+	})
+	for _, s := range seasons {
+		for _, e := range s.Episodes {
+			files = append(files, e.Files...)
+		}
+	}
+	files = append(files, detail.OtherFiles...)
+	if len(files) == 0 {
+		return ""
+	}
+	// Its folder's theme file
+	var dirs []string
+	if detail.Kind == "show" {
+		if dir := metadata.ShowFolderOf(lib, files[0].Path); dir != "" {
+			dirs = append(dirs, dir)
+		}
+	} else {
+		for _, f := range files {
+			if dir := filepath.Dir(f.Path); filepath.Clean(dir) != filepath.Clean(lib.Path) {
+				dirs = append(dirs, dir) // a movie's own folder, not the library's
+			}
+		}
+	}
+	for _, dir := range dirs {
+		if file := media.ThemeFile(dir); file != "" {
+			if !make {
+				return file
+			}
+			served, err := media.ServableTheme(ctx, file)
+			if err != nil {
+				log.Printf("[THEMES] %s: %v", filepath.Base(file), err)
+				return ""
+			}
+			return served
+		}
+	}
+	// Else cut from the videos
+	for _, f := range files {
+		segs, err := h.db.GetSegments(clientPath(f.Path))
+		if err != nil {
+			continue
+		}
+		var span *media.Segment
+		switch {
+		case detail.Kind == "show" && segs.Intro != nil:
+			span = &media.Segment{Start: segs.Intro.Start, End: segs.Intro.End}
+		case detail.Kind == "movie" && segs.Credits != nil:
+			if !make {
+				return f.Path
+			}
+			span = media.MovieThemeSpan(ctx, f.Path, &media.Segment{Start: segs.Credits.Start, End: segs.Credits.End}, f.Duration)
+		}
+		if span == nil {
+			continue
+		}
+		if !make {
+			return f.Path
+		}
+		cut, err := media.CutTheme(ctx, f.Path, span.Start, span.End-span.Start)
+		if err != nil {
+			log.Printf("[THEMES] %s: %v", filepath.Base(f.Path), err)
+			continue
+		}
+		return cut
+	}
+	return ""
+}
+
+// GetLibraryTheme sends a title's theme music: GET /api/library/theme?lib=<id>&kind=movie|show&id=<tmdb id>
+// (404 when it has none). Ranges work, so a large FLAC or WAV streams.
+func (h *MediaHandler) GetLibraryTheme(w http.ResponseWriter, r *http.Request) {
+	lib, ok := h.libraryFromRequest(w, r)
+	if !ok {
+		return
+	}
+	kind := r.URL.Query().Get("kind")
+	id, err := strconv.Atoi(r.URL.Query().Get("id"))
+	if (kind != "movie" && kind != "show") || err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "kind (movie or show) and id are required")
+		return
+	}
+	detail, err := h.meta.Title(r.Context(), lib, kind, id, h.libraryFileInfo)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Title not found")
+		return
+	}
+	file := h.titleTheme(r.Context(), lib, detail, true)
+	if file == "" {
+		respondError(w, http.StatusNotFound, "No theme music")
+		return
+	}
+	types := map[string]string{".m4a": "audio/mp4", ".aac": "audio/aac", ".mp3": "audio/mpeg", ".flac": "audio/flac",
+		".wav": "audio/wav"}
+	if t := types[strings.ToLower(filepath.Ext(file))]; t != "" {
+		w.Header().Set("Content-Type", t)
+	}
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	http.ServeFile(w, r, file)
 }
 
 // Collections admins make (database/collections.go): a name, a description and movies of the
@@ -292,6 +405,7 @@ func (h *MediaHandler) GetLibraryTitle(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to load title")
 		return
 	}
+	detail.Theme = h.titleTheme(r.Context(), lib, detail, false) != ""
 	annotateTitle(detail, h.requestPlayback(r))
 	if uid, ok := userID(r); ok && kind == "show" {
 		detail.AutoSkip = h.db.AutoSkip(uid, id)

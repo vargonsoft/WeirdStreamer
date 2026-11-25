@@ -153,6 +153,23 @@ struct AppTab: View {
                                              set: { model.setSetting("rewind_on_resume", $0 ? "true" : "false") }))
                         .labelsHidden()
                 }
+                SettingsRow(title: "Play theme music on title pages",
+                            detail: "A show's or movie's theme plays quietly while its page is open") {
+                    Toggle("", isOn: Binding(get: { model.themeMusic },
+                                             set: { model.setSetting("theme_music", $0 ? "true" : "false") }))
+                        .labelsHidden()
+                }
+                if model.themeMusic {
+                    SettingsRow(title: "Theme music volume") {
+                        Picker("Theme music volume", selection: Binding(get: { model.themeVolume },
+                                                                        set: { model.setSetting("theme_volume", $0) })) {
+                            ForEach(themeVolumes.map { $0.0 }, id: \.self) { level in
+                                Text(themeVolumes.first { $0.0 == level }?.1 ?? level).tag(level)
+                            }
+                        }
+                        .pickerStyle(.segmented).fixedSize()
+                    }
+                }
                 Button {
                     ImageCache.shared.removeAllObjects()
                     URLCache.shared.removeAllCachedResponses()

@@ -59,6 +59,8 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     val currentThemeFocus = remember { FocusRequester() }
     val hiddenFilesFocus = remember { FocusRequester() }
     val rewindFocus = remember { FocusRequester() }
+    val themeMusicFocus = remember { FocusRequester() }
+    val themeVolumeFocus = remember { FocusRequester() }
     val clearCacheFocus = remember { FocusRequester() }
     val updateFocus = remember { FocusRequester() }
     val subtitleStyleFocus = remember { FocusRequester() }
@@ -181,13 +183,24 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         onClick = { viewModel.updateShowHiddenFiles(!viewModel.showHiddenFiles) }) {
                         Switch(checked = viewModel.showHiddenFiles, onCheckedChange = null, colors = tvSwitchColors())
                     }
-                    TvSettingsRow("Rewind 5 seconds when resuming", focus = rewindFocus, up = hiddenFilesFocus, down = subtitleStyleFocus,
+                    TvSettingsRow("Rewind 5 seconds when resuming", focus = rewindFocus, up = hiddenFilesFocus, down = themeMusicFocus,
                         onClick = { viewModel.updateRewindOnResume(!viewModel.rewindOnResume) }) {
                         Switch(checked = viewModel.rewindOnResume, onCheckedChange = null, colors = tvSwitchColors())
                     }
+                    TvSettingsRow("Play theme music on title pages", focus = themeMusicFocus, up = rewindFocus, down = themeVolumeFocus,
+                        onClick = { viewModel.updateThemeMusic(!viewModel.themeMusic) }) {
+                        Switch(checked = viewModel.themeMusic, onCheckedChange = null, colors = tvSwitchColors())
+                    }
+                    // Its volume: OK steps Low → Medium → High
+                    TvSettingsRow("Theme music volume", THEME_VOLUMES.firstOrNull { it.first == viewModel.themeVolume }?.second ?: "Medium",
+                        themeVolumeFocus, up = themeMusicFocus, down = subtitleStyleFocus,
+                        onClick = {
+                            val n = THEME_VOLUMES.indexOfFirst { it.first == viewModel.themeVolume }
+                            viewModel.updateThemeVolume(THEME_VOLUMES[(n + 1).mod(THEME_VOLUMES.size)].first)
+                        }) {}
                     // Subtitle style: Android's caption settings, or our own
                     TvSettingsRow("Subtitle style", subtitleStyleSummary(SubtitleStyleStore.get(context)), subtitleStyleFocus,
-                        up = rewindFocus, down = clearCacheFocus, onClick = { showSubtitleStyle = true }) {
+                        up = themeVolumeFocus, down = clearCacheFocus, onClick = { showSubtitleStyle = true }) {
                         Icon(Icons.Default.ClosedCaption, contentDescription = null)
                     }
                     TvSettingsRow("Clear thumbnail cache", focus = clearCacheFocus, up = subtitleStyleFocus, down = updateFocus,

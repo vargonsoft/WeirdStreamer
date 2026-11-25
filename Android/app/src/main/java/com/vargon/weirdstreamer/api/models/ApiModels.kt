@@ -494,7 +494,9 @@ data class TitleDetail(
     @SerializedName("seasons") val seasons: List<LibrarySeason>? = null,
     @SerializedName("other_files") val otherFiles: List<LibraryFile>? = null,
     // Shows: the user has the players skip intros and credits by themselves
-    @SerializedName("auto_skip") val autoSkip: Boolean = false
+    @SerializedName("auto_skip") val autoSkip: Boolean = false,
+    // It has theme music for its page (GET /api/library/theme)
+    @SerializedName("theme") val theme: Boolean = false
 )
 
 /** A part of a video, in seconds, and where it was found ("chapters", "fingerprint", "black", "manual"). */

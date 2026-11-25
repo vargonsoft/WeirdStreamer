@@ -151,6 +151,22 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var rewindOnResume by mutableStateOf(credentialManager.getRewindOnResume())
         private set
 
+    /** Title pages play their theme music (ThemeMusic.kt), at this volume: "low", "medium" or "high". */
+    var themeMusic by mutableStateOf(credentialManager.getThemeMusic())
+        private set
+    var themeVolume by mutableStateOf(credentialManager.getThemeVolume())
+        private set
+
+    fun updateThemeMusic(on: Boolean) {
+        themeMusic = on
+        credentialManager.setThemeMusic(on)
+    }
+
+    fun updateThemeVolume(level: String) {
+        themeVolume = level
+        credentialManager.setThemeVolume(level)
+    }
+
     var contentFilter by mutableStateOf(ContentFilter.ALL)
         private set
 

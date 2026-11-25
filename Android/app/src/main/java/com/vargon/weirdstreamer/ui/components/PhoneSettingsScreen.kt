@@ -123,6 +123,31 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
                 )
             }
 
+            item {
+                ListItem(
+                    headlineContent = { Text("Play theme music on title pages") },
+                    supportingContent = { Text("A show's or movie's theme plays quietly while its page is open") },
+                    trailingContent = {
+                        Switch(checked = viewModel.themeMusic, onCheckedChange = { viewModel.updateThemeMusic(it) })
+                    },
+                    modifier = Modifier.clickable { viewModel.updateThemeMusic(!viewModel.themeMusic) }
+                )
+            }
+
+            if (viewModel.themeMusic) item {
+                ListItem(
+                    headlineContent = { Text("Theme music volume") },
+                    supportingContent = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                            THEME_VOLUMES.forEach { (level, label) ->
+                                FilterChip(selected = viewModel.themeVolume == level, onClick = { viewModel.updateThemeVolume(level) },
+                                    label = { Text(label) })
+                            }
+                        }
+                    }
+                )
+            }
+
             // Subtitle style: Android's caption settings, or our own
             item {
                 var showSubtitleStyle by remember { mutableStateOf(false) }

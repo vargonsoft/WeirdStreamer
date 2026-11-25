@@ -269,6 +269,7 @@ struct TitleDetail: Decodable {
     let seasons: [LibrarySeason]?
     let otherFiles: [LibraryFile]?
     let autoSkip: Bool?
+    let theme: Bool?          // it has theme music (GET /api/library/theme)
 }
 
 /// A progress report for the player (`POST /api/streams/progress`).

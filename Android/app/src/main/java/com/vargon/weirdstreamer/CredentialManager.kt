@@ -129,6 +129,20 @@ class CredentialManager(context: Context) {
 
     fun getRewindOnResume(): Boolean = sharedPreferences.getBoolean("rewind_on_resume", false)
 
+    // Theme music on title pages (this device's; on unless turned off)
+    fun setThemeMusic(on: Boolean) {
+        sharedPreferences.edit().putBoolean("theme_music", on).apply()
+    }
+
+    fun getThemeMusic(): Boolean = sharedPreferences.getBoolean("theme_music", true)
+
+    // Its volume: "low", "medium" (the default) or "high"
+    fun setThemeVolume(level: String) {
+        sharedPreferences.edit().putString("theme_volume", level).apply()
+    }
+
+    fun getThemeVolume(): String = sharedPreferences.getString("theme_volume", null) ?: "medium"
+
     fun saveLastPath(path: String) {
         sharedPreferences.edit().putString("last_path", path).apply()
     }

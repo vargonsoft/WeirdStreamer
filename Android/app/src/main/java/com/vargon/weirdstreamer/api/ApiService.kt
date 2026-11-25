@@ -308,6 +308,11 @@ interface ApiService {
 
     // Collections admins make: {"lib", "name", "description", "titles"} to create; {"lib", "id", "name"?,
     // "description"?, "add"?, "remove"?} to change
+    /** A title's theme music (audio, 404 when it has none). */
+    @Streaming
+    @GET("/api/library/theme")
+    suspend fun getTheme(@Query("lib") libraryId: String, @Query("kind") kind: String, @Query("id") id: Int): Response<okhttp3.ResponseBody>
+
     @GET("/api/library/person")
     suspend fun getPerson(@Query("lib") libraryId: String, @Query("id") id: Int): Response<com.vargon.weirdstreamer.api.models.PersonDetail>
 

@@ -481,6 +481,19 @@ final class AppModel {
         return setting("rewind_on_resume") == "true"
     }
 
+    /// Title pages play their theme music (Settings, on by default), at this volume: "low",
+    /// "medium" or "high" (ThemeMusic.swift).
+    var themeMusic: Bool {
+        _ = settingsVersion
+        return setting("theme_music") != "false"
+    }
+
+    var themeVolume: String {
+        _ = settingsVersion
+        let level = setting("theme_volume") ?? "medium"
+        return ["low", "medium", "high"].contains(level) ? level : "medium"
+    }
+
     /// The folder's entries, through the Show filter (folders always show) and without hidden
     /// files (names starting with a dot) unless Settings shows them.
     var filteredEntries: [FileEntry] {

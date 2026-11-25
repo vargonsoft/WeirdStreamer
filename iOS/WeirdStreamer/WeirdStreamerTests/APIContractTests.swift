@@ -188,6 +188,14 @@ struct APIContractTests {
         #expect(file.format == "1080p · H.264 · AAC 2.0")
     }
 
+    /// A title page says whether it has theme music (models.TitleDetail's theme).
+    @Test func titleThemeReadsTheServersName() throws {
+        let t = try decode(TitleDetail.self, #"{"kind":"show","tmdb_id":1,"title":"Spartacus","theme":true}"#)
+        #expect(t.theme == true)
+        #expect(themeVolume("low") < themeVolume("medium") && themeVolume("medium") < themeVolume("high"))
+        #expect(themeVolume("unknown") == themeVolume("medium"))
+    }
+
     // MARK: Fixing matches
 
     /// GET /api/media/match (metadata.MatchInfo with models.ItemMetadata and EpisodeInfo).

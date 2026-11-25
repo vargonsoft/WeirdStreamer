@@ -124,6 +124,9 @@ func main() {
 		config.GlobalConfig.Media.TempPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "tmp")
 	}
 	// Fixed copies of damaged videos, and the originals they replaced: beside the thumbnails by default
+	if config.GlobalConfig.Media.ThemePath == "" {
+		config.GlobalConfig.Media.ThemePath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "themes")
+	}
 	if config.GlobalConfig.Media.RepairPath == "" {
 		config.GlobalConfig.Media.RepairPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "repairs")
 	}
@@ -238,6 +241,7 @@ func main() {
 	api.HandleFunc("/library/collection", mediaHandler.GetLibraryCollection).Methods("GET")
 	api.HandleFunc("/library/usercollection", mediaHandler.GetUserCollection).Methods("GET")
 	api.HandleFunc("/library/person", mediaHandler.GetLibraryPerson).Methods("GET")
+	api.HandleFunc("/library/theme", mediaHandler.GetLibraryTheme).Methods("GET", "HEAD")
 	api.HandleFunc("/library/usercollections", mediaHandler.ChangeUserCollection).Methods("POST", "PUT", "DELETE")
 	api.HandleFunc("/library/new", mediaHandler.NewAdditions).Methods("GET")
 	api.HandleFunc("/playback/watched", mediaHandler.SetWatched).Methods("POST")

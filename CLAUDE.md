@@ -438,6 +438,12 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   `X-Stream-Error: unreadable`. Players then skip every fallback and show the reason under "Can't
   play this video" (`unreadableReason` on Android; the web checks codecs again on a `<video>`
   error). A read that fails partway through an original logs `Stopped serving …`.
+- **Without ffmpeg:** background jobs (trickplay, intros and credits, styled subtitles, damaged
+  videos) wait while ffmpeg or ffprobe isn't on the PATH (`ffmpegMissing`, checked in `busyFor`; the
+  Jobs page says which), and store nothing about a file read then; the scanner leaves its format
+  unread for the next scan. `backgroundCommand` runs a missing tool without nice, so the error is
+  exec.ErrNotFound and not nice's exit status 127, which read like the file being turned down (a
+  server started before ffmpeg was installed once marked every video done without frames).
 - **Streams with track options:** file transcodes take `audio=N` (index among the audio tracks)
   and `subtitle=N` (burn in that subtitle track, scaled to the video), in `TrackOptions`
   (`media/codecs.go`).
@@ -610,6 +616,21 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   title pages' files (`LibraryFile.format`) carry it ("?" sent as nothing). Every client shows it between a
   video's name and its size and length: folder-view list rows (the web's tiles too) and title pages' file and
   episode rows (each distinct format of an episode's files).
+- **Theme music** (`media/themes.go`, `GET /api/library/theme?lib=&kind=&id=`; `TitleDetail.theme` says there is
+  one): a title page plays its show's or movie's theme once, quietly, and fades it out when the page closes or a
+  video plays. The theme is a `theme.<ext>` file in the show's folder or the movie's own (flac, wav, m4a, aac, mp3
+  sent as they are; opus, ogg, oga, wma converted to AAC once; one folder with several plays the best, in that
+  order), else cut from the videos: a show's intro (the segments table's, its first episode that has one, specials
+  last), a movie's music its first ten minutes and its credits share (`MovieThemeSpan`: Chromaprint, as intros;
+  20 s or more, remembered per file), else the first minute of its credits. Cuts and conversions are AAC in
+  `media.themePath` (default `themes` beside the thumbnails, on the Jobs page's storage list), named by a hash of
+  the file, its size and time and the part cut, faded in and out, up to 2 minutes; the first request makes one
+  (a few seconds for a movie's search). A title with neither has none. Settings (each device's, on by default):
+  "Play theme music on title pages" and its volume, Low, Medium or High (15%, 30%, 50% of the device's volume):
+  web My Account › Playback (`localStorage` `themeMusic`, `themeVolume`; `playThemeMusic`, `stopThemeMusic`),
+  Android `ThemeMusic.kt` (`TitleThemeMusic` on the phone's and TV's title pages; downloaded through the app's
+  client, then `MediaPlayer`), iPhone `ThemeMusic.swift` (`AVAudioPlayer`, the ambient session: it mixes and
+  keeps to the silent switch).
 - **Video thumbnails** (`media/thumbnail.go`): a frame a minute in, and while it's blank (`frameBlank`:
   mean brightness under 0.07 or over 0.93, little spread in brightness and color, or 80% or more of it
   one color, as a white card with a small logo: a fade, a title card, one color) 30 s further, up to 3½ minutes in; the first that isn't wins, else the least blank. A video

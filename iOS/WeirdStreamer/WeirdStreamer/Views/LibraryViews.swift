@@ -231,6 +231,7 @@ struct TitleScreen: View {
             .padding(.bottom, 24)
         }
         .refreshable { model.reloadTitle() }
+        .titleThemeMusic(title, model: model)
     }
 }
 

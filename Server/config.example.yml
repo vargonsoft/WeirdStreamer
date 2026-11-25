@@ -95,6 +95,10 @@ media:
   # an indexed Matroska file here, played in their place (default: "repairs" beside the
   # thumbnails folder). Settings › Server lists them, to play both and replace the original.
   repairPath: ./var/repairs
+  # Theme music for show and movie title pages, cut from a show's intro or a movie's credits when
+  # its folder has no theme file (theme.flac, .wav, .m4a, .mp3…), and theme files browsers can't
+  # play converted (default: "themes" beside the thumbnails folder).
+  themePath: ./var/themes
   # The originals replaced by their fixed copies, deleted after 30 days or with Settings' Empty
   # trash (default: "trash" beside the thumbnails folder).
   trashPath: ./var/trash
