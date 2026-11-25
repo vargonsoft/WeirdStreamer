@@ -460,6 +460,19 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   device, and a container's `/proc/diskstats` lists the host's disks) are judged by timing 64 KB reads
   from a big file in each instead (`isTimedFS`, `IsTimedMount`; above 60 ms where someone is playing,
   500 ms otherwise), shown as Read times on the Jobs page.
+- **Trickplay on the GPU** (`media/trickplaygpu.go`): a trickplay frame costs the CPU a decode of every
+  frame from the keyframe before its time (up to a keyframe interval: on a 4K film about 1.6 CPU-seconds a
+  frame here, 7 on a Core Ultra 5). With a hardware encoder chosen in Settings (`hardwareChoice`), batches
+  decode on that GPU instead: VA-API for Quick Sync and VA-API (the render node), CUDA for NVENC;
+  VideoToolbox isn't tried. One device for the batch (`-init_hw_device`, a context per input was slower than
+  the CPU), frames scaled to 320 px on the GPU (`scale_vaapi`, `scale_cuda`) and only those copied back
+  (copying every decoded 4K frame back cost more than the CPU's decode). Measured: a tenth of the CPU time,
+  the same pictures (only the scaler differs, a little sharper). A GPU batch that makes nothing is tried
+  with one frame: if that works the GPU ran out of memory (a 6 GB GTX 1060 took 10 4K decoders, not 15), so
+  batches keep to half the pixels from then on (`tooBig`, per GPU, logged once); if not, the GPU can't decode
+  that video and its batches go back to the CPU (three such videos in a row rest the GPU for 10 minutes).
+  `cli trickplay` waits for the GPU check first (`WaitForHardware`). Keyframes-only decoding (`-skip_frame
+  nokey`) was 11-15 times faster but shows the keyframe before each time, up to ~10 s early: not used.
 - **Trickplay memory** (`media/memory.go`): each frame of a trickplay batch is an ffmpeg input with a
   decoder of its own, so a batch's memory grows with the picture: about 60 MB a process plus 228 MB a
   frame for 4K HEVC 10-bit, 84 MB for 1080p HEVC 10-bit, 45 MB for 1080p H.264 (measured, ffmpeg 8).

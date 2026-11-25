@@ -54,11 +54,13 @@ enum HardwareSettings {
     }
 
     static func note(_ r: HardwareReport, chosen: String) -> String {
-        if chosen.isEmpty { return "Transcodes and downloads are encoded by the CPU." }
+        if chosen.isEmpty { return "Transcodes and downloads are encoded by the CPU, and trickplay frames decoded by it." }
         let sessions = (r.encoders ?? []).first(where: { key($0) == chosen })?.sessions ?? 0
         return "The GPU encodes the video; decoding, scaling and burned-in subtitles stay on the CPU. " +
             "A transcode the GPU fails to start is encoded by the CPU, as are those past the limit. " +
             (sessions > 0 ? "Its driver allows \(sessions) encodes at once, so the limit is never more than that. " : "") +
-            "Downloads are encoded the same way and count toward the limit."
+            "Downloads are encoded the same way and count toward the limit. " +
+            "The GPU also decodes the videos for trickplay frames (the seek bar's pictures), outside the limit; " +
+            "a video it can't decode is done by the CPU."
     }
 }

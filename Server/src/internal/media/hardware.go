@@ -83,6 +83,14 @@ func DetectHardware() {
 	})
 }
 
+// WaitForHardware waits (up to limit) for DetectHardware's check to finish, for the cli's trickplay,
+// which decodes on the GPU the check found.
+func WaitForHardware(limit time.Duration) {
+	for deadline := time.Now().Add(limit); Hardware().Checking && time.Now().Before(deadline); {
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 // logHardware writes what the startup check found, and what Settings has chosen, to the log.
 func logHardware(r HardwareReport) {
 	if len(r.GPUs) == 0 {
@@ -174,7 +182,8 @@ func HardwareSetting() string {
 			limit += " (the driver's limit)"
 		}
 	}
-	return "Hardware encoding: " + name + " encodes transcodes and downloads, " + limit + where
+	return "Hardware encoding: " + name + " encodes transcodes and downloads, " + limit + where +
+		"; it also decodes trickplay frames"
 }
 
 // Hardware is what DetectHardware found so far.

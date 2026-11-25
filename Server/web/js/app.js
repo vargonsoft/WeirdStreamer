@@ -3786,11 +3786,13 @@ async function showHardwareSettings(streaming) {
     const note = document.getElementById('hardware-note');
     const updateNote = () => {
         const sessions = (report.encoders.find(e => `${e.id}|${e.device || ''}` === select.value) || {}).sessions || 0;
-        note.textContent = !select.value ? 'Transcodes and downloads are encoded by the CPU.' :
+        note.textContent = !select.value ? 'Transcodes and downloads are encoded by the CPU, and trickplay frames decoded by it.' :
             'The GPU encodes the video; decoding, scaling and burned-in subtitles stay on the CPU. ' +
             'A transcode the GPU fails to start is encoded by the CPU, as are those past the limit. ' +
             (sessions > 0 ? `Its driver allows ${sessions} encodes at once, so the limit is never more than that. ` : '') +
-            'Downloads are encoded the same way and count toward the limit.';
+            'Downloads are encoded the same way and count toward the limit. ' +
+            'The GPU also decodes the videos for trickplay frames (the seek bar\'s pictures), outside the limit; ' +
+            'a video it can\'t decode is done by the CPU.';
     };
     select.onchange = updateNote;
     updateNote();

@@ -136,11 +136,12 @@ streaming:
   # whatever the machine's load: a failsafe
   pauseJobsWhileStreaming: false
   # The graphics hardware that encodes the video of streaming transcodes and downloads, instead of
-  # the CPU (x264):
+  # the CPU (x264), and decodes the videos for trickplay frames:
   # "nvenc" (NVIDIA), "qsv" (Intel Quick Sync), "vaapi" (VA-API: AMD or Intel) or "videotoolbox"
   # (a Mac with Apple Silicon); empty for the
   # CPU. The server tries each GPU's encoders at startup, and Settings (Streaming) offers those
-  # that work. Decoding and filters (scaling, burned-in subtitles) stay on the CPU. A transcode
+  # that work. A transcode's decoding and filters (scaling, burned-in subtitles) stay on the CPU;
+  # trickplay decodes on the GPU (not VideoToolbox), a video it can't decode on the CPU. A transcode
   # the GPU fails to start runs on the CPU, which then encodes for 5 minutes; a download the GPU
   # fails is encoded again by the CPU.
   hardwareEncoder: ""

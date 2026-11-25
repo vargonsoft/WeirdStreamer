@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
@@ -266,6 +267,7 @@ func handleScanCommand(db *database.DB) {
 
 func handleTrickplayCommand(db *database.DB, args []string) {
 	trickplayGenerator := media.NewTrickplayGenerator(db)
+	media.WaitForHardware(time.Minute) // frames decode on the GPU Settings chose, once it's checked
 
 	if len(args) > 0 && args[0] == "clean" {
 		fmt.Println("Cleaning up orphaned trickplay images...")

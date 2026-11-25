@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -116,8 +117,9 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 
 	// Generate frames every 10 seconds, in batches of config.TrickplayFramesPerRunner (one ffmpeg
 	// process each, read for every batch so a change applies at once; the Jobs page shows the memory
-	// that takes). A frame a batch doesn't make is tried again on its own, so a failure is judged as it
-	// always was.
+	// that takes), on the GPU when Settings chose one (trickplayDecoder). A frame a batch doesn't make
+	// is tried again on its own on the CPU, so a failure is judged as it always was.
+	gpu := chooseTrickplayDecoder()
 	var pending []int
 	failures, lastGood := 0, -1
 	for i := 0; i <= int(duration)-1; i += 10 {
@@ -133,11 +135,37 @@ loop:
 			return ctx.Err()
 		}
 		n := min(config.TrickplayFramesPerRunner(), len(pending))
-		batch := pending[:n]
+		if gpu != nil {
+			if limit := gpu.batchLimit(info.Width, info.Height); limit > 0 {
+				n = min(n, limit)
+			}
+		}
+		batch := slices.Clone(pending[:n])
 		pending = pending[n:]
-		made := tg.extractBatch(ctx, src, trickplayVideoDir, codec, batch)
+		made := tg.extractBatch(ctx, src, trickplayVideoDir, codec, batch, gpu)
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if gpu != nil && !slices.Contains(made, true) {
+			// Nothing came out of the GPU. One frame on it tells a batch too big for its memory (smaller
+			// batches from now on) from a video it can't decode (the CPU's batches for the rest of it).
+			if n > 1 && tg.extractBatch(ctx, src, trickplayVideoDir, codec, batch[:1], gpu)[0] {
+				gpu.tooBig(n, info.Width, info.Height)
+				pending = append(batch[1:], pending...)
+				batch, made = batch[:1], []bool{true}
+			} else {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				fmt.Printf("Trickplay: no frames from the GPU for %s; making them on the CPU\n", videoPath)
+				gpu.videoDone(false)
+				gpu = nil
+				pending = append(batch, pending...)
+				continue
+			}
+		}
+		if gpu != nil {
+			gpu.videoDone(true)
 		}
 		for k, i := range batch {
 			if made[k] {
@@ -266,17 +294,19 @@ func isSupportedVideo(path string) bool {
 	return config.IsVideo(path)
 }
 
-// videoInfo is what making a video's frames needs to know: its length (seconds) and video codec.
+// videoInfo is what making a video's frames needs to know: its length (seconds), video codec and
+// picture size (for the GPU's batch limit).
 type videoInfo struct {
-	Duration float64
-	Codec    string
+	Duration      float64
+	Codec         string
+	Width, Height int
 }
 
 func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (videoInfo, error) {
 	cmd := backgroundCommand(context.Background(), "ffprobe",
 		"-v", "error",
 		"-select_streams", "v:0",
-		"-show_entries", "stream=codec_name,duration:format=duration",
+		"-show_entries", "stream=codec_name,width,height,duration:format=duration",
 		"-of", "default=noprint_wrappers=1",
 		videoPath,
 	)
@@ -310,6 +340,14 @@ func (tg *TrickplayGenerator) getVideoInfo(videoPath string) (videoInfo, error) 
 		case "codec_name":
 			if info.Codec == "" {
 				info.Codec = value
+			}
+		case "width":
+			if info.Width == 0 {
+				info.Width, _ = strconv.Atoi(value)
+			}
+		case "height":
+			if info.Height == 0 {
+				info.Height, _ = strconv.Atoi(value)
 			}
 		}
 	}
@@ -413,12 +451,18 @@ func (tg *TrickplayGenerator) fillLength(path string) error {
 }
 
 // extractBatch makes the frames at the given times (seconds) in one ffmpeg process, each input
-// seeking like extractFrame does, and says which came out. ffmpeg exits with success even when
-// some inputs fail, so a frame counts only when its file was written.
-func (tg *TrickplayGenerator) extractBatch(ctx context.Context, videoPath, dir, codec string, times []int) []bool {
+// seeking like extractFrame does, and says which came out; decoded and scaled on gpu when given.
+// ffmpeg exits with success even when some inputs fail, so a frame counts only when its file was
+// written.
+func (tg *TrickplayGenerator) extractBatch(ctx context.Context, videoPath, dir, codec string, times []int, gpu *gpuDecoder) []bool {
 	made := make([]bool, len(times))
 	outs := make([]string, len(times))
 	args := []string{"-v", "error"}
+	filter := "scale=320:-1,format=yuvj420p"
+	if gpu != nil {
+		args = append(args, gpu.globalArgs()...)
+		filter = gpu.filter()
+	}
 	for k, i := range times {
 		outs[k] = partPath(filepath.Join(dir, fmt.Sprintf("frame-%d.jpg", i)))
 		os.Remove(outs[k])
@@ -427,11 +471,14 @@ func (tg *TrickplayGenerator) extractBatch(ctx context.Context, videoPath, dir, 
 			matrix = codec + "_metadata=matrix_coefficients=1"
 		}
 		args = append(args, "-threads", "1")
+		if gpu != nil {
+			args = append(args, gpu.inputArgs()...)
+		}
 		args = append(args, inputFilters(videoPath, matrix)...)
 		args = append(args, "-ss", fmt.Sprintf("%.3f", float64(i)), "-noaccurate_seek", "-i", videoPath)
 	}
 	for k := range times {
-		args = append(args, "-map", fmt.Sprintf("%d:v:0", k), "-vf", "scale=320:-1,format=yuvj420p",
+		args = append(args, "-map", fmt.Sprintf("%d:v:0", k), "-vf", filter,
 			"-frames:v", "1", "-strict", "unofficial", "-y", outs[k])
 	}
 	backgroundCommand(ctx, "ffmpeg", args...).Run()

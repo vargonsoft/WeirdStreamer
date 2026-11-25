@@ -374,7 +374,8 @@ type StreamingConfig struct {
 	// Background jobs (intros and credits, trickplay, cleanup) wait while anyone is streaming,
 	// whatever the machine's load: a failsafe
 	PauseJobsWhileStreaming bool `json:"pauseJobsWhileStreaming,omitempty" yaml:"pauseJobsWhileStreaming"`
-	// The graphics hardware that encodes the video of transcodes and downloads: "" (the CPU, x264), "nvenc"
+	// The graphics hardware that encodes the video of transcodes and downloads, and decodes trickplay's
+	// frames (media.trickplayDecoder): "" (the CPU, x264), "nvenc"
 	// (NVIDIA), "qsv" (Intel Quick Sync), "vaapi" (VA-API: AMD or Intel) or "videotoolbox" (Apple
 	// Silicon Macs). Settings offers what
 	// the server found working (media.Hardware).
