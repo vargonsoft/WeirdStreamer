@@ -168,6 +168,9 @@ for each TODO item are at the end of this file.
 - On macOS, Homebrew's ffmpeg lacks the DVD reader, the chromaprint muxer and libass:
   `Server/scripts/build-ffmpeg.sh` builds the server's own into `Server/ffmpeg/bin` (git-ignored),
   which `run-e2e.sh` and `live.sh` put first on the PATH. `scripts/check-ffmpeg.sh` lists what's needed.
+- Windows: a test VM inside this machine (KVM, Windows 11, SSH into PowerShell). How to reach it, its
+  account and password are in `Server/windows.local` (git-ignored; never print the password), and
+  `~/vms/windows11/scripts/windows-vm start|stop|status|ssh` drives it. Stop it when done.
 - Emulators run the TV and phone apps; the tests use the e2e server only, never the live server or a
   real device. `Android/tools/start-emulators.sh` starts them (details in `Server/e2e/NOTES.md`).
   Install debug builds on emulators only.

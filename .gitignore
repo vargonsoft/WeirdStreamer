@@ -74,3 +74,5 @@ xcuserdata/
 # IPAs (iOS/remote/mac-ios ipa leaves one where it runs)
 *.ipa
 *.ipa.part
+# The Windows test VM: its address, account and password
+/Server/windows.local
