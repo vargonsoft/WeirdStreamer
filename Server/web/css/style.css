@@ -3636,7 +3636,8 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
 .person-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .person-facts h2 { margin: 0 0 8px; }
 .person-fact { margin: 4px 0; }
-.person-bio { line-height: 1.55; white-space: pre-line; margin: 0; }
+.person-facts { flex: 1; min-width: 0; }
+.person-bio { line-height: 1.55; white-space: pre-line; margin: 12px 0 0; }
 .person-body h3 { margin: 18px 0 10px; color: var(--heading-color, inherit); }
 .person-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
 .person-films { display: flex; flex-direction: column; gap: 6px; }
@@ -3650,3 +3651,7 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
 .person-film.here .person-film-title { color: var(--heading-color, inherit); }
 .person-film-meta { color: var(--muted-text); font-size: 13px; }
 @media (max-width: 600px) { .person-head { flex-direction: column; } .person-photo { flex-basis: auto; width: 140px; } }
+.title-file-list { margin-top: 20px; }
+/* A movie's files: fewer than a season's episodes, so a larger thumbnail */
+.title-file-list .episode-row { grid-template-columns: 320px 1fr; }
+@media (max-width: 640px) { .title-file-list .episode-row { grid-template-columns: 1fr; } }

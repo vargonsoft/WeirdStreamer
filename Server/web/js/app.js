@@ -5644,10 +5644,11 @@ async function openPersonDialog(libId, cast) {
     const body = $('.person-body');
     body.innerHTML = '';
     if (p.biography) {
+        // Beside the photo, under their facts (below it on a narrow window)
         const bio = document.createElement('p');
         bio.className = 'person-bio';
         bio.textContent = p.biography;
-        body.appendChild(bio);
+        facts.appendChild(bio);
     }
     const openTitle = (kind, id) => { close(); showTitle(libId, kind, id); };
     if (p.in_library.length) {
@@ -5705,22 +5706,54 @@ function createFilesSection(heading, files) {
         h2.textContent = heading;
         section.appendChild(h2);
     }
-    const grid = document.createElement('div');
-    grid.className = 'media-grid';
+    // Each file as a TV show's episode row: the wide thumbnail (which plays it), then its name, size and
+    // length, and Play, Fix and watched beside it.
+    const list = document.createElement('div');
+    list.className = 'episode-list title-file-list';
     files.forEach(f => {
         const item = libraryFileItem(f);
-        const wrap = document.createElement('div');
-        wrap.className = 'title-file';
-        wrap.appendChild(createMediaElement(item, { cornerButtons: false }));
-        // Play, Fix and watched in a row under the video, as on the TV and in episode rows.
+        const row = document.createElement('div');
+        row.className = 'episode-row';
+        const still = document.createElement('button');
+        still.type = 'button';
+        still.className = 'episode-still';
+        still.title = 'Play';
+        if (item.thumbnail_url) {
+            const img = document.createElement('img');
+            img.src = api.getThumbnailUrl(item.thumbnail_url);
+            img.alt = '';
+            img.loading = 'lazy';
+            still.appendChild(img);
+        }
+        addProgressOverlay(still, item.playback, item.duration);
+        still.onclick = () => playVideo(item, false, resumePosition(item));
+
+        const text = document.createElement('div');
+        text.className = 'episode-text';
+        if (f.match) {
+            const match = document.createElement('div');
+            match.className = 'episode-title';
+            match.textContent = describeMatch(f.match);
+            text.appendChild(match);
+        }
+        const name = document.createElement('div');
+        name.className = f.match ? 'episode-meta' : 'episode-title';
+        name.textContent = f.name;
+        const meta = document.createElement('div');
+        meta.className = 'episode-meta';
+        meta.textContent = [formatSize(item.size || 0), item.duration ? formatDuration(item.duration) : '', timeLeftText(item)]
+            .filter(Boolean).join(' · ');
+        text.append(name, meta);
         const actions = el('div', 'episode-actions');
+        // As on every platform: Play (Resume, Play from start), watched, then Fix
         actions.appendChild(createPlayButtons(item));
-        if (canFixMatches()) actions.appendChild(createFixIconButton(f));
         actions.appendChild(createWatchedToggle([item], 'btn secondary icon-btn watched-btn'));
-        wrap.appendChild(actions);
-        grid.appendChild(wrap);
+        if (canFixMatches()) actions.appendChild(createFixIconButton(f));
+        text.appendChild(actions);
+        row.append(still, text);
+        list.appendChild(row);
     });
-    section.appendChild(grid);
+    section.appendChild(list);
     return section;
 }
 
@@ -5888,13 +5921,14 @@ function createEpisodeRow(ep) {
 
     const actions = document.createElement('div');
     actions.className = 'episode-actions';
+    // As on every platform: Play (each file's), watched, then Fix
     ep.files.forEach(f => {
         const item = libraryFileItem(f);
         const ext = f.name.split('.').pop().toUpperCase();
         actions.appendChild(createPlayButtons(item, ep.files.length > 1 ? ext : ''));
-        if (canFixMatches()) actions.appendChild(createFixIconButton(f));
     });
     actions.appendChild(createWatchedToggle(ep.files.map(libraryFileItem), 'btn secondary icon-btn watched-btn'));
+    if (canFixMatches()) ep.files.forEach(f => actions.appendChild(createFixIconButton(f)));
     // The buttons go under the description, left-aligned.
     text.appendChild(actions);
     row.append(still, text);
