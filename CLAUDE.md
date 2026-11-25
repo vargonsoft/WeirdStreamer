@@ -601,6 +601,15 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   input bitstream filter (`inputFilters`: `-bsf:v filter_units=remove_types=6` before `-i`, chained after
   the matrix filter where there is one): thumbnails, trickplay, transcodes, download encodes and credits
   on black. The file isn't touched, and it isn't a damaged video (no fixed copy).
+- **Format lines** (`media/format.go`): each video's resolution, video codec, HDR and main audio track, as
+  "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1" or "1080p · H.264 · AAC 2.0" (resolution by width as well as
+  height, so a cropped 1920×800 film is 1080p; Dolby Vision from the stream's DOVI configuration record, else HDR10
+  or HLG from its transfer; the default audio track, DTS by its profile, Atmos from the profile). The scanner
+  builds it from its ffprobe and stores it in `media_items.format` ("" not read yet, "?" none, "DVD" for discs);
+  videos scanned before are read once by the next scan (`SetMediaFormat`, the item's ID kept). Browse items and
+  title pages' files (`LibraryFile.format`) carry it ("?" sent as nothing). Every client shows it between a
+  video's name and its size and length: folder-view list rows (the web's tiles too) and title pages' file and
+  episode rows (each distinct format of an episode's files).
 - **Video thumbnails** (`media/thumbnail.go`): a frame a minute in, and while it's blank (`frameBlank`:
   mean brightness under 0.07 or over 0.93, little spread in brightness and color, or 80% or more of it
   one color, as a white card with a small logo: a fade, a title card, one color) 30 s further, up to 3½ minutes in; the first that isn't wins, else the least blank. A video

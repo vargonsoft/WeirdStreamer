@@ -791,6 +791,8 @@ function createMediaElement(item, { cornerButtons = true, filmstrip = false } = 
     }
     
     info.appendChild(name);
+    // A video's format ("4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"), between its name and its size and length
+    if (item.format) info.appendChild(formatLineEl(item.format, 'media-format'));
     info.appendChild(size);
     const match = createMatchLabel(item.metadata);
     if (match) info.appendChild(match);
@@ -5743,7 +5745,9 @@ function createFilesSection(heading, files) {
         meta.className = 'episode-meta';
         meta.textContent = [formatSize(item.size || 0), item.duration ? formatDuration(item.duration) : '', timeLeftText(item)]
             .filter(Boolean).join(' · ');
-        text.append(name, meta);
+        text.append(name);
+        if (f.format) text.appendChild(formatLineEl(f.format, 'episode-format'));
+        text.append(meta);
         const actions = el('div', 'episode-actions');
         // As on every platform: Play (Resume, Play from start), watched, then Fix
         actions.appendChild(createPlayButtons(item));
@@ -5887,6 +5891,15 @@ function createFixIconButton(f) {
     return fix;
 }
 
+// A video's format line ("4K · HEVC · Dolby Vision · TrueHD Atmos 7.1").
+function formatLineEl(format, className) {
+    const line = document.createElement('div');
+    line.className = className;
+    line.textContent = format;
+    line.title = format;
+    return line;
+}
+
 function createEpisodeRow(ep) {
     const row = document.createElement('div');
     row.className = 'episode-row';
@@ -5917,7 +5930,10 @@ function createEpisodeRow(ep) {
     const overview = document.createElement('div');
     overview.className = 'episode-overview';
     overview.textContent = ep.overview || '';
-    text.append(title, meta, overview);
+    text.append(title);
+    // Its files' formats (one line each where they differ), between its title and its date and length
+    [...new Set(ep.files.map(f => f.format).filter(Boolean))].forEach(f => text.appendChild(formatLineEl(f, 'episode-format')));
+    text.append(meta, overview);
 
     const actions = document.createElement('div');
     actions.className = 'episode-actions';

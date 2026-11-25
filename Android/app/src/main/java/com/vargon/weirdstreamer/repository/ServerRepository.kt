@@ -279,6 +279,7 @@ class ServerRepository(
                                 height = mediaItem.height,
                                 originalPath = mediaItem.path,
                                 id = mediaItem.id,
+                                format = mediaItem.format,
                                 playback = mediaItem.playback
                             )
                         )

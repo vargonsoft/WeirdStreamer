@@ -76,6 +76,10 @@ struct FileRow: View {
                 .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name).font(.body).lineLimit(1)
+                    // A video's format, between its name and its size and length
+                    if let format = item.format, !format.isEmpty {
+                        Text(format).font(.caption).foregroundStyle(Palette.muted).lineLimit(1)
+                    }
                     if !item.isDirectory {
                         Text(infoLine(item)).font(.subheadline).foregroundStyle(Palette.muted)
                     }

@@ -47,6 +47,7 @@ struct MediaItem: Decodable, Hashable {
     let duration: Double?
     let playback: Playback?
     let liveVideo: String?
+    var format: String? = nil   // a video's: "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"
 
     var stableID: String { path }
     var isVideo: Bool { type == "video" }
@@ -164,6 +165,7 @@ struct LibraryFile: Decodable, Hashable {
     let size: Int64?
     let duration: Double?
     let thumbnailUrl: String?
+    var format: String? = nil   // "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"
     let count: Int?           // a folder of several files (unmatched): not playable as one
     let match: FileMatch?
     let playback: Playback?

@@ -707,6 +707,9 @@ private fun FileRow(
                         Text(m.title + (m.year?.let { " ($it)" } ?: ""), style = MaterialTheme.typography.titleSmall)
                     }
                     Text(file.name, style = MaterialTheme.typography.bodyMedium) // the whole name, wrapped
+                    file.format?.takeIf { it.isNotEmpty() }?.let {
+                        Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     formatBytes(file.size).takeIf { it.isNotEmpty() }?.let {
                         Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -915,6 +918,10 @@ private fun EpisodeRow(
                 String.format(Locale.US, "S%02dE%02d · %s", episode.season, episode.episode, episode.title),
                 style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis
             )
+            // Its files' formats, between its title and its date and length
+            episode.files.mapNotNull { it.format?.takeIf { f -> f.isNotEmpty() } }.distinct().forEach {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
             val meta = listOfNotNull(episode.airDate, episode.runtime?.takeIf { it > 0 }?.let { "$it min" },
                 episode.files.takeIf { it.size > 1 }?.let { "${it.size} files" })
             if (meta.isNotEmpty()) {

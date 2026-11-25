@@ -89,7 +89,11 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                     sizeStr
                 }
                 val left = timeLeftText(playback, item.duration)
-                Text(if (left != null) "$infoStr · $left" else infoStr)
+                Column {
+                    // A video's format, above its size and length
+                    item.format?.takeIf { it.isNotEmpty() }?.let { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    Text(if (left != null) "$infoStr · $left" else infoStr)
+                }
             }
         } else null,
         // Videos on a WeirdStreamer server can be downloaded for offline viewing.

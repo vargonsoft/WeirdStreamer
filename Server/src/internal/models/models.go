@@ -14,18 +14,20 @@ type User struct {
 }
 
 type MediaItem struct {
-	ID           int64     `json:"id"`
-	Path         string    `json:"path"`
-	Name         string    `json:"name"`
-	Type         string    `json:"type"` // video, image, document
-	Size         int64     `json:"size"`
-	MimeType     string    `json:"mime_type"`
-	ThumbnailURL string    `json:"thumbnail_url"`
-	Duration     float64   `json:"duration"`
-	Width        int       `json:"width"`
-	Height       int       `json:"height"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           int64   `json:"id"`
+	Path         string  `json:"path"`
+	Name         string  `json:"name"`
+	Type         string  `json:"type"` // video, image, document
+	Size         int64   `json:"size"`
+	MimeType     string  `json:"mime_type"`
+	ThumbnailURL string  `json:"thumbnail_url"`
+	Duration     float64 `json:"duration"`
+	Width        int     `json:"width"`
+	Height       int     `json:"height"`
+	// A video's format line: "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1" (stored "" before it's read, "?" for none)
+	Format    string    `json:"format,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 
 	// An Apple Live Photo's video: the .MOV of the same name beside this photo, which folder
 	// listings then leave out (media.PairLivePhotos)
@@ -221,7 +223,8 @@ type LibraryFile struct {
 	Size         int64   `json:"size,omitempty"`
 	Duration     float64 `json:"duration,omitempty"`
 	ThumbnailURL string  `json:"thumbnail_url,omitempty"`
-	Count        int     `json:"count,omitempty"` // unmatched TV shows: how many files
+	Format       string  `json:"format,omitempty"` // "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"
+	Count        int     `json:"count,omitempty"`  // unmatched TV shows: how many files
 	// Match is the movie a TV library file that isn't an episode was matched to by hand.
 	Match    *ItemMetadata `json:"match,omitempty"`
 	Playback *Playback     `json:"playback,omitempty"`

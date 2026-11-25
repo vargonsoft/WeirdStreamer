@@ -397,6 +397,9 @@ struct LibraryFileRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 if let match = file.match { Text(match.label).font(.subheadline.weight(.medium)) }
                 Text(file.name).font(.caption)
+                if let format = file.format, !format.isEmpty {
+                    Text(format).font(.caption2).foregroundStyle(Palette.muted)
+                }
                 let size = formatBytes(file.size)
                 if !size.isEmpty { Text(size).font(.caption2).foregroundStyle(Palette.muted) }
                 if let left = timeLeftText(file.playback, file.duration) {
@@ -655,6 +658,10 @@ struct EpisodeRow: View {
                         Text(files.map(\.name).joined(separator: "\n")).font(.caption2).foregroundStyle(Palette.muted)
                         Text(String(format: "S%02dE%02d · %@", episode.season, episode.episode, episode.title))
                             .font(.subheadline.weight(.medium)).padding(.top, 10)
+                        // Its files' formats, between its title and its date and length
+                        ForEach(Array(Set(files.compactMap { $0.format }.filter { !$0.isEmpty })).sorted(), id: \.self) { format in
+                            Text(format).font(.caption2).foregroundStyle(Palette.muted)
+                        }
                         let meta = [episode.airDate, episode.runtime.flatMap { $0 > 0 ? "\($0) min" : nil },
                                     files.count > 1 ? "\(files.count) files" : nil].compactMap { $0 }
                         if !meta.isEmpty {

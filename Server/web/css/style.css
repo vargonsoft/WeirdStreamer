@@ -3655,3 +3655,7 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
 /* A movie's files: fewer than a season's episodes, so a larger thumbnail */
 .title-file-list .episode-row { grid-template-columns: 320px 1fr; }
 @media (max-width: 640px) { .title-file-list .episode-row { grid-template-columns: 1fr; } }
+
+/* A video's format line: under its name, above its size and length */
+.media-format { font-size: 12px; color: var(--muted-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.episode-format { font-size: 13px; color: var(--muted-text); margin-top: 2px; }

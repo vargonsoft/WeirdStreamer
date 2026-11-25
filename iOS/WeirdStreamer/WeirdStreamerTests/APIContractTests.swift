@@ -180,6 +180,14 @@ struct APIContractTests {
         #expect(p.inLibrary.first?.role == "Tony Stark" && p.filmography.first?.inLibrary == false)
     }
 
+    /// A video's format line, in folder listings (models.MediaItem) and on title pages (models.LibraryFile).
+    @Test func formatLinesReadTheServersNames() throws {
+        let item = try decode(MediaItem.self, #"{"path":"a/b.mkv","name":"b.mkv","type":"video","format":"4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"}"#)
+        #expect(item.format == "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1")
+        let file = try decode(LibraryFile.self, #"{"path":"a/b.mkv","name":"b.mkv","format":"1080p · H.264 · AAC 2.0"}"#)
+        #expect(file.format == "1080p · H.264 · AAC 2.0")
+    }
+
     // MARK: Fixing matches
 
     /// GET /api/media/match (metadata.MatchInfo with models.ItemMetadata and EpisodeInfo).

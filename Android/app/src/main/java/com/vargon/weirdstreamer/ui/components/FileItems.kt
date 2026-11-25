@@ -261,6 +261,10 @@ fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modi
         Spacer(modifier = Modifier.width(16.dp))
         Column {
             Text(text = item.name, style = MaterialTheme.typography.bodyLarge)
+            // A video's format, between its name and its size and length
+            item.format?.takeIf { it.isNotEmpty() }?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
             if (infoText != null) {
                 val left = timeLeftText(playback, item.duration)
                 Text(text = if (left != null) "$infoText · $left" else infoText, style = MaterialTheme.typography.bodySmall)

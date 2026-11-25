@@ -476,6 +476,7 @@ func (h *MediaHandler) libraryFileInfo(path string) models.LibraryFile {
 	item, err := h.db.GetMediaItem(path)
 	if err == nil {
 		file.ID, file.Size, file.Duration, file.ThumbnailURL = item.ID, item.Size, item.Duration, item.ThumbnailURL
+		file.Format = shownFormat(item.Format)
 		if item.ThumbnailURL != "" {
 			return file
 		}

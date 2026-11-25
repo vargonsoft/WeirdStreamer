@@ -23,7 +23,8 @@ data class MediaItem(
     @SerializedName("created_at") val createdAt: String,
     @SerializedName("updated_at") val updatedAt: String,
     @SerializedName("playback") val playback: Playback? = null,
-    @SerializedName("live_video") val liveVideo: String? = null // an Apple Live Photo's .MOV
+    @SerializedName("live_video") val liveVideo: String? = null, // an Apple Live Photo's .MOV
+    @SerializedName("format") val format: String? = null // a video's: "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"
 )
 
 /** Where the signed-in user is in a video (seconds); position is 0 once it's been watched. */
@@ -241,6 +242,7 @@ data class LibraryFile(
     @SerializedName("size") val size: Long = 0,
     @SerializedName("duration") val duration: Double? = null,
     @SerializedName("thumbnail_url") val thumbnailUrl: String? = null,
+    @SerializedName("format") val format: String? = null, // "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"
     @SerializedName("count") val count: Int? = null,
     // The movie a TV-library file that isn't an episode was matched to by hand
     @SerializedName("match") val match: FileMatch? = null,

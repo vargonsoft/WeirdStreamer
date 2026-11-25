@@ -109,6 +109,7 @@ func clientItems(items []models.MediaItem) {
 	for i := range items {
 		items[i].Path = clientPath(items[i].Path)
 		items[i].LiveVideo = clientPath(items[i].LiveVideo)
+		items[i].Format = shownFormat(items[i].Format)
 	}
 }
 
@@ -136,4 +137,12 @@ func withoutDiskPath(text, path string) string {
 		return text
 	}
 	return strings.ReplaceAll(text, path, clientPath(path))
+}
+
+// shownFormat is a stored format line as clients get it: "" for a video with none ("?").
+func shownFormat(format string) string {
+	if format == "?" {
+		return ""
+	}
+	return format
 }

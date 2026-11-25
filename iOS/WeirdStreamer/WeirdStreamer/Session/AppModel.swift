@@ -18,6 +18,7 @@ struct FileEntry: Identifiable, Hashable {
     var playback: Playback? = nil
     var liveVideo: String? = nil   // an Apple Live Photo's .MOV (client path)
     var fixable = false            // a folder standing for one title, whose match an admin can fix
+    var format: String? = nil      // a video's: "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"
 
     var id: String { path }
     var isVideo: Bool { type == "video" }
@@ -421,7 +422,7 @@ final class AppModel {
                     + (directory.items ?? []).map {
                         FileEntry(name: $0.name, path: $0.path, isDirectory: false, type: $0.type, size: $0.size ?? 0,
                                   duration: $0.duration, thumbnailUrl: $0.thumbnailUrl, playback: $0.playback,
-                                  liveVideo: $0.liveVideo)
+                                  liveVideo: $0.liveVideo, format: $0.format)
                     }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                 isLoading = false
                 if isLibraryView { loadLibrary() }

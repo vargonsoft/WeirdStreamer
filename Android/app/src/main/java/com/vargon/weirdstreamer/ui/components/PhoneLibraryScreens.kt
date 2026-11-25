@@ -414,6 +414,9 @@ private fun PhoneFileRow(viewModel: MediaViewModel, file: LibraryFile, queue: Li
                 Text(m.title + (m.year?.let { " ($it)" } ?: ""), style = MaterialTheme.typography.titleSmall)
             }
             Text(file.name, style = MaterialTheme.typography.bodySmall) // the whole name, wrapped
+            file.format?.takeIf { it.isNotEmpty() }?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             formatBytes(file.size).takeIf { it.isNotEmpty() }?.let {
                 Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -591,6 +594,10 @@ private fun PhoneEpisodeRow(viewModel: MediaViewModel, episode: LibraryEpisode, 
                 String.format(Locale.US, "S%02dE%02d · %s", episode.season, episode.episode, episode.title),
                 style = MaterialTheme.typography.titleSmall
             )
+            // Its files' formats, between its title and its date and length
+            episode.files.mapNotNull { it.format?.takeIf { f -> f.isNotEmpty() } }.distinct().forEach {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             val meta = listOfNotNull(episode.airDate, episode.runtime?.takeIf { it > 0 }?.let { "$it min" },
                 episode.files.takeIf { it.size > 1 }?.let { "${it.size} files" })
             if (meta.isNotEmpty()) {

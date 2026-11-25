@@ -95,6 +95,8 @@ func (db *DB) initSchema() error {
 	// path_hash maps thumbnail and trickplay file names back to their media item, so access to
 	// them can be checked against the item's library.
 	_, _ = db.mediaConn.Exec("ALTER TABLE media_items ADD COLUMN path_hash TEXT")
+	// A video's format line ("4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"): "" not read yet, "?" none
+	_, _ = db.mediaConn.Exec("ALTER TABLE media_items ADD COLUMN format TEXT NOT NULL DEFAULT ''")
 	if _, err := db.mediaConn.Exec("CREATE INDEX IF NOT EXISTS idx_media_path_hash ON media_items(path_hash)"); err != nil {
 		return err
 	}
@@ -328,13 +330,19 @@ func (db *DB) UpdateUserPassword(username, newPassword, keepSession string) erro
 	return db.EndUserSessions(user.ID, keepSession)
 }
 
+// SetMediaFormat stores a known file's format line, keeping the rest (and its ID).
+func (db *DB) SetMediaFormat(path, format string) error {
+	_, err := db.mediaConn.Exec(`UPDATE media_items SET format = ? WHERE path = ?`, format, path)
+	return err
+}
+
 // Media operations
 func (db *DB) SaveMediaItem(item *models.MediaItem) error {
 	result, err := db.mediaConn.Exec(`
 		INSERT OR REPLACE INTO media_items 
-		(path, name, type, size, mime_type, thumbnail_url, duration, width, height, path_hash, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, item.Path, item.Name, item.Type, item.Size, item.MimeType, item.ThumbnailURL, item.Duration, item.Width, item.Height, config.CacheKey(item.Path))
+		(path, name, type, size, mime_type, thumbnail_url, duration, width, height, format, path_hash, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+	`, item.Path, item.Name, item.Type, item.Size, item.MimeType, item.ThumbnailURL, item.Duration, item.Width, item.Height, item.Format, config.CacheKey(item.Path))
 
 	if err != nil {
 		return err
@@ -348,10 +356,10 @@ func (db *DB) SaveMediaItem(item *models.MediaItem) error {
 func (db *DB) GetMediaItem(path string) (*models.MediaItem, error) {
 	item := &models.MediaItem{}
 	err := db.mediaConn.QueryRow(`
-		SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, created_at, updated_at
+		SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, format, created_at, updated_at
 		FROM media_items WHERE path = ?
 	`, path).Scan(&item.ID, &item.Path, &item.Name, &item.Type, &item.Size, &item.MimeType,
-		&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.CreatedAt, &item.UpdatedAt)
+		&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.Format, &item.CreatedAt, &item.UpdatedAt)
 
 	if err != nil {
 		return nil, err
@@ -386,10 +394,10 @@ func (db *DB) FolderPreviewItem(dir string) (url, path string) {
 func (db *DB) GetMediaItemByID(id int64) (*models.MediaItem, error) {
 	item := &models.MediaItem{}
 	err := db.mediaConn.QueryRow(`
-		SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, created_at, updated_at
+		SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, format, created_at, updated_at
 		FROM media_items WHERE id = ?
 	`, id).Scan(&item.ID, &item.Path, &item.Name, &item.Type, &item.Size, &item.MimeType,
-		&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.CreatedAt, &item.UpdatedAt)
+		&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.Format, &item.CreatedAt, &item.UpdatedAt)
 
 	if err != nil {
 		return nil, err
@@ -401,10 +409,10 @@ func (db *DB) GetMediaItemByID(id int64) (*models.MediaItem, error) {
 func (db *DB) GetMediaItemByPathHash(hash string) (*models.MediaItem, error) {
 	item := &models.MediaItem{}
 	err := db.mediaConn.QueryRow(`
-		SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, created_at, updated_at
+		SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, format, created_at, updated_at
 		FROM media_items WHERE path_hash = ?
 	`, hash).Scan(&item.ID, &item.Path, &item.Name, &item.Type, &item.Size, &item.MimeType,
-		&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.CreatedAt, &item.UpdatedAt)
+		&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.Format, &item.CreatedAt, &item.UpdatedAt)
 
 	if err != nil {
 		return nil, err
@@ -418,12 +426,12 @@ func (db *DB) ListMediaItems(mediaType string) ([]models.MediaItem, error) {
 
 	if mediaType != "" {
 		rows, err = db.mediaConn.Query(`
-			SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, created_at, updated_at
+			SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, format, created_at, updated_at
 			FROM media_items WHERE type = ? ORDER BY name
 		`, mediaType)
 	} else {
 		rows, err = db.mediaConn.Query(`
-			SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, created_at, updated_at
+			SELECT id, path, name, type, size, mime_type, thumbnail_url, duration, width, height, format, created_at, updated_at
 			FROM media_items ORDER BY name
 		`)
 	}
@@ -437,7 +445,7 @@ func (db *DB) ListMediaItems(mediaType string) ([]models.MediaItem, error) {
 	for rows.Next() {
 		var item models.MediaItem
 		if err := rows.Scan(&item.ID, &item.Path, &item.Name, &item.Type, &item.Size, &item.MimeType,
-			&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			&item.ThumbnailURL, &item.Duration, &item.Width, &item.Height, &item.Format, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

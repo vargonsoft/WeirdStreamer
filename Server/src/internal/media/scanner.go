@@ -154,6 +154,10 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 		s.job.Step(1)
 		if known, err := s.db.GetMediaItem(path); err == nil && known.Size == size {
 			*processed++
+			// A video scanned before format lines were (or since): its format read once, the rest kept
+			if known.Type == "video" && known.Format == "" {
+				return next(s.db.SetMediaFormat(path, videoFormat(path)))
+			}
 			return next(nil)
 		}
 
@@ -189,6 +193,7 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 					}
 					item.ThumbnailURL = s.GenerateVideoThumbnail(path)
 				}
+				item.Format = "DVD"
 			} else if err := s.getVideoMetadata(item); err == nil {
 				item.ThumbnailURL = s.GenerateVideoThumbnail(path)
 			}
@@ -281,6 +286,13 @@ func (s *Scanner) getVideoMetadata(item *models.MediaItem) error {
 	}
 	if err := json.Unmarshal(output, &probe); err != nil {
 		return err
+	}
+	var fp formatProbe
+	if json.Unmarshal(output, &fp) == nil {
+		item.Format = formatLine(fp)
+	}
+	if item.Format == "" {
+		item.Format = "?"
 	}
 	d, _ := strconv.ParseFloat(probe.Format.Duration, 64)
 	item.Duration = orPackets(item.Path, d)
@@ -459,4 +471,23 @@ func (s *Scanner) cleanupOrphanedThumbnails() error {
 	}
 
 	return nil
+}
+
+// videoFormat reads a video's format line (a disc's is "DVD"); "?" when it has none or can't be read.
+func videoFormat(path string) string {
+	if IsDiscImage(path) {
+		return "DVD"
+	}
+	out, err := backgroundCommand(context.Background(), "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", Playable(path)).Output()
+	if err != nil {
+		return "?"
+	}
+	var fp formatProbe
+	if json.Unmarshal(out, &fp) != nil {
+		return "?"
+	}
+	if line := formatLine(fp); line != "" {
+		return line
+	}
+	return "?"
 }
