@@ -100,7 +100,9 @@ stop_windows() {
     if [ "$win_started" = 1 ]; then
         win_started=0
         echo "== Stopping the Windows build machine"
-        bash -c "$(win_value VM_STOP)" >/dev/null 2>&1 || echo "   It didn't stop: stop it yourself ($(win_value VM_STOP))." >&2
+        if ! bash -c "$(win_value VM_STOP)" 2>&1 | sed 's/^/   /' >&2; then
+            echo "   It didn't stop: stop it yourself ($(win_value VM_STOP))." >&2
+        fi
     fi
 }
 
@@ -149,7 +151,7 @@ for target in "${targets[@]}"; do
                     echo "== Starting the Windows build machine ($win_host)"
                     win_started=1
                     trap stop_windows EXIT
-                    bash -c "$(win_value VM_START)" >/dev/null 2>&1 || true
+                    bash -c "$(win_value VM_START)" 2>&1 | sed 's/^/   /' >&2 || true
                 fi
                 if ! win_ssh 'go version; gcc --version' >/dev/null 2>&1; then
                     problem "Can't build windows-amd64 on $win_host: it isn't reachable by SSH with its key (is it running? VM_START and VM_STOP in $win_conf let this script start it), or lacks Go or MinGW-w64 gcc."
