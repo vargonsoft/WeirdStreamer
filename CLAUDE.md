@@ -958,8 +958,10 @@ What's built (server):
   to groups that can open every one of the libraries (`canSeeTyped`), and their libraries are in no regular channel
   (`InTypedChannel`). Folder libraries are read from their files (`FolderTitles`): series (SnnEnn, or names alike
   but for numbers, or Season folders), collections (fewer than 5 videos join the parent's) of long videos, and
-  short clips packed into half-hour blocks (`Item.Parts`: the first clip the program, the rest its filler;
-  `ProgramInfo.block`, no voice-overs), which also fill the definition's other channels (`clipsBesides`).
+  short clips aired in half-hour blocks (an hour for long clips, `Title.BlockLength`) that the planner fills when it
+  schedules one (`planner.block`: the collection's clips aired longest ago; the first the program, the rest its
+  filler, `Slot.Parts`; `ProgramInfo.block`, no voice-overs), topped up by the definition's clips not aired in the
+  last 2 hours, which fill all its channels' gaps.
   `TypedChannels` splits a definition's content: a channel per kind with a day of it, the rest joining the
   largest, then splits while each part has two weeks. Each type has four channel names with logos of their own
   (`TypedChannelNames`, `typedDesigns` in `logodesign.go`, `typed-*.json`), taken in order (`TypedName`; a fifth is

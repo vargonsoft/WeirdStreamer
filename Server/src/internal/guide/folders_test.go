@@ -2,6 +2,7 @@ package guide
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -112,11 +113,9 @@ func TestFolderCollections(t *testing.T) {
 	}
 	names := map[string]int{}
 	for _, b := range blocks {
-		for _, it := range b.Items {
-			names[b.Name] += len(it.Parts)
-			if it.Duration > halfHour {
-				t.Errorf("%s: a block of %v", b.Name, it.Duration)
-			}
+		names[b.Name] += len(b.Items)
+		if !b.Block || b.BlockLength != halfHour || b.typicalSlot() != halfHour {
+			t.Errorf("%s: block %v of %v", b.Name, b.Block, b.BlockLength)
 		}
 	}
 	// the people's folders (two clips each) join Shorts; the loose clips are the library's own
@@ -173,29 +172,42 @@ func TestTypedChannelSplit(t *testing.T) {
 }
 
 func TestPlanBlock(t *testing.T) {
-	block := Item{Path: "lib/a.mp4", Duration: 20 * time.Minute, Parts: []Part{
-		{Path: "lib/a.mp4", Duration: 8 * time.Minute}, {Path: "lib/b.mp4", Duration: 7 * time.Minute},
-		{Path: "lib/c.mp4", Duration: 5 * time.Minute}}}
-	ch := Channel{Key: "typed:d/clips:1", Kind: ChannelShows, AnyTime: true,
-		Titles: []*Title{{Key: "folder:x:clips", Kind: KindShow, Name: "Shorts", Block: true, Items: []Item{block}}}}
+	clip := func(name string, minutes int) Item {
+		return Item{Path: "lib/" + name + ".mp4", Duration: time.Duration(minutes) * time.Minute, Name: name}
+	}
+	title := &Title{Key: "folder:x:clips", Kind: KindShow, Name: "Shorts", Folder: true, Block: true, BlockLength: halfHour,
+		Items: []Item{clip("a", 8), clip("b", 7), clip("c", 12), clip("d", 5), clip("e", 9), clip("f", 6)}}
+	ch := Channel{Key: "typed:d/clips:1", Kind: ChannelShows, AnyTime: true, Titles: []*Title{title}}
 	set := Settings{PrimeTime: 20, Location: time.UTC}
 	from := time.Date(2026, 11, 26, 13, 0, 0, 0, time.UTC)
-	slots := Plan(ch, from, from.Add(halfHour), NewState(set), nil)
+	st := NewState(set)
+	// the channel's own clips fill what's left: none aired in the last 2 hours
+	clips := []Clip{{Path: "lib/a.mp4", Duration: 8 * time.Minute}, {Path: "lib/g.mp4", Duration: 2 * time.Minute}}
+	slots := Plan(ch, from, from.Add(2*halfHour), st, clips)
 	var got []string
 	for _, s := range slots {
 		got = append(got, s.Kind+":"+s.Path)
 	}
-	want := []string{"program:lib/a.mp4", "filler:lib/b.mp4", "filler:lib/c.mp4", "bumper:"}
-	if len(got) != len(want) {
+	// a (8) b (7) c (12) fill 27 minutes, d no longer fits, g (2) tops it up, a bumper the last minute; the
+	// next block starts with the clips never aired: d e f
+	want := []string{"program:lib/a.mp4", "filler:lib/b.mp4", "filler:lib/c.mp4", "filler:lib/g.mp4", "bumper:",
+		"program:lib/d.mp4", "filler:lib/e.mp4", "filler:lib/f.mp4"}
+	if len(got) < len(want) {
 		t.Fatalf("%v", got)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Errorf("%v, want %v", got, want)
+			t.Fatalf("%v, want %v…", got, want)
 		}
 	}
-	if slots[2].End() != from.Add(20*time.Minute) || slots[3].End() != from.Add(halfHour) {
-		t.Errorf("times %v %v", slots[2].End(), slots[3].End())
+	if slots[0].Parts != 3 || slots[5].Parts < 3 {
+		t.Errorf("parts %d, %d", slots[0].Parts, slots[5].Parts)
+	}
+	if slots[4].End() != from.Add(halfHour) || slots[5].Start != from.Add(halfHour) {
+		t.Errorf("times %v %v", slots[4].End(), slots[5].Start)
+	}
+	if info := programInfo("lib", title, slots[0].Item, slots[0].Parts); !strings.Contains(info, `"title":"Shorts - a and 2 more"`) {
+		t.Errorf("info %s", info)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 )
@@ -41,6 +42,7 @@ type Slot struct {
 	Item    int    // programs: the index of its item (episode) in the title's Items
 	Path    string // programs and filler: the file's client path
 	Track   string // programs: what placed it ("weekly:<weekday>:<minutes>", "strip", "movie")
+	Parts   int    // a block's program: how many clips the block has (the others follow it as filler)
 }
 
 // End is when the slot ends.
@@ -138,6 +140,9 @@ func (st *State) Record(s Slot) {
 			st.lastAired[s.Track] = s.Start
 		}
 		st.lastAired[s.Title] = s.Start
+		if s.Path != "" {
+			st.lastAired[s.Path] = s.Start // its file too: a block's first clip, also a filler clip elsewhere
+		}
 		part, day := st.set.part(s.Start)
 		st.partCount[partKey(day, part)]++
 	case SlotFiller:
@@ -177,30 +182,58 @@ func Plan(ch Channel, from, to time.Time, st *State, clips []Clip) []Slot {
 			t = t.Add(halfHour)
 			continue
 		}
+		if title.Block {
+			end := t.Add(max(title.BlockLength, halfHour))
+			slots := p.block(title, t, end, track)
+			out = append(out, slots...)
+			out = append(out, p.fill(slots[len(slots)-1].End(), end, title.Year)...)
+			t = end
+			continue
+		}
 		it := title.Items[item]
 		prog := Slot{Channel: ch.Key, Start: t, Length: it.Duration, Kind: SlotProgram, Title: title.Key, Item: item,
 			Path: it.Path, Track: track}
+		st.Record(prog)
+		out = append(out, prog)
 		end := t.Add(slotLength(it.Duration))
-		after := prog.End()
-		if len(it.Parts) > 0 {
-			// A block: its first clip is the program, the others follow as its filler (each recorded as aired).
-			prog.Path, prog.Length = it.Parts[0].Path, it.Parts[0].Duration
-			st.Record(prog)
-			out = append(out, prog)
-			after = prog.End()
-			for _, pt := range it.Parts[1:] {
-				s := Slot{Channel: ch.Key, Start: after, Length: pt.Duration, Kind: SlotFiller, Path: pt.Path}
-				st.Record(s)
-				out = append(out, s)
-				after = s.End()
-			}
-		} else {
-			st.Record(prog)
-			out = append(out, prog)
-		}
-		out = append(out, p.fill(after, end, title.Year)...)
+		out = append(out, p.fill(prog.End(), end, title.Year)...)
 		t = end
 	}
+	return out
+}
+
+// block fills a block of clips from start to end with the title's clips aired longest ago (never aired
+// first, in its order), as many as fit: the first is the program, the others its filler, each recorded as
+// aired. The planner's fill tops up what's left.
+func (p *planner) block(title *Title, start, end time.Time, track string) []Slot {
+	order := make([]int, 0, len(title.Items))
+	for i, it := range title.Items {
+		if it.Duration > 0 {
+			order = append(order, i)
+		}
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		return p.st.lastAired[title.Items[order[a]].Path].Before(p.st.lastAired[title.Items[order[b]].Path])
+	})
+	var out []Slot
+	t := start
+	for _, i := range order {
+		it := title.Items[i]
+		if len(out) > 0 && t.Add(it.Duration).After(end) {
+			continue
+		}
+		s := Slot{Channel: p.ch.Key, Start: t, Length: it.Duration, Kind: SlotFiller, Path: it.Path}
+		if len(out) == 0 {
+			s.Kind, s.Title, s.Item, s.Track = SlotProgram, title.Key, i, track
+		}
+		p.st.Record(s)
+		out = append(out, s)
+		t = s.End()
+		if end.Sub(t) < minFillerGap {
+			break
+		}
+	}
+	out[0].Parts = len(out)
 	return out
 }
 

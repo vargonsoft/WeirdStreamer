@@ -197,8 +197,10 @@ Guide library grouped by network and genre. For example a Kids type from two lib
   - Any other folder is a **collection**: its videos air in a shuffled order, each once before any
     again. A folder with fewer than five videos joins its parent's collection (the library's own loose
     files are one).
-  - A collection's **short clips** (15 minutes or less) air packed into half-hour blocks (an hour
-    when they're long) named for their folder, and fill the gaps on the definition's other channels.
+  - A collection's **short clips** (15 minutes or less) air in half-hour blocks (an hour when they're
+    long) named for their folder. Each block is filled when it's scheduled, with the collection's clips aired
+    longest ago, and its last minutes with the definition's other clips; the clips fill every channel's gaps,
+    none again within 2 hours (so a block channel's gaps aren't bumpers).
     Typed channels take no other filler: without clips of their own the gaps are bumpers.
   - A program's picture is its video's own thumbnail. Its title is the folder's and the file's: "Folder - The
     Pier" (an episode's own title where its file name has one, else the file name without the series' name, its

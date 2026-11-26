@@ -44,7 +44,7 @@ type ProgramInfo struct {
 	Episode         int      `json:"episode,omitempty"`
 	EpisodeTitle    string   `json:"episode_title,omitempty"`
 	EpisodeOverview string   `json:"episode_overview,omitempty"`
-	Block           bool     `json:"block,omitempty"` // a block of short clips (its filler is its other clips)
+	Block           bool     `json:"block,omitempty"` // a block of short clips (the rest of the block is its filler)
 }
 
 // Service keeps the Guide's channels planned: at start, every hour, and when asked (settings
@@ -263,7 +263,7 @@ func (s *Service) Refresh(ctx context.Context) error {
 			continue
 		}
 		for _, ch := range TypedChannels(def.ID, def.Type, def.Max, groups) {
-			if err := place(ch, clipsBesides(ch, clips)); err != nil {
+			if err := place(ch, clips); err != nil {
 				return err
 			}
 		}
@@ -401,13 +401,13 @@ func (s *Service) planChannel(ch Channel, c database.GuideChannel, set Settings,
 			if t.Library != "" {
 				lib = t.Library
 			}
-			rows[i].Info = programInfo(lib, t, sl.Item)
+			rows[i].Info = programInfo(lib, t, sl.Item, sl.Parts)
 		}
 	}
 	return len(rows), s.db.AddGuideSlots(rows)
 }
 
-func programInfo(lib string, t *Title, item int) string {
+func programInfo(lib string, t *Title, item, parts int) string {
 	info := ProgramInfo{Kind: t.Kind, TMDBID: t.TMDBID, Library: lib, Title: t.Name, Year: t.Year, Rating: t.Rating,
 		Genres: t.Genres, Overview: t.Overview, Poster: t.Poster, Block: t.Block}
 	if item < len(t.Items) {
@@ -415,8 +415,12 @@ func programInfo(lib string, t *Title, item int) string {
 		if t.Kind == KindShow {
 			info.Season, info.Episode, info.EpisodeTitle, info.EpisodeOverview = it.Season, it.Episode, it.Name, it.Overview
 		}
-		if t.Folder && it.Name != "" {
-			info.Title, info.EpisodeTitle = t.Name+" - "+it.Name, "" // a folder's program: the folder and the file
+		name := it.Name
+		if t.Block && parts > 1 { // a block: its first clip, and how many follow
+			name += " and " + strconv.Itoa(parts-1) + " more"
+		}
+		if t.Folder && name != "" {
+			info.Title, info.EpisodeTitle = t.Name+" - "+name, "" // a folder's program: the folder and the file
 		}
 		if info.Poster == "" {
 			info.Poster = it.Poster
@@ -702,29 +706,6 @@ func (s *Service) typedContent(ctx context.Context, cfg *config.Config, def conf
 	}
 	sort.Slice(clips, func(i, j int) bool { return clips[i].Path < clips[j].Path })
 	return groups, clips, nil
-}
-
-// clipsBesides are the clips that may fill a typed channel's gaps: those not in its own blocks (they'd
-// air twice close together: as filler, then in the block).
-func clipsBesides(ch Channel, clips []Clip) []Clip {
-	own := map[string]bool{}
-	for _, t := range ch.Titles {
-		for _, it := range t.Items {
-			for _, p := range it.Parts {
-				own[p.Path] = true
-			}
-		}
-	}
-	if len(own) == 0 {
-		return clips
-	}
-	var out []Clip
-	for _, c := range clips {
-		if !own[c.Path] {
-			out = append(out, c)
-		}
-	}
-	return out
 }
 
 // takenNames are the names the active channels besides key have.

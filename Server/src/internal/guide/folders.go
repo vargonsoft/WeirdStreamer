@@ -143,9 +143,13 @@ func FolderTitles(libraryID, libraryName string, files []FolderFile) (series, lo
 		}
 		if len(short) > 0 {
 			clips = append(clips, short...)
-			if b := packBlocks(short, "clips|"+dir); len(b) > 0 {
-				blocks = append(blocks, &Title{Key: "folder:" + key + ":clips", Kind: KindShow, Name: name(dir), Folder: true, Block: true, Items: b})
+			items := make([]Item, len(short))
+			for i, c := range short {
+				items[i] = Item{Path: c.Path, Duration: c.Duration, Poster: c.Poster, Name: c.Name}
 			}
+			shuffle(items, "clips|"+dir) // the order clips never aired go in
+			blocks = append(blocks, &Title{Key: "folder:" + key + ":clips", Kind: KindShow, Name: name(dir), Folder: true,
+				Block: true, BlockLength: blockLength(short), Items: items})
 		}
 	}
 	return series, long, blocks, clips
@@ -317,48 +321,18 @@ func numbers(rel string) []int {
 	return out
 }
 
-// packBlocks packs clips into blocks of a half hour (an hour when they're long), in an order shuffled
-// once: each block an item whose parts air one after another.
-func packBlocks(clips []Clip, seed string) []Item {
-	order := slices.Clone(clips)
-	shuffle(order, seed)
-	lengths := make([]time.Duration, len(order))
-	for i, c := range order {
+// blockLength is how long a collection's blocks of clips are: a half hour, or an hour when its clips
+// are long (the planner fills each with the clips aired longest ago).
+func blockLength(clips []Clip) time.Duration {
+	lengths := make([]time.Duration, len(clips))
+	for i, c := range clips {
 		lengths[i] = c.Duration
 	}
 	slices.Sort(lengths)
-	target := halfHour
-	if lengths[len(lengths)/2] > 8*time.Minute {
-		target = 2 * halfHour
+	if len(lengths) > 0 && lengths[len(lengths)/2] > 8*time.Minute {
+		return 2 * halfHour
 	}
-	var out []Item
-	var cur Item
-	for _, c := range order {
-		if len(cur.Parts) > 0 && cur.Duration+c.Duration > target {
-			out = append(out, cur)
-			cur = Item{}
-		}
-		if len(cur.Parts) == 0 {
-			cur.Path, cur.Poster = c.Path, c.Poster
-		}
-		cur.Parts = append(cur.Parts, Part{Path: c.Path, Duration: c.Duration})
-		cur.Duration += c.Duration
-	}
-	if len(cur.Parts) > 0 {
-		out = append(out, cur)
-	}
-	// a block's part of its title: its first clip's name, and how many follow
-	names := map[string]string{}
-	for _, c := range order {
-		names[c.Path] = c.Name
-	}
-	for i := range out {
-		out[i].Name = names[out[i].Parts[0].Path]
-		if n := len(out[i].Parts) - 1; n > 0 {
-			out[i].Name += " and " + strconv.Itoa(n) + " more"
-		}
-	}
-	return out
+	return halfHour
 }
 
 func hashKey(s string) string { return strconv.FormatUint(hash(s), 36) }
