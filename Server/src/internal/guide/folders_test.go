@@ -81,8 +81,10 @@ func TestFileNames(t *testing.T) {
 	}
 	for in, want := range map[string]string{
 		"Velvet Hour - S01E02 - The Pier": "The Pier",
-		"Velvet Hour - S01E02":            "S01E02",
-		"Velvet Hour":                     "Velvet Hour",
+		"Velvet Hour - S01E02":            "",
+		"Velvet Hour":                     "",
+		"S01E02":                          "",
+		"Episode5 s05":                    "Episode5 s05",
 	} {
 		if got := episodeSummary(in, "Velvet Hour"); got != want {
 			t.Errorf("summary %q: %q, want %q", in, got, want)

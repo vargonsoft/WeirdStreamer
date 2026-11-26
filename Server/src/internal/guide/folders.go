@@ -264,20 +264,23 @@ func fileTitle(rel string) string {
 }
 
 // episodeSummary is an episode's part of its program's title ("Velvet Hour - The Pier"): its own title
-// where the file name has one, else the file name without the series' name ("S01E02"), else all of it.
+// where the file name has one, else the file name without the series' name; "" when that's only its
+// SnnEnn or nothing (the program is then titled the series alone: the guide shows the season and episode).
 func episodeSummary(title, series string) string {
 	if t := episodeTitle(title, series); t != "" {
 		return t
 	}
 	t := title
-	if len(t) > len(series) && strings.EqualFold(t[:len(series)], series) {
+	if len(t) >= len(series) && strings.EqualFold(t[:len(series)], series) {
 		t = strings.Trim(t[len(series):], " -_.:")
 	}
-	if t == "" {
-		return title
+	if onlySeasonEp.MatchString(t) {
+		return ""
 	}
 	return t
 }
+
+var onlySeasonEp = regexp.MustCompile(`(?i)^\s*(?:s\d{1,3}[ ._-]?e\d{1,4})?\s*$`)
 
 // episodeTitle is what's left of an episode's file title for the guide: without the series' name and
 // its SnnEnn ("Velvet Hour - S01E02 - The Pier" is "The Pier"), "" when nothing is.

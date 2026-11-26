@@ -202,7 +202,8 @@ Guide library grouped by network and genre. For example a Kids type from two lib
     Typed channels take no other filler: without clips of their own the gaps are bumpers.
   - A program's picture is its video's own thumbnail. Its title is the folder's and the file's: "Folder - The
     Pier" (an episode's own title where its file name has one, else the file name without the series' name, its
-    extension and tags like 1080p, with _ as spaces); a block's is its first clip's "and 3 more".
+    extension and tags like 1080p, with _ as spaces; when that leaves only its SnnEnn, the title is the folder's
+    alone, as the guide shows the season and episode); a block's is its first clip's "and 3 more".
 - **Scheduling** is a network channel's: prime-time positions weekly, strips through the day, the
   rest as the regular channels do. Collections and blocks are titles like shows, so they rotate too.
 - **Voice-overs** are made for series and long videos, not for blocks of clips.

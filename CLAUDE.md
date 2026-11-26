@@ -964,7 +964,7 @@ What's built (server):
   largest, then splits while each part has two weeks. Each type has four channel names with logos of their own
   (`TypedChannelNames`, `typedDesigns` in `logodesign.go`, `typed-*.json`), taken in order (`TypedName`; a fifth is
   the first name and a number). A folder library's program is titled "<folder> - <the file's>" (`Title.Folder`):
-  an episode's own title, else its file name cleaned (`fileTitle`, `episodeSummary`); a block's first clip "and
+  an episode's own title, else its file name cleaned (`fileTitle`, `episodeSummary`; nothing but SnnEnn: the folder's alone); a block's first clip "and
   N more". Late Night channels aren't previewed on the Guide channel. Nothing checked in names what a Late Night library holds.
 - **Settings' Guide tab** (admins; web, phone, TV, iPhone): `GET/PUT /api/admin/guide` (`handlers/guideadmin.go`):
   typed channels, every library's Show in Guide (movie and TV) and Use for Guide Filler, prime time, the weather
