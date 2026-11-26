@@ -289,6 +289,7 @@ func serve(parent context.Context) {
 	api.HandleFunc("/guide/voiceover/report", guideHandler.ReportVoiceOver).Methods("POST")
 	api.HandleFunc("/admin/guide", guideHandler.GuideSettings).Methods("GET")
 	api.HandleFunc("/admin/guide", guideHandler.SaveGuideSettings).Methods("PUT")
+	api.HandleFunc("/admin/guide/replan", guideHandler.ReplanGuide).Methods("POST")
 	api.HandleFunc("/admin/guide/voices", guideHandler.Voices).Methods("GET")
 	api.HandleFunc("/admin/guide/voices/try", guideHandler.TryVoice).Methods("POST")
 	api.HandleFunc("/admin/guide/voices/fix", guideHandler.SaveVoiceFix).Methods("POST")

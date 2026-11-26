@@ -1243,3 +1243,19 @@ async function saveGuideSettings() {
 }
 
 document.getElementById('guide-save')?.addEventListener('click', saveGuideSettings);
+
+// Plan again from now: every channel from its next program, the next 6 hours too (asked first).
+async function replanGuide() {
+    const message = document.getElementById('guide-replan-message');
+    if (!confirm('Plan every channel again from its next program?\n\nWhat each channel airs now stays. Everything after it, the next 6 hours too, is planned anew, so the Guide everyone sees changes.')) return;
+    message.textContent = 'Planning…';
+    try {
+        const r = await api.replanGuide();
+        message.textContent = r.message || 'Planned again.';
+        loadGuideSettings();
+    } catch (error) {
+        message.textContent = 'Couldn’t plan again: ' + error.message;
+    }
+}
+
+document.getElementById('guide-replan')?.addEventListener('click', replanGuide);

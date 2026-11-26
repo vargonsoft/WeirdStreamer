@@ -136,6 +136,9 @@ interface ApiService {
     @GET("/api/admin/guide")
     suspend fun getGuideSettings(): Response<com.vargon.weirdstreamer.api.models.GuideAdmin>
 
+    @POST("/api/admin/guide/replan")
+    suspend fun replanGuide(): Response<JsonObject>
+
     @PUT("/api/admin/guide")
     suspend fun saveGuideSettings(@Body body: com.vargon.weirdstreamer.api.models.GuideAdminSave): Response<com.vargon.weirdstreamer.api.models.GuideAdmin>
 

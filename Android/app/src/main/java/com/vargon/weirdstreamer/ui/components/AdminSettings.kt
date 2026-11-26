@@ -444,7 +444,24 @@ class GuideSettingsModel(val server: ServerRepository, private val scope: Corout
         pendingSave?.cancel()
         pendingSave = scope.launch { delay(600); pendingSave = null; save() }
     }
+
+    var replanning by mutableStateOf(false); private set
+
+    /** Plans every channel again from its next program, the next 6 hours too (asked first). */
+    fun replan() {
+        replanning = true
+        scope.launch {
+            val (r, err) = attempt { server.api.replanGuide() }
+            replanning = false
+            message = if (err != null) err to true else (r?.get("message")?.asString ?: "Planned again.") to false
+            if (err == null) load() // the channels' names and numbers now
+        }
+    }
 }
+
+/** What Plan again from now asks before it runs. */
+internal const val REPLAN_QUESTION = "What each channel airs now stays. Everything after it, the next 6 hours too, is planned " +
+    "anew, so the Guide everyone sees changes."
 
 @Composable
 fun rememberGuideSettings(server: ServerRepository): GuideSettingsModel {

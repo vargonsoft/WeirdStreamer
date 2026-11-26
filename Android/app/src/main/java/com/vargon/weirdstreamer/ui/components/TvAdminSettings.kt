@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ChevronRight
@@ -549,6 +550,7 @@ fun TvGuideTab(server: ServerRepository, first: FocusRequester, up: FocusRequest
     // dialogs by index: a save brings the lists back from the server as new objects, in the same order
     var typedOpen by remember { mutableStateOf<Int?>(null) }
     var libraryOpen by remember { mutableStateOf<Int?>(null) }
+    var replanAsk by remember { mutableStateOf(false) }
     val data = m.data
     if (data == null) {
         TvPlaceholderRow(m.loadError ?: "Loading…", first, up)
@@ -590,6 +592,16 @@ fun TvGuideTab(server: ServerRepository, first: FocusRequester, up: FocusRequest
         entry = TextEntry("Weather ZIP code", m.weatherZip, TvEntryKind.Number) { v -> m.weatherZip = v.filter { it.isDigit() }.take(5); m.save() }
     }) { TvChevron() }
     TvNote(guideExtras(data.musicTracks, data.voiceOvers))
+
+    TvSectionTitle("Plan again")
+    TvNote("The Guide plans by itself every hour and never changes the next 6 hours. This plans every channel again from " +
+        "its next program, the next 6 hours too: what's on now stays. Only when you press it.")
+    TvSettingsRow("Plan again from now", if (m.replanning) "Planning…" else null, onClick = { if (!m.replanning) replanAsk = true }) {
+        Icon(Icons.Default.Refresh, contentDescription = null)
+    }
+    if (replanAsk) {
+        TvConfirmDialog("Plan again from now?", REPLAN_QUESTION, "Plan again", onDismiss = { replanAsk = false }) { m.replan() }
+    }
 
     typedOpen?.let { i ->
         val t = m.typed.getOrNull(i)

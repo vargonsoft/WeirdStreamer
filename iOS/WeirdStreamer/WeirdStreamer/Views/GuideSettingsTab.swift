@@ -40,6 +40,8 @@ struct GuideSettingsTab: View {
     @State private var weatherZip = ""
     @State private var message: (String, Bool)?
     @State private var saving = false
+    @State private var replanAsk = false
+    @State private var replanning = false
 
     var body: some View {
         Group {
@@ -52,6 +54,27 @@ struct GuideSettingsTab: View {
             }
         }
         .task { await load() }
+        .alert("Plan again from now?", isPresented: $replanAsk) {
+            Button("Plan again", role: .destructive) { Task { await replan() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("What each channel airs now stays. Everything after it, the next 6 hours too, is planned anew, so the Guide everyone sees changes.")
+        }
+    }
+
+    /// Plans every channel again from its next program (POST /api/admin/guide/replan).
+    private func replan() async {
+        guard let client = model.client else { return }
+        replanning = true
+        defer { replanning = false }
+        do {
+            let reply = try await client.json("POST", "/api/admin/guide/replan") as? [String: Any]
+            message = (reply?["message"] as? String ?? "Planned again.", false)
+            await load()
+        } catch {
+            model.handle(error)
+            message = (errorText(error), true)
+        }
     }
 
     private func form(_ data: GuideAdmin) -> some View {
@@ -98,6 +121,13 @@ struct GuideSettingsTab: View {
                 .buttonStyle(PhoneButtonStyle())
                 .disabled(saving)
                 .padding(.top, 8)
+
+                SectionTitle(text: "Plan again")
+                Text("The Guide plans by itself every hour and never changes the next 6 hours. This plans every channel again from its next program, the next 6 hours too: what's on now stays. Only when you press it.")
+                    .font(.caption).foregroundStyle(Palette.muted)
+                Button { replanAsk = true } label: { Text(replanning ? "Planning…" : "Plan again from now") }
+                    .buttonStyle(PhoneSecondaryButtonStyle())
+                    .disabled(replanning)
             }
             .padding(16)
         }

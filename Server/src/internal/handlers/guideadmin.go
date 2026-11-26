@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -159,4 +160,21 @@ func (h *GuideHandler) SaveGuideSettings(w http.ResponseWriter, r *http.Request)
 		h.planner.Kick()
 	}
 	respondJSON(w, http.StatusOK, h.guideAdmin())
+}
+
+// ReplanGuide plans every channel again from its next program, the next 6 hours too (what's on now
+// stays): POST /api/admin/guide/replan. Destructive, so only by hand: the Guide tab asks first.
+func (h *GuideHandler) ReplanGuide(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(w, r) {
+		return
+	}
+	if h.planner == nil {
+		respondError(w, http.StatusServiceUnavailable, "The Guide isn't running")
+		return
+	}
+	if err := h.planner.Replan(context.WithoutCancel(r.Context())); err != nil {
+		respondError(w, http.StatusInternalServerError, "Planning failed: "+err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Planned again from each channel's next program."})
 }

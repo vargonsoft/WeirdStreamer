@@ -969,6 +969,8 @@ What's built (server):
 - **Settings' Guide tab** (admins; web, phone, TV, iPhone): `GET/PUT /api/admin/guide` (`handlers/guideadmin.go`):
   typed channels, every library's Show in Guide (movie and TV) and Use for Guide Filler, prime time, the weather
   ZIP, the music and Piper found; saved apart from `/api/config` (the Server tab no longer shows these).
+  Plan again from now (asked first; only by hand, `POST /api/admin/guide/replan`, `Service.Replan`) plans every channel
+  again from its next program, the next 6 hours too; what each airs now stays.
 - **iPhone** (`Session/Guide.swift`: `GuideModel`; `Views/GuideView.swift`: `GuideScreen`), as the phone's:
   - The Guide button ends `ContinueRows` (`AppModel.guideRow`); `openGuide` sets `guideOpen`, which
     `RootView` shows as a full-screen cover. The last channel is kept per server and Guide (`UserDefaults`).

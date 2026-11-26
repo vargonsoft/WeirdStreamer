@@ -29,7 +29,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -58,6 +63,13 @@ internal fun typedSummary(m: GuideSettingsModel, t: TypedEdit): Pair<String, Str
 fun GuideSettingsTab(server: ServerRepository) {
     val m = rememberGuideSettings(server)
     val data = m.data
+    var replanAsk by remember { mutableStateOf(false) }
+    if (replanAsk) {
+        AlertDialog(onDismissRequest = { replanAsk = false }, title = { Text("Plan again from now?") },
+            text = { Text(REPLAN_QUESTION) },
+            confirmButton = { PhoneButton(onClick = { replanAsk = false; m.replan() }, destructive = true) { Text("Plan again") } },
+            dismissButton = { PhoneSecondaryButton(onClick = { replanAsk = false }) { Text("Cancel") } })
+    }
     when {
         data == null && m.loadError != null -> AdminOnly(m.loadError!!)
         data == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -146,6 +158,16 @@ fun GuideSettingsTab(server: ServerRepository) {
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     Icon(Icons.Default.Save, contentDescription = null)
                     Spacer(Modifier.width(6.dp)); ButtonLabel(if (m.saving) "Saving…" else "Save Guide settings")
+                }
+            }
+            item {
+                SectionTitle("Plan again")
+                Text("The Guide plans by itself every hour and never changes the next 6 hours. This plans every channel again " +
+                    "from its next program, the next 6 hours too: what's on now stays. Only when you press it.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onClick = { replanAsk = true }, enabled = !m.replanning, shape = AppButtonShape,
+                    modifier = Modifier.padding(top = 8.dp)) {
+                    ButtonLabel(if (m.replanning) "Planning…" else "Plan again from now")
                 }
             }
         }

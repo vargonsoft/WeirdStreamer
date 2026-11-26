@@ -216,6 +216,9 @@ TV), saved apart from the rest (`GET/PUT /api/admin/guide`):
   leave Media Paths.
 - **Schedule:** prime time, the weather ZIP code, the music folder in use and its tracks, and whether
   voice-overs are set up. The voice-over tester stays on the web.
+- **Plan again from now** (asked first, only by hand): every channel is planned again from its next program,
+  the next 6 hours too, so a change (new names, titles, libraries) shows at once. What each channel airs now
+  stays, so no one watching is cut off mid-program.
 
 ## Voice-overs on the credits (later phase)
 

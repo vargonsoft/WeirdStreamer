@@ -306,6 +306,42 @@ func (s *Service) Refresh(ctx context.Context) error {
 	return nil
 }
 
+// Replan plans every channel again from its next program: what each airs now stays (a viewer isn't cut
+// off mid-program), and everything after it is made anew, the next 6 hours too. Only an admin asks for it
+// (the Guide tab's Plan again from now); planning by itself never changes the next 6 hours.
+func (s *Service) Replan(ctx context.Context) error {
+	s.mu.Lock()
+	chans, err := s.db.GuideChannels()
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	now := time.Now()
+	cleared := 0
+	for _, c := range chans {
+		slots, err := s.db.GuideSlots(c.Key, now, now.Add(PlanAhead+24*time.Hour), SlotProgram)
+		if err != nil {
+			s.mu.Unlock()
+			return err
+		}
+		for _, sl := range slots {
+			if sl.Start.After(now) { // the first program after the one on now (programs start on half hours)
+				if err := s.db.DeleteGuideSlotsFrom(c.Key, sl.Start); err != nil {
+					s.mu.Unlock()
+					return err
+				}
+				cleared++
+				break
+			}
+		}
+	}
+	s.mu.Unlock()
+	log.Printf("[GUIDE] Planning %d channels again from their next programs (asked by an admin)", cleared)
+	err = s.Refresh(ctx)
+	go s.voiceOversOnce(ctx)
+	return err
+}
+
 // planChannel plans a channel on to PlanAhead, returning how many slots it added.
 func (s *Service) planChannel(ch Channel, c database.GuideChannel, set Settings, clips []Clip, now time.Time) (int, error) {
 	fp := fingerprint(ch, clips, set)

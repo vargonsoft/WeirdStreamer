@@ -467,6 +467,11 @@ class MediaAPI {
         return this.request('/api/admin/guide', { method: 'PUT', body: JSON.stringify(settings) });
     }
 
+    // Plans every channel again from its next program, the next 6 hours too (admins): {message}
+    async replanGuide() {
+        return this.request('/api/admin/guide/replan', { method: 'POST' });
+    }
+
     async updateConfig(config) {
         return this.request('/api/config', {
             method: 'PUT',
