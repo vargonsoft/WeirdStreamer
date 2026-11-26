@@ -95,4 +95,18 @@ struct GuideTests {
         let failed = try decode(GuideWeather.self, #"{"zip":"00000","periods":[],"alerts":[],"radar":false,"error":"00000 isn't a US ZIP code"}"#)
         #expect(failed.current == nil && failed.error != nil)
     }
+
+    @Test func voiceOver() throws {
+        let n = try decode(GuideNow.self, """
+        {"channel":{"number":30,"name":"Variety","logo":"/api/guide/logo?channel=30"},"kind":"program",
+         "path":"c05c48ef/Spartacus/S01E01.mp4","offset":12,"start":1,"end":2,"server_time":1,
+         "voice_over":{"url":"/api/guide/voiceover?key=5c5234ccc5a2f140ab97f237","at":41,"seconds":5.1,
+                       "squeeze_at":40.5,"line":"Stay tuned for Spartacus, next on Channel 30.","announcer":"Ryan"}}
+        """)
+        #expect(n.voiceOver?.at == 41)
+        #expect(n.voiceOver?.squeezeAt == 40.5)
+        #expect(n.voiceOver?.announcer == "Ryan")
+        let unsqueezed = try decode(GuideVoiceOver.self, #"{"url":"/x","at":50,"seconds":5,"line":"…","announcer":"HFC Female"}"#)
+        #expect(unsqueezed.squeezeAt == nil)
+    }
 }

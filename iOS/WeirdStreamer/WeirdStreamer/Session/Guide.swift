@@ -23,6 +23,13 @@ final class GuideModel {
     /// Whether something plays (a program or filler); nil between programs, where the card shows.
     private(set) var playing = false
     var muted = false { didSet { player.isMuted = muted; music.isMuted = muted } }
+    /// The program's voice-over while it plays (the program is lowered under it), for a report.
+    private(set) var voiceOverOn: GuideVoiceOver?
+    /// The credits squeezed into the corner beside what's next.
+    private(set) var squeezed = false
+    @ObservationIgnored private var voiceTask: Task<Void, Never>?
+    /// Where the player's time 0 is in the file: a stream's start (0 for the file itself).
+    @ObservationIgnored private var fileStart: Double = 0
     /// The Weather channel's forecast, while it's tuned.
     private(set) var weather: GuideWeather?
     @ObservationIgnored private var weatherAt = Date.distantPast
@@ -209,6 +216,7 @@ final class GuideModel {
                 stopMusic()
                 stopItem()
             }
+            scheduleVoiceOver(n)
             let wait = max(n.end - serverNow(), 0) + 50
             try? await Task.sleep(for: .milliseconds(wait))
         }
@@ -227,6 +235,7 @@ final class GuideModel {
         // where the server said it is in the file, plus the time since
         let offset = max((n.offset ?? 0) + Double(serverNow() - n.serverTime) / 1000, 0)
         let item: AVPlayerItem
+        fileStart = 0
         if let codecs, OfflinePlayback.of(codecs, path: path).plays {
             // The file as it is, in byte ranges through the app (for the server's kept certificate).
             item = AVPlayerItem(asset: OriginalLoader.asset(for: client.streamURL(for: path), token: client.token))
@@ -238,7 +247,10 @@ final class GuideModel {
             let keepAudio = !transcode && ["aac", "mp3", "ac3", "eac3", "alac", "flac"].contains(track?.codec?.lowercased() ?? "")
             var parts = [copy ? "transcode=audio" : "transcode=1"]
             parts.append(transcode ? "audiocodec=aac&channels=2" : keepAudio ? "audiocodec=copy" : "audiocodec=aac")
-            if offset > 1 { parts.append("start=" + String(format: "%.2f", offset)) }
+            if offset > 1 {
+                parts.append("start=" + String(format: "%.2f", offset))
+                fileStart = offset
+            }
             // A transcode has no length: relayed as HLS from the app's own little server.
             do {
                 _ = try await HLSServer.shared.start()
@@ -308,6 +320,64 @@ final class GuideModel {
         Task { try? await client.execute("POST", "/api/guide/watched", query: query) }
     }
 
+    /// The program's voice-over when the player reaches its place in the file (the player's own
+    /// position, so it lines up with the picture even after a stall): the squeeze, then the announcer
+    /// (on the music's player, which is quiet during programs), then back.
+    private func scheduleVoiceOver(_ n: GuideNow) {
+        endVoiceOver()
+        guard let vo = n.voiceOver, n.kind == "program" else { return }
+        let filePos = { [weak self] () -> Double in
+            guard let self else { return 0 }
+            if self.player.currentItem?.status == .readyToPlay {
+                let t = self.player.currentTime().seconds
+                if t.isFinite { return self.fileStart + t }
+            }
+            return (n.offset ?? 0) + Double(self.serverNow() - n.serverTime) / 1000
+        }
+        let end = vo.at + vo.seconds
+        guard filePos() < end else { return }
+        voiceTask = Task { [weak self] in
+            func until(_ secs: Double) async {
+                while !Task.isCancelled && filePos() < secs { try? await Task.sleep(for: .milliseconds(250)) }
+            }
+            if let squeeze = vo.squeezeAt, squeeze > 0 {
+                await until(squeeze)
+                guard !Task.isCancelled, let self else { return }
+                self.squeezed = true
+            }
+            await until(vo.at)
+            guard !Task.isCancelled, let self, let url = self.client.url(for: vo.url) else { return }
+            let into = max(filePos() - vo.at, 0)
+            self.musicURL = nil
+            self.music.replaceCurrentItem(with: AVPlayerItem(asset: OriginalLoader.asset(for: url, token: self.client.token)))
+            if into > 0.5 { await self.music.seek(to: CMTime(seconds: into, preferredTimescale: 600)) }
+            self.music.isMuted = self.muted
+            self.music.play()
+            self.voiceOverOn = vo
+            self.player.volume = 0.3 // the program under the announcer
+            await until(end + 0.3)
+            guard !Task.isCancelled else { return }
+            self.voiceOverOn = nil
+            self.player.volume = 1
+        }
+    }
+
+    private func endVoiceOver() {
+        voiceTask?.cancel()
+        voiceTask = nil
+        if voiceOverOn != nil { stopMusic() }
+        voiceOverOn = nil
+        squeezed = false
+        player.volume = 1
+    }
+
+    /// Reports the voice-over playing, heard said wrong (for the tester's list).
+    func reportVoiceOver() async -> Bool {
+        guard let vo = voiceOverOn else { return false }
+        let body: [String: Any] = ["channel": channel ?? 0, "line": vo.line, "announcer": vo.announcer]
+        return (try? await client.json("POST", "/api/guide/voiceover/report", body: body)) != nil
+    }
+
     /// Plays the item's music from where the clock says (going on if it's already that track).
     private func playMusic(_ n: GuideNow) {
         guard let m = n.music, let url = client.url(for: m.url) else { return stopMusic() }
@@ -355,6 +425,7 @@ final class GuideModel {
     var weatherRadarPath: String { "/api/guide/weather/radar?v=\(serverNow() / 300_000)" }
 
     func stop() {
+        endVoiceOver()
         stopMusic()
         loop?.cancel()
         follow?.cancel()

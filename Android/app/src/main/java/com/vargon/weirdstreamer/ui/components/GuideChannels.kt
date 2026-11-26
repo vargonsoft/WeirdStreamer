@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -323,4 +324,29 @@ private fun WeatherNowPage(model: GuideModel, c: com.vargon.weirdstreamer.api.mo
 private fun Ticker(text: String, size: TextUnit, width: Dp) {
     ScaledText(text + "          ", size, Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 0,
         repeatDelayMillis = 0, spacing = androidx.compose.foundation.MarqueeSpacing(width / 3), velocity = width / 12), shadow = false)
+}
+
+/** Beside a voice-over's squeezed credits: what's next on the channel. [shown] fades and slides it in. */
+@Composable
+fun UpNextCard(model: GuideModel, now: GuideNow?, shown: Float, modifier: Modifier) {
+    val color = runCatching { Color(android.graphics.Color.parseColor(now?.channel?.color ?: "#3A2A6A")) }
+        .getOrDefault(Color(0xFF3A2A6A))
+    BoxWithConstraints(modifier.background(Brush.radialGradient(listOf(color, Color(0xFF0B0B1E))))
+        .graphicsLayer { alpha = shown }) {
+        val s = Scale(maxHeight, LocalDensity.current)
+        val next = now?.next ?: return@BoxWithConstraints
+        Column(Modifier.align(Alignment.TopEnd).fillMaxWidth(0.4f).fillMaxHeight()
+            .padding(top = s.dp(6f), bottom = s.dp(6f), end = s.dp(5f))
+            .offset(x = s.dp(10f) * (1f - shown)), verticalArrangement = Arrangement.spacedBy(s.dp(1.2f))) {
+            now.channel.let { c -> AsyncImage(model = model.logoUrl(c, 512), contentDescription = null, modifier = Modifier.height(s.dp(14f))) }
+            ScaledText("UP NEXT · " + guideTime(androidx.compose.ui.platform.LocalContext.current, now.nextStart), s.sp(4f), color = Gold,
+                weight = FontWeight.Black)
+            ScaledText(next.title, s.sp(6.5f), weight = FontWeight.Black, maxLines = 2)
+            next.episodeLabel?.let { ScaledText(it, s.sp(3.6f)) }
+            next.poster?.let {
+                AsyncImage(model = model.posterUrl(it), contentDescription = null, contentScale = ContentScale.Fit,
+                    alignment = Alignment.TopStart, modifier = Modifier.weight(1f).border(2.dp, Color.White))
+            }
+        }
+    }
 }

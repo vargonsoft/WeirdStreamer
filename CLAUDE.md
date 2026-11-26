@@ -891,6 +891,23 @@ What's built (server):
   that channel is tuned, the app sends `POST /api/guide/watched?channel=&start=<the program's start>`.
 - **TV:** OK on the tuned channel (its name or what's on now) goes full screen, since the picture is hard to
   reach with the arrows.
+- **Voice-overs on the credits** (`guide/voices.go`, `voiceovers.go`): Piper (`guide.piperCommand`,
+  `piperVoices`) says a line ("Stay tuned for {next}, next on Channel {channel}…") in the channel's announcer's
+  voice (by its number), with the announcer's fixes (`match` → `say` with `[[ phonemes ]]`, optional `pace`:
+  that piece said apart and joined), then ffmpeg's filter chain; kept in `guide.voiceOverPath` by a hash of the
+  line and the announcer's settings. All of it is in `guide-voices.yml` beside config.yml (written from
+  `voices.default.yml` when missing, read again when it changes). A job makes the next 4 hours' after each
+  planning and every 10 minutes. `/now`'s `voice_over` (only once made): `at` seconds into the program's file
+  (a second into known credits, never ending later than 5 s before the end; unknown credits: ending 5 s
+  before it, `voiceOverTiming`), `seconds`, `squeeze_at` (known credits only). Never over filler. The players
+  start it when they reach `at` by their own position in the file (an original's position; a stream's start
+  plus its position: web `guide.fileStart`, Android `GuideStream.fileStartMs` via `GuideModel.playerPosition`,
+  iPhone `fileStart`; the clock only until the item has loaded), so a stall doesn't put it early; they
+  play it over the program (lowered to 30%), squeeze the picture beside an "Up next" card (web `guide.js`
+  `scheduleVoiceOver`, Android `GuideModel.scheduleVoiceOver` / `UpNextCard`, iPhone the same names), and show
+  Report voice-over while it plays (`POST /api/guide/voiceover/report`). The web's Settings › Server › Guide
+  has the tester (`/api/admin/guide/voices`, `/try` with phonemes from Piper's `--debug`, `/fix` saved keeping
+  the file's comments, reports). The e2e server has Piper in `e2e/piper-venv` and the voices in `e2e/piper-voices`.
 - **The grid scrolls to the end of the plan:** `/api/guide` gives `until` (72 hours ahead) and takes `from=`;
   every app loads the next 3 hours as its grid nears the end of what's loaded (`extendGrid`, web
   `extendGuideGrid`), merging a program across the boundary once, and the half-hourly reload keeps the hours

@@ -207,11 +207,20 @@ As old shows did, while the credits roll: "Stay tuned for *Title*, next on Chann
 - **Sounding like broadcast:** a little slower than Piper's default (`--length-scale` about 1.1), then
   ffmpeg's compressor, a high-pass filter and a slight presence boost, so the voice sits over the music
   like a 1980s announce booth.
-- ffmpeg mixes it over the last part of the credits, lowering the credits' music under it. Optional:
-  squeeze the credits into part of the picture beside an "Up next" card. Credit starts come from the
-  segments table (the intros and credits analyzer); a program without known credits gets it over its
-  filler instead.
-- It's made ahead with the schedule and cached per slot, so it plays like the rest of the program.
+- **The players mix it** (settled 2026-11-26, instead of ffmpeg remaking the program's end): the server makes
+  the voice-over as a short audio file and `/now` says when it plays, a second into the credits (from the
+  segments table: the intros and credits analyzer, or marked by hand). The player starts it when it reaches
+  that point by its own position in the file (not the clock, so it lines up with the picture after a stall),
+  and plays it over the program, its sound lowered to 30% under it, and squeezes the picture into the top left beside an "Up next"
+  card from then to the program's end. Nothing is encoded, it works on originals, and the card is sharp.
+- **Never over filler** (settled 2026-11-26). It's always over the program itself, and always finishes
+  speaking at least 5 seconds before the video ends (credits too short start it earlier). A program whose
+  credits aren't known gets it at the end of its video, timed so the voice finishes 5 seconds before the
+  video ends, and isn't squeezed (what's on screen may not be credits).
+- It's made ahead: a job ("Guide voice-overs" on the Jobs page) makes those of the next 4 hours after each
+  planning and every 10 minutes, cached by a hash of the line and the announcer's settings and fixes.
+- **Built** (2026-11-26): the server (`guide/voices.go`, `voiceovers.go`), the players on the web, Android
+  and the iPhone, the tester in the web's Settings › Server › Guide, and Report voice-over on all three.
 
 ## Playing a channel
 

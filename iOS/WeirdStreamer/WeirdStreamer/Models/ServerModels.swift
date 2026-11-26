@@ -880,6 +880,19 @@ struct GuideNow: Decodable, Equatable {
     var airsOn: GuideChannel? = nil
     /// What plays under the Weather channel and the Guide channel's cards.
     var music: GuideMusic? = nil
+    /// A program's voice-over on its credits ("Stay tuned for…"), when it's been made.
+    var voiceOver: GuideVoiceOver? = nil
+}
+
+/// When a program's voice-over plays: from at seconds into its file, the program lowered under it;
+/// from squeezeAt (nil: never) the picture is squeezed beside an "Up next" card.
+struct GuideVoiceOver: Decodable, Equatable {
+    let url: String
+    let at: Double
+    let seconds: Double
+    let squeezeAt: Double?
+    let line: String
+    let announcer: String
 }
 
 /// A track of the Guide's music, from offset seconds; the next starts at end.

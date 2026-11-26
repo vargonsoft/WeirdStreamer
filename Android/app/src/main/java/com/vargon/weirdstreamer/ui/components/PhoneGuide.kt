@@ -172,6 +172,7 @@ private fun PhoneGuideDetails(model: GuideModel, modifier: Modifier) {
             info?.episodeLabel?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold) }
             Text(guideFacts(context, c, l), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ReportVoiceOver(model, c.number) { label, onClick -> PhoneSecondaryButton(onClick = onClick) { Text(label) } }
             (info?.episodeOverview?.takeIf { it.isNotBlank() } ?: info?.overview)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall)
             }

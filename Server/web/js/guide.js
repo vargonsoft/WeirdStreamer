@@ -20,6 +20,8 @@ const guide = {
     codecs: new Map(), // path → codecs report
     digits: '',       // channel number being typed
     digitTimer: null,
+    voiceTimers: [],  // the voice-over's and squeeze's times
+    voiceOver: null,  // the voice-over playing: { channel, line, announcer }, for a report
     weather: null,    // the Weather channel's data, and when it was read
     weatherAt: 0,
     screenTimer: null, // turns the Weather channel's pages
@@ -95,6 +97,7 @@ function guideChannelKey() {
 }
 
 function stopGuidePlayback() {
+    endVoiceOver();
     guide.request++;
     clearTimeout(guide.timer);
     guide.timer = null;
@@ -373,6 +376,7 @@ async function playGuideNow() {
         await playGuideItem(now, request);
     }
     if (request !== guide.request) return;
+    scheduleVoiceOver(now, request);
     // What comes next, when this ends (by the server's clock).
     guide.timer = setTimeout(playGuideNow, Math.max(now.end - serverNow(), 0) + 50);
 }
@@ -395,6 +399,7 @@ async function playGuideItem(now, request) {
     const track = codecs ? defaultAudioTrack(codecs) : null;
     const original = codecs && !originalProblem(codecs) && (!track || browserPlaysAudio(track));
     guideVideo.muted = guide.muted;
+    guide.fileStart = 0; // where the player's time 0 is in the file (a stream's start)
     if (original) {
         guideVideo.src = api.getStreamUrl(now.path);
         guideVideo.addEventListener('loadedmetadata', () => {
@@ -405,7 +410,10 @@ async function playGuideItem(now, request) {
         let url = api.getStreamUrl(now.path, copy ? 'audio' : true);
         url += track && KEPT_AUDIO.includes(track.codec) && browserPlaysAudio(track) ? '&audiocodec=copy' : '&audiocodec=aac&channels=2';
         const start = offset();
-        if (start > 1) url += `&start=${start.toFixed(2)}`;
+        if (start > 1) {
+            url += `&start=${start.toFixed(2)}`;
+            guide.fileStart = start;
+        }
         guideVideo.src = url;
     }
     guideVideo.play().catch(error => {
@@ -422,6 +430,115 @@ function stopGuideVideo() {
     guideVideo.pause();
     guideVideo.removeAttribute('src');
     showPreviewCaption(null);
+}
+
+// ---- Voice-overs on the credits (docs/GUIDE.md) ----
+
+// The program's voice-over, when the server made one: when the player reaches its place in the
+// program's file (the player's own position, so it lines up with the picture even after a stall),
+// the program's sound lowered under it; over known credits the picture is squeezed beside an "Up
+// next" card. Anything from the last item ends first.
+function scheduleVoiceOver(now, request) {
+    endVoiceOver();
+    const vo = now.voice_over;
+    if (!vo || now.kind !== 'program') return;
+    // where the player is in the file: its time plus where its stream started
+    const filePos = () => guideVideo.src && guideVideo.readyState > 0
+        ? (guide.fileStart || 0) + guideVideo.currentTime
+        : (now.offset || 0) + (serverNow() - now.server_time) / 1000;
+    const pending = [];
+    const at = (secs, f) => pending.push({ secs, f });
+    const poll = setInterval(() => {
+        if (request !== guide.request) return clearInterval(poll);
+        const pos = filePos();
+        for (let i = 0; i < pending.length;) {
+            if (pos >= pending[i].secs) pending.splice(i, 1)[0].f();
+            else i++;
+        }
+        if (!pending.length) clearInterval(poll);
+    }, 250);
+    guide.voiceTimers.push(poll);
+    if (vo.squeeze_at) at(vo.squeeze_at, () => squeezeForUpNext(now));
+    at(vo.at, () => {
+        const voice = document.getElementById('guide-voice');
+        const into = filePos() - vo.at;
+        if (into >= vo.seconds) return; // long past
+        voice.src = api.getThumbnailUrl(vo.url);
+        voice.muted = guide.muted;
+        voice.addEventListener('loadedmetadata', () => { if (into > 0.5) voice.currentTime = into; }, { once: true });
+        voice.play().catch(() => {});
+        guideVideo.volume = 0.3; // the program's sound under the announcer
+        guide.voiceOver = { channel: now.channel.number, line: vo.line, announcer: vo.announcer };
+        showReportVoiceOver();
+        at(vo.at + vo.seconds + 0.3, () => {
+            guideVideo.volume = 1;
+            guide.voiceOver = null;
+            showReportVoiceOver();
+        });
+    });
+}
+
+function endVoiceOver() {
+    (guide.voiceTimers || []).forEach(clearInterval);
+    guide.voiceTimers = [];
+    const voice = document.getElementById('guide-voice');
+    voice.pause();
+    voice.removeAttribute('src');
+    guideVideo.volume = 1;
+    guide.voiceOver = null;
+    document.getElementById('guide-player').classList.remove('guide-player--squeezed');
+    document.getElementById('guide-upnext').hidden = true;
+    showReportVoiceOver();
+}
+
+// The credits squeezed into the corner, and what's next beside them.
+function squeezeForUpNext(now) {
+    const card = document.getElementById('guide-upnext');
+    card.innerHTML = '';
+    if (now.next) {
+        const logo = el('img', 'guide-upnext-logo');
+        logo.src = guideLogoUrl(now.channel, 512, '#ffffff');
+        logo.alt = '';
+        card.append(logo, el('div', 'guide-upnext-kicker', `Up next · ${guideTime(now.next_start)}`),
+            el('div', 'guide-upnext-title', now.next.title));
+        if (now.next.season) card.appendChild(el('div', 'guide-upnext-line', episodeLabel(now.next)));
+        if (now.next.poster) {
+            const poster = el('img', 'guide-upnext-poster');
+            poster.src = api.getThumbnailUrl(now.next.poster);
+            poster.alt = '';
+            card.appendChild(poster);
+        }
+    }
+    card.style.setProperty('--channel-color', now.channel.color || 'var(--button-bg)');
+    card.hidden = false;
+    document.getElementById('guide-player').classList.add('guide-player--squeezed');
+}
+
+// While a voice-over plays, the channel's info has "Report voice-over", for one said wrong.
+function showReportVoiceOver() {
+    const box = document.getElementById('guide-info');
+    let button = document.getElementById('guide-report-voice');
+    if (!guide.voiceOver) {
+        if (button) button.remove();
+        return;
+    }
+    if (button) return;
+    button = el('button', 'btn btn-small btn-secondary guide-report-voice');
+    button.id = 'guide-report-voice';
+    button.type = 'button';
+    button.textContent = 'Report voice-over';
+    const vo = guide.voiceOver;
+    button.onclick = async () => {
+        button.disabled = true;
+        try {
+            await api.request('/api/guide/voiceover/report', { method: 'POST', body: JSON.stringify(vo) });
+            button.textContent = 'Reported';
+        } catch (error) {
+            button.disabled = false;
+            alert('Couldn’t report it: ' + error.message);
+        }
+    };
+    box.appendChild(button);
 }
 
 // ---- The channels of their own: the Guide channel and the Weather channel (docs/GUIDE.md) ----
@@ -749,6 +866,7 @@ function showChannelBadge() {
 function toggleGuideMute() {
     guide.muted = !guide.muted;
     guideVideo.muted = guide.muted;
+    document.getElementById('guide-voice').muted = guide.muted;
     document.getElementById('guide-music').muted = guide.muted;
     updateGuideMute();
 }
@@ -829,3 +947,129 @@ function setupGuide() {
 }
 
 setupGuide();
+
+// ---- The voice-over tester (Settings › Server › Guide, admins; docs/GUIDE.md) ----
+
+// Hear a line in an announcer's voice, with or without the fixes; see how Piper spelled it; try a
+// fix and save it to guide-voices.yml; and go through the voice-overs reported while watching.
+async function loadVoiceTester() {
+    const box = document.getElementById('voice-tester');
+    if (!box) return;
+    let data;
+    try {
+        data = await api.request('/api/admin/guide/voices');
+    } catch (error) {
+        box.textContent = '';
+        return;
+    }
+    box.innerHTML = '';
+    box.appendChild(el('h4', '', 'Voice-overs'));
+    if (!data.enabled) {
+        box.appendChild(el('p', 'hardware-status', 'Voice-overs need Piper: set guide.piperCommand (and guide.piperVoices) in config.yml.'));
+    }
+    box.appendChild(el('p', 'hardware-status', `Announcers, their fixes and lines are in ${data.file}; edits there apply without a restart.`));
+    const sample = (data.later_lines[0] || data.lines[0] || '').replace('{next}', 'Spartacus').replace('{channel}', '15')
+        .replace('{later_time}', '9').replace('{later}', 'Annie');
+    const voice = el('select', 'settings-input');
+    data.announcers.forEach(a => voice.appendChild(new Option(a.name, a.name)));
+    const line = el('textarea', 'settings-input voice-line');
+    line.rows = 2;
+    line.value = sample;
+    const templates = el('select', 'settings-input');
+    templates.appendChild(new Option('A line they say…', ''));
+    [...data.lines, ...data.later_lines].forEach(t => templates.appendChild(new Option(t, t)));
+    templates.onchange = () => {
+        if (!templates.value) return;
+        line.value = templates.value.replace('{next}', 'Spartacus').replace('{channel}', '15')
+            .replace('{later_time}', '9').replace('{later}', 'Annie');
+    };
+    const fixes = el('label', 'settings-check');
+    const withFixes = el('input');
+    withFixes.type = 'checkbox';
+    withFixes.checked = true;
+    fixes.append(withFixes, ' With the announcer\u2019s fixes');
+    const out = el('div', 'voice-out');
+    const audio = el('audio');
+    audio.controls = true;
+    const phonemes = el('div', 'voice-phonemes');
+    out.append(audio, phonemes);
+    const say = async fix => {
+        phonemes.textContent = 'Saying it…';
+        try {
+            const r = await api.request('/api/admin/guide/voices/try', { method: 'POST',
+                body: JSON.stringify({ announcer: voice.value, line: line.value, fixes: withFixes.checked, fix }) });
+            audio.src = api.getThumbnailUrl(r.url);
+            audio.play().catch(() => {});
+            phonemes.textContent = 'Piper: ' + (r.phonemes || '');
+        } catch (error) {
+            phonemes.textContent = error.message;
+        }
+    };
+    const sayButton = el('button', 'btn btn-small', 'Say it');
+    sayButton.type = 'button';
+    sayButton.onclick = () => say(null);
+
+    // a fix: the words to match, what to say ([[ phonemes ]] allowed), an optional pace
+    const match = el('input', 'settings-input');
+    match.placeholder = 'Words to match (next on Channel)';
+    const instead = el('input', 'settings-input');
+    instead.placeholder = 'Say instead (next on [[ tʃˈæːnəl ]])';
+    const pace = el('input', 'settings-input');
+    pace.placeholder = 'Pace (1.3: slower)';
+    pace.style.width = '120px';
+    const fix = () => ({ match: match.value.trim(), say: instead.value.trim(), pace: parseFloat(pace.value) || 0 });
+    const tryFix = el('button', 'btn btn-small btn-secondary', 'Try the fix');
+    tryFix.type = 'button';
+    tryFix.onclick = () => say(fix());
+    const saveFix = el('button', 'btn btn-small', 'Save the fix');
+    saveFix.type = 'button';
+    saveFix.onclick = async () => {
+        const f = fix();
+        if (!f.match || !f.say) return;
+        try {
+            await api.request('/api/admin/guide/voices/fix', { method: 'POST', body: JSON.stringify({ announcer: voice.value, ...f }) });
+            loadVoiceTester();
+        } catch (error) {
+            alert('Couldn’t save it: ' + error.message);
+        }
+    };
+    const fixList = el('div', 'voice-fixes');
+    const showFixes = () => {
+        const a = data.announcers.find(x => x.name === voice.value);
+        fixList.innerHTML = '';
+        (a && a.fixes || []).forEach(f => fixList.appendChild(el('div', 'voice-fix',
+            `“${f.match}” → ${f.say}${f.pace ? ` (pace ${f.pace})` : ''}`)));
+        if (!fixList.childElementCount) fixList.appendChild(el('div', 'voice-fix', 'No fixes yet.'));
+    };
+    voice.onchange = showFixes;
+    showFixes();
+
+    const row = (...items) => { const r = el('div', 'voice-row'); r.append(...items); return r; };
+    box.append(row(voice, templates), line, row(fixes, sayButton), out,
+        el('h5', '', 'Fixes'), fixList, row(match, instead, pace), row(tryFix, saveFix));
+
+    // reported while watching
+    box.appendChild(el('h5', '', 'Reported'));
+    if (!data.reports.length) box.appendChild(el('p', 'hardware-status', 'None. While a voice-over plays, the channel’s info has Report voice-over.'));
+    data.reports.slice().reverse().forEach(r => {
+        const item = el('div', 'voice-report');
+        item.appendChild(el('div', '', `${new Date(r.time).toLocaleString()} · Channel ${r.channel} · ${r.announcer}${r.user ? ' · ' + r.user : ''}`));
+        item.appendChild(el('div', 'voice-report-line', r.line));
+        const tryIt = el('button', 'btn btn-small btn-secondary', 'Try it');
+        tryIt.type = 'button';
+        tryIt.onclick = () => {
+            voice.value = r.announcer;
+            showFixes();
+            line.value = r.line;
+            say(null);
+        };
+        const done = el('button', 'btn btn-small btn-secondary', 'Done');
+        done.type = 'button';
+        done.onclick = async () => {
+            await api.request('/api/admin/guide/voices/report?time=' + r.time, { method: 'DELETE' }).catch(() => {});
+            loadVoiceTester();
+        };
+        item.appendChild(row(tryIt, done));
+        box.appendChild(item);
+    });
+}

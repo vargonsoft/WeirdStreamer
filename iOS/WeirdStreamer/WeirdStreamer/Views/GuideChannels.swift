@@ -317,3 +317,33 @@ private struct Ticker: View {
         }
     }
 }
+
+/// Beside a voice-over's squeezed credits: what's next on the channel.
+struct UpNextCard: View {
+    let guide: GuideModel
+    let size: CGSize
+
+    var body: some View {
+        let h = size.height / 100
+        if let now = guide.now, let next = now.next {
+            HStack {
+                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: h * 1.2) {
+                    GuideImage(relative: guide.logoPath(now.channel, width: 512)).frame(height: h * 14, alignment: .leading)
+                    Scaled("UP NEXT · " + guideTime(now.nextStart ?? 0), h * 4, color: gold, weight: .black)
+                    Scaled(next.title, h * 6.5, weight: .black, lines: 2)
+                    if let e = next.episodeLabel { Scaled(e, h * 3.6) }
+                    if let poster = next.poster {
+                        GuideImage(relative: poster).border(.white, width: 2).frame(maxHeight: .infinity, alignment: .topLeading)
+                    }
+                }
+                .frame(width: size.width * 0.38, alignment: .leading)
+                .padding(.vertical, h * 6).padding(.trailing, size.width * 0.03)
+            }
+            .frame(width: size.width, height: size.height)
+            .background(RadialGradient(colors: [guideColor(now.channel.color), Color(hex: 0x0B0B1E)], center: .center,
+                                       startRadius: 0, endRadius: size.height).zIndex(-1))
+            .allowsHitTesting(false)
+        }
+    }
+}

@@ -157,6 +157,7 @@ private fun TvGuideDetails(model: GuideModel, modifier: Modifier) {
             info?.episodeLabel?.let { Text(it, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
             Text(guideFacts(context, c, l), style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ReportVoiceOver(model, c.number) { label, onClick -> TvSecondaryButton(onClick = onClick) { Text(label) } }
             (info?.episodeOverview?.takeIf { it.isNotBlank() } ?: info?.overview)?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, overflow = TextOverflow.Ellipsis)
             }

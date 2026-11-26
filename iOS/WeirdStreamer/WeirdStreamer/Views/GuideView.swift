@@ -155,9 +155,13 @@ private struct GuidePicture: View {
         // A channel of its own: the Guide channel's picture on top with every channel's listings below;
         // the Weather channel's pages over it all
         let kind = guide.now?.channel.kind ?? guide.data?.channels?.first { $0.number == guide.channel }?.kind
+        // a voice-over's squeeze: the credits shrink into the corner beside what's next
+        let squeezed = guide.squeezed && kind == nil
         GeometryReader { geo in
             ZStack(alignment: .top) {
                 Color.black
+                // under the squeezed picture: the background and what's next
+                if squeezed { UpNextCard(guide: guide, size: geo.size).transition(.opacity.combined(with: .move(edge: .trailing))) }
                 ZStack(alignment: .bottomLeading) {
                     GuideVideoLayer(player: guide.player)
                     if kind == "weather" {
@@ -170,7 +174,13 @@ private struct GuidePicture: View {
                         PreviewCaption(now: now, height: geo.size.height)
                     }
                 }
-                .frame(height: kind == "guide" ? geo.size.height * 0.58 : geo.size.height)
+                .frame(width: squeezed ? geo.size.width * 0.52 : nil,
+                       height: kind == "guide" ? geo.size.height * 0.58 : (squeezed ? geo.size.height * 0.52 : geo.size.height))
+                .overlay { if squeezed { Rectangle().stroke(.white, lineWidth: 2) } }
+                .padding(.leading, squeezed ? geo.size.width * 0.03 : 0)
+                .padding(.top, squeezed ? geo.size.height * 0.04 : 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .animation(.easeInOut(duration: 0.6), value: squeezed)
                 if kind == "guide" {
                     GuideListingsRoll(guide: guide, height: geo.size.height)
                         .frame(height: geo.size.height * 0.42)
@@ -307,6 +317,7 @@ struct GuideImage: View {
 
 private struct GuideDetails: View {
     let guide: GuideModel
+    @State private var reported: String?
 
     var body: some View {
         if let picked = guide.selected {
@@ -322,6 +333,13 @@ private struct GuideDetails: View {
                             .font(.headline).foregroundStyle(Palette.accent)
                         if let e = info?.episodeLabel { Text(e).font(.subheadline.weight(.bold)) }
                         Text(guideFacts(c, l)).font(.caption).foregroundStyle(Palette.muted)
+                        if guide.voiceOverOn != nil && guide.channel == c.number {
+                            Button(reported ?? "Report voice-over") {
+                                Task { reported = await guide.reportVoiceOver() ? "Reported" : "Couldn't report it" }
+                            }
+                            .buttonStyle(PhoneSecondaryButtonStyle())
+                            .padding(.vertical, 4)
+                        }
                         if let text = info?.episodeOverview.flatMap({ $0.isEmpty ? nil : $0 }) ?? info?.overview {
                             Text(text).font(.caption)
                         }

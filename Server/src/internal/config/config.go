@@ -35,6 +35,16 @@ type GuideConfig struct {
 	// The folder of music for the Weather channel and the Guide channel's cards (default guide-music
 	// beside the thumbnails folder). A <track>.txt beside a track holds its credit line.
 	MusicPath string `json:"musicPath,omitempty" yaml:"musicPath,omitempty"`
+	// Voice-overs on the credits ("Stay tuned for…"), made by Piper: its command (a binary, or
+	// "python3 -m piper"), and the folder of its voice models (.onnx with their .onnx.json). Without
+	// a command there are none.
+	PiperCommand string `json:"piperCommand,omitempty" yaml:"piperCommand,omitempty"`
+	PiperVoices  string `json:"piperVoices,omitempty" yaml:"piperVoices,omitempty"`
+	// The announcers, their fixes and the lines they say (default guide-voices.yml beside config.yml,
+	// written with its defaults when it's missing), and where the voice-overs made are kept (default
+	// voiceovers beside the thumbnails folder).
+	VoicesFile    string `json:"voicesFile,omitempty" yaml:"voicesFile,omitempty"`
+	VoiceOverPath string `json:"voiceOverPath,omitempty" yaml:"voiceOverPath,omitempty"`
 }
 
 // Prime time's starts (GuideConfig.PrimeTime)

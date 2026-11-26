@@ -187,6 +187,14 @@ class ServerRepository(
         }
     }
 
+    /** Reports a voice-over heard said wrong, for the tester's list. */
+    suspend fun reportVoiceOver(channel: Int, line: String, announcer: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.reportVoiceOver(mapOf("channel" to channel, "line" to line, "announcer" to announcer))
+            if (!r.isSuccessful) throw Exception("Server error: ${r.code()}")
+        }
+    }
+
     /** The Weather channel's forecast (the server reads it at most every 10 minutes). */
     suspend fun guideWeather(): Result<com.vargon.weirdstreamer.api.models.GuideWeather> = withContext(Dispatchers.IO) {
         runCatching {

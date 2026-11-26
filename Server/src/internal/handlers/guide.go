@@ -7,12 +7,15 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/fileio"
@@ -243,6 +246,38 @@ type guideNow struct {
 	AirsOn *guideChannel `json:"airs_on,omitempty"`
 	// What plays under the Weather channel and the Guide channel's cards
 	Music *guideMusic `json:"music,omitempty"`
+	// A program's voice-over on its credits ("Stay tuned for…"), when it's been made
+	VoiceOver *guideVoiceOver `json:"voice_over,omitempty"`
+}
+
+// guideVoiceOver is when a program's voice-over plays: from at seconds into the program's file (its
+// credits, else timed to end 5 seconds before the file does), its sound lowered under it; with
+// squeeze_at, the picture is squeezed beside an "Up next" card from then (only over known credits).
+type guideVoiceOver struct {
+	URL       string  `json:"url"`
+	At        float64 `json:"at"`
+	Seconds   float64 `json:"seconds"`
+	SqueezeAt float64 `json:"squeeze_at,omitempty"`
+	Line      string  `json:"line"`
+	Announcer string  `json:"announcer"`
+}
+
+// voiceOverEnd is how long before the program's end its voice-over finishes, at the latest.
+const voiceOverEnd = 5.0
+
+// voiceOverTiming places a voice-over of vo seconds in a program of length seconds: a second into
+// its credits (starting at credits, or -1 for none found), but never ending later than voiceOverEnd
+// before the end; then the squeeze starts with it. ok is false when it doesn't fit.
+func voiceOverTiming(length, credits, vo float64) (at, squeezeAt float64, ok bool) {
+	latest := length - voiceOverEnd - vo
+	if latest < 0 {
+		return 0, 0, false
+	}
+	if credits <= 0 || credits >= length {
+		return latest, 0, true // credits unknown: at the end, no squeeze
+	}
+	at = min(credits+1, latest)
+	return at, max(at-0.5, 0.01), true
 }
 
 // guideMusic is the track playing under a channel's cards, from offset seconds; the next one
@@ -363,6 +398,18 @@ func (h *GuideHandler) Now(w http.ResponseWriter, r *http.Request) {
 		if slots[i].Kind == guide.SlotProgram {
 			out.Next, out.NextStart = programInfo(slots[i].Info), slots[i].Start.UnixMilli()
 			break
+		}
+	}
+	if s.Kind == guide.SlotProgram {
+		if vo, ok := h.planner.VoiceOverFor(c.Number, slots, cur); ok {
+			credits := -1.0
+			if segs, err := h.db.GetSegments(s.Path); err == nil && segs.Credits != nil {
+				credits = segs.Credits.Start
+			}
+			if at, squeeze, ok := voiceOverTiming(s.Length.Seconds(), credits, vo.Seconds); ok {
+				out.VoiceOver = &guideVoiceOver{URL: "/api/guide/voiceover?key=" + vo.Key, At: at, Seconds: vo.Seconds,
+					SqueezeAt: squeeze, Line: vo.Line, Announcer: vo.Announcer}
+			}
 		}
 	}
 	respondJSON(w, http.StatusOK, out)
@@ -497,4 +544,185 @@ func (h *GuideHandler) Music(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fileio.ServeFile(w, r, filepath.Join(dir, name))
+}
+
+// VoiceOver is a voice-over's audio: GET /api/guide/voiceover?key=.
+func (h *GuideHandler) VoiceOver(w http.ResponseWriter, r *http.Request) {
+	path, ok := guide.VoiceOverFile(r.URL.Query().Get("key"))
+	if !ok {
+		respondError(w, http.StatusNotFound, "No such voice-over")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	fileio.ServeFile(w, r, path)
+}
+
+// voiceReport is a voice-over someone heard said wrong, for the tester's list.
+type voiceReport struct {
+	Time      int64  `json:"time"` // Unix ms
+	Channel   int    `json:"channel"`
+	Line      string `json:"line"`
+	Announcer string `json:"announcer"`
+	User      string `json:"user"`
+}
+
+func voiceReportsPath() string { return filepath.Join(guide.VoiceOverDir(), "reports.json") }
+
+func readVoiceReports() []voiceReport {
+	var out []voiceReport
+	if b, err := fileio.ReadFile(voiceReportsPath()); err == nil {
+		json.Unmarshal(b, &out)
+	}
+	return out
+}
+
+func writeVoiceReports(reports []voiceReport) error {
+	b, err := json.MarshalIndent(reports, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(guide.VoiceOverDir(), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(voiceReportsPath(), b, 0o600)
+}
+
+var voiceReportsMu sync.Mutex
+
+// ReportVoiceOver keeps a voice-over heard said wrong (the one playing on a channel), for the
+// tester: POST /api/guide/voiceover/report {"channel", "line", "announcer"}.
+func (h *GuideHandler) ReportVoiceOver(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Channel   int    `json:"channel"`
+		Line      string `json:"line"`
+		Announcer string `json:"announcer"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Line) == "" {
+		respondError(w, http.StatusBadRequest, "Which voice-over?")
+		return
+	}
+	user := ""
+	if claims := auth.GetClaims(r.Context()); claims != nil {
+		user = claims.Username
+	}
+	voiceReportsMu.Lock()
+	defer voiceReportsMu.Unlock()
+	reports := append(readVoiceReports(), voiceReport{Time: time.Now().UnixMilli(), Channel: body.Channel,
+		Line: body.Line, Announcer: body.Announcer, User: user})
+	if len(reports) > 200 {
+		reports = reports[len(reports)-200:]
+	}
+	if err := writeVoiceReports(reports); err != nil {
+		respondError(w, http.StatusInternalServerError, "Couldn't keep the report")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// Voices is the tester's view: GET /api/admin/guide/voices (admins): the announcers with their
+// fixes, the lines, whether Piper is set up, and the reports.
+func (h *GuideHandler) Voices(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(w, r) {
+		return
+	}
+	f, err := h.planner.Voices().File()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	voiceReportsMu.Lock()
+	reports := readVoiceReports()
+	voiceReportsMu.Unlock()
+	if reports == nil {
+		reports = []voiceReport{}
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"enabled": h.planner.Voices().Enabled(), "file": config.GlobalConfig.Guide.VoicesFile,
+		"announcers": f.Announcers, "lines": f.Lines, "later_lines": f.LaterLines, "reports": reports})
+}
+
+// TryVoice says a line in an announcer's voice for the tester: POST /api/admin/guide/voices/try
+// {"announcer", "line", "fixes"} gives the audio's address, its length and Piper's phonemes.
+func (h *GuideHandler) TryVoice(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(w, r) {
+		return
+	}
+	var body struct {
+		Announcer string     `json:"announcer"`
+		Line      string     `json:"line"`
+		Fixes     bool       `json:"fixes"`
+		Fix       *guide.Fix `json:"fix,omitempty"` // a fix being tried (added to the announcer's)
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Line) == "" {
+		respondError(w, http.StatusBadRequest, "A line to say")
+		return
+	}
+	voices := h.planner.Voices()
+	f, err := voices.File()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	a, ok := f.Announcer(body.Announcer)
+	if !ok {
+		respondError(w, http.StatusNotFound, "No such announcer")
+		return
+	}
+	if body.Fix != nil && strings.TrimSpace(body.Fix.Match) != "" {
+		a.Fixes = append(append([]guide.Fix{}, a.Fixes...), *body.Fix)
+		body.Fixes = true
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	vo, err := voices.Make(ctx, a, strings.TrimSpace(body.Line), body.Fixes)
+	if err != nil {
+		respondError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	phonemes, _ := voices.Phonemes(ctx, a, strings.TrimSpace(body.Line), body.Fixes)
+	respondJSON(w, http.StatusOK, map[string]any{"url": "/api/guide/voiceover?key=" + vo.Key, "seconds": vo.Seconds,
+		"phonemes": phonemes})
+}
+
+// SaveVoiceFix saves a fix in guide-voices.yml: POST /api/admin/guide/voices/fix {"announcer",
+// "match", "say", "pace"} (admins). The voice-overs it changes are made again before they air.
+func (h *GuideHandler) SaveVoiceFix(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(w, r) {
+		return
+	}
+	var body struct {
+		Announcer string `json:"announcer"`
+		guide.Fix
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Match) == "" || strings.TrimSpace(body.Say) == "" {
+		respondError(w, http.StatusBadRequest, "A fix needs the words to match and what to say")
+		return
+	}
+	if err := h.planner.Voices().AddFix(body.Announcer, body.Fix); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.planner.VoiceOversSoon()
+	respondJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// DeleteVoiceReport takes a report off the list: DELETE /api/admin/guide/voices/report?time= (admins).
+func (h *GuideHandler) DeleteVoiceReport(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(w, r) {
+		return
+	}
+	t, _ := strconv.ParseInt(r.URL.Query().Get("time"), 10, 64)
+	voiceReportsMu.Lock()
+	defer voiceReportsMu.Unlock()
+	reports := readVoiceReports()
+	kept := reports[:0]
+	for _, rep := range reports {
+		if rep.Time != t {
+			kept = append(kept, rep)
+		}
+	}
+	if err := writeVoiceReports(kept); err != nil {
+		respondError(w, http.StatusInternalServerError, "Couldn't change the list")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

@@ -54,6 +54,10 @@ type Service struct {
 	mu   sync.Mutex // one refresh at a time
 	kick chan struct{}
 
+	voices   *Voices
+	voiceJob *bgjobs.Job
+	voiceRun sync.Mutex // one run of the voice-overs at a time
+
 	clipsMu    sync.Mutex
 	clipsByLib map[string][]Clip // the filler libraries' clips, by library ID, from the last refresh
 }
@@ -75,7 +79,7 @@ func (s *Service) FillerClips(may func(libraryID string) bool) []Clip {
 
 // NewService makes the Guide's planner; Start runs it.
 func NewService(db *database.DB, meta *metadata.Service) *Service {
-	return &Service{db: db, meta: meta, kick: make(chan struct{}, 1),
+	return &Service{db: db, meta: meta, kick: make(chan struct{}, 1), voices: NewVoices(), voiceJob: newVoiceJob(),
 		job: bgjobs.Register("guide", "Guide",
 			"Plans the Guide's channels three days ahead from the libraries with Show in Guide on.")}
 }
@@ -84,6 +88,20 @@ func NewService(db *database.DB, meta *metadata.Service) *Service {
 func (s *Service) Start(ctx context.Context) {
 	s.job.Schedule("A minute after server start, every hour, and when settings change")
 	s.job.OnRunNow(s.Kick)
+	s.voiceJob.Schedule("After each planning, and every 10 minutes")
+	s.voiceJob.OnRunNow(func() { go s.voiceOversOnce(ctx) })
+	go func() {
+		t := time.NewTicker(voiceOversEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.voiceOversOnce(ctx)
+			}
+		}
+	}()
 	go func() {
 		timer := time.NewTimer(firstRefresh)
 		s.job.NextIn(firstRefresh)
@@ -98,11 +116,24 @@ func (s *Service) Start(ctx context.Context) {
 			if err := s.Refresh(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("[GUIDE] Planning failed: %v", err)
 			}
+			go s.voiceOversOnce(ctx)
 			timer.Reset(refreshEvery)
 			s.job.NextIn(refreshEvery)
 		}
 	}()
 }
+
+// voiceOversOnce makes the voice-overs ahead, one run at a time.
+func (s *Service) voiceOversOnce(ctx context.Context) {
+	if !s.voiceRun.TryLock() {
+		return
+	}
+	defer s.voiceRun.Unlock()
+	s.makeVoiceOvers(ctx)
+}
+
+// VoiceOversSoon makes the voice-overs ahead again now (a fix changed some).
+func (s *Service) VoiceOversSoon() { go s.voiceOversOnce(context.Background()) }
 
 // Kick plans again soon (libraries or settings changed).
 func (s *Service) Kick() {

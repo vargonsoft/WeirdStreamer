@@ -1,0 +1,43 @@
+# The Guide's voice-overs (docs/GUIDE.md): who announces, how they speak, what they say, and fixes for
+# words Piper says wrong. The server reads this file again when it changes: no restart. Settings ›
+# Server › Guide has a tester: hear a line in a voice, with and without its fixes, see how Piper spelled
+# it, and save a fix here.
+#
+# Each channel keeps one announcer from this list, picked by its number.
+announcers:
+  - name: Ryan                      # shown in the tester
+    model: en_US-ryan-high          # a Piper voice in guide.piperVoices (its .onnx and .onnx.json)
+    lengthScale: 1.1                # pace: above 1 is slower (Piper's --length-scale)
+    noiseScale: 0.667               # variation in the voice (--noise-scale)
+    noiseW: 0.8                     # variation in timing (--noise-w)
+    sentenceSilence: 0.3            # seconds between sentences
+    # ffmpeg's audio filters after Piper: the 1980s announce booth (no rumble, a little warmth and
+    # presence, a steady level)
+    filter: highpass=f=90,equalizer=f=200:t=q:w=1:g=2,equalizer=f=3500:t=q:w=1.2:g=3,acompressor=threshold=0.1:ratio=3:attack=5:release=120:makeup=2,loudnorm=I=-16:TP=-1.5:LRA=7
+    fixes:
+      # match: words as written (any case, whole words); say: what Piper is given instead, where
+      # [[ … ]] is phonemes; pace (optional): that piece is said on its own at this pace (a
+      # lengthScale) and joined back in. A phrase fixes a word only there; a single word, everywhere.
+      - match: next on Channel
+        say: next on [[ tʃˈæːnəl ]]
+  - name: HFC Female
+    model: en_US-hfc_female-medium
+    lengthScale: 1.08
+    noiseScale: 0.667
+    noiseW: 0.8
+    sentenceSilence: 0.3
+    filter: highpass=f=110,equalizer=f=3500:t=q:w=1.2:g=2,acompressor=threshold=0.1:ratio=3:attack=5:release=120:makeup=2,loudnorm=I=-16:TP=-1.5:LRA=7
+    fixes:
+      - match: next on Channel
+        say: next on [[ tʃˈæːːnəl ]]
+
+# What they say over a program's credits, one picked for each program. {next}: the next program's
+# title; {channel}: the channel's number. laterLines are used when a program follows the next one
+# within three hours: {later} is its title and {later_time} when it starts ("9", "9:30").
+lines:
+  - Stay tuned for {next}, next on Channel {channel}.
+  - Coming up next on Channel {channel}, {next}.
+  - Don't go away. {next} is next, only on Channel {channel}.
+laterLines:
+  - Stay tuned for {next}, next on Channel {channel}. And at {later_time}, {later}.
+  - Next on Channel {channel}, {next}. Then at {later_time}, {later}.

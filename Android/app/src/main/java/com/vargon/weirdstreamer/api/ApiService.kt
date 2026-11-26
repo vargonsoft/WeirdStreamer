@@ -308,6 +308,9 @@ interface ApiService {
     @GET("/api/guide/now")
     suspend fun guideNow(@Query("channel") channel: Int, @Query("lib") libraryId: String? = null): Response<com.vargon.weirdstreamer.api.models.GuideNow>
 
+    @POST("/api/guide/voiceover/report")
+    suspend fun reportVoiceOver(@Body body: Map<String, @JvmSuppressWildcards Any>): Response<Unit>
+
     @GET("/api/guide/weather")
     suspend fun guideWeather(): Response<com.vargon.weirdstreamer.api.models.GuideWeather>
 

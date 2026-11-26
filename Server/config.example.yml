@@ -189,3 +189,11 @@ guide:
   # shown while it plays (a Creative Commons track's attribution). Default: guide-music beside the
   # thumbnails folder.
   # musicPath: ./var/guide-music
+  # Voice-overs on the credits ("Stay tuned for…"), made by Piper (github.com/OHF-Voice/piper1-gpl;
+  # pip install piper-tts): its command, and the folder of its voice models (.onnx and .onnx.json:
+  # en_US-ryan-high and en_US-hfc_female-medium from huggingface.co/rhasspy/piper-voices). Without a
+  # command there are no voice-overs. The announcers, their fixes and lines are in guide-voices.yml
+  # beside this file (voicesFile), written with its defaults when it's missing; the voice-overs made
+  # are kept in voiceOverPath (default voiceovers beside the thumbnails folder).
+  # piperCommand: /opt/piper/bin/piper
+  # piperVoices: /opt/piper/voices

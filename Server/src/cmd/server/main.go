@@ -138,6 +138,12 @@ func serve(parent context.Context) {
 		config.GlobalConfig.Media.TempPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "tmp")
 	}
 	// Fixed copies of damaged videos, and the originals they replaced: beside the thumbnails by default
+	if config.GlobalConfig.Guide.VoiceOverPath == "" {
+		config.GlobalConfig.Guide.VoiceOverPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "voiceovers")
+	}
+	if config.GlobalConfig.Guide.VoicesFile == "" {
+		config.GlobalConfig.Guide.VoicesFile = filepath.Join(filepath.Dir(configPath), "guide-voices.yml")
+	}
 	if config.GlobalConfig.Guide.MusicPath == "" {
 		config.GlobalConfig.Guide.MusicPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "guide-music")
 	}
@@ -276,6 +282,12 @@ func serve(parent context.Context) {
 	api.HandleFunc("/guide/weather/radar", guideHandler.WeatherRadar).Methods("GET")
 	api.HandleFunc("/guide/weather/icon", guideHandler.WeatherIcon).Methods("GET")
 	api.HandleFunc("/guide/music", guideHandler.Music).Methods("GET")
+	api.HandleFunc("/guide/voiceover", guideHandler.VoiceOver).Methods("GET")
+	api.HandleFunc("/guide/voiceover/report", guideHandler.ReportVoiceOver).Methods("POST")
+	api.HandleFunc("/admin/guide/voices", guideHandler.Voices).Methods("GET")
+	api.HandleFunc("/admin/guide/voices/try", guideHandler.TryVoice).Methods("POST")
+	api.HandleFunc("/admin/guide/voices/fix", guideHandler.SaveVoiceFix).Methods("POST")
+	api.HandleFunc("/admin/guide/voices/report", guideHandler.DeleteVoiceReport).Methods("DELETE")
 	api.HandleFunc("/library/new", mediaHandler.NewAdditions).Methods("GET")
 	api.HandleFunc("/playback/watched", mediaHandler.SetWatched).Methods("POST")
 	api.HandleFunc("/playback/sync", mediaHandler.SyncPlayback).Methods("POST")

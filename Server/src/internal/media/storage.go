@@ -94,6 +94,7 @@ func countFolders() {
 		{"Fixed videos", m.RepairPath},
 		{"Theme music", m.ThemePath},
 		{"Guide music", config.GlobalConfig.Guide.MusicPath},
+		{"Guide voice-overs", config.GlobalConfig.Guide.VoiceOverPath},
 		{"Trash", m.TrashPath},
 	} {
 		if f.dir != "" {

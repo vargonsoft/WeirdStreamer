@@ -973,6 +973,18 @@ data class GuideNow(
     @SerializedName("airs_on") val airsOn: GuideChannel? = null,
     // what plays under the Weather channel and the Guide channel's cards
     @SerializedName("music") val music: GuideMusic? = null,
+    // a program's voice-over on its credits ("Stay tuned for…"), when it's been made
+    @SerializedName("voice_over") val voiceOver: GuideVoiceOver? = null,
+)
+
+/** When a program's voice-over plays: from [at] seconds into its file, the program lowered under it; from [squeezeAt] (0: never) the picture is squeezed beside an "Up next" card. */
+data class GuideVoiceOver(
+    @SerializedName("url") val url: String = "",
+    @SerializedName("at") val at: Double = 0.0,
+    @SerializedName("seconds") val seconds: Double = 0.0,
+    @SerializedName("squeeze_at") val squeezeAt: Double = 0.0,
+    @SerializedName("line") val line: String = "",
+    @SerializedName("announcer") val announcer: String = "",
 )
 
 /** A track of the Guide's music, from [offset] seconds; the next starts at [end]. */

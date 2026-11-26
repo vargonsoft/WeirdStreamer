@@ -2975,6 +2975,7 @@ async function showSettings(pushHistory = true) {
             showBackupSettings(config.database || {});
             document.getElementById('guide-prime-time').value = String((config.guide && config.guide.primeTime) || 20);
             document.getElementById('guide-weather-zip').value = (config.guide && config.guide.weatherZip) || '';
+            loadVoiceTester();
             loadDamagedVideos();
             const metadata = config.metadata || {};
             document.getElementById('tmdb-token').value = metadata.tmdbAccessToken || '';

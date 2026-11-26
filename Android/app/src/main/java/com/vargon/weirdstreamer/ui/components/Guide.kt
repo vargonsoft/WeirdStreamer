@@ -68,7 +68,7 @@ import java.util.Locale
  */
 
 /** What the player plays: a file from [seekMs] (the original) or a stream from where the channel is. */
-data class GuideStream(val url: String, val seekMs: Long, val key: String)
+data class GuideStream(val url: String, val seekMs: Long, val key: String, val fileStartMs: Long = 0) // fileStartMs: where a stream starts in the file
 
 /**
  * The Guide's state: the grid, the channel tuned, what it airs and how it plays. [library] is the
@@ -102,6 +102,15 @@ class GuideModel(
     /** Bumped each second, for the time line. */
     var clock by mutableStateOf(0L)
         private set
+    /** The program's voice-over while it plays (the program is lowered under it), for a report. */
+    var voiceOverOn by mutableStateOf<com.vargon.weirdstreamer.api.models.GuideVoiceOver?>(null)
+        private set
+    /** The credits squeezed into the corner beside what's next. */
+    var squeezed by mutableStateOf(false)
+        private set
+    private var voiceJob: Job? = null
+    /** Where the player is in the file now, ms (GuidePlayer's), or null before it has the item. */
+    var playerPosition: (() -> Long?)? = null
     /** The Weather channel's forecast, while it's tuned. */
     var weather by mutableStateOf<com.vargon.weirdstreamer.api.models.GuideWeather?>(null)
         private set
@@ -256,6 +265,7 @@ class GuideModel(
                 stopMusic()
                 stream = n.path?.takeIf { n.kind != "bumper" }?.let { streamFor(n, it, transcode = false) }
             }
+            scheduleVoiceOver(n)
             delay((n.end - serverNow()).coerceAtLeast(0) + 50)
         }
     }
@@ -281,7 +291,7 @@ class GuideModel(
             if (!copy) VideoDecoders.maxHeight?.let { append("&resolution=$it") }
             if (start > 1000) append("&start=" + String.format(Locale.US, "%.2f", start / 1000.0))
         }
-        return GuideStream(repo.streamUrlFor(path, query), 0, key)
+        return GuideStream(repo.streamUrlFor(path, query), 0, key, fileStartMs = if (start > 1000) start else 0)
     }
 
     /** The player failed on what it was given: a full transcode from where the channel is, once. */
@@ -291,6 +301,52 @@ class GuideModel(
         if (fellBack) return
         fellBack = true
         scope.launch { stream = streamFor(n, path, transcode = true) }
+    }
+
+    /** The program's voice-over when the player reaches its place in the file (the player's own
+     *  position, so it lines up with the picture even after a stall): the squeeze, then the announcer
+     *  (on the music's player, which is quiet during programs), then back. */
+    private fun scheduleVoiceOver(n: GuideNow) {
+        endVoiceOver()
+        val vo = n.voiceOver ?: return
+        if (n.kind != "program") return
+        fun filePos() = playerPosition?.invoke()?.let { it / 1000.0 } ?: (n.offset + (serverNow() - n.serverTime) / 1000.0)
+        val end = vo.at + vo.seconds
+        if (filePos() >= end) return
+        voiceJob = scope.launch {
+            suspend fun until(secs: Double) {
+                while (filePos() < secs) delay(250)
+            }
+            if (vo.squeezeAt > 0) {
+                until(vo.squeezeAt)
+                squeezed = true
+            }
+            until(vo.at)
+            val url = repo.absoluteUrl(vo.url) ?: return@launch
+            val into = ((filePos() - vo.at) * 1000).toLong().coerceAtLeast(0)
+            musicUsed = true
+            music.volume = if (muted) 0f else 1f
+            music.setMediaItem(MediaItem.Builder().setUri(url).setMediaId(url).build(), into)
+            music.prepare()
+            music.playWhenReady = true
+            voiceOverOn = vo
+            until(end + 0.3)
+            voiceOverOn = null
+        }
+    }
+
+    private fun endVoiceOver() {
+        voiceJob?.cancel()
+        voiceJob = null
+        if (voiceOverOn != null) stopMusic()
+        voiceOverOn = null
+        squeezed = false
+    }
+
+    /** Reports the voice-over playing, heard said wrong. */
+    suspend fun reportVoiceOver(): Result<Unit> {
+        val vo = voiceOverOn ?: return Result.failure(Exception("No voice-over"))
+        return repo.reportVoiceOver(channel ?: 0, vo.line, vo.announcer)
     }
 
     /** Plays the item's music from where the clock says (going on if it's already that track). */
@@ -332,6 +388,7 @@ class GuideModel(
     fun weatherRadarUrl() = repo.weatherRadarUrl(serverNow())
 
     fun stop() {
+        endVoiceOver()
         nowJob?.cancel()
         stream = null
         now = null
@@ -380,9 +437,20 @@ fun GuidePlayer(model: GuideModel, player: ExoPlayer, modifier: Modifier = Modif
         player.prepare()
         player.playWhenReady = true
     }
-    LaunchedEffect(model.muted) {
-        player.volume = if (model.muted) 0f else 1f
+    // muted, or lowered under the announcer
+    LaunchedEffect(model.muted, model.voiceOverOn) {
+        player.volume = if (model.muted) 0f else if (model.voiceOverOn != null) 0.3f else 1f
         model.music.volume = if (model.muted) 0f else 1f
+    }
+    // where the player is in the file: its position plus where its stream started
+    DisposableEffect(player, stream?.key) {
+        model.playerPosition = {
+            val s = model.stream
+            if (s != null && player.currentMediaItem?.mediaId == s.key &&
+                (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING))
+                player.currentPosition + s.fileStartMs else null
+        }
+        onDispose { }
     }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -403,7 +471,16 @@ fun GuidePlayer(model: GuideModel, player: ExoPlayer, modifier: Modifier = Modif
     // the Weather channel's pages over it all
     val kind = now?.channel?.kind ?: model.data?.channels?.firstOrNull { it.number == model.channel }?.kind ?: ""
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
-        Box(if (kind == "guide") Modifier.fillMaxWidth().fillMaxHeight(0.58f).align(Alignment.TopCenter) else Modifier.fillMaxSize()) {
+        // a voice-over's squeeze: the credits shrink into the corner beside what's next
+        val squeeze by androidx.compose.animation.core.animateFloatAsState(if (model.squeezed && kind.isEmpty()) 1f else 0f,
+            androidx.compose.animation.core.tween(600), label = "squeeze")
+        if (squeeze > 0f) UpNextCard(model, now, squeeze, Modifier.fillMaxSize())
+        Box(when {
+            kind == "guide" -> Modifier.fillMaxWidth().fillMaxHeight(0.58f).align(Alignment.TopCenter)
+            squeeze > 0f -> Modifier.align(Alignment.TopStart).fillMaxWidth(1f - 0.48f * squeeze).fillMaxHeight(1f - 0.48f * squeeze)
+                .padding(start = (16 * squeeze).dp, top = (12 * squeeze).dp)
+            else -> Modifier.fillMaxSize()
+        }) {
             AndroidView(
                 factory = { ctx ->
                     (LayoutInflater.from(ctx).inflate(R.layout.texture_video_view, null) as PlayerView).apply {
@@ -513,3 +590,15 @@ fun guideAccent(fallback: Color): Color =
 /** A channel's logo color for the theme's text: "rrggbb". */
 fun guideLogoColor(c: Color): String = String.format(Locale.US, "%02x%02x%02x",
     (c.red * 255).toInt(), (c.green * 255).toInt(), (c.blue * 255).toInt())
+
+/** While the channel's voice-over plays, "Report voice-over" (one said wrong, for the tester's list). */
+@Composable
+fun ReportVoiceOver(model: GuideModel, channel: Int, button: @Composable (String, () -> Unit) -> Unit) {
+    val vo = model.voiceOverOn ?: return
+    if (model.channel != channel) return
+    var label by remember(vo) { mutableStateOf("Report voice-over") }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    button(label) {
+        scope.launch { label = if (model.reportVoiceOver().isSuccess) "Reported" else "Couldn't report it" }
+    }
+}

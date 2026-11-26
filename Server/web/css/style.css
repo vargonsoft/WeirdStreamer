@@ -3874,6 +3874,73 @@ body:has(#guide-screen.active) > footer {
     font-size: 3.2cqw;
 }
 
+/* A voice-over's squeeze: the credits shrink into the corner beside what's next */
+.guide-player video {
+    transition: width 0.6s ease, height 0.6s ease, margin 0.6s ease;
+}
+
+.guide-player--squeezed video {
+    width: 52%;
+    height: 52%;
+    margin: 3% 0 0 3%;
+    border: 0.4cqh solid #fff;
+    box-shadow: 0.8cqh 0.8cqh 0 rgba(0, 0, 0, 0.5);
+}
+
+.guide-player--squeezed {
+    background: radial-gradient(circle at 75% 40%, var(--squeeze-color, #3a2a6a), #0b0b1e 80%);
+}
+
+.guide-upnext {
+    position: absolute;
+    left: 58%;
+    right: 3%;
+    top: 6%;
+    bottom: 6%;
+    display: flex;
+    flex-direction: column;
+    gap: 1.2cqh;
+    color: #fff;
+    text-shadow: 0.3cqh 0.3cqh 0 rgba(0, 0, 0, 0.6);
+    animation: guide-upnext-in 0.6s ease;
+}
+
+@keyframes guide-upnext-in {
+    from { opacity: 0; transform: translateX(10%); }
+}
+
+.guide-upnext-logo {
+    width: 70%;
+    filter: drop-shadow(0.4cqh 0.4cqh 0 rgba(0, 0, 0, 0.5));
+}
+
+.guide-upnext-kicker {
+    font: 900 4cqh/1.1 sans-serif;
+    color: #FFD23F;
+    text-transform: uppercase;
+}
+
+.guide-upnext-title {
+    font: 900 6.5cqh/1.05 sans-serif;
+}
+
+.guide-upnext-line {
+    font: bold 3.6cqh/1.2 sans-serif;
+}
+
+.guide-upnext-poster {
+    flex: 1;
+    min-height: 0;
+    align-self: flex-start;
+    object-fit: contain;
+    border: 0.4cqh solid #fff;
+}
+
+.guide-report-voice {
+    align-self: flex-start;
+    margin-top: 8px;
+}
+
 /* ---- The channels of their own: drawn over the picture, sized to it (container units) ---- */
 .guide-player {
     container-type: size;
@@ -4420,4 +4487,57 @@ body:has(#guide-screen.active) > footer {
     background: var(--primary-color);
     pointer-events: none;
     z-index: 2;
+}
+
+/* The voice-over tester (Settings › Server › Guide) */
+.voice-tester {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+    max-width: 760px;
+}
+
+.voice-tester h4,
+.voice-tester h5 {
+    margin: 8px 0 0;
+}
+
+.voice-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.voice-row .settings-input {
+    flex: 1;
+    min-width: 160px;
+}
+
+.voice-line {
+    width: 100%;
+    font: inherit;
+}
+
+.voice-out audio {
+    width: 100%;
+}
+
+.voice-phonemes,
+.voice-fix,
+.voice-report-line {
+    font-family: monospace;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.voice-report {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 13px;
 }
