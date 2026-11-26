@@ -40,6 +40,10 @@ type Service struct {
 	client   *Client
 	clientID string          // token+language the client was built with
 	pending  map[string]bool // job IDs queued or running
+	running  map[string]bool // job IDs being run now
+	again    map[string]job  // jobs asked for again while running: run once more after
+	lookupMu sync.Mutex      // orders hand changes to a lookup against a running lookup's saves
+	changed  map[string]int  // lookup job IDs: how often a match was set or reset by hand
 	active   map[string]bool // "movie:123"/"tv:123" being written, protected from cleanup
 	// Folders a discovery found not to be a single movie or a show with episodes, so browsing
 	// doesn't list them again on every request.
@@ -64,6 +68,9 @@ type job struct {
 	showID     int // set for season fetches
 	season     int
 	notifyPath string
+	// asked for because the match was set or reset by hand: if this lookup is running, it runs
+	// once more after (the running one read the row from before, and saves nothing)
+	rerun bool
 	// set for folder discovery: list folder to see whether it holds one movie or a show
 	discoverLib    *config.MediaPath
 	discoverFolder string
@@ -84,6 +91,9 @@ func NewService(db *database.DB, notify func(path string)) *Service {
 		db:      db,
 		notify:  notify,
 		pending: map[string]bool{},
+		running: map[string]bool{},
+		again:   map[string]job{},
+		changed: map[string]int{},
 		active:  map[string]bool{},
 
 		notTitleFolders: map[string]time.Time{},
@@ -137,13 +147,17 @@ func artworkDir() string {
 
 // EnqueueRef schedules a lookup for ref's title (and its season, for episodes) if needed.
 func (s *Service) EnqueueRef(ref Ref, notifyPath string) {
+	s.enqueueRef(ref, notifyPath, false)
+}
+
+func (s *Service) enqueueRef(ref Ref, notifyPath string, rerun bool) {
 	l := &database.Lookup{Kind: ref.Kind, LibraryID: ref.LibraryID, QueryKey: ref.Key,
 		QueryTitle: ref.Title, QueryYear: ref.Year, QueryCountry: ref.Country}
 	var seasons []int
 	if ref.Kind == config.LibraryTypeTV && (ref.IsEpisode || ref.Season > 0) {
 		seasons = []int{ref.Season}
 	}
-	s.enqueue(job{lookup: l, seasons: seasons, notifyPath: notifyPath})
+	s.enqueue(job{lookup: l, seasons: seasons, notifyPath: notifyPath, rerun: rerun})
 }
 
 func (s *Service) enqueue(j job) {
@@ -153,6 +167,10 @@ func (s *Service) enqueue(j job) {
 	id := j.id()
 	s.mu.Lock()
 	if s.pending[id] {
+		if s.running[id] && j.rerun {
+			// The running lookup read the row from before this hand change: run it once more after.
+			s.again[id] = j
+		}
 		s.mu.Unlock()
 		return
 	}
@@ -168,11 +186,50 @@ func (s *Service) enqueue(j job) {
 	}
 }
 
+func lookupID(l *database.Lookup) string { return job{lookup: l}.id() }
+
+// changeByHand runs a hand change to a lookup's row (Fix dialog: set or reset a match), counted so
+// a lookup running for it meanwhile saves nothing over it.
+func (s *Service) changeByHand(l *database.Lookup, change func() error) error {
+	s.lookupMu.Lock()
+	defer s.lookupMu.Unlock()
+	s.changed[lookupID(l)]++
+	return change()
+}
+
+// lookupGeneration is how often l's match has been changed by hand, read when a lookup starts.
+func (s *Service) lookupGeneration(l *database.Lookup) int {
+	s.lookupMu.Lock()
+	defer s.lookupMu.Unlock()
+	return s.changed[lookupID(l)]
+}
+
+// saveLookup saves a lookup's result unless its match was set or reset by hand since gen: then the
+// result is from the row before, and it saves nothing and returns false.
+func (s *Service) saveLookup(l *database.Lookup, gen int) (bool, error) {
+	s.lookupMu.Lock()
+	defer s.lookupMu.Unlock()
+	if s.changed[lookupID(l)] != gen {
+		return false, nil
+	}
+	return true, s.db.SaveLookup(l)
+}
+
 func (s *Service) run(ctx context.Context, j job) {
+	id := j.id()
+	s.mu.Lock()
+	s.running[id] = true
+	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
-		delete(s.pending, j.id())
+		delete(s.running, id)
+		delete(s.pending, id)
+		next, rerun := s.again[id]
+		delete(s.again, id)
 		s.mu.Unlock()
+		if rerun {
+			s.enqueue(next)
+		}
 	}()
 	client := s.tmdb()
 	if client == nil {
@@ -204,6 +261,7 @@ func due(status string, at time.Time) bool {
 
 func (s *Service) runLookup(ctx context.Context, client *Client, j job) error {
 	l := j.lookup
+	gen := s.lookupGeneration(l)
 	existing, err := s.db.GetLookup(l.Kind, l.LibraryID, l.QueryKey)
 	if err != nil {
 		return err
@@ -226,15 +284,18 @@ func (s *Service) runLookup(ctx context.Context, client *Client, j job) error {
 		switch {
 		case err != nil:
 			l.Status = "error"
-			s.db.SaveLookup(l)
+			s.saveLookup(l, gen)
 			return err
 		case tmdbID == 0:
 			l.Status = "not_found"
+			if saved, err := s.saveLookup(l, gen); !saved || err != nil {
+				return err
+			}
 			log.Printf("[METADATA] No TMDB match for %s %q (%d)", l.Kind, l.QueryTitle, l.QueryYear)
-			return s.db.SaveLookup(l)
+			return nil
 		}
 		l.TMDBID, l.Status = tmdbID, "matched"
-		if err := s.db.SaveLookup(l); err != nil {
+		if saved, err := s.saveLookup(l, gen); err != nil || !saved {
 			return err
 		}
 	}
@@ -249,7 +310,8 @@ func (s *Service) runLookup(ctx context.Context, client *Client, j job) error {
 		// The search result has no details record (removed from TMDB): treat as no match.
 		// A manual match is kept as chosen.
 		l.TMDBID, l.Status, l.AttemptedAt = 0, "not_found", time.Now()
-		return s.db.SaveLookup(l)
+		_, err = s.saveLookup(l, gen)
+		return err
 	}
 	if err != nil {
 		return err

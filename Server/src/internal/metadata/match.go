@@ -184,7 +184,7 @@ func (s *Service) SetMatch(ref Ref, tmdbID int, kind, notifyPath string) error {
 	if tmdbID == 0 {
 		l.Status = "not_found"
 	}
-	if err := s.db.SaveLookup(l); err != nil {
+	if err := s.changeByHand(l, func() error { return s.db.SaveLookup(l) }); err != nil {
 		return err
 	}
 	if tmdbID > 0 {
@@ -192,7 +192,7 @@ func (s *Service) SetMatch(ref Ref, tmdbID int, kind, notifyPath string) error {
 		if ref.IsEpisode {
 			seasons = []int{ref.Season}
 		}
-		s.enqueue(job{lookup: l, seasons: seasons, notifyPath: notifyPath})
+		s.enqueue(job{lookup: l, seasons: seasons, notifyPath: notifyPath, rerun: true})
 		// A sync queues the seasons of every episode on disk for the new show.
 		go s.SyncAll(context.Background())
 	}
@@ -205,14 +205,14 @@ func (s *Service) ResetMatch(ref Ref, notifyPath string) error {
 	if err != nil || l == nil {
 		return err
 	}
-	if err := s.db.DeleteLookup(ref.Kind, ref.LibraryID, ref.Key); err != nil {
+	if err := s.changeByHand(l, func() error { return s.db.DeleteLookup(ref.Kind, ref.LibraryID, ref.Key) }); err != nil {
 		return err
 	}
 	if IsExtraKey(ref.Key) {
 		return nil // single files that aren't episodes are only ever matched by hand
 	}
 	ref.Title, ref.Year, ref.Country = l.QueryTitle, l.QueryYear, l.QueryCountry
-	s.EnqueueRef(ref, notifyPath)
+	s.enqueueRef(ref, notifyPath, true)
 	return nil
 }
 
