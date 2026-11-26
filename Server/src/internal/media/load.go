@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // LoadMonitor samples the machine's CPU and disk use (Linux /proc), so background jobs run only
@@ -178,7 +180,7 @@ func (m *LoadMonitor) diskUse(name string) (float64, bool) {
 // timeReads reads probeSize bytes at probeReads random places in a file, dropping them from the
 // page cache after so a later read goes to the disk again, and returns the median time (ms).
 func timeReads(path string) (float64, error) {
-	f, err := os.Open(path)
+	f, err := fileio.Open(path)
 	if err != nil {
 		return 0, err
 	}

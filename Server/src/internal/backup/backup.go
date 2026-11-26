@@ -24,6 +24,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/jobs"
 )
 
@@ -75,7 +76,7 @@ func Create(db *database.DB, version string) (Info, error) {
 		return Info{}, err
 	}
 	files := []string{"manifest.json", "users.db", "media.db"}
-	if cfg, err := os.ReadFile(config.Path()); err == nil {
+	if cfg, err := fileio.ReadFile(config.Path()); err == nil {
 		if err := os.WriteFile(filepath.Join(work, "config.yml"), cfg, 0o600); err != nil {
 			return Info{}, err
 		}
@@ -95,7 +96,7 @@ func Create(db *database.DB, version string) (Info, error) {
 		os.Remove(part)
 		return Info{}, err
 	}
-	if err := os.Rename(part, filepath.Join(dir, name)); err != nil {
+	if err := fileio.Rename(part, filepath.Join(dir, name)); err != nil {
 		os.Remove(part)
 		return Info{}, err
 	}
@@ -109,7 +110,7 @@ func Create(db *database.DB, version string) (Info, error) {
 }
 
 func writeArchive(path, dir string, files []string) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := fileio.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
@@ -131,7 +132,7 @@ func writeArchive(path, dir string, files []string) error {
 }
 
 func addFile(tw *tar.Writer, path, name string) error {
-	src, err := os.Open(path)
+	src, err := fileio.Open(path)
 	if err != nil {
 		return err
 	}
@@ -418,7 +419,7 @@ func Restore(file string, withConfig bool) (string, error) {
 
 // extract unpacks a backup's known files (nothing else, and no paths) into dir.
 func extract(file, dir string) (map[string]bool, error) {
-	f, err := os.Open(file)
+	f, err := fileio.Open(file)
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +443,7 @@ func extract(file, dir string) (map[string]bool, error) {
 		default:
 			continue
 		}
-		out, err := os.OpenFile(filepath.Join(dir, h.Name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		out, err := fileio.OpenFile(filepath.Join(dir, h.Name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 		if err != nil {
 			return nil, err
 		}
@@ -458,7 +459,7 @@ func extract(file, dir string) (map[string]bool, error) {
 // ReadManifest is what a backup says about itself, read from the archive as it is.
 func ReadManifest(file string) (Manifest, error) {
 	var m Manifest
-	f, err := os.Open(file)
+	f, err := fileio.Open(file)
 	if err != nil {
 		return m, err
 	}
@@ -479,17 +480,18 @@ func ReadManifest(file string) (Manifest, error) {
 	}
 }
 
-// moveFile renames, or copies across disks; the copy is the owner's only.
+// moveFile renames, or copies across disks; the copy is the owner's only. Any other failure (on
+// Windows, a file another program has open) is returned as it is: a copy wouldn't remove it either.
 func moveFile(from, to string) error {
-	if err := os.Rename(from, to); err == nil {
-		return nil
+	if err := fileio.Rename(from, to); err == nil || !fileio.CrossDevice(err) {
+		return err
 	}
-	src, err := os.Open(from)
+	src, err := fileio.Open(from)
 	if err != nil {
 		return err
 	}
 	defer src.Close()
-	dst, err := os.OpenFile(to, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	dst, err := fileio.OpenFile(to, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

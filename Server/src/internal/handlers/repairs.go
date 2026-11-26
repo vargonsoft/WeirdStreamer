@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/weirdstreamer/server/internal/auth"
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/media"
 )
 
@@ -121,7 +122,7 @@ func (h *MediaHandler) TrashThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "private, max-age=86400")
-	http.ServeFile(w, r, item.Thumbnail)
+	fileio.ServeFile(w, r, item.Thumbnail)
 }
 
 // RestoreTrash undoes a replace (POST /api/admin/trash/restore with {"id"}): the original goes
@@ -166,6 +167,9 @@ func (h *MediaHandler) RestoreTrash(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, media.ErrReplacementChanged):
 		respondError(w, http.StatusConflict, "Can't restore it: "+filepath.Base(item.Replacement)+" has changed since it replaced it")
 		return
+	case fileio.InUse(err):
+		respondError(w, http.StatusConflict, inUseMessage)
+		return
 	case err != nil:
 		log.Printf("[REPAIRS] Restoring %s: %v", item.Path, err)
 		respondError(w, http.StatusInternalServerError, "Couldn't restore it: "+withoutDiskPath(withoutDiskPath(err.Error(), item.Path), item.Replacement))
@@ -201,6 +205,10 @@ func (h *MediaHandler) DamagedVideos(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{"videos": list})
 }
 
+// inUseMessage answers a replace or restore that Windows refused because a program has one of the
+// files open: ffmpeg playing or reading it for a job, or a program outside the server.
+const inUseMessage = "The video is open (being played, read by a background job, or open in another program): try again in a few minutes"
+
 // ReplaceDamaged puts a damaged video's fixed copy in its place, as .mkv, its progress and the rest
 // following it, and moves the original to the trash (POST /api/admin/damaged/replace with
 // {"path": base64 client path}). Answers {"path": the new file's client path}.
@@ -234,6 +242,9 @@ func (h *MediaHandler) ReplaceDamaged(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, media.ErrNameTaken):
 		respondError(w, http.StatusConflict, "A file named "+filepath.Base(newPathFor(path))+" is already in that folder")
+		return
+	case fileio.InUse(err):
+		respondError(w, http.StatusConflict, inUseMessage)
 		return
 	case err != nil:
 		log.Printf("[REPAIRS] Replacing %s: %v", path, err)

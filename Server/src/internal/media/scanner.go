@@ -21,6 +21,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/jobs"
 	"github.com/weirdstreamer/server/internal/models"
 )
@@ -306,7 +307,7 @@ func (s *Scanner) getVideoMetadata(item *models.MediaItem) error {
 }
 
 func (s *Scanner) getImageMetadata(item *models.MediaItem) error {
-	file, err := os.Open(item.Path)
+	file, err := fileio.Open(item.Path)
 	if err != nil {
 		return err
 	}

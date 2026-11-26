@@ -810,15 +810,23 @@ Checked by type-checking the server for each target and reading `release.sh` (wh
   ffmpeg lacks the DVD reader, chromaprint and libass: ship or point to `scripts/build-ffmpeg.sh`'s.
   The disk-busy check (`media/disks.go`, `/sys/dev/block`) is Linux-only and already falls back to
   nothing. About half a day.
-- **Windows x64:** doesn't compile yet: `media/shutdown.go` (`syscall.Kill`, SIGTERM/SIGKILL to
-  ffmpeg) and `media/disks.go` (`syscall.Stat_t`, `unix.Major`) need Windows versions. The bigger
-  risk is paths: client paths, `config.LibraryOf`, `diskPath` and the prefix checks assume `/`
-  separators; drive letters and backslashes need careful work and testing, since that code is the
-  access boundary. The bash scripts (`setup.sh`, `live.sh`, `restart-live.sh`) need PowerShell or
-  `cli` replacements and a service install. `private_other.go` does nothing on Windows (data and the
-  TLS key aren't locked down; would need ACLs). The gyan.dev "full" ffmpeg builds probably have
-  libass, chromaprint and dvdvideo (unverified). SMB/NFS shares, file locking and long paths are
-  untested. A couple of days, and it needs a Windows machine to test.
+- **Windows x64** (2026-11-25): the server builds and its tests pass on the test VM (Go, MinGW gcc,
+  Gyan's "full" ffmpeg 9.1, which has dvdvideo and chromaprint), and the web UI works against it.
+  Platform files (`_windows.go` / `_unix.go` or `_other.go`) cover disks, free space, stopping ffmpeg,
+  low priority, memory and the folder picker's drives. Disk paths are Windows paths; client paths
+  stay `/`, and only `config.ClientPath` / `DiskPath` convert: `DiskPath` checks each part
+  (`clientPartsOK`: no `:` streams, trailing dots or spaces, reserved names, and the name as stored, so
+  8.3 short names and other cases are refused), and paths compare case-insensitively (`SamePath`,
+  `InDir`). Windows won't rename or delete a file that's open unless every handle allows it, nor rename
+  over one that's open: files the server opens, renames or serves go through `internal/fileio`
+  (`Open`, `OpenFile`, `Create`, `ReadFile`, `Rename`, `ServeFile`, `Dir`; on Unix the `os` calls),
+  which shares delete access and renames with POSIX semantics, and moves copy only across disks
+  (`fileio.CrossDevice`). A file ffmpeg or another program has open still can't be moved there:
+  Replace with fixed copy and Restore answer that it's in use (`fileio.InUse`). A new file
+  open/rename/serve uses `fileio`, not `os`. Still to do: transcodes write to stdout there (no
+  `ExtraFiles`), jobs don't wait for busy disks (no load readings), `private_other.go` locks nothing
+  (would need ACLs), no service or PowerShell scripts, and no `release.sh` package (needs MinGW on the
+  build machine).
 - **Building:** either switch to pure-Go SQLite (`modernc.org/sqlite`; no C toolchains, every target
   cross-compiles from the build machine and `release.sh` loops over them; benchmark the media DB
   first, it's slower than the C one), or keep CGO and build natively (GitHub Actions matrix, or

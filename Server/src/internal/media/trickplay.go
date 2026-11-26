@@ -18,6 +18,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 type TrickplayGenerator struct {
@@ -550,7 +551,7 @@ var errUnreadableMedia = errors.New("not readable as a video")
 
 // readable says whether a file's first bytes can be read now.
 func readable(path string) bool {
-	f, err := os.Open(path)
+	f, err := fileio.Open(path)
 	if err != nil {
 		return false
 	}
@@ -686,7 +687,7 @@ func (tg *TrickplayGenerator) discSegmentFrames(ctx context.Context, path string
 		}
 		at := int(seg.Start + float64(n-1)*10)
 		frame := filepath.Join(dir, fmt.Sprintf("frame-%d.jpg", at))
-		if os.Rename(filepath.Join(tmp, e.Name()), frame) == nil {
+		if fileio.Rename(filepath.Join(tmp, e.Name()), frame) == nil {
 			addFrame(frame)
 		}
 	}
@@ -711,7 +712,7 @@ func TrickplayTitle(videoPath string) int {
 	if dir == "" {
 		return 0
 	}
-	b, err := os.ReadFile(filepath.Join(dir, GenerateThumbnailHash(videoPath), trickplayDone))
+	b, err := fileio.ReadFile(filepath.Join(dir, GenerateThumbnailHash(videoPath), trickplayDone))
 	if err != nil {
 		return 0
 	}

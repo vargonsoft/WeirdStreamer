@@ -22,6 +22,7 @@ import (
 	"github.com/weirdstreamer/server/internal/clientip"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/handlers"
 	"github.com/weirdstreamer/server/internal/logs"
 	"github.com/weirdstreamer/server/internal/media"
@@ -343,7 +344,7 @@ func main() {
 		// package, not a zip
 		mime.AddExtensionType(".apk", "application/vnd.android.package-archive")
 		// no-cache makes browsers revalidate (a cheap 304) instead of running a stale web UI after an update
-		fileServer := http.FileServer(http.Dir(webDir))
+		fileServer := http.FileServer(fileio.Dir(webDir))
 		// The app (20 MB) only for those signed in: anyone else fetching it over and over would use
 		// up the server's upload. Signed-in pages and the apps' update checks fetch it with their token.
 		r.PathPrefix("/downloads/").Handler(authHandler.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

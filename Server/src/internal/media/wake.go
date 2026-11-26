@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // A share's folder can answer "permission denied" while the NAS behind it has let it go to sleep
@@ -47,7 +49,7 @@ func Wake(path string, err error) bool {
 	wakeMu.Unlock()
 
 	for dir := filepath.Dir(path); ; dir = filepath.Dir(dir) {
-		if f, err := os.Open(dir); err == nil {
+		if f, err := fileio.Open(dir); err == nil {
 			f.Readdirnames(-1)
 			f.Close()
 			if _, err := os.Stat(path); err == nil {

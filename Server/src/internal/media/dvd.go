@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // DVD-Video disc images (.iso) are played with ffmpeg's dvdvideo demuxer. It plays one program
@@ -100,7 +101,7 @@ func (d folderDisc) readFile(parts ...string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(file)
+	return fileio.ReadFile(file)
 }
 
 // discInfoVersion changes when probing changes, so discs stored by older builds are probed again.
@@ -749,7 +750,7 @@ func readDVDTables(path string) ([]dvdTitleTable, error) {
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		fs = folderDisc(path)
 	} else {
-		f, err := os.Open(path)
+		f, err := fileio.Open(path)
 		if err != nil {
 			return nil, err
 		}

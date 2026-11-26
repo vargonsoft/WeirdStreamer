@@ -26,6 +26,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/jobs"
 )
 
@@ -65,7 +66,7 @@ func loadAssIndex() {
 	assIndex.loaded = true
 	assIndex.entries = map[string]assEntry{}
 	if dir := assDir(); dir != "" {
-		if b, err := os.ReadFile(filepath.Join(dir, "index.json")); err == nil {
+		if b, err := fileio.ReadFile(filepath.Join(dir, "index.json")); err == nil {
 			json.Unmarshal(b, &assIndex.entries)
 		}
 	}
@@ -88,7 +89,7 @@ func saveAssIndex() error {
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(dir, "index.json"))
+	return fileio.Rename(tmp, filepath.Join(dir, "index.json"))
 }
 
 // assCurrent reports whether the cache's entry for path is for the file as it is now.
@@ -168,7 +169,7 @@ func extractAss(ctx context.Context, path, key string, tracks []int) error {
 		return fmt.Errorf("%v: %s", err, lastLines(stderr.String(), 3))
 	}
 	for i, t := range tracks {
-		if err := os.Rename(tmps[i], assTrackFile(key, t)); err != nil {
+		if err := fileio.Rename(tmps[i], assTrackFile(key, t)); err != nil {
 			return err
 		}
 	}

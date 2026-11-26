@@ -20,6 +20,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/jobs"
 )
 
@@ -85,7 +86,7 @@ func loadRepairIndex() {
 	repairIndex.loaded = true
 	repairIndex.entries = map[string]repairEntry{}
 	if dir := repairDir(); dir != "" {
-		if b, err := os.ReadFile(filepath.Join(dir, "index.json")); err == nil {
+		if b, err := fileio.ReadFile(filepath.Join(dir, "index.json")); err == nil {
 			json.Unmarshal(b, &repairIndex.entries)
 		}
 	}
@@ -108,7 +109,7 @@ func saveRepairIndex() error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(dir, "index.json"))
+	return fileio.Rename(tmp, filepath.Join(dir, "index.json"))
 }
 
 func repairCurrent(path string, e repairEntry, ok bool) bool {
@@ -279,7 +280,7 @@ func fixVideo(ctx context.Context, path, key string) (size int64, duration float
 	if damaged {
 		return 0, 0, fmt.Errorf("the copy doesn't seek either: %s", reason)
 	}
-	if err := os.Rename(part, out); err != nil {
+	if err := fileio.Rename(part, out); err != nil {
 		return 0, 0, err
 	}
 	info, err := os.Stat(out)
@@ -641,10 +642,10 @@ func ReplaceWithFixed(path string) (string, error) {
 		note.ReplacementSize = pi.Size()
 	}
 	if err := MoveToTrash(path, &note); err != nil {
-		os.Rename(part, fixed) // back where it was
+		fileio.Rename(part, fixed) // back where it was
 		return "", fmt.Errorf("moving the original to the trash: %w", err)
 	}
-	if err := os.Rename(part, target); err != nil {
+	if err := fileio.Rename(part, target); err != nil {
 		return "", fmt.Errorf("naming the fixed video: %w", err)
 	}
 	repairIndex.mu.Lock()
@@ -656,12 +657,14 @@ func ReplaceWithFixed(path string) (string, error) {
 }
 
 // moveFile renames a file, or copies it (keeping its time on disk) and removes the original when
-// it's on another disk.
+// it's on another disk. Any other failure is returned as it is: on Windows a video another program
+// has open (a player, or ffmpeg reading it) can't be renamed or removed, and copying a whole video
+// only to find that out would leave it in both places.
 func moveFile(from, to string) error {
-	if err := os.Rename(from, to); err == nil {
-		return nil
+	if err := fileio.Rename(from, to); err == nil || !fileio.CrossDevice(err) {
+		return err
 	}
-	in, err := os.Open(from)
+	in, err := fileio.Open(from)
 	if err != nil {
 		return err
 	}
@@ -670,7 +673,7 @@ func moveFile(from, to string) error {
 	if err != nil {
 		return err
 	}
-	out, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	out, err := fileio.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return err
 	}
@@ -689,7 +692,7 @@ func moveFile(from, to string) error {
 
 // copyFile copies a small file (a thumbnail).
 func copyFile(from, to string) error {
-	b, err := os.ReadFile(from)
+	b, err := fileio.ReadFile(from)
 	if err != nil {
 		return err
 	}
@@ -854,7 +857,7 @@ func readTrashItem(slot string, at time.Time) (TrashItem, bool) {
 	}
 	item := TrashItem{ID: filepath.Base(slot), Name: fi.Name(), Size: fi.Size(), At: at}
 	var note trashNote
-	if b, err := os.ReadFile(filepath.Join(slot, trashNoteFile)); err == nil && json.Unmarshal(b, &note) == nil && note.Path != "" {
+	if b, err := fileio.ReadFile(filepath.Join(slot, trashNoteFile)); err == nil && json.Unmarshal(b, &note) == nil && note.Path != "" {
 		item.Path = notedPath(note.ClientPath, note.Path)
 		item.Replacement = notedPath(note.ReplacementClient, note.Replacement)
 		item.Reason = note.Reason
@@ -950,7 +953,7 @@ func RestoreFromTrash(id string) (TrashItem, error) {
 	}
 	slot := filepath.Join(trashDir(), id)
 	var note trashNote
-	if b, err := os.ReadFile(filepath.Join(slot, trashNoteFile)); err == nil {
+	if b, err := fileio.ReadFile(filepath.Join(slot, trashNoteFile)); err == nil {
 		json.Unmarshal(b, &note)
 	}
 	if item.Path != item.Replacement && fileExists(item.Path) {

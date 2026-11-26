@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // Track is a subtitle file for a video.
@@ -143,7 +144,7 @@ func storeDir(root, videoPath string) string {
 
 func readIndex(dir string) storedIndex {
 	var idx storedIndex
-	if b, err := os.ReadFile(filepath.Join(dir, "index.json")); err == nil {
+	if b, err := fileio.ReadFile(filepath.Join(dir, "index.json")); err == nil {
 		json.Unmarshal(b, &idx)
 	}
 	return idx
@@ -202,7 +203,7 @@ func Store(root, videoPath string, r Result, data []byte) (Track, error) {
 // Charset is the character set to read a subtitle file in: UTF-8, else Windows-1252 (what most
 // older SRT files are in).
 func Charset(path string) string {
-	b, err := os.ReadFile(path)
+	b, err := fileio.ReadFile(path)
 	if err != nil || utf8.Valid(b) {
 		return "UTF-8"
 	}

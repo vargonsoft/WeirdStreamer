@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // The config is a YAML file (config.yml) that people edit by hand, with comments, and that the
@@ -21,7 +23,7 @@ import (
 
 // Load reads the config from path and makes it the current one.
 func Load(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := fileio.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -55,7 +57,7 @@ func Save(path string, config *Config) error {
 		path = real // a symlinked config stays a symlink
 	}
 	var doc yaml.Node
-	if data, err := os.ReadFile(path); err == nil {
+	if data, err := fileio.ReadFile(path); err == nil {
 		if err := parseKeepingLayout(data, &doc); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
@@ -67,7 +69,7 @@ func Save(path string, config *Config) error {
 // with the example's comments. The example's settings that config leaves out stay in it as
 // commented-out lines, so their explanations are still there.
 func SaveFrom(template, path string, config *Config) error {
-	data, err := os.ReadFile(template)
+	data, err := fileio.ReadFile(template)
 	if err != nil {
 		return err
 	}
@@ -185,7 +187,7 @@ func writeFileKeepingMode(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	return fileio.Rename(tmp.Name(), path)
 }
 
 // mergeNode puts fresh's values (the config being saved, for Go type t) into old (the file),

@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // Theme music for title pages: a theme file in the show's or movie's folder (theme.flac,
@@ -122,7 +123,7 @@ func cachedTheme(ctx context.Context, key string, args []string) (string, error)
 	if info, err := os.Stat(part); err != nil || info.Size() == 0 {
 		return "", errors.New("ffmpeg made no audio")
 	}
-	return out, os.Rename(part, out)
+	return out, fileio.Rename(part, out)
 }
 
 // ServableTheme is a theme file as the players get it: itself when they all play its type, else

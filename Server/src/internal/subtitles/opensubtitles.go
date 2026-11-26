@@ -10,11 +10,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 const (
@@ -252,7 +253,7 @@ func (c *Client) call(ctx context.Context, method, path string, body []byte, out
 // MovieHash is OpenSubtitles' hash of a video file: its size plus the 64-bit little-endian words
 // of its first and last 64 KiB. "" for files too small to hash.
 func MovieHash(path string) string {
-	f, err := os.Open(path)
+	f, err := fileio.Open(path)
 	if err != nil {
 		return ""
 	}

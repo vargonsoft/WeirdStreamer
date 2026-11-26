@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // Compressed and compatible downloads for offline viewing: the server encodes a file to a
@@ -435,7 +437,7 @@ func (m *DownloadManager) ffmpeg(ctx context.Context, job *DownloadJob, src *Dow
 		}
 		return fmt.Errorf("ffmpeg: %v %s", err, msg)
 	}
-	return os.Rename(part, job.file)
+	return fileio.Rename(part, job.file)
 }
 
 // expire removes finished files nobody fetched.

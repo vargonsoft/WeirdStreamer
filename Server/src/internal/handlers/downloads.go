@@ -3,12 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/weirdstreamer/server/internal/auth"
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/media"
 )
 
@@ -119,7 +119,7 @@ func (h *MediaHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "Download not ready")
 		return
 	}
-	f, err := os.Open(file)
+	f, err := fileio.Open(file)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "Download not found")
 		return

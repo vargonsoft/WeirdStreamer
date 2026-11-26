@@ -22,6 +22,7 @@ import (
 
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // ThumbnailGenerator handles on-demand thumbnail generation with caching
@@ -209,7 +210,7 @@ func (tg *ThumbnailGenerator) generate(filePath string) (string, error) {
 			imageFile = filePath
 		}
 
-		file, err := os.Open(imageFile)
+		file, err := fileio.Open(imageFile)
 		if err != nil {
 			return "", fmt.Errorf("failed to open image: %w", err)
 		}
@@ -245,7 +246,7 @@ func (tg *ThumbnailGenerator) generate(filePath string) (string, error) {
 		}
 
 		part := partPath(thumbnailPath)
-		out, err := os.Create(part)
+		out, err := fileio.Create(part)
 		if err != nil {
 			return "", fmt.Errorf("failed to create thumbnail file: %w", err)
 		}
@@ -507,7 +508,7 @@ func grabFrame(filePath, part, codec string, seconds float64) (frame []byte, mad
 		if exec.Command("ffmpeg", a...).Run() != nil {
 			continue
 		}
-		if data, err := os.ReadFile(part); err == nil && len(data) > 0 {
+		if data, err := fileio.ReadFile(part); err == nil && len(data) > 0 {
 			if len(data) > 1024 || frame == nil {
 				frame = data
 			}
@@ -540,7 +541,7 @@ func discThumbnail(filePath, part string) bool {
 			log.Printf("[THUMBNAIL] %s: %v", filePath, ErrFFmpegStalled)
 		}
 		cancel()
-		data, readErr := os.ReadFile(part)
+		data, readErr := fileio.ReadFile(part)
 		if err != nil || readErr != nil || len(data) == 0 {
 			break
 		}

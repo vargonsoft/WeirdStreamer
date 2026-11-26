@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 const (
@@ -358,7 +360,7 @@ func (c *Client) DownloadImage(ctx context.Context, size, imagePath, dest string
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), dest)
+	return fileio.Rename(tmp.Name(), dest)
 }
 
 func (c *Client) get(ctx context.Context, path string, params url.Values, out any) error {

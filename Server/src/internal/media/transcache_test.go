@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // useSpools runs "transcodes" as a shell script writing the numbers from 1, into a fresh cache.
@@ -157,6 +159,37 @@ func TestTranscodeWaitsForClients(t *testing.T) {
 	spool.detach()
 	if !bytes.Equal(buf[:1], []byte{0}) {
 		t.Errorf("read %v", buf[:1])
+	}
+}
+
+// A transcode closed while its chunks are open (ffmpeg's writer half way through one, a reader in
+// another) leaves none behind: on Windows a file that's open can't be deleted unless it was opened
+// to allow that.
+func TestTranscodeClosedLeavesNoChunks(t *testing.T) {
+	dir := useSpools(t)
+	spool, err := transcodes.attach("/m/big.mkv", []string{"-c", "head -c 400000000 /dev/zero"}, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for { // until it waits for the reader, with a chunk half written
+		spool.mu.Lock()
+		size := spool.size
+		spool.mu.Unlock()
+		if size >= spoolAhead || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	reading, err := fileio.Open(spool.chunk(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reading.Close()
+	spool.detach()
+	spool.close()
+	if names, _ := filepath.Glob(filepath.Join(dir, "*")); len(names) != 0 {
+		t.Errorf("left behind: %v", names)
 	}
 }
 

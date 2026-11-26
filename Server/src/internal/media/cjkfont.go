@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // baseText is what every subset holds besides the text's CJK characters: basic and Latin-1
@@ -139,7 +140,7 @@ func SubsetCJK(ctx context.Context, text string) ([]byte, error) {
 	var cacheFile string
 	if root := config.GlobalConfig.Media.SubtitlePath; root != "" {
 		cacheFile = filepath.Join(root, "cjk", name)
-		if b, err := os.ReadFile(cacheFile); err == nil {
+		if b, err := fileio.ReadFile(cacheFile); err == nil {
 			return b, nil
 		}
 	}
@@ -151,7 +152,7 @@ func SubsetCJK(ctx context.Context, text string) ([]byte, error) {
 	}
 	defer func() { <-subsetSlots }()
 	if cacheFile != "" {
-		if b, err := os.ReadFile(cacheFile); err == nil { // made while this one waited
+		if b, err := fileio.ReadFile(cacheFile); err == nil { // made while this one waited
 			return b, nil
 		}
 	}
@@ -194,7 +195,7 @@ func SubsetCJK(ctx context.Context, text string) ([]byte, error) {
 		log.Printf("[SUBTITLES] pyftsubset failed: %v: %s", err, lastLines(stderr.String(), 3))
 		return nil, errors.New("the subsetter failed")
 	}
-	b, err := os.ReadFile(out.Name())
+	b, err := fileio.ReadFile(out.Name())
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +203,7 @@ func SubsetCJK(ctx context.Context, text string) ([]byte, error) {
 		if err := os.MkdirAll(filepath.Dir(cacheFile), 0o755); err == nil {
 			tmp := cacheFile + ".tmp"
 			if os.WriteFile(tmp, b, 0o644) == nil {
-				os.Rename(tmp, cacheFile)
+				fileio.Rename(tmp, cacheFile)
 				pruneSubsets(filepath.Dir(cacheFile))
 			}
 		}

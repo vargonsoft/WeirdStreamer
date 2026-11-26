@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 type Streamer struct{}
@@ -67,7 +69,7 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 	// Serve original file
 	log.Printf("Serving original file: %s\n", filePath)
 
-	file, err := os.Open(filePath)
+	file, err := fileio.Open(filePath)
 	if err != nil {
 		return err
 	}
@@ -301,7 +303,7 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Now stream the converted JPEG file
-	file, err := os.Open(tempFile)
+	file, err := fileio.Open(tempFile)
 	if err != nil {
 		return fmt.Errorf("failed to open converted file: %w", err)
 	}
@@ -328,7 +330,7 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 
 // serveOriginalFile serves the original file with range request support
 func (s *Streamer) serveOriginalFile(w http.ResponseWriter, r *http.Request, filePath string, contentType string) error {
-	file, err := os.Open(filePath)
+	file, err := fileio.Open(filePath)
 	if err != nil {
 		return err
 	}
@@ -362,9 +364,9 @@ func CheckReadable(filePath string) *UnreadableFile {
 			filePath = ifo
 		}
 	}
-	f, err := os.Open(filePath)
+	f, err := fileio.Open(filePath)
 	if err != nil && Wake(filePath, err) {
-		f, err = os.Open(filePath)
+		f, err = fileio.Open(filePath)
 	}
 	if err == nil {
 		defer f.Close()

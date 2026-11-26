@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // A transcode's output goes through chunks on disk instead of straight to the client, so a stream
@@ -465,7 +466,7 @@ func (s *transcodeSpool) store(stdout io.Reader) error {
 		n, err := stdout.Read(buf[:min(int64(len(buf)), room)])
 		if n > 0 {
 			if file == nil {
-				if file, err = os.Create(s.chunk(at / spoolChunk)); err != nil {
+				if file, err = fileio.Create(s.chunk(at / spoolChunk)); err != nil {
 					return err
 				}
 			}
@@ -547,7 +548,7 @@ func (s *transcodeSpool) read(ctx context.Context, offset int64, p []byte) (int,
 	}
 	within := offset % spoolChunk
 	length := min(int64(len(p)), size-offset, spoolChunk-within)
-	file, oerr := os.Open(s.chunk(offset / spoolChunk))
+	file, oerr := fileio.Open(s.chunk(offset / spoolChunk))
 	if oerr != nil {
 		return 0, errCannotResume
 	}

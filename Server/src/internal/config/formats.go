@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // MediaType is what a file is by its extension and the configured formats (media's
@@ -71,7 +73,7 @@ func looksLikeTransportStream(path string) bool {
 			return c.ok
 		}
 	}
-	f, err := os.Open(path)
+	f, err := fileio.Open(path)
 	if err != nil {
 		return true
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/weirdstreamer/server/internal/config"
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // mediaTarget is a file or folder addressed by a metadata request, by its client path
@@ -109,7 +110,7 @@ func (h *MediaHandler) ServeArtwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "private, max-age=604800")
-	http.ServeFile(w, r, path)
+	fileio.ServeFile(w, r, path)
 }
 
 // canAccessTitle reports whether the user can access any library holding the movie or show.

@@ -8,12 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // damagedFLV writes a 5-minute FLV with a seek index (good), and a copy whose index points at
@@ -290,8 +292,38 @@ func TestReplaceThenRestore(t *testing.T) {
 		return -1
 	}
 
-	// Replaced (as the handler does: the file, then its progress)
+	if runtime.GOOS == "windows" {
+		// Open in a program that doesn't share delete access (ffmpeg, a player): refused as in use,
+		// and nothing moved or copied.
+		other, err := os.Open(damaged)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReplaceWithFixed(damaged); !fileio.InUse(err) {
+			t.Errorf("replacing a video another program has open: %v, want in use", err)
+		}
+		other.Close()
+		if _, err := os.Stat(damaged); err != nil {
+			t.Errorf("the original after a refused replace: %v", err)
+		}
+		if _, err := os.Stat(fixedFile(key)); err != nil {
+			t.Errorf("the fixed copy after a refused replace: %v", err)
+		}
+		if items, _ := TrashItems(); len(items) != 0 {
+			t.Errorf("the trash after a refused replace: %+v", items)
+		}
+		if _, err := os.Stat(strings.TrimSuffix(damaged, ".avi") + ".mkv.part"); err == nil {
+			t.Error("a refused replace left its .part")
+		}
+	}
+
+	// Replaced (as the handler does: the file, then its progress), while the server is sending it.
+	sending, err := fileio.Open(damaged)
+	if err != nil {
+		t.Fatal(err)
+	}
 	newPath, err := ReplaceWithFixed(damaged)
+	sending.Close()
 	if err != nil {
 		t.Fatalf("replacing: %v", err)
 	}

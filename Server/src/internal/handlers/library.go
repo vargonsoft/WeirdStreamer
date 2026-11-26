@@ -15,6 +15,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/metadata"
 	"github.com/weirdstreamer/server/internal/models"
@@ -207,7 +208,7 @@ func (h *MediaHandler) GetLibraryTheme(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", t)
 	}
 	w.Header().Set("Cache-Control", "private, max-age=3600")
-	http.ServeFile(w, r, file)
+	fileio.ServeFile(w, r, file)
 }
 
 // Collections admins make (database/collections.go): a name, a description and movies of the

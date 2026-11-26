@@ -1,10 +1,11 @@
 package media
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+
+	"github.com/weirdstreamer/server/internal/fileio"
 )
 
 // partPath is where a picture is made before it's renamed to path, so a stop part way never
@@ -17,7 +18,7 @@ func partPath(path string) string {
 
 // finishPart renames a finished picture made at partPath(path) to path.
 func finishPart(path string) error {
-	return os.Rename(partPath(path), path)
+	return fileio.Rename(partPath(path), path)
 }
 
 // shuttingDown is set once StopChildren runs, so the transcodes it stops don't log as failed.

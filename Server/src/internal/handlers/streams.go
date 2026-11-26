@@ -19,6 +19,7 @@ import (
 
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/clientip"
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/models"
 	"github.com/weirdstreamer/server/internal/subtitles"
@@ -381,7 +382,7 @@ func (h *MediaHandler) GetSubtitles(w http.ResponseWriter, r *http.Request) {
 		// From the track copied out by the ASS job when there is one: every line on screen in the
 		// window, those started before it too. Else read from the video.
 		if cached := media.CachedAss(path, track); cached != "" {
-			if script, err := os.ReadFile(cached); err == nil {
+			if script, err := fileio.ReadFile(cached); err == nil {
 				media.ServeAssWindow(w, script, start, duration)
 				return
 			}

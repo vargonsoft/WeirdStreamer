@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/models"
 )
 
@@ -110,7 +111,7 @@ func IsLivePhotoVideo(path string) bool {
 		return c.live
 	}
 	live := false
-	if f, err := os.Open(path); err == nil {
+	if f, err := fileio.Open(path); err == nil {
 		live = bytes.Contains(readMoov(f, st.Size()), livePhotoKey)
 		f.Close()
 	}

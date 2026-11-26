@@ -19,6 +19,7 @@ import (
 	"github.com/weirdstreamer/server/internal/auth"
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
+	"github.com/weirdstreamer/server/internal/fileio"
 	"github.com/weirdstreamer/server/internal/jobs"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/metadata"
@@ -898,7 +899,7 @@ func (h *MediaHandler) ServeThumbnail(w http.ResponseWriter, r *http.Request) {
 
 	// URLs are per-file and change (?v= / ?t=) when a thumbnail is regenerated.
 	w.Header().Set("Cache-Control", "private, max-age=604800")
-	http.ServeFile(w, r, thumbnailPath)
+	fileio.ServeFile(w, r, thumbnailPath)
 }
 
 // ServeTrickplayFrame serves one trickplay frame, with the same access rules as thumbnails.
@@ -920,7 +921,7 @@ func (h *MediaHandler) ServeTrickplayFrame(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Cache-Control", "private, max-age=604800")
-	http.ServeFile(w, r, filepath.Join(trickplayDir, hash, frame))
+	fileio.ServeFile(w, r, filepath.Join(trickplayDir, hash, frame))
 }
 
 // itemForHash looks up the media item a thumbnail/trickplay hash belongs to and checks the
