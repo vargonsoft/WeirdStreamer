@@ -16,6 +16,12 @@ import com.vargon.weirdstreamer.api.models.AdminStream
 import com.vargon.weirdstreamer.api.models.BackupList
 import com.vargon.weirdstreamer.api.models.ChangePasswordRequest
 import com.vargon.weirdstreamer.api.models.CreateUserRequest
+import com.vargon.weirdstreamer.api.models.GuideAdmin
+import com.vargon.weirdstreamer.api.models.GuideAdminChannel
+import com.vargon.weirdstreamer.api.models.GuideAdminLibrary
+import com.vargon.weirdstreamer.api.models.GuideAdminSave
+import com.vargon.weirdstreamer.api.models.GuideLibrarySave
+import com.vargon.weirdstreamer.api.models.GuideTypedSave
 import com.vargon.weirdstreamer.api.models.HardwareReport
 import com.vargon.weirdstreamer.api.models.JobLoad
 import com.vargon.weirdstreamer.api.models.JobsResponse
@@ -60,9 +66,6 @@ class PathEdit(val source: JsonObject, name: String, path: String, groups: List<
     // Where its videos in progress and its newest videos show (the web's defaults when unset)
     var continueWatching by mutableStateOf(source.get("continueWatchingMode")?.asString ?: "on")
     var newAdditions by mutableStateOf(source.get("showNewAdditions")?.asString ?: "off")
-    // The Guide: where its titles are on the channels (movie and TV libraries), and whether its short videos fill gaps
-    var showInGuide by mutableStateOf(source.get("showInGuide")?.asString ?: "off")
-    var guideFiller by mutableStateOf(source.get("guideFiller")?.asBoolean ?: false)
     // The phone shows it as it is, with Edit, so a stray tap can't change it; one just added opens for editing.
     var editing by mutableStateOf(source.size() == 0)
 
@@ -79,7 +82,7 @@ internal fun jsonNames(names: List<String>) = JsonArray().apply { names.forEach 
 internal val libraryTypes = listOf("" to "No type", "movie" to "Movies", "tv" to "TV Shows")
 
 // Where a library's Continue Watching and Recently Added rows show (continueWatchingMode, showNewAdditions),
-// and its titles on the Guide's channels (showInGuide)
+// and its titles on the Guide's channels (the Guide tab's Show in Guide)
 internal val libraryRowModes = listOf("on" to "Home screen and library", "libraryOnly" to "Library only", "off" to "Off")
 
 // The Guide's prime time (guide.primeTime), the news hour after it
@@ -104,8 +107,6 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
     var host by mutableStateOf("")
     var http2 by mutableStateOf(false)
     var pauseJobs by mutableStateOf(false)
-    var primeTime by mutableStateOf("20") // the Guide's: the hour it starts
-    var weatherZip by mutableStateOf("") // the Weather channel's US ZIP code ("" New York City's)
     // Hardware encoding: what the server found, and the config's choice ("" the CPU, else "id|device")
     var hardware by mutableStateOf<HardwareReport?>(HardwareReport(checking = true)); private set
     var hwEncoder by mutableStateOf("")
@@ -154,8 +155,6 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
             http2 = it.get("enableHTTP2")?.asBoolean ?: false
             pauseJobs = it.get("pauseJobsWhileStreaming")?.asBoolean ?: false
         }
-        primeTime = c.getAsJsonObject("guide")?.get("primeTime")?.asInt?.takeIf { it > 0 }?.toString() ?: "20"
-        weatherZip = c.getAsJsonObject("guide")?.get("weatherZip")?.asString.orEmpty()
         hwEncoder = HardwareSettings.encoderOf(c); hwDevice = HardwareSettings.deviceOf(c)
         hwMax = HardwareSettings.maxOf(c).toString()
         c.getAsJsonObject("database")?.let {
@@ -202,8 +201,6 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
             // Only where set before or changed from the default, so config.yml changes only where it was changed.
             if (o.has("continueWatchingMode") || p.continueWatching != "on") o.addProperty("continueWatchingMode", p.continueWatching)
             if (o.has("showNewAdditions") || p.newAdditions != "off") o.addProperty("showNewAdditions", p.newAdditions)
-            if (o.has("showInGuide") || p.showInGuide != "off") o.addProperty("showInGuide", p.showInGuide)
-            if (p.guideFiller) o.addProperty("guideFiller", true) else o.remove("guideFiller")
             array.add(o)
         }
         c.getAsJsonObject("media").add("paths", array)
@@ -220,9 +217,6 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
         if (hardware?.encoders?.isNotEmpty() == true) {
             HardwareSettings.apply(c, HardwareSettings.key(hwEncoder, hwDevice), hwMax.toIntOrNull() ?: 0)
         }
-        val guide = c.getAsJsonObject("guide") ?: JsonObject().also { c.add("guide", it) }
-        guide.addProperty("primeTime", primeTime.toIntOrNull() ?: 20)
-        guide.addProperty("weatherZip", weatherZip.trim())
         val database = c.getAsJsonObject("database") ?: JsonObject().also { c.add("database", it) }
         database.addProperty("backupSchedule", backupSchedule)
         database.addProperty("backupDay", backupDay)
@@ -345,6 +339,119 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
             loadBackups()
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The Guide tab: typed channels, each library's Show in Guide and Use for Guide Filler, the schedule
+// (GET/PUT /api/admin/guide), saved apart from the Server tab.
+
+/** A typed channel definition being edited: its type, its libraries and up to how many channels. */
+class TypedEdit(val id: String, type: String, libraries: List<String>, max: Int, val number: Int,
+                val channels: List<GuideAdminChannel>) {
+    var type by mutableStateOf(type)
+    val libraries = mutableStateListOf<String>().apply { addAll(libraries) }
+    var max by mutableStateOf(max)
+}
+
+/** A library's Guide switches being edited. */
+class GuideLibraryEdit(val library: GuideAdminLibrary) {
+    var showInGuide by mutableStateOf(library.showInGuide.ifEmpty { "off" })
+    var guideFiller by mutableStateOf(library.guideFiller)
+    val airs get() = library.type == "movie" || library.type == "tv" // only those take Show in Guide
+}
+
+class GuideSettingsModel(val server: ServerRepository, private val scope: CoroutineScope) {
+    var data by mutableStateOf<GuideAdmin?>(null); private set
+    var loadError by mutableStateOf<String?>(null); private set
+    val typed = mutableStateListOf<TypedEdit>()
+    val libraries = mutableStateListOf<GuideLibraryEdit>()
+    var primeTime by mutableStateOf("20")
+    var weatherZip by mutableStateOf("")
+    var message by mutableStateOf<Notice?>(null)
+    var saving by mutableStateOf(false); private set
+
+    fun adopt(g: GuideAdmin) {
+        data = g
+        primeTime = g.primeTime.takeIf { it > 0 }?.toString() ?: "20"
+        weatherZip = g.weatherZip
+        typed.clear()
+        g.typedChannels.forEach { typed.add(TypedEdit(it.id, it.type, it.libraries, it.max, it.number, it.channels)) }
+        libraries.clear()
+        g.libraries.forEach { libraries.add(GuideLibraryEdit(it)) }
+    }
+
+    suspend fun load() {
+        val (g, err) = attempt { server.api.getGuideSettings() }
+        if (g != null && err == null) adopt(g) else loadError = err
+    }
+
+    val types get() = data?.types?.map { it.id to it.name } ?: emptyList()
+    fun typeName(id: String) = optionLabel(types, id)
+    fun library(id: String) = data?.libraries?.firstOrNull { it.id == id }
+    val canAdd get() = data != null && typed.size < (data?.maxTyped ?: 0)
+
+    /** Whether a typed channel other than [t] has the library (a library is one's at most). */
+    fun usedElsewhere(t: TypedEdit, id: String) = typed.any { it !== t && id in it.libraries }
+    /** Whether any typed channel has the library: then it's in no regular channel. */
+    fun inTyped(id: String) = typed.any { id in it.libraries }
+
+    /** The groups that see [t]'s channels: those that can open every one of its libraries (null: none chosen). */
+    fun groupsFor(t: TypedEdit): List<String>? {
+        var out: List<String>? = null
+        t.libraries.forEach { id ->
+            val g = library(id)?.groups ?: emptyList()
+            out = out?.filter { it in g } ?: g
+        }
+        return out
+    }
+
+    fun toggleLibrary(t: TypedEdit, id: String) {
+        if (id in t.libraries) t.libraries.remove(id) else if (!usedElsewhere(t, id)) t.libraries.add(id)
+    }
+
+    fun addTyped(): TypedEdit? {
+        val d = data ?: return null
+        if (!canAdd) return null
+        return TypedEdit("", d.types.firstOrNull()?.id ?: "latenight", emptyList(), d.maxChannels, 0, emptyList()).also { typed.add(it) }
+    }
+
+    fun removeTyped(t: TypedEdit) { typed.remove(t) }
+
+    private var saveCount = 0
+    private var pendingSave: kotlinx.coroutines.Job? = null
+
+    /** Sends the tab; the server answers with it as saved (new typed channels numbered), or why not. */
+    fun save() {
+        pendingSave?.cancel()
+        val zip = weatherZip.trim()
+        if (zip.isNotEmpty() && !Regex("\\d{5}").matches(zip)) { message = "The weather ZIP code is five digits." to true; return }
+        val body = GuideAdminSave(primeTime.toIntOrNull() ?: 20, zip,
+            libraries.map { GuideLibrarySave(it.library.id, if (it.showInGuide == "off") "" else it.showInGuide, it.guideFiller) },
+            typed.map { GuideTypedSave(it.id, it.type, it.libraries.toList(), it.max) })
+        val count = ++saveCount
+        saving = true
+        scope.launch {
+            val (g, err) = attempt { server.api.saveGuideSettings(body) }
+            if (count != saveCount) return@launch
+            saving = false
+            if (g != null && err == null) { adopt(g); message = "Saved. The Guide plans again now." to false }
+            else message = (err ?: "Couldn't save") to true
+        }
+    }
+
+    /** Saves after a moment without another change (the TV saves each change). */
+    fun saveSoon() {
+        pendingSave?.cancel()
+        pendingSave = scope.launch { delay(600); pendingSave = null; save() }
+    }
+}
+
+@Composable
+fun rememberGuideSettings(server: ServerRepository): GuideSettingsModel {
+    val scope = rememberCoroutineScope()
+    val model = remember(server.address) { GuideSettingsModel(server, scope) }
+    LaunchedEffect(model) { model.load() }
+    return model
 }
 
 @Composable

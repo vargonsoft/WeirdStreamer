@@ -132,6 +132,13 @@ interface ApiService {
     @PUT("/api/config")
     suspend fun updateConfig(@Body config: JsonObject): Response<JsonObject>
 
+    // The Guide tab (admins): typed channels, the libraries' Guide switches, the schedule
+    @GET("/api/admin/guide")
+    suspend fun getGuideSettings(): Response<com.vargon.weirdstreamer.api.models.GuideAdmin>
+
+    @PUT("/api/admin/guide")
+    suspend fun saveGuideSettings(@Body body: com.vargon.weirdstreamer.api.models.GuideAdminSave): Response<com.vargon.weirdstreamer.api.models.GuideAdmin>
+
     @GET("/api/admin/hardware")
     suspend fun getHardware(): Response<com.vargon.weirdstreamer.api.models.HardwareReport>
 

@@ -197,3 +197,14 @@ guide:
   # are kept in voiceOverPath (default voiceovers beside the thumbnails folder).
   # piperCommand: /opt/piper/bin/piper
   # piperVoices: /opt/piper/voices
+  # Typed channels (Settings › Guide): channels made only from the libraries listed (their IDs), of a
+  # type, seen only by the groups that can open every one of them. Those libraries are in no other
+  # channel. type: latenight (everything in them, all day), kids, cartoons, comedy, scifi, drama,
+  # reallife, action or horror (their TMDB titles of that genre). max: up to this many channels (1 to
+  # 4), as the content allows. number: the first of its block of ten (100, 110… 190), given when added.
+  # typedChannels:
+  #   - id: 3f9a1c2e
+  #     type: kids
+  #     libraries: [a1b2c3d4]
+  #     max: 2
+  #     number: 100

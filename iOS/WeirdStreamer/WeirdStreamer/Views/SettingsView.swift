@@ -29,7 +29,7 @@ struct SettingsView: View {
     /// open), then the server's for administrators (Server, Users, Streams and Jobs).
     private var tabs: [String] {
         guard model.currentAddress != nil else { return ["App", "Themes"] }
-        return ["App", "Account", "Downloads", "Themes"] + (model.isAdmin ? ["Server", "Users", "Streams", "Jobs"] : [])
+        return ["App", "Account", "Downloads", "Themes"] + (model.isAdmin ? ["Server", "Guide", "Users", "Streams", "Jobs"] : [])
     }
 
     var body: some View {
@@ -52,6 +52,7 @@ struct SettingsView: View {
                         case "Themes": ThemesTab()
                         case "Downloads": DownloadsTab()
                         case "Server": ServerSettingsTab()
+                        case "Guide": GuideSettingsTab()
                         case "Users": UsersTab()
                         case "Streams": StreamsTab()
                         case "Jobs": JobsTab()

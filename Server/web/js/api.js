@@ -457,6 +457,16 @@ class MediaAPI {
         return this.request(`/api/config/folders?path=${encodeURIComponent(path || '')}${parent ? '&parent=1' : ''}`);
     }
 
+    // The Guide tab (admins): {prime_time, weather_zip, libraries, typed_channels, types, max_channels, max_typed, music_tracks, voice_overs}
+    async getGuideSettings() {
+        return this.request('/api/admin/guide');
+    }
+
+    // Saves it, answering with the tab as saved: {prime_time, weather_zip, libraries: [{id, show_in_guide, guide_filler}], typed_channels: [{id, type, libraries, max}]}
+    async saveGuideSettings(settings) {
+        return this.request('/api/admin/guide', { method: 'PUT', body: JSON.stringify(settings) });
+    }
+
     async updateConfig(config) {
         return this.request('/api/config', {
             method: 'PUT',

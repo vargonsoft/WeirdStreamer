@@ -1073,3 +1073,173 @@ async function loadVoiceTester() {
         box.appendChild(item);
     });
 }
+
+// ---- The Guide tab (Settings, admins; docs/GUIDE.md, "The Guide tab") ----
+
+// Typed channels (a type, its libraries, up to how many), each library's Show in Guide and Use for
+// Guide Filler, and the schedule's settings: edited here, saved together (PUT /api/admin/guide).
+const guideTab = { data: null, typed: [], libraries: {} };
+
+const GUIDE_WHERE = [
+    { value: 'on', label: 'Home screen and library' },
+    { value: 'libraryOnly', label: 'Library only' },
+    { value: 'off', label: 'Off' },
+];
+
+async function loadGuideSettings() {
+    const message = document.getElementById('guide-save-message');
+    try {
+        showGuideSettings(await api.getGuideSettings());
+    } catch (error) {
+        if (message) message.textContent = 'Couldn’t load the Guide’s settings: ' + error.message;
+        return;
+    }
+    if (message) message.textContent = '';
+    loadVoiceTester();
+}
+
+function showGuideSettings(data) {
+    guideTab.data = data;
+    guideTab.typed = data.typed_channels.map(t => ({ ...t, libraries: [...t.libraries] }));
+    guideTab.libraries = {};
+    data.libraries.forEach(l => { guideTab.libraries[l.id] = { show_in_guide: l.show_in_guide || 'off', guide_filler: l.guide_filler }; });
+    document.getElementById('guide-prime-time').value = String(data.prime_time || 20);
+    document.getElementById('guide-weather-zip').value = data.weather_zip || '';
+    const extras = [];
+    extras.push(data.music_tracks ? `Music: ${data.music_tracks} track${data.music_tracks === 1 ? '' : 's'}.` : 'Music: none (guide.musicPath, or the setup’s Guide step).');
+    extras.push(data.voice_overs ? 'Voice-overs: Piper is set up.' : 'Voice-overs: off (Piper isn’t set up: guide.piperCommand, or the setup’s Guide step).');
+    document.getElementById('guide-extras').textContent = extras.join(' ');
+    renderTypedChannels();
+    renderGuideLibraries();
+}
+
+function libraryTypeName(type) {
+    return type === 'movie' ? 'Movies' : type === 'tv' ? 'TV Shows' : 'Folders';
+}
+
+function renderTypedChannels() {
+    const data = guideTab.data;
+    const box = document.getElementById('typed-channels');
+    box.innerHTML = '';
+    if (!guideTab.typed.length) box.appendChild(el('p', 'settings-hint', 'None yet.'));
+    guideTab.typed.forEach((t, index) => {
+        const card = el('div', 'typed-channel');
+        const head = el('div', 'typed-channel-head');
+        const type = el('select', 'settings-input');
+        data.types.forEach(ty => type.appendChild(new Option(ty.name, ty.id)));
+        type.value = t.type;
+        type.onchange = () => { t.type = type.value; };
+        const max = el('select', 'settings-input');
+        for (let n = 1; n <= data.max_channels; n++) max.appendChild(new Option(`Up to ${n} channel${n === 1 ? '' : 's'}`, String(n)));
+        max.value = String(t.max || data.max_channels);
+        max.onchange = () => { t.max = parseInt(max.value); };
+        const remove = el('button', 'btn btn-small btn-secondary', 'Remove');
+        remove.type = 'button';
+        remove.onclick = () => { guideTab.typed.splice(index, 1); renderTypedChannels(); renderGuideLibraries(); };
+        head.append(type, max, remove);
+        card.appendChild(head);
+
+        const libs = el('div', 'typed-channel-libraries');
+        data.libraries.forEach(l => {
+            const label = el('label', 'settings-check');
+            const box = el('input');
+            box.type = 'checkbox';
+            box.checked = t.libraries.includes(l.id);
+            // a library is one typed channel's at most
+            const other = guideTab.typed.some((o, i) => i !== index && o.libraries.includes(l.id));
+            box.disabled = other && !box.checked;
+            box.onchange = () => {
+                if (box.checked) t.libraries.push(l.id); else t.libraries = t.libraries.filter(id => id !== l.id);
+                renderTypedChannels();
+                renderGuideLibraries();
+            };
+            const groups = (l.groups || []).length ? l.groups.join(', ') : 'no group';
+            label.append(box, ` ${l.name}`, el('span', 'settings-hint', ` (${libraryTypeName(l.type)}; ${groups}${other ? '; another typed channel has it' : ''})`));
+            libs.appendChild(label);
+        });
+        card.appendChild(libs);
+
+        // Who sees it: the groups that can open every one of its libraries (as chosen now)
+        let groups = null;
+        t.libraries.forEach(id => {
+            const l = data.libraries.find(x => x.id === id);
+            const g = l ? (l.groups || []) : [];
+            groups = groups === null ? [...g] : groups.filter(x => g.includes(x));
+        });
+        const seen = !t.libraries.length ? 'Choose its libraries.'
+            : groups.length ? `Seen by: ${groups.join(', ')}.` : 'No group can open all of these libraries: no one will see it.';
+        card.appendChild(el('p', groups && groups.length ? 'settings-hint' : 'hardware-status', seen));
+        const numbers = t.number ? `Numbers ${t.number}–${t.number + 9}. ` : 'Numbered when saved. ';
+        const chans = (t.channels || []).map(c => `${c.number} ${c.name}`).join(', ');
+        card.appendChild(el('p', 'settings-hint', numbers + (chans ? `Now: ${chans}.` : 'Its channels are made at the next planning, as its content allows.')));
+        box.appendChild(card);
+    });
+    const add = document.getElementById('typed-add');
+    add.disabled = guideTab.typed.length >= data.max_typed;
+    add.onclick = () => {
+        guideTab.typed.push({ type: data.types[0].id, libraries: [], max: data.max_channels, channels: [] });
+        renderTypedChannels();
+    };
+}
+
+function renderGuideLibraries() {
+    const data = guideTab.data;
+    const box = document.getElementById('guide-libraries');
+    box.innerHTML = '';
+    const table = el('table', 'guide-libraries-table');
+    const head = el('tr');
+    ['Library', 'Show in Guide', 'Use for Guide Filler'].forEach(h => head.appendChild(el('th', '', h)));
+    table.appendChild(head);
+    data.libraries.forEach(l => {
+        const cur = guideTab.libraries[l.id];
+        const row = el('tr');
+        const name = el('td');
+        name.append(el('div', '', l.name), el('div', 'settings-hint', libraryTypeName(l.type)));
+        const where = el('td');
+        const typed = guideTab.typed.some(t => t.libraries.includes(l.id));
+        if (typed) {
+            where.appendChild(el('span', 'settings-hint', 'Its typed channels'));
+        } else if (l.type === 'movie' || l.type === 'tv') {
+            const select = el('select', 'settings-input');
+            GUIDE_WHERE.forEach(o => select.appendChild(new Option(o.label, o.value)));
+            select.value = cur.show_in_guide || 'off';
+            select.onchange = () => { cur.show_in_guide = select.value; };
+            where.appendChild(select);
+        } else {
+            where.appendChild(el('span', 'settings-hint', 'Only typed channels (Late Night) take folder libraries'));
+        }
+        const filler = el('td');
+        const check = el('input');
+        check.type = 'checkbox';
+        check.checked = !!cur.guide_filler;
+        check.onchange = () => { cur.guide_filler = check.checked; };
+        filler.appendChild(check);
+        row.append(name, where, filler);
+        table.appendChild(row);
+    });
+    box.appendChild(table);
+}
+
+async function saveGuideSettings() {
+    const message = document.getElementById('guide-save-message');
+    const zip = document.getElementById('guide-weather-zip').value.trim();
+    if (zip && !/^\d{5}$/.test(zip)) {
+        message.textContent = 'The weather ZIP code is five digits.';
+        return;
+    }
+    const body = {
+        prime_time: parseInt(document.getElementById('guide-prime-time').value) || 20,
+        weather_zip: zip,
+        libraries: Object.entries(guideTab.libraries).map(([id, l]) => ({ id, show_in_guide: l.show_in_guide === 'off' ? '' : l.show_in_guide, guide_filler: !!l.guide_filler })),
+        typed_channels: guideTab.typed.map(t => ({ id: t.id || '', type: t.type, libraries: t.libraries, max: t.max })),
+    };
+    message.textContent = 'Saving…';
+    try {
+        showGuideSettings(await api.saveGuideSettings(body));
+        message.textContent = 'Saved. The Guide plans again now.';
+    } catch (error) {
+        message.textContent = 'Couldn’t save: ' + error.message;
+    }
+}
+
+document.getElementById('guide-save')?.addEventListener('click', saveGuideSettings);

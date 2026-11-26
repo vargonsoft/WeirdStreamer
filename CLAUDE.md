@@ -764,7 +764,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   never sends the secret. Settings' save (`PUT /api/config`) changes only the fields its screens show
   (`settingsUpdate` in `handlers/config.go`: server name, port and host, streaming switches, TMDB,
   OpenSubtitles, language, libraries); the rest of what it's sent is ignored, and a new field Settings
-  shows must be added there. The web UI never sees its token: its sign-in sends `web: true`, so the
+  shows must be added there. The Guide's settings are the Guide tab's own save (`PUT /api/admin/guide`,
+  `handlers/guideadmin.go`), which `/api/config`'s keeps as they are. The web UI never sees its token: its sign-in sends `web: true`, so the
   token goes only into the HttpOnly cookie (`Secure` over HTTPS, including behind a trusted proxy
   that sends `X-Forwarded-Proto: https`), and its requests send `X-WeirdStreamer-Web: 1`, without
   which the cookie works for GET only (other sites can't add the header).
@@ -833,7 +834,7 @@ What's built (server):
   (`shows.network_id`, `network`, `rating`; `movies.rating`). A title without them (`guide_info` 0) is due
   for the TMDB lookups job.
 - **Library settings.** `showInGuide` (on, libraryOnly, off: `MediaPath.InGuide`) and `guideFiller` on
-  each library. A filler library's videos get no trickplay frames (`config.InGuideFiller`): the trickplay job
+  each library, set in Settings' Guide tab (below). A filler library's videos get no trickplay frames (`config.InGuideFiller`): the trickplay job
   skips them (removing any made before, logged) and only reads a missing length, which the Guide plans with;
   `cli trickplay` for a library or every video skips them too.
 - **Lengths.** The Guide schedules only videos whose length is stored (`media_items.duration`). A scan reads a
@@ -851,7 +852,7 @@ What's built (server):
   - `Service` plans 72 hours ahead, hourly and when settings change (the Jobs page's Guide job). When
     a channel's titles change it plans again from 6 hours ahead. Slots are kept 35 days.
 - **Tables:** `guide_channels` (numbers in blocks, `guide/numbers.go`: Guide 1, networks 2–19, Weather 20–29, TV
-  genres 30–49, movies 50–69, overflow from 100; one outside its block moves in at the next refresh, `Renumber`) and `guide_slots` (client
+  genres 30–49, movies 50–69, each typed definition its ten from 100 (`Typed`), overflow from 200; one outside its block moves in at the next refresh, `Renumber`) and `guide_slots` (client
   paths, a program's info as JSON), in `database/guide.go`.
 - **API** (`handlers/guide.go`): `GET /api/guide/available`, `GET /api/guide` (the grid),
   `GET /api/guide/now?channel=` (the file, the offset, and the program on now and next) and
@@ -883,7 +884,8 @@ What's built (server):
   - Bumpers are a card drawn over the picture (`showBumper`).
   - There's no seeking, and a pause mutes instead. Typing a number tunes to that channel, and Up and
     Down change channel in full screen.
-  - Settings has the libraries' Show in Guide and Use for Guide Filler, and Server › Guide's prime time.
+  - Settings' Guide tab (`loadGuideSettings` in `guide.js`): typed channels, the libraries' Show in Guide and Use for
+    Guide Filler, prime time, the weather ZIP and the voice-over tester.
 - **Android** (`Guide.kt`: `GuideModel`, `GuidePlayer`, the cards; `TvGuide.kt`, `PhoneGuide.kt`):
   - The Guide row is the last of the rows above the folders (`MediaViewModel.guideRow`, from
     `/api/guide/available`): a button in `TvContinueRow` and `PhoneContinueRow`. `openGuide` sets
@@ -898,8 +900,8 @@ What's built (server):
     full screen, where Up and Down change channel. Number keys tune, and Play/Pause mutes.
   - Phone: the grid scrolls sideways. A tap on the picture goes full screen (sideways), where swipes
     change channel; there's a mute button.
-  - Settings: each library's Show in Guide and Use for Guide Filler, and prime time
-    (`AdminSettings.kt`; the phone's and the TV's screens).
+  - Settings' Guide tab (`GuideSettingsModel` in `AdminSettings.kt`; the phone's `PhoneGuideSettings.kt`, the
+    TV's `TvGuideTab` in `TvAdminSettings.kt`).
 - **Marking shows watched:** no button. Each device's setting "Mark Guide shows watched" (off by default; web
   My Account › Playback `localStorage.guideMarksWatched`, Android `guideMarksWatched`, iPhone
   `guide_marks_watched`): when the item after a library channel's program starts at or after its end while
@@ -920,7 +922,7 @@ What's built (server):
   iPhone `fileStart`; the clock only until the item has loaded), so a stall doesn't put it early; they
   play it over the program (lowered to 30%), squeeze the picture beside an "Up next" card (web `guide.js`
   `scheduleVoiceOver`, Android `GuideModel.scheduleVoiceOver` / `UpNextCard`, iPhone the same names), and show
-  Report voice-over while it plays (`POST /api/guide/voiceover/report`). The web's Settings › Server › Guide
+  Report voice-over while it plays (`POST /api/guide/voiceover/report`). The web's Settings › Guide
   has the tester (`/api/admin/guide/voices`, `/try` with phonemes from Piper's `--debug`, `/fix` saved keeping
   the file's comments, reports). The e2e server has Piper in `e2e/piper-venv` and the voices in `e2e/piper-voices`.
 - **The grid scrolls to the end of the plan:** `/api/guide` gives `until` (72 hours ahead) and takes `from=`;
@@ -937,7 +939,7 @@ What's built (server):
   - Guide channel: `GuideChannelBlock`, 30-second blocks by the clock (preview, its promo card, preview,
     commercial), worked out per request from the viewer's channels and filler (`Service.FillerClips`); `/now`
     adds `airs` and `airs_on`. The apps draw the picture in the top 58% and the listings roll below.
-  - Weather: `guide/weather.go`, the National Weather Service for `guide.weatherZip` (Settings › Server; default
+  - Weather: `guide/weather.go`, the National Weather Service for `guide.weatherZip` (Settings › Guide; default
     10001), the ZIP's position from the embedded Census table (`zipcodes.txt.gz`); `GET /api/guide/weather`
     (10-minute cache), `/weather/radar` (the radar station's latest GIF), `/weather/icon?name=` (drawn like the
     logos' symbols, `weathericons.go`). Pages turn every 10 s by the server's clock.
@@ -948,6 +950,22 @@ What's built (server):
   - Clients: web `guide.js` (`setChannelScreen`, `renderGuideListings`, `showPromo`, `renderWeather`, the
     `<audio id="guide-music">`), Android `GuideChannels.kt` (drawn inside `GuidePlayer`; the music is
     `GuideModel.music`, its own ExoPlayer), iPhone `Views/GuideChannels.swift` (`GuideModel.music`, an AVPlayer).
+- **Typed channels** (`docs/GUIDE.md`; `config/typed.go`, `guide/typed.go`, `guide/folders.go`): `guide.typedChannels`, each
+  a type (`config.TypedChannelTypes`: Late Night, late night content, airs everything in its libraries all day,
+  `Channel.AnyTime`; the genre types their TMDB titles of that genre, `TypedMatch`), its libraries, up to `max` (1–4)
+  channels and its block of ten numbers from 100 (`number`, given when added). Their channels' library is
+  `typed:<id>` (`TypedLibraryID`), keys `typed:<id>/<group>:<part>`: the handlers show them on the home Guide only,
+  to groups that can open every one of the libraries (`canSeeTyped`), and their libraries are in no regular channel
+  (`InTypedChannel`). Folder libraries are read from their files (`FolderTitles`): series (SnnEnn, or names alike
+  but for numbers, or Season folders), collections (fewer than 5 videos join the parent's) of long videos, and
+  short clips packed into half-hour blocks (`Item.Parts`: the first clip the program, the rest its filler;
+  `ProgramInfo.block`, no voice-overs), which also fill the definition's other channels (`clipsBesides`).
+  `TypedChannels` splits a definition's content: a channel per kind with a day of it, the rest joining the
+  largest, then splits while each part has two weeks. Late Night channels take station call signs and aren't
+  previewed on the Guide channel. Nothing checked in names what a Late Night library holds.
+- **Settings' Guide tab** (admins; web, phone, TV, iPhone): `GET/PUT /api/admin/guide` (`handlers/guideadmin.go`):
+  typed channels, every library's Show in Guide (movie and TV) and Use for Guide Filler, prime time, the weather
+  ZIP, the music and Piper found; saved apart from `/api/config` (the Server tab no longer shows these).
 - **iPhone** (`Session/Guide.swift`: `GuideModel`; `Views/GuideView.swift`: `GuideScreen`), as the phone's:
   - The Guide button ends `ContinueRows` (`AppModel.guideRow`); `openGuide` sets `guideOpen`, which
     `RootView` shows as a full-screen cover. The last channel is kept per server and Guide (`UserDefaults`).
@@ -956,7 +974,7 @@ What's built (server):
     failure as a full transcode. A pause from outside mutes and plays on.
   - The grid's half hours follow the programs' sideways scroll (`onGeometryChange`), and one time line
     runs over them. Full screen asks the window to turn sideways; swipes change channel.
-  - Settings › Server: each library's Show in Guide and Use for Guide Filler, and prime time (`AdminTabs.swift`).
+  - Settings' Guide tab (`GuideSettingsTab.swift`), as the phone's.
   - Compiled and unit-tested (`GuideTests`) through `mac-ios`; not yet run on a simulator or phone.
 
 

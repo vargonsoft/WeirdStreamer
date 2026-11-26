@@ -944,3 +944,57 @@ struct WeatherAlert: Decodable, Equatable {
     let event: String
     let headline: String?
 }
+
+// MARK: The Guide tab of Settings (admins): GET/PUT /api/admin/guide
+
+struct GuideAdminLibrary: Decodable, Hashable {
+    let id: String
+    let name: String
+    let type: String // movie, tv or "" (a folder library)
+    let groups: [String]
+    let showInGuide: String
+    let guideFiller: Bool
+    let typed: Bool // a typed channel uses it
+}
+
+struct GuideAdminChannel: Decodable, Hashable {
+    let number: Int
+    let name: String
+}
+
+struct GuideAdminTyped: Decodable, Hashable {
+    let id: String
+    let type: String
+    let libraries: [String]
+    let max: Int
+    let number: Int // its block's first number
+    let groups: [String] // who sees it
+    let channels: [GuideAdminChannel]
+}
+
+struct GuideAdminType: Decodable, Hashable {
+    let id: String
+    let name: String
+}
+
+struct GuideAdmin: Decodable {
+    let primeTime: Int
+    let weatherZip: String
+    let libraries: [GuideAdminLibrary]
+    let typedChannels: [GuideAdminTyped]
+    let types: [GuideAdminType]
+    let maxChannels: Int
+    let maxTyped: Int
+    let musicTracks: Int
+    let voiceOvers: Bool
+}
+
+/// The Guide tab as saved (sent with snake_case keys): a typed channel without an id is new.
+struct GuideAdminSave: Encodable {
+    struct Library: Encodable { let id: String; let showInGuide: String; let guideFiller: Bool }
+    struct Typed: Encodable { let id: String; let type: String; let libraries: [String]; let max: Int }
+    let primeTime: Int
+    let weatherZip: String
+    let libraries: [Library]
+    let typedChannels: [Typed]
+}

@@ -41,10 +41,10 @@ import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import com.vargon.weirdstreamer.MediaViewModel
 import kotlinx.coroutines.delay
 
-/** The TV Settings' tabs. Account needs a server open; Server, Users, Streams and Jobs, an admin's account on it. */
+/** The TV Settings' tabs. Account needs a server open; Server, Guide, Users, Streams and Jobs, an admin's account on it. */
 private enum class TvSettingsTab(val title: String, val admin: Boolean = false) {
     General("General"), Account("Account"), Sources("Sources"), Themes("Themes"),
-    Server("Server", admin = true), Users("Users", admin = true), Streams("Streams", admin = true), Jobs("Jobs", admin = true)
+    Server("Server", admin = true), Guide("Guide", admin = true), Users("Users", admin = true), Streams("Streams", admin = true), Jobs("Jobs", admin = true)
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -115,7 +115,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
         TvSettingsTab.General -> hiddenFilesFocus
         TvSettingsTab.Account -> languagesFocus
         TvSettingsTab.Sources -> if (hasSources) firstSourceFocus else FocusRequester.Default
-        TvSettingsTab.Server, TvSettingsTab.Users, TvSettingsTab.Streams, TvSettingsTab.Jobs -> adminFocus
+        TvSettingsTab.Server, TvSettingsTab.Guide, TvSettingsTab.Users, TvSettingsTab.Streams, TvSettingsTab.Jobs -> adminFocus
         TvSettingsTab.Themes -> currentThemeFocus
     }
     val tabUp = tabFocus.getValue(tab)
@@ -252,6 +252,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
 
             // The open server's administration (admins), as the phone's and the web's Settings
             TvSettingsTab.Server -> item { adminServer?.let { TvServerTab(it, adminFocus, tabUp, onPlay = viewModel::playServerFile) } }
+            TvSettingsTab.Guide -> item { adminServer?.let { TvGuideTab(it, adminFocus, tabUp) } }
             TvSettingsTab.Users -> item { adminServer?.let { TvUsersTab(it, adminFocus, tabUp) } }
             TvSettingsTab.Streams -> item { adminServer?.let { TvStreamsTab(it, adminFocus, tabUp) } }
             TvSettingsTab.Jobs -> item { adminServer?.let { TvJobsTab(it, adminFocus, tabUp) } }

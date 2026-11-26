@@ -30,6 +30,8 @@ type Title struct {
 	Overview  string
 	Poster    string
 	Items     []Item // a show's episodes in order, or a movie's file
+	Library   string // the library it's from, where its channel isn't one library's (typed channels)
+	Block     bool   // its items are blocks of short clips (a folder collection's: no voice-overs)
 }
 
 // TitleKey is a title's key, from its kind and TMDB ID.
@@ -43,13 +45,22 @@ type Item struct {
 	Duration        time.Duration
 	Season, Episode int // episodes
 	Name, Overview  string
+	Poster          string // its own picture (a folder library's video's thumbnail), where the title has none
+	Parts           []Part // a block of clips: they air one after another (Path is the first's)
+}
+
+// Part is a clip of a block.
+type Part struct {
+	Path     string // client path
+	Duration time.Duration
 }
 
 // Clip is a short video that can fill a gap between programs (a Use for Guide Filler library's).
 type Clip struct {
 	Path     string // client path
 	Duration time.Duration
-	Year     int // from its folder or name (1987/…, "… (1987) …"), 0 unknown: the planner prefers clips near the program's year
+	Year     int    // from its folder or name (1987/…, "… (1987) …"), 0 unknown: the planner prefers clips near the program's year
+	Poster   string // its thumbnail (a folder library's), "" none
 }
 
 // MaxClip is the longest video used as filler.

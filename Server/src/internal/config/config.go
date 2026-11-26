@@ -45,6 +45,9 @@ type GuideConfig struct {
 	// voiceovers beside the thumbnails folder).
 	VoicesFile    string `json:"voicesFile,omitempty" yaml:"voicesFile,omitempty"`
 	VoiceOverPath string `json:"voiceOverPath,omitempty" yaml:"voiceOverPath,omitempty"`
+	// Channels an admin defines: a type and the libraries they're made from (typed.go). Settings'
+	// Guide tab changes these.
+	TypedChannels []TypedChannel `json:"typedChannels,omitempty" yaml:"typedChannels,omitempty"`
 }
 
 // Prime time's starts (GuideConfig.PrimeTime)
@@ -394,7 +397,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("media path %q: invalid showInGuide %w", p.Name, err)
 		}
 	}
-	return nil
+	return c.validateTypedChannels()
 }
 
 // canonicalMode reads an on/libraryOnly/off option in any capitalization, written back in the

@@ -352,12 +352,6 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
     TvSettingsRow("Enable HTTP/2", onClick = { m.http2 = !m.http2; m.saveSoon() }) { TvSwitch(m.http2) }
     TvSettingsRow("Pause background jobs while anyone is streaming", "Finding intros and credits, trickplay frames, cleanup",
         onClick = { m.pauseJobs = !m.pauseJobs; m.saveSoon() }) { TvSwitch(m.pauseJobs) }
-    TvSettingsRow("Guide's prime time", "Then the news hour", stepValue = optionLabel(primeTimes, m.primeTime),
-        onStep = { m.primeTime = stepOption(primeTimes, m.primeTime, it); m.saveSoon() },
-        onClick = { m.primeTime = stepOption(primeTimes, m.primeTime, 1); m.saveSoon() }) { }
-    TvSettingsRow("Weather ZIP code", (m.weatherZip.ifBlank { "10001" }) + " · the Weather channel's forecast (US)", onClick = {
-        entry = TextEntry("Weather ZIP code", m.weatherZip, TvEntryKind.Number) { v -> m.weatherZip = v.filter { it.isDigit() }.take(5); m.save() }
-    }) { }
     TvSettingsRow("Hardware encoding", hardwareSummary(m.hardware, config),
         onClick = { if (m.hardware != null) showHardware = true }) { Icon(Icons.Default.Memory, contentDescription = null) }
 
@@ -523,15 +517,6 @@ private fun TvLibraryDialog(m: ServerSettingsModel, p: PathEdit, onDismiss: () -
             onStep = { p.newAdditions = stepOption(libraryRowModes, p.newAdditions, it); m.saveSoon() }) {
             onChoose(ChoiceEntry("Recently Added", libraryRowModes, p.newAdditions) { p.newAdditions = it; m.save() })
         }
-        if (p.type.isNotEmpty()) {
-            TvValueRow("Show in Guide", optionLabel(libraryRowModes, p.showInGuide),
-                onStep = { p.showInGuide = stepOption(libraryRowModes, p.showInGuide, it); m.saveSoon() }) {
-                onChoose(ChoiceEntry("Show in Guide", libraryRowModes, p.showInGuide) { p.showInGuide = it; m.save() })
-            }
-        }
-        TvValueRow("Use for Guide Filler", if (p.guideFiller) "On" else "Off", onStep = { p.guideFiller = !p.guideFiller; m.saveSoon() }) {
-            p.guideFiller = !p.guideFiller; m.saveSoon()
-        }
         Text("Groups that can see it", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp))
         if (m.groupNames.isEmpty()) TvNote("None defined: add one under Groups.")
@@ -548,6 +533,135 @@ private fun TvLibraryDialog(m: ServerSettingsModel, p: PathEdit, onDismiss: () -
         TvConfirmDialog("Remove ${p.name.ifEmpty { "this library" }}?",
             "It's removed from the server's libraries. The files aren't touched.", "Remove",
             onDismiss = { removing = false }) { m.removePath(p); m.save(); onDismiss() }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Guide tab: typed channels, each library's Guide switches and the schedule (GuideSettingsModel),
+// each change saved at once.
+
+@Composable
+fun TvGuideTab(server: ServerRepository, first: FocusRequester, up: FocusRequester) {
+    val m = rememberGuideSettings(server)
+    TvNoticeToast(m.message)
+    var entry by remember { mutableStateOf<TextEntry?>(null) }
+    var choice by remember { mutableStateOf<ChoiceEntry?>(null) }
+    // dialogs by index: a save brings the lists back from the server as new objects, in the same order
+    var typedOpen by remember { mutableStateOf<Int?>(null) }
+    var libraryOpen by remember { mutableStateOf<Int?>(null) }
+    val data = m.data
+    if (data == null) {
+        TvPlaceholderRow(m.loadError ?: "Loading…", first, up)
+        return
+    }
+
+    TvSectionTitle("Typed channels")
+    TvNote("Channels made only from the libraries you pick, of one type, numbered from 100. Only the groups that can open every " +
+        "one of their libraries see them, and those libraries are in no other channel. Late Night airs everything in its " +
+        "libraries, all day; the other types take their TMDB titles of that genre.")
+    m.typed.forEachIndexed { i, t ->
+        val (seen, numbers) = typedSummary(m, t)
+        val libs = t.libraries.mapNotNull { m.library(it)?.name }.joinToString(", ").ifEmpty { "No libraries" }
+        TvSettingsRow("${m.typeName(t.type)} · up to ${t.max}", "$libs\n$seen $numbers",
+            focus = if (i == 0) first else null, up = if (i == 0) up else null, onClick = { typedOpen = i }) { TvChevron() }
+    }
+    TvSettingsRow("Add typed channels", if (m.canAdd) null else "As many as there can be",
+        focus = if (m.typed.isEmpty()) first else null, up = if (m.typed.isEmpty()) up else null,
+        onClick = { if (m.addTyped() != null) typedOpen = m.typed.lastIndex }) { Icon(Icons.Default.Add, contentDescription = null) }
+
+    TvSectionTitle("Libraries")
+    TvNote("Show in Guide puts a movie or TV library's titles on the channels, by network and genre. Use for Guide Filler lends " +
+        "its videos of 15 minutes or less to the gaps between programs.")
+    m.libraries.forEachIndexed { i, l ->
+        val where = when {
+            m.inTyped(l.library.id) -> "On its typed channels"
+            l.airs -> "Show in Guide: " + optionLabel(libraryRowModes, l.showInGuide)
+            else -> "Only typed channels take it"
+        }
+        TvSettingsRow(l.library.name, "${libraryKind(l.library.type)} · $where · Filler: ${if (l.guideFiller) "On" else "Off"}",
+            onClick = { libraryOpen = i }) { TvChevron() }
+    }
+
+    TvSectionTitle("Schedule")
+    TvSettingsRow("Prime time", "Then the news hour", stepValue = optionLabel(primeTimes, m.primeTime),
+        onStep = { m.primeTime = stepOption(primeTimes, m.primeTime, it); m.saveSoon() },
+        onClick = { m.primeTime = stepOption(primeTimes, m.primeTime, 1); m.saveSoon() }) { }
+    TvSettingsRow("Weather ZIP code", (m.weatherZip.ifBlank { "10001" }) + " · the Weather channel's forecast (US)", onClick = {
+        entry = TextEntry("Weather ZIP code", m.weatherZip, TvEntryKind.Number) { v -> m.weatherZip = v.filter { it.isDigit() }.take(5); m.save() }
+    }) { TvChevron() }
+    TvNote(guideExtras(data.musicTracks, data.voiceOvers))
+
+    typedOpen?.let { i ->
+        val t = m.typed.getOrNull(i)
+        if (t == null) typedOpen = null
+        else TvTypedDialog(m, t, onDismiss = { typedOpen = null }, onChoose = { choice = it })
+    }
+    libraryOpen?.let { i ->
+        val l = m.libraries.getOrNull(i)
+        if (l == null) libraryOpen = null
+        else TvGuideLibraryDialog(m, l, onDismiss = { libraryOpen = null }, onChoose = { choice = it })
+    }
+    entry?.let { e -> TvTextEntryDialog(e.title, e.initial, e.kind, e.note, onDismiss = { entry = null }, onDone = e.onDone) }
+    choice?.let { c -> TvChoiceDialog(c.title, c.options, c.selected, onPick = c.onPick, onDismiss = { choice = null }) }
+}
+
+/** A typed channel: its type, how many channels, its libraries (OK turns one on or off), and Remove. */
+@Composable
+private fun TvTypedDialog(m: GuideSettingsModel, t: TypedEdit, onDismiss: () -> Unit, onChoose: (ChoiceEntry) -> Unit) {
+    val data = m.data ?: return
+    var removing by remember { mutableStateOf(false) }
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    val counts = (1..data.maxChannels).map { "$it" to "Up to $it" }
+    TvDialogFrame("${m.typeName(t.type)} channels", onDismiss) {
+        TvValueRow("Type", m.typeName(t.type), focus = first, onStep = { t.type = stepOption(m.types, t.type, it); m.saveSoon() }) {
+            onChoose(ChoiceEntry("Type", m.types, t.type) { t.type = it; m.save() })
+        }
+        TvValueRow("Channels", "Up to ${t.max}", onStep = { t.max = stepOption(counts, "${t.max}", it).toInt(); m.saveSoon() }) {
+            onChoose(ChoiceEntry("Channels", counts, "${t.max}") { t.max = it.toInt(); m.save() })
+        }
+        Text("Libraries", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp))
+        data.libraries.forEach { l ->
+            val value = when {
+                l.id in t.libraries -> "On"
+                m.usedElsewhere(t, l.id) -> "Another typed channel has it"
+                else -> "Off"
+            }
+            TvValueRow("${l.name} (${libraryKind(l.type)}; ${l.groups.joinToString(", ").ifEmpty { "no group" }})", value) {
+                if (!m.usedElsewhere(t, l.id)) { m.toggleLibrary(t, l.id); m.saveSoon() }
+            }
+        }
+        val (seen, numbers) = typedSummary(m, t)
+        TvNote(seen)
+        TvNote(numbers)
+        Spacer(Modifier.height(4.dp))
+        TvValueRow("Remove these typed channels", destructive = true) { removing = true }
+    }
+    if (removing) {
+        TvConfirmDialog("Remove the ${m.typeName(t.type)} channels?", "Their channels leave the Guide, and their libraries go back to the regular channels' settings.",
+            "Remove", onDismiss = { removing = false }) { m.removeTyped(t); m.save(); onDismiss() }
+    }
+}
+
+/** A library's Guide switches. */
+@Composable
+private fun TvGuideLibraryDialog(m: GuideSettingsModel, l: GuideLibraryEdit, onDismiss: () -> Unit, onChoose: (ChoiceEntry) -> Unit) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    TvDialogFrame(l.library.name, onDismiss) {
+        when {
+            m.inTyped(l.library.id) -> TvNote("On its typed channels, and in no other channel.")
+            l.airs -> TvValueRow("Show in Guide", optionLabel(libraryRowModes, l.showInGuide), focus = first,
+                onStep = { l.showInGuide = stepOption(libraryRowModes, l.showInGuide, it); m.saveSoon() }) {
+                onChoose(ChoiceEntry("Show in Guide", libraryRowModes, l.showInGuide) { l.showInGuide = it; m.save() })
+            }
+            else -> TvNote("A folder library: only typed channels (Late Night) take it.")
+        }
+        TvValueRow("Use for Guide Filler", if (l.guideFiller) "On" else "Off", focus = if (l.airs && !m.inTyped(l.library.id)) null else first,
+            onStep = { l.guideFiller = !l.guideFiller; m.saveSoon() }) {
+            l.guideFiller = !l.guideFiller; m.saveSoon()
+        }
     }
 }
 

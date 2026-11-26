@@ -61,7 +61,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
             // Account and Downloads are the account's: there's none until a server's account is open.
             if (server != null) addAll(listOf("Account", "Downloads"))
             add("Themes")
-            if (server != null && isAdmin) addAll(listOf("Server", "Users", "Streams", "Jobs"))
+            if (server != null && isAdmin) addAll(listOf("Server", "Guide", "Users", "Streams", "Jobs"))
         }
         // In the view model: playing a download from its tab replaces this screen, and coming back
         // returns to the tab (by name, as the list changes with the server).
@@ -86,6 +86,7 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
         }
         when (tab) {
         "Server" -> ServerSettingsTab(server!!, onPlay = viewModel::playServerFile)
+        "Guide" -> GuideSettingsTab(server!!)
         "Users" -> UsersTab(server!!)
         "Streams" -> StreamsTab(server!!)
         "Jobs" -> JobsTab(server!!)

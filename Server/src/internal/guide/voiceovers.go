@@ -31,6 +31,9 @@ func voiceOverPlan(f *VoicesFile, channel int, slots []database.GuideSlot, i int
 	if f == nil || i >= len(slots) || slots[i].Kind != SlotProgram {
 		return VoiceOverPlan{}, false
 	}
+	if info := slotInfo(slots[i]); info != nil && info.Block {
+		return VoiceOverPlan{}, false // a block of clips: its next clip follows, not the next program
+	}
 	var next, later *ProgramInfo
 	var laterStart, nextStart time.Time
 	for j := i + 1; j < len(slots); j++ {

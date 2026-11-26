@@ -7,7 +7,8 @@ works the way 80s and 90s TV did, not the way modern TV does.
 Status: on the `guide` branch, phase 1 (the server: channels, the planner, filler, the API), phase 2
 (the web: `js/guide.js`), phases 3 and 4 (Android TV and phone) and phase 5 (the iPhone; compiled and
 unit-tested, not yet tried on a simulator or phone) are built, and so are the Guide and Weather channels (the
-iPhone's again only compiled and unit-tested). The Music channel needs its plan; voice-overs are next. Decisions are marked as settled; open questions are at the end.
+iPhone's again only compiled and unit-tested), voice-overs, typed channels and the Guide tab (web, Android
+and iPhone; the iPhone's compiled and unit-tested only). The Music channel needs its plan. Decisions are marked as settled; open questions are at the end.
 
 ## Decisions (settled)
 
@@ -67,7 +68,7 @@ iPhone's again only compiled and unit-tested). The Music channel needs its plan;
 - **Movies get genre and decade channels:** action, family, horror, comedy, 80s movies, and so on.
 - **Channel numbers come in blocks, and stay put** (settled 2026-11-26). Up to 3 digits, with gaps to grow
   into: the Guide channel 1, network stations 2–19, Weather (and channels like it, later Music) 20–29, TV
-  genre channels 30–49, movie channels 50–69; a full block goes on from 100. Numbers are stored in the
+  genre channels 30–49, movie channels 50–69, typed channels 100–199 (below); a full block goes on from 200. Numbers are stored in the
   `guide_channels` table: a new channel takes the next free number of its block, a channel keeps its number
   while it's in its block, and one numbered outside it (before the blocks) moves in once. Later, an admin
   may rename, renumber or hide channels, and give them their own logos.
@@ -162,6 +163,53 @@ encoded for them, and their text is sharp at any size.
   easy listening (incompetech.com, CC BY 4.0), each credited on screen while it plays (a `<track>.txt`
   beside it holds the credit line).
 - **The Music channel** has its logo; what it plays needs its own plan.
+
+## Typed channels (settled 2026-11-26)
+
+Channels an admin defines: a **type** and the **libraries** they're made from, instead of every Show in
+Guide library grouped by network and genre. For example a Kids type from two libraries, or Late Night
+(late night content) from a library only some groups see.
+
+- **Who sees them.** Only the groups that can open every one of the channel's libraries; to anyone else
+  they don't exist (the grid, Now, logos, the Guide channel's listings). They're on the home screen's
+  Guide, not a library's own.
+- **Their libraries are theirs.** A library a typed channel uses isn't in the regular channels, whatever
+  its Show in Guide says.
+- **Types.** Late Night airs everything in its libraries, all day, with no time-of-day rules. The genre
+  types (Kids, Cartoons, Comedy, Sci-Fi, Drama, Real Life, Action, Horror) take the libraries' TMDB
+  titles of that genre, shows and movies, by the regular channels' rules.
+- **How many.** Up to the number the admin sets (1 to 4), as the content allows: one per kind of content
+  with at least a day of it (series; long videos; short clips), the rest joining the largest, then the
+  kind with the most hours per channel is split in two while it has more than two weeks for each. Each
+  channel keeps its place (its key is its kind and its part), so its number does too.
+- **Numbers.** Each typed definition has a block of ten from 100 (100–109, 110–119…, 190–199), given when
+  it's added and kept. The overflow of the regular blocks goes on from 200.
+- **Names and logos.** Late Night channels take call signs from the pool of made-up stations, like network
+  channels; genre types take their genre's name and logo.
+- **Libraries without TMDB** (plain folder libraries) are read from their files:
+  - A folder is a **series** when most of its videos share a name apart from their numbers ("Show
+    S01E05", "Episode 5", "1987"), with `Season N` and `Specials` folders read as its seasons. Its
+    episodes air in order (SnnEnn, else the numbers), specials last.
+  - Any other folder is a **collection**: its videos air in a shuffled order, each once before any
+    again. A folder with fewer than five videos joins its parent's collection (the library's own loose
+    files are one).
+  - A collection's **short clips** (15 minutes or less) air packed into half-hour blocks (an hour
+    when they're long) named for their folder, and fill the gaps on the definition's other channels.
+    Typed channels take no other filler: without clips of their own the gaps are bumpers.
+  - A program's picture is its video's own thumbnail; its name is the folder's (and the file's).
+- **Scheduling** is a network channel's: prime-time positions weekly, strips through the day, the
+  rest as the regular channels do. Collections and blocks are titles like shows, so they rotate too.
+- **Voice-overs** are made for series and long videos, not for blocks of clips.
+
+## The Guide tab (settled 2026-11-26)
+
+The Guide's settings leave Settings › Server for a Guide tab of their own (admins; web, phone, iPhone,
+TV), saved apart from the rest (`GET/PUT /api/admin/guide`):
+- **Typed channels:** each with its type, libraries and "up to" count, and the numbers it has now.
+- **Libraries:** every library's Show in Guide (movie and TV libraries) and Use for Guide Filler. They
+  leave Media Paths.
+- **Schedule:** prime time, the weather ZIP code, the music folder in use and its tracks, and whether
+  voice-overs are set up. The voice-over tester stays on the web.
 
 ## Voice-overs on the credits (later phase)
 

@@ -1036,3 +1036,67 @@ data class WeatherAlert(
     @SerializedName("event") val event: String = "",
     @SerializedName("headline") val headline: String = "",
 )
+
+// The Guide tab of Settings (admins): GET/PUT /api/admin/guide
+
+data class GuideAdminLibrary(
+    @SerializedName("id") val id: String = "",
+    @SerializedName("name") val name: String = "",
+    @SerializedName("type") val type: String = "", // movie, tv or "" (a folder library)
+    @SerializedName("groups") val groups: List<String> = emptyList(),
+    @SerializedName("show_in_guide") val showInGuide: String = "",
+    @SerializedName("guide_filler") val guideFiller: Boolean = false,
+    @SerializedName("typed") val typed: Boolean = false, // a typed channel uses it
+)
+
+data class GuideAdminChannel(
+    @SerializedName("number") val number: Int = 0,
+    @SerializedName("name") val name: String = "",
+)
+
+data class GuideAdminTyped(
+    @SerializedName("id") val id: String = "",
+    @SerializedName("type") val type: String = "",
+    @SerializedName("libraries") val libraries: List<String> = emptyList(),
+    @SerializedName("max") val max: Int = 4,
+    @SerializedName("number") val number: Int = 0, // its block's first number
+    @SerializedName("groups") val groups: List<String> = emptyList(), // who sees it
+    @SerializedName("channels") val channels: List<GuideAdminChannel> = emptyList(),
+)
+
+data class GuideAdminType(
+    @SerializedName("id") val id: String = "",
+    @SerializedName("name") val name: String = "",
+)
+
+data class GuideAdmin(
+    @SerializedName("prime_time") val primeTime: Int = 20,
+    @SerializedName("weather_zip") val weatherZip: String = "",
+    @SerializedName("libraries") val libraries: List<GuideAdminLibrary> = emptyList(),
+    @SerializedName("typed_channels") val typedChannels: List<GuideAdminTyped> = emptyList(),
+    @SerializedName("types") val types: List<GuideAdminType> = emptyList(),
+    @SerializedName("max_channels") val maxChannels: Int = 4,
+    @SerializedName("max_typed") val maxTyped: Int = 10,
+    @SerializedName("music_tracks") val musicTracks: Int = 0,
+    @SerializedName("voice_overs") val voiceOvers: Boolean = false,
+)
+
+data class GuideLibrarySave(
+    @SerializedName("id") val id: String,
+    @SerializedName("show_in_guide") val showInGuide: String,
+    @SerializedName("guide_filler") val guideFiller: Boolean,
+)
+
+data class GuideTypedSave(
+    @SerializedName("id") val id: String,
+    @SerializedName("type") val type: String,
+    @SerializedName("libraries") val libraries: List<String>,
+    @SerializedName("max") val max: Int,
+)
+
+data class GuideAdminSave(
+    @SerializedName("prime_time") val primeTime: Int,
+    @SerializedName("weather_zip") val weatherZip: String,
+    @SerializedName("libraries") val libraries: List<GuideLibrarySave>,
+    @SerializedName("typed_channels") val typedChannels: List<GuideTypedSave>,
+)

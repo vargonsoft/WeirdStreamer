@@ -180,10 +180,25 @@ func Plan(ch Channel, from, to time.Time, st *State, clips []Clip) []Slot {
 		it := title.Items[item]
 		prog := Slot{Channel: ch.Key, Start: t, Length: it.Duration, Kind: SlotProgram, Title: title.Key, Item: item,
 			Path: it.Path, Track: track}
-		st.Record(prog)
-		out = append(out, prog)
 		end := t.Add(slotLength(it.Duration))
-		out = append(out, p.fill(prog.End(), end, title.Year)...)
+		after := prog.End()
+		if len(it.Parts) > 0 {
+			// A block: its first clip is the program, the others follow as its filler (each recorded as aired).
+			prog.Path, prog.Length = it.Parts[0].Path, it.Parts[0].Duration
+			st.Record(prog)
+			out = append(out, prog)
+			after = prog.End()
+			for _, pt := range it.Parts[1:] {
+				s := Slot{Channel: ch.Key, Start: after, Length: pt.Duration, Kind: SlotFiller, Path: pt.Path}
+				st.Record(s)
+				out = append(out, s)
+				after = s.End()
+			}
+		} else {
+			st.Record(prog)
+			out = append(out, prog)
+		}
+		out = append(out, p.fill(after, end, title.Year)...)
 		t = end
 	}
 	return out
@@ -205,6 +220,9 @@ func (p *planner) pick(t time.Time) (*Title, int, string) {
 // eligible are the titles the part may air: kids' ratings on Saturday morning, nothing adult
 // before the news hour. With none, the next wider set.
 func (p *planner) eligible(titles []*Title, part string) []*Title {
+	if p.ch.AnyTime {
+		return titles
+	}
 	allowed := []int{ratingKids, ratingGeneral}
 	switch part {
 	case partKids:

@@ -17,6 +17,7 @@ import (
 	bgjobs "github.com/weirdstreamer/server/internal/jobs"
 	"github.com/weirdstreamer/server/internal/media"
 	"github.com/weirdstreamer/server/internal/metadata"
+	"github.com/weirdstreamer/server/internal/models"
 )
 
 // How far the schedule reaches
@@ -43,6 +44,7 @@ type ProgramInfo struct {
 	Episode         int      `json:"episode,omitempty"`
 	EpisodeTitle    string   `json:"episode_title,omitempty"`
 	EpisodeOverview string   `json:"episode_overview,omitempty"`
+	Block           bool     `json:"block,omitempty"` // a block of short clips (its filler is its other clips)
 }
 
 // Service keeps the Guide's channels planned: at start, every hour, and when asked (settings
@@ -157,11 +159,17 @@ func (s *Service) Refresh(ctx context.Context) error {
 
 	var libs []config.MediaPath
 	for _, lib := range cfg.Media.Paths {
-		if (lib.InGuide(false) || lib.InGuide(true)) && (lib.Type == config.LibraryTypeMovie || lib.Type == config.LibraryTypeTV) {
+		// a library a typed channel uses is in no regular channel
+		if (lib.InGuide(false) || lib.InGuide(true)) && (lib.Type == config.LibraryTypeMovie || lib.Type == config.LibraryTypeTV) &&
+			!cfg.InTypedChannel(lib.ID) {
 			libs = append(libs, lib)
 		}
 	}
-	s.job.Begin(len(libs))
+	typed := Typed{}
+	for _, t := range cfg.Guide.TypedChannels {
+		typed[t.ID] = t.Number
+	}
+	s.job.Begin(len(libs) + len(cfg.Guide.TypedChannels))
 	stored, err := s.db.GuideChannels()
 	if err != nil {
 		s.job.End("failed: " + err.Error())
@@ -171,7 +179,8 @@ func (s *Service) Refresh(ctx context.Context) error {
 	for _, c := range stored {
 		byKey[c.Key] = c
 	}
-	clipsByLib, err := s.fillerClips(cfg.Media.Paths)
+	videos := &videoList{db: s.db}
+	clipsByLib, err := s.fillerClips(cfg.Media.Paths, videos)
 	if err != nil {
 		s.job.End("failed: " + err.Error())
 		return err
@@ -182,6 +191,40 @@ func (s *Service) Refresh(ctx context.Context) error {
 
 	active := map[string]bool{}
 	planned := 0
+	// place stores a channel (new, or back) and plans it on
+	place := func(ch Channel, clips []Clip) error {
+		active[ch.Key] = true
+		c, ok := byKey[ch.Key]
+		if !ok {
+			if c, err = s.addChannel(ch, byKey, typed); err != nil {
+				return err
+			}
+			byKey[ch.Key] = c
+		} else if !c.Active {
+			if err := s.db.SetGuideChannelActive(ch.Key, true); err != nil {
+				return err
+			}
+		}
+		if ch.Network && !IsStation(c.Name) { // named before the pool of stations
+			c.Name = pickStation(ch.Key, byKey)
+			if err := s.db.SetGuideChannelName(ch.Key, c.Name); err != nil {
+				return err
+			}
+			byKey[ch.Key] = c
+		}
+		if !slices.Contains(Colors, c.Color) { // a color since taken out of the palette
+			c.Color = Colors[hash(ch.Key)%uint64(len(Colors))]
+			if err := s.db.SetGuideChannelColor(ch.Key, c.Color); err != nil {
+				return err
+			}
+		}
+		n, err := s.planChannel(ch, c, set, clips, now)
+		if err != nil {
+			return fmt.Errorf("channel %d: %w", c.Number, err)
+		}
+		planned += n
+		return nil
+	}
 	for _, lib := range libs {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -195,36 +238,27 @@ func (s *Service) Refresh(ctx context.Context) error {
 		}
 		clips := clipsFor(lib, cfg.Media.Paths, clipsByLib)
 		for _, ch := range Channels(lib.ID, titles) {
-			active[ch.Key] = true
-			c, ok := byKey[ch.Key]
-			if !ok {
-				if c, err = s.addChannel(ch, byKey); err != nil {
-					return err
-				}
-				byKey[ch.Key] = c
-			} else if !c.Active {
-				if err := s.db.SetGuideChannelActive(ch.Key, true); err != nil {
-					return err
-				}
+			if err := place(ch, clips); err != nil {
+				return err
 			}
-			if ch.Network && !IsStation(c.Name) { // named before the pool of stations
-				c.Name = pickStation(ch.Key, byKey)
-				if err := s.db.SetGuideChannelName(ch.Key, c.Name); err != nil {
-					return err
-				}
-				byKey[ch.Key] = c
+		}
+		s.job.Step(1)
+	}
+	for _, def := range cfg.Guide.TypedChannels {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		s.job.SetDetail(TypedTypeName(def.Type) + " (typed)")
+		groups, clips, err := s.typedContent(ctx, cfg, def, videos)
+		if err != nil {
+			log.Printf("[GUIDE] Typed channels %s: %v", TypedTypeName(def.Type), err)
+			s.job.Step(1)
+			continue
+		}
+		for _, ch := range TypedChannels(def.ID, def.Type, def.Max, groups) {
+			if err := place(ch, clipsBesides(ch, clips)); err != nil {
+				return err
 			}
-			if !slices.Contains(Colors, c.Color) { // a color since taken out of the palette
-				c.Color = Colors[hash(ch.Key)%uint64(len(Colors))]
-				if err := s.db.SetGuideChannelColor(ch.Key, c.Color); err != nil {
-					return err
-				}
-			}
-			n, err := s.planChannel(ch, c, set, clips, now)
-			if err != nil {
-				return fmt.Errorf("channel %d: %w", c.Number, err)
-			}
-			planned += n
 		}
 		s.job.Step(1)
 	}
@@ -255,7 +289,7 @@ func (s *Service) Refresh(ctx context.Context) error {
 			}
 		}
 	}
-	if err := s.renumber(); err != nil {
+	if err := s.renumber(typed); err != nil {
 		return err
 	}
 	if err := s.db.DeleteGuideSlotsBefore(now.Add(-KeepHistory)); err != nil {
@@ -320,7 +354,11 @@ func (s *Service) planChannel(ch Channel, c database.GuideChannel, set Settings,
 		rows[i] = database.GuideSlot{Channel: sl.Channel, Start: sl.Start, Length: sl.Length, Kind: sl.Kind,
 			Title: sl.Title, Item: sl.Item, Path: sl.Path, Track: sl.Track}
 		if t := byKey[sl.Title]; sl.Kind == SlotProgram && t != nil {
-			rows[i].Info = programInfo(ch.LibraryID, t, sl.Item)
+			lib := ch.LibraryID
+			if t.Library != "" {
+				lib = t.Library
+			}
+			rows[i].Info = programInfo(lib, t, sl.Item)
 		}
 	}
 	return len(rows), s.db.AddGuideSlots(rows)
@@ -328,10 +366,15 @@ func (s *Service) planChannel(ch Channel, c database.GuideChannel, set Settings,
 
 func programInfo(lib string, t *Title, item int) string {
 	info := ProgramInfo{Kind: t.Kind, TMDBID: t.TMDBID, Library: lib, Title: t.Name, Year: t.Year, Rating: t.Rating,
-		Genres: t.Genres, Overview: t.Overview, Poster: t.Poster}
-	if t.Kind == KindShow && item < len(t.Items) {
+		Genres: t.Genres, Overview: t.Overview, Poster: t.Poster, Block: t.Block}
+	if item < len(t.Items) {
 		it := t.Items[item]
-		info.Season, info.Episode, info.EpisodeTitle, info.EpisodeOverview = it.Season, it.Episode, it.Name, it.Overview
+		if t.Kind == KindShow {
+			info.Season, info.Episode, info.EpisodeTitle, info.EpisodeOverview = it.Season, it.Episode, it.Name, it.Overview
+		}
+		if info.Poster == "" {
+			info.Poster = it.Poster
+		}
 	}
 	b, _ := json.Marshal(info)
 	return string(b)
@@ -353,14 +396,14 @@ func fingerprint(ch Channel, clips []Clip, set Settings) string {
 }
 
 // addChannel stores a new channel with the next free number of its block (numbers.go).
-func (s *Service) addChannel(ch Channel, existing map[string]database.GuideChannel) (database.GuideChannel, error) {
+func (s *Service) addChannel(ch Channel, existing map[string]database.GuideChannel, typed Typed) (database.GuideChannel, error) {
 	name := ch.Genre
 	if ch.Network {
 		name = pickStation(ch.Key, existing)
 	}
 	c := database.GuideChannel{Key: ch.Key, LibraryID: ch.LibraryID, Name: name, Genre: ch.Genre,
 		Kind: ch.Kind, Color: Colors[hash(ch.Key)%uint64(len(Colors))], Active: true}
-	c.Number = nextNumber(c, existing)
+	c.Number = nextNumber(c, existing, typed)
 	return c, s.db.AddGuideChannel(c)
 }
 
@@ -368,18 +411,18 @@ func (s *Service) addChannel(ch Channel, existing map[string]database.GuideChann
 func (s *Service) addSpecial(sc SpecialChannel, existing map[string]database.GuideChannel) (database.GuideChannel, error) {
 	c := database.GuideChannel{Key: sc.Key, Name: sc.Name, Genre: sc.Name, Kind: sc.Kind,
 		Color: Colors[hash(sc.Key)%uint64(len(Colors))], Active: true}
-	c.Number = nextNumber(c, existing)
+	c.Number = nextNumber(c, existing, nil)
 	return c, s.db.AddGuideChannel(c)
 }
 
 // renumber moves the channels numbered outside their blocks into them (numbers.go): first to
 // numbers no channel can have, then to their own, so no two hold one number on the way.
-func (s *Service) renumber() error {
+func (s *Service) renumber(typed Typed) error {
 	all, err := s.db.GuideChannels()
 	if err != nil {
 		return err
 	}
-	moves := Renumber(all)
+	moves := Renumber(all, typed)
 	if len(moves) == 0 {
 		return nil
 	}
@@ -466,7 +509,7 @@ func (s *Service) item(path string) (Item, bool) {
 var clipYear = regexp.MustCompile(`\b(19[5-9]\d|20[0-4]\d)\b`)
 
 // fillerClips are the short videos of each Use for Guide Filler library, by library ID.
-func (s *Service) fillerClips(libs []config.MediaPath) (map[string][]Clip, error) {
+func (s *Service) fillerClips(libs []config.MediaPath, videos *videoList) (map[string][]Clip, error) {
 	out := map[string][]Clip{}
 	var fillers []config.MediaPath
 	for _, lib := range libs {
@@ -477,7 +520,7 @@ func (s *Service) fillerClips(libs []config.MediaPath) (map[string][]Clip, error
 	if len(fillers) == 0 {
 		return out, nil
 	}
-	items, err := s.db.ListMediaItems("video")
+	items, err := videos.list()
 	if err != nil {
 		return nil, err
 	}
@@ -524,6 +567,112 @@ func clipsFor(lib config.MediaPath, libs []config.MediaPath, clipsByLib map[stri
 		}
 		if seesAll {
 			out = append(out, clipsByLib[f.ID]...)
+		}
+	}
+	return out
+}
+
+// videoList is the media database's videos, read once for a planning.
+type videoList struct {
+	db    *database.DB
+	items []models.MediaItem
+	read  bool
+	err   error
+}
+
+func (v *videoList) list() ([]models.MediaItem, error) {
+	if !v.read {
+		v.items, v.err = v.db.ListMediaItems("video")
+		v.read = true
+	}
+	return v.items, v.err
+}
+
+// typedContent is a typed definition's titles by group, and its clips (for filler): its movie and TV
+// libraries' TMDB titles of its type, and (Late Night) its folder libraries read from their files.
+func (s *Service) typedContent(ctx context.Context, cfg *config.Config, def config.TypedChannel, videos *videoList) (map[string][]*Title, []Clip, error) {
+	groups := map[string][]*Title{}
+	var clips []Clip
+	seen := map[string]bool{}
+	add := func(group string, lib config.MediaPath, ts ...*Title) {
+		for _, t := range ts {
+			if seen[t.Key] || len(t.Items) == 0 {
+				continue
+			}
+			seen[t.Key] = true
+			t.Library = lib.ID
+			groups[group] = append(groups[group], t)
+		}
+	}
+	for _, id := range def.Libraries {
+		lib, ok := cfg.LibraryByID(id)
+		if !ok {
+			continue
+		}
+		if lib.Type == config.LibraryTypeMovie || lib.Type == config.LibraryTypeTV {
+			titles, err := s.titles(ctx, lib)
+			if err != nil {
+				return nil, nil, err
+			}
+			for _, t := range titles {
+				if !TypedMatch(def.Type, t) {
+					continue
+				}
+				if t.Kind == KindMovie {
+					add(TypedMovies, lib, t)
+				} else {
+					add(TypedSeries, lib, t)
+				}
+			}
+			continue
+		}
+		if def.Type != TypedLateNight {
+			continue // a folder library has no genres
+		}
+		items, err := videos.list()
+		if err != nil {
+			return nil, nil, err
+		}
+		var files []FolderFile
+		for _, it := range items {
+			if it.Duration <= 0 || media.IsDiscImage(it.Path) || !config.InDir(it.Path, lib.Path) {
+				continue
+			}
+			client, ok := config.ClientPath(it.Path)
+			if !ok {
+				continue
+			}
+			files = append(files, FolderFile{Path: client, Duration: time.Duration(it.Duration*1000) * time.Millisecond,
+				Thumbnail: it.ThumbnailURL})
+		}
+		series, long, blocks, c := FolderTitles(lib.ID, lib.Name, files)
+		add(TypedSeries, lib, series...)
+		add(TypedLong, lib, long...)
+		add(TypedClips, lib, blocks...)
+		clips = append(clips, c...)
+	}
+	sort.Slice(clips, func(i, j int) bool { return clips[i].Path < clips[j].Path })
+	return groups, clips, nil
+}
+
+// clipsBesides are the clips that may fill a typed channel's gaps: those not in its own blocks (they'd
+// air twice close together: as filler, then in the block).
+func clipsBesides(ch Channel, clips []Clip) []Clip {
+	own := map[string]bool{}
+	for _, t := range ch.Titles {
+		for _, it := range t.Items {
+			for _, p := range it.Parts {
+				own[p.Path] = true
+			}
+		}
+	}
+	if len(own) == 0 {
+		return clips
+	}
+	var out []Clip
+	for _, c := range clips {
+		if !own[c.Path] {
+			out = append(out, c)
 		}
 	}
 	return out

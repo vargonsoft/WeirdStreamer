@@ -25,12 +25,14 @@ import (
 // The Guide (docs/GUIDE.md): live channels planned by internal/guide. Each channel is made from
 // one library, so a user sees the channels of the libraries their group may see: the home
 // screen's Guide those with Show in Guide on, a library's own (lib=) its channels where it's on
-// or Library Only.
+// or Library Only. A typed channel is made from its definition's libraries: it's on the home
+// screen's Guide for the groups that can open every one of them, and nowhere else.
 
 type GuideHandler struct {
-	db      *database.DB
-	planner *guide.Service
-	weather *guide.WeatherService
+	db         *database.DB
+	planner    *guide.Service
+	weather    *guide.WeatherService
+	saveConfig func(*config.Config) (int, error) // the Guide tab's (SetConfigSaver)
 }
 
 func NewGuideHandler(db *database.DB, planner *guide.Service) *GuideHandler {
@@ -91,6 +93,13 @@ func (h *GuideHandler) channels(r *http.Request) ([]database.GuideChannel, bool)
 		if c.LibraryID == "" { // a channel of its own: on the home screen's Guide, with any other channel
 			if c.Active && libID == "" {
 				out = append(out, c)
+			}
+			continue
+		}
+		if def := guide.TypedDefinition(c.LibraryID); def != "" {
+			if c.Active && libID == "" && canSeeTyped(userGroup(r), def) {
+				out = append(out, c)
+				libraryChannels = true
 			}
 			continue
 		}
@@ -213,6 +222,22 @@ func programInfo(raw string) *guide.ProgramInfo {
 	return &p
 }
 
+// canSeeTyped says whether a group sees a typed definition's channels: it can open every one of its
+// libraries.
+func canSeeTyped(group, def string) bool {
+	t, ok := config.GlobalConfig.TypedChannelByID(def)
+	if !ok || group == "" || len(t.Libraries) == 0 {
+		return false
+	}
+	return slices.Contains(config.GlobalConfig.TypedChannelGroups(t), group)
+}
+
+// lateNight says whether a channel is a Late Night typed channel's.
+func lateNight(c database.GuideChannel) bool {
+	t, ok := config.GlobalConfig.TypedChannelByID(guide.TypedDefinition(c.LibraryID))
+	return ok && t.Type == guide.TypedLateNight
+}
+
 // channelByNumber is the channel the request names (channel=) among those it may see.
 func (h *GuideHandler) channelByNumber(r *http.Request) (*database.GuideChannel, bool) {
 	n, err := strconv.Atoi(r.URL.Query().Get("channel"))
@@ -321,8 +346,8 @@ func (h *GuideHandler) specialNow(r *http.Request, c database.GuideChannel, sc g
 	byNumber := map[int]database.GuideChannel{}
 	var upcoming []guide.Airing
 	for _, ch := range chans {
-		if ch.LibraryID == "" {
-			continue
+		if ch.LibraryID == "" || lateNight(ch) {
+			continue // late night content isn't previewed on the Guide channel (its listings show it)
 		}
 		byNumber[ch.Number] = ch
 		slots, err := h.db.GuideSlots(ch.Key, now, now.Add(6*time.Hour), guide.SlotProgram)

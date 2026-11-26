@@ -228,6 +228,7 @@ func serve(parent context.Context) {
 	guideHandler := handlers.NewGuideHandler(db, guideService)
 	// new videos, and lengths read, change the channels (planning never changes the next 6 hours)
 	mediaHandler.AfterScan(guideService.Kick)
+	guideHandler.SetConfigSaver(configHandler.SaveGuideConfig)
 	// A token or library change saved through Settings starts a sync without a restart
 	configHandler.OnUpdate(func() { go metadataService.SyncAll(ctx); guideHandler.Plan() })
 
@@ -286,6 +287,8 @@ func serve(parent context.Context) {
 	api.HandleFunc("/guide/music", guideHandler.Music).Methods("GET")
 	api.HandleFunc("/guide/voiceover", guideHandler.VoiceOver).Methods("GET")
 	api.HandleFunc("/guide/voiceover/report", guideHandler.ReportVoiceOver).Methods("POST")
+	api.HandleFunc("/admin/guide", guideHandler.GuideSettings).Methods("GET")
+	api.HandleFunc("/admin/guide", guideHandler.SaveGuideSettings).Methods("PUT")
 	api.HandleFunc("/admin/guide/voices", guideHandler.Voices).Methods("GET")
 	api.HandleFunc("/admin/guide/voices/try", guideHandler.TryVoice).Methods("POST")
 	api.HandleFunc("/admin/guide/voices/fix", guideHandler.SaveVoiceFix).Methods("POST")

@@ -4541,3 +4541,56 @@ body:has(#guide-screen.active) > footer {
     border-radius: 6px;
     font-size: 13px;
 }
+
+/* The Guide tab (Settings): typed channels and the libraries' Guide switches */
+.typed-channels {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.typed-channel {
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.typed-channel-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.typed-channel-head .btn {
+    margin-left: auto;
+}
+
+.typed-channel-libraries {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.typed-channel p {
+    margin: 4px 0 0;
+}
+
+.guide-libraries-table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.guide-libraries-table th,
+.guide-libraries-table td {
+    text-align: left;
+    padding: 6px 10px 6px 0;
+    vertical-align: middle;
+}
+
+.guide-libraries-table tr + tr td {
+    border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+}

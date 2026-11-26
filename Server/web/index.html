@@ -101,6 +101,7 @@
                     <button class="settings-tab" data-tab="subtitles">Subtitles</button>
                     <button class="settings-tab" data-tab="themes">Themes</button>
                     <button class="settings-tab" data-tab="server">Server & Media</button>
+                    <button class="settings-tab" data-tab="guide">Guide</button>
                     <button class="settings-tab" data-tab="users">Users</button>
                     <button class="settings-tab" data-tab="streams">Streams</button>
                     <button class="settings-tab" data-tab="jobs">Jobs</button>
@@ -140,19 +141,6 @@
                         <label>Name: <input type="text" id="server-name" class="settings-input" style="width: 250px;" placeholder="Shown in the apps' server lists"></label><br><br>
                         <label>Port: <input type="number" id="server-port" class="settings-input" style="width: 100px;"></label><br><br>
                         <label>Host: <input type="text" id="server-host" class="settings-input" style="width: 250px;"></label>
-                    </div>
-
-                    <div class="settings-group">
-                        <h3>Guide</h3>
-                        <label title="The news hour follows prime time; until there's news it's late-night programming.">Prime time:
-                            <select id="guide-prime-time" class="settings-input">
-                                <option value="20">8 to 11 pm, then the news hour</option>
-                                <option value="19">7 to 10 pm, then the news hour</option>
-                            </select></label><br><br>
-                        <label title="The Weather channel's forecast is the US National Weather Service's for this ZIP code.">Weather ZIP code:
-                            <input type="text" id="guide-weather-zip" class="settings-input" style="width: 100px;" inputmode="numeric" maxlength="5" placeholder="10001"></label>
-                        <div id="voice-tester" class="voice-tester"></div>
-                        <p class="hardware-status">Libraries are put in the Guide, or lend it their short videos as filler, below under Media Paths.</p>
                     </div>
 
                     <div class="settings-group">
@@ -249,6 +237,39 @@
                             <span id="streams-updated" class="streams-updated"></span>
                         </div>
                         <div id="streams-list" class="streams-list"></div>
+                    </div>
+                </div>
+
+                <!-- Guide Tab (admins): typed channels, each library's Guide switches, the schedule (js/guide.js) -->
+                <div id="guide-tab" class="settings-tab-content">
+                    <div class="settings-group">
+                        <h3>Typed Channels</h3>
+                        <p class="settings-hint">Channels made only from the libraries you pick, of one type, numbered from 100. Only the groups that can open every one of their libraries see them, and those libraries are in no other channel. Late Night airs everything in its libraries, all day (folder libraries too, read from their files); the other types take their libraries' TMDB titles of that genre.</p>
+                        <div id="typed-channels" class="typed-channels"></div>
+                        <button type="button" id="typed-add" class="btn btn-small">Add typed channels</button>
+                    </div>
+                    <div class="settings-group">
+                        <h3>Libraries</h3>
+                        <p class="settings-hint">Show in Guide puts a movie or TV library's titles on the channels, grouped by network and genre. Use for Guide Filler lends a library's videos of 15 minutes or less to the gaps between programs; it stays a library as usual.</p>
+                        <div id="guide-libraries" class="guide-libraries"></div>
+                    </div>
+                    <div class="settings-group">
+                        <h3>Schedule</h3>
+                        <label title="The news hour follows prime time; until there's news it's late-night programming.">Prime time:
+                            <select id="guide-prime-time" class="settings-input">
+                                <option value="20">8 to 11 pm, then the news hour</option>
+                                <option value="19">7 to 10 pm, then the news hour</option>
+                            </select></label><br><br>
+                        <label title="The Weather channel's forecast is the US National Weather Service's for this ZIP code.">Weather ZIP code:
+                            <input type="text" id="guide-weather-zip" class="settings-input" style="width: 100px;" inputmode="numeric" maxlength="5" placeholder="10001"></label>
+                        <p id="guide-extras" class="hardware-status"></p>
+                    </div>
+                    <div class="settings-group">
+                        <button type="button" id="guide-save" class="btn">Save Guide Settings</button>
+                        <span id="guide-save-message" class="groups-message"></span>
+                    </div>
+                    <div class="settings-group">
+                        <div id="voice-tester" class="voice-tester"></div>
                     </div>
                 </div>
 

@@ -10,6 +10,36 @@ struct GuideTests {
         try ServerClient.decode(type, from: Data(text.utf8))
     }
 
+    /// The Guide tab: GET /api/admin/guide's reply, and PUT's body with the server's keys.
+    @Test func guideSettings() throws {
+        let g = try decode(GuideAdmin.self, """
+        {"prime_time":20,"weather_zip":"10001","libraries":[
+          {"id":"a","name":"Shows","type":"tv","groups":["family"],"show_in_guide":"on","guide_filler":false,"typed":false},
+          {"id":"b","name":"Late Shows","type":"","groups":["night"],"show_in_guide":"","guide_filler":true,"typed":true}],
+         "typed_channels":[{"id":"d1","type":"latenight","libraries":["b"],"max":4,"number":100,"groups":["night"],
+           "channels":[{"number":100,"name":"WBNQ"},{"number":101,"name":"WPLN"}]}],
+         "types":[{"id":"latenight","name":"Late Night"},{"id":"kids","name":"Kids"}],
+         "max_channels":4,"max_typed":10,"music_tracks":20,"voice_overs":true}
+        """)
+        #expect(g.libraries.map(\.id) == ["a", "b"])
+        #expect(g.libraries[1].typed && g.libraries[1].guideFiller)
+        #expect(g.typedChannels[0].channels.map(\.number) == [100, 101])
+        #expect(g.typedChannels[0].groups == ["night"])
+        #expect(g.maxTyped == 10 && g.voiceOvers)
+
+        let body = GuideAdminSave(primeTime: 19, weatherZip: "02139",
+                                  libraries: [.init(id: "a", showInGuide: "libraryOnly", guideFiller: true)],
+                                  typedChannels: [.init(id: "", type: "kids", libraries: ["a"], max: 2)])
+        let json = try #require(try JSONSerialization.jsonObject(with: ServerClient.encodeBody(body, snakeCase: true)) as? [String: Any])
+        #expect(json["prime_time"] as? Int == 19)
+        #expect(json["weather_zip"] as? String == "02139")
+        let lib = try #require((json["libraries"] as? [[String: Any]])?.first)
+        #expect(lib["show_in_guide"] as? String == "libraryOnly")
+        #expect(lib["guide_filler"] as? Bool == true)
+        let typed = try #require((json["typed_channels"] as? [[String: Any]])?.first)
+        #expect(typed["id"] as? String == "" && typed["max"] as? Int == 2 && typed["libraries"] as? [String] == ["a"])
+    }
+
     @Test func available() throws {
         #expect(try decode(GuideAvailable.self, #"{"available":true}"#).available == true)
     }

@@ -49,9 +49,7 @@ private func pathEscape(_ s: String) -> String {
 // MARK: Server
 
 private let libraryTypes = [("", "No type"), ("movie", "Movies"), ("tv", "TV Shows")]
-private let libraryRowModes = [("on", "Home screen and library"), ("libraryOnly", "Library only"), ("off", "Off")]
-// The Guide's prime time (guide.primeTime), the news hour after it
-private let primeTimes = [("20", "8 to 11 pm"), ("19", "7 to 10 pm")]
+let libraryRowModes = [("on", "Home screen and library"), ("libraryOnly", "Library only"), ("off", "Off")]
 
 /// A library being edited: the server's own entry (kept whole), and what the tab changes.
 private struct PathEdit: Identifiable {
@@ -63,10 +61,6 @@ private struct PathEdit: Identifiable {
     var type: String
     var continueWatching: String
     var newAdditions: String
-    // The Guide: where its titles are on the channels (movie and TV libraries; showInGuide, as the rows' modes),
-    // and whether its short videos fill gaps (guideFiller)
-    var showInGuide: String
-    var guideFiller: Bool
     var editing = false
 }
 
@@ -82,8 +76,6 @@ struct ServerSettingsTab: View {
     @State private var host = ""
     @State private var http2 = false
     @State private var pauseJobs = false
-    @State private var primeTime = "20" // the Guide's: the hour it starts
-    @State private var weatherZip = "" // the Weather channel's US ZIP code ("" New York City's)
     // Hardware encoding: what the server found, and the choice ("" the CPU, else "id|device")
     @State private var hardware: HardwareReport? = HardwareReport(checking: true, gpus: nil, encoders: nil, problems: nil)
     @State private var hwEncoder = ""
@@ -176,10 +168,6 @@ struct ServerSettingsTab: View {
                         Text("Finding intros and credits, trickplay frames, cleanup").font(.caption).foregroundStyle(Palette.muted)
                     }
                 }
-                SectionTitle(text: "Guide")
-                OptionMenu(label: "Prime time (then the news hour)", options: primeTimes, value: $primeTime)
-                PhoneTextField(label: "Weather ZIP code", text: $weatherZip, placeholder: "10001", keyboard: .numberPad,
-                               hint: "The Weather channel's forecast is the National Weather Service's for it (US only)")
                 hardwareSection
                 backupSection
                 DamagedVideosSection()
@@ -222,10 +210,6 @@ struct ServerSettingsTab: View {
                 summaryRow("Groups", p.wrappedValue.groups.isEmpty ? "None (no one sees it)" : p.wrappedValue.groups.joined(separator: ", "))
                 summaryRow("Continue Watching", libraryRowModes.first { $0.0 == p.wrappedValue.continueWatching }?.1 ?? p.wrappedValue.continueWatching)
                 summaryRow("Recently Added", libraryRowModes.first { $0.0 == p.wrappedValue.newAdditions }?.1 ?? p.wrappedValue.newAdditions)
-                if !p.wrappedValue.type.isEmpty {
-                    summaryRow("Show in Guide", libraryRowModes.first { $0.0 == p.wrappedValue.showInGuide }?.1 ?? p.wrappedValue.showInGuide)
-                }
-                summaryRow("Guide filler", p.wrappedValue.guideFiller ? "Its short videos fill gaps" : "No")
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     PhoneTextField(label: "Name", text: p.name)
@@ -240,16 +224,6 @@ struct ServerSettingsTab: View {
                     OptionMenu(label: "Library type", options: libraryTypes, value: p.type)
                     OptionMenu(label: "Continue Watching", options: libraryRowModes, value: p.continueWatching)
                     OptionMenu(label: "Recently Added", options: libraryRowModes, value: p.newAdditions)
-                    if !p.wrappedValue.type.isEmpty {
-                        OptionMenu(label: "Show in Guide", options: libraryRowModes, value: p.showInGuide)
-                    }
-                    Toggle(isOn: p.guideFiller) {
-                        VStack(alignment: .leading) {
-                            Text("Use for Guide Filler")
-                            Text("Its videos of 15 minutes or less fill gaps between the Guide's programs")
-                                .font(.caption).foregroundStyle(Palette.muted)
-                        }
-                    }
                     Text(p.wrappedValue.path).font(.caption).foregroundStyle(Palette.muted)
                     HStack {
                         Spacer()
@@ -405,9 +379,7 @@ struct ServerSettingsTab: View {
             PathEdit(source: o, name: o["name"] as? String ?? "", path: o["path"] as? String ?? "",
                      groups: o["groups"] as? [String] ?? [], type: o["type"] as? String ?? "",
                      continueWatching: o["continueWatchingMode"] as? String ?? "on",
-                     newAdditions: o["showNewAdditions"] as? String ?? "off",
-                     showInGuide: o["showInGuide"] as? String ?? "off",
-                     guideFiller: o["guideFiller"] as? Bool ?? false)
+                     newAdditions: o["showNewAdditions"] as? String ?? "off")
         }
         let server = c["server"] as? [String: Any]
         serverName = server?["name"] as? String ?? ""
@@ -416,8 +388,6 @@ struct ServerSettingsTab: View {
         let streaming = c["streaming"] as? [String: Any]
         http2 = streaming?["enableHTTP2"] as? Bool ?? false
         pauseJobs = streaming?["pauseJobsWhileStreaming"] as? Bool ?? false
-        primeTime = ((c["guide"] as? [String: Any])?["primeTime"] as? Int).flatMap { $0 > 0 ? "\($0)" : nil } ?? "20"
-        weatherZip = (c["guide"] as? [String: Any])?["weatherZip"] as? String ?? ""
         hwEncoder = streaming?["hardwareEncoder"] as? String ?? ""
         hwDevice = streaming?["hardwareDevice"] as? String ?? ""
         hwMax = "\(streaming?["hardwareMaxTranscodes"] as? Int ?? 0)"
@@ -445,8 +415,6 @@ struct ServerSettingsTab: View {
             // Only where set before or changed from the default, so config.yml changes only where it was changed.
             if o["continueWatchingMode"] != nil || p.continueWatching != "on" { o["continueWatchingMode"] = p.continueWatching }
             if o["showNewAdditions"] != nil || p.newAdditions != "off" { o["showNewAdditions"] = p.newAdditions }
-            if o["showInGuide"] != nil || p.showInGuide != "off" { o["showInGuide"] = p.showInGuide }
-            if p.guideFiller { o["guideFiller"] = true } else { o.removeValue(forKey: "guideFiller") }
             return o
         }
         c["media"] = media
@@ -465,10 +433,6 @@ struct ServerSettingsTab: View {
             streaming["hardwareMaxTranscodes"] = max(0, Int(hwMax.filter(\.isNumber)) ?? 0)
         }
         c["streaming"] = streaming
-        var guide = c["guide"] as? [String: Any] ?? [:]
-        guide["primeTime"] = Int(primeTime) ?? 20
-        guide["weatherZip"] = String(weatherZip.filter(\.isNumber).prefix(5))
-        c["guide"] = guide
         var database = c["database"] as? [String: Any] ?? [:]
         database["backupSchedule"] = backupSchedule
         database["backupDay"] = backupDay
@@ -537,7 +501,7 @@ struct ServerSettingsTab: View {
         if paths.contains(where: { $0.path == path }) { message = ("That path is already listed", true); return }
         let name = (path.hasSuffix("/") ? String(path.dropLast()) : path).components(separatedBy: "/").last ?? path
         paths.append(PathEdit(source: [:], name: name.isEmpty ? path : name, path: path, groups: [], type: newType,
-                              continueWatching: "on", newAdditions: "off", showInGuide: "off", guideFiller: false))
+                              continueWatching: "on", newAdditions: "off"))
         newPath = ""
         newType = ""
         message = ("Added. Save to apply.", false)

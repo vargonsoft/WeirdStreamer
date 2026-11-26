@@ -210,14 +210,10 @@ type settingsUpdate struct {
 			Type                 string   `json:"type"`
 			ContinueWatchingMode string   `json:"continueWatchingMode"`
 			ShowNewAdditions     string   `json:"showNewAdditions"`
-			ShowInGuide          string   `json:"showInGuide"`
-			GuideFiller          bool     `json:"guideFiller"`
 		} `json:"paths"`
 	} `json:"media"`
-	Guide struct {
-		PrimeTime  int    `json:"primeTime"`
-		WeatherZip string `json:"weatherZip"`
-	} `json:"guide"`
+	// The Guide's settings (prime time, the weather ZIP, each library's Show in Guide and Use for
+	// Guide Filler, typed channels) are the Guide tab's: PUT /api/admin/guide.
 }
 
 // applyTo is a copy of current with the update's fields.
@@ -240,17 +236,24 @@ func (u settingsUpdate) applyTo(current *config.Config) *config.Config {
 	c.Media.Paths = make([]config.MediaPath, len(u.Media.Paths))
 	for i, p := range u.Media.Paths {
 		c.Media.Paths[i] = config.MediaPath{Name: p.Name, Path: p.Path, ID: p.ID, Groups: p.Groups, Type: p.Type,
-			ContinueWatchingMode: p.ContinueWatchingMode, ShowNewAdditions: p.ShowNewAdditions,
-			ShowInGuide: p.ShowInGuide, GuideFiller: p.GuideFiller}
+			ContinueWatchingMode: p.ContinueWatchingMode, ShowNewAdditions: p.ShowNewAdditions}
+		if old, ok := current.LibraryByID(p.ID); ok && p.ID != "" { // the Guide tab's switches stay
+			c.Media.Paths[i].ShowInGuide, c.Media.Paths[i].GuideFiller = old.ShowInGuide, old.GuideFiller
+		}
 	}
-	c.Guide.PrimeTime = u.Guide.PrimeTime
-	c.Guide.WeatherZip = strings.TrimSpace(u.Guide.WeatherZip)
+	c.Guide.TypedChannels = append([]config.TypedChannel{}, current.Guide.TypedChannels...)
 	return &c
 }
 
+// SaveGuideConfig is saveConfig for the Guide tab: without the hook that looks up TMDB again (the
+// Guide tab plans the Guide itself).
+func (h *ConfigHandler) SaveGuideConfig(c *config.Config) (int, error) { return h.save(c, false) }
+
 // saveConfig validates, saves and reloads a new configuration, returning the HTTP status for
 // its error.
-func (h *ConfigHandler) saveConfig(c *config.Config) (int, error) {
+func (h *ConfigHandler) saveConfig(c *config.Config) (int, error) { return h.save(c, true) }
+
+func (h *ConfigHandler) save(c *config.Config, hook bool) (int, error) {
 	if err := c.Validate(); err != nil {
 		return http.StatusBadRequest, err
 	}
@@ -261,7 +264,7 @@ func (h *ConfigHandler) saveConfig(c *config.Config) (int, error) {
 	if err := config.Load(config.Path()); err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to reload configuration")
 	}
-	if h.onUpdate != nil {
+	if hook && h.onUpdate != nil {
 		h.onUpdate()
 	}
 	return http.StatusOK, nil

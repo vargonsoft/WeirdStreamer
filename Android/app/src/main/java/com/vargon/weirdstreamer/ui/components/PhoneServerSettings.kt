@@ -107,13 +107,13 @@ import java.util.Locale
 // on the shared models in AdminSettings.kt (the TV's are TvAdminSettings.kt).
 
 @Composable
-private fun SectionTitle(text: String) {
+internal fun SectionTitle(text: String) {
     Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
 }
 
 @Composable
-private fun Message(text: String?, isError: Boolean) {
+internal fun Message(text: String?, isError: Boolean) {
     if (text == null) return
     Text(text, color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 8.dp))
@@ -121,7 +121,7 @@ private fun Message(text: String?, isError: Boolean) {
 
 /** A button label that wraps with tight line spacing, centred. */
 @Composable
-private fun ButtonLabel(text: String) {
+internal fun ButtonLabel(text: String) {
     Text(text, textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge.copy(lineHeight = 16.sp))
 }
 
@@ -211,8 +211,6 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
                         }
                         LibrarySummaryRow("Continue Watching") { Text(libraryRowModes.firstOrNull { it.first == p.continueWatching }?.second ?: p.continueWatching, style = MaterialTheme.typography.bodyMedium) }
                         LibrarySummaryRow("Recently Added") { Text(libraryRowModes.firstOrNull { it.first == p.newAdditions }?.second ?: p.newAdditions, style = MaterialTheme.typography.bodyMedium) }
-                        if (p.type.isNotEmpty()) LibrarySummaryRow("Show in Guide") { Text(optionLabel(libraryRowModes, p.showInGuide), style = MaterialTheme.typography.bodyMedium) }
-                        LibrarySummaryRow("Guide filler") { Text(if (p.guideFiller) "Its short videos fill gaps" else "No", style = MaterialTheme.typography.bodyMedium) }
                     } else Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(p.name, { p.name = it }, label = { Text("Name") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth())
@@ -220,15 +218,6 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
                         LibraryOptionMenu("Library type", libraryTypes, p.type) { p.type = it }
                         LibraryOptionMenu("Continue Watching", libraryRowModes, p.continueWatching) { p.continueWatching = it }
                         LibraryOptionMenu("Recently Added", libraryRowModes, p.newAdditions) { p.newAdditions = it }
-                        if (p.type.isNotEmpty()) LibraryOptionMenu("Show in Guide", libraryRowModes, p.showInGuide) { p.showInGuide = it }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("Use for Guide Filler")
-                                Text("Its videos of 15 minutes or less fill gaps between the Guide's programs", style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(checked = p.guideFiller, onCheckedChange = { p.guideFiller = it })
-                        }
                         Text(p.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Spacer(Modifier.weight(1f))
@@ -311,13 +300,6 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
                     }
                     Switch(checked = m.pauseJobs, onCheckedChange = { m.pauseJobs = it })
                 }
-                Text("Guide", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
-                LibraryOptionMenu("Prime time (then the news hour)", primeTimes, m.primeTime) { m.primeTime = it }
-                OutlinedTextField(m.weatherZip, { v -> m.weatherZip = v.filter { it.isDigit() }.take(5) },
-                    label = { Text("Weather ZIP code") }, placeholder = { Text("10001") }, singleLine = true,
-                    supportingText = { Text("The Weather channel's forecast is the National Weather Service's for it (US only)") },
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                 Text("Hardware encoding", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
                 val report = m.hardware
                 if (report == null) {
@@ -547,7 +529,7 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryOptionMenu(label: String, options: List<Pair<String, String>>, value: String, onChange: (String) -> Unit) {
+internal fun LibraryOptionMenu(label: String, options: List<Pair<String, String>>, value: String, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
         OutlinedTextField(
