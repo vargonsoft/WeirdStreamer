@@ -68,7 +68,7 @@ func (s *Scanner) ScanMediaPaths() error {
 		})
 	}
 
-	fmt.Printf("Found %d media files to scan\n", totalFiles)
+	log.Printf("Found %d media files to scan\n", totalFiles)
 	s.job.SetTotal(totalFiles)
 
 	// Second pass: scan with progress
@@ -82,11 +82,11 @@ func (s *Scanner) ScanMediaPaths() error {
 
 	// Clear progress line and print completion
 	fmt.Printf("\r%s\n", strings.Repeat(" ", 100))
-	fmt.Printf("Scan complete: %d files processed\n", processedFiles)
+	log.Printf("Scan complete: %d files processed\n", processedFiles)
 
 	// Clean up orphaned thumbnails after scanning
 	if err := s.cleanupOrphanedThumbnails(); err != nil {
-		fmt.Printf("Warning: failed to cleanup thumbnails: %v\n", err)
+		log.Printf("Warning: failed to cleanup thumbnails: %v\n", err)
 	}
 	s.job.End(fmt.Sprintf("%s checked, %d new or changed", plural(processedFiles, "file"), s.probed))
 
@@ -440,7 +440,7 @@ func (s *Scanner) cleanupOrphanedThumbnails() error {
 		// Delete if not in valid set
 		if !validThumbnails[relPath] {
 			if err := os.Remove(path); err != nil {
-				fmt.Printf("Warning: failed to delete orphaned thumbnail %s: %v\n", relPath, err)
+				log.Printf("Warning: failed to delete orphaned thumbnail %s: %v\n", relPath, err)
 			} else {
 				deletedCount++
 			}
@@ -467,7 +467,7 @@ func (s *Scanner) cleanupOrphanedThumbnails() error {
 	})
 
 	if deletedCount > 0 {
-		fmt.Printf("Cleaned up %d orphaned thumbnails\n", deletedCount)
+		log.Printf("Cleaned up %d orphaned thumbnails\n", deletedCount)
 	}
 
 	return nil

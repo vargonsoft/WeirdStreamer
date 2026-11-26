@@ -80,7 +80,7 @@ func HasTrickplay(videoPath string) bool {
 // generate makes a video's frames, calling wait (when given) before each one so a background
 // job can pause; it stops when ctx ends or wait says so, and marks the video done when finished.
 func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wait func() bool) error {
-	fmt.Printf("Generating trickplay frames for %s\n", videoPath)
+	log.Printf("Generating trickplay frames for %s\n", videoPath)
 	// A damaged video's frames come from its fixed copy (src); what's kept is keyed by videoPath.
 	src := Playable(videoPath)
 
@@ -89,7 +89,7 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 	if errors.Is(err, errUnreadableMedia) && ctx.Err() == nil && readable(videoPath) && ffmpegMissing() == "" {
 		// Every way of reading it failed, but the file is there and reads (so it's not the share):
 		// not a video (code named .ts, say, or a corrupt file). Marked done, it isn't tried again.
-		fmt.Printf("Not a video, no frames to make: %s (%v)\n", videoPath, err)
+		log.Printf("Not a video, no frames to make: %s (%v)\n", videoPath, err)
 		return markNoFrames(videoPath)
 	}
 	if err != nil {
@@ -157,7 +157,7 @@ loop:
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				fmt.Printf("Trickplay: no frames from the GPU for %s; making them on the CPU\n", videoPath)
+				log.Printf("Trickplay: no frames from the GPU for %s; making them on the CPU\n", videoPath)
 				gpu.videoDone(false)
 				gpu = nil
 				pending = append(batch, pending...)
@@ -181,7 +181,7 @@ loop:
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				fmt.Printf("Warning: failed to generate frame at %ds of %s: %v\n", i, videoPath, err)
+				log.Printf("Warning: failed to generate frame at %ds of %s: %v\n", i, videoPath, err)
 				if failures++; failures >= maxFrameFailures {
 					// Frames worked up to a point and none after it: a damaged file (cut short, empty or
 					// garbled past there, or a header claiming more than it holds). If it's still the
@@ -190,7 +190,7 @@ loop:
 					// every start. Otherwise give up for now, keeping the frames made, and leave it
 					// unmarked.
 					if lastGood >= 0 && tg.stillReadable(ctx, src, start, float64(lastGood), codec) {
-						fmt.Printf("Damaged file: no frames after %ds of %.0fs; keeping the frames up to there: %s\n", lastGood, duration, videoPath)
+						log.Printf("Damaged file: no frames after %ds of %.0fs; keeping the frames up to there: %s\n", lastGood, duration, videoPath)
 						break loop
 					}
 					return fmt.Errorf("%d frames in a row failed (at %ds of %.0fs)", failures, i, duration)
@@ -204,7 +204,7 @@ loop:
 		return err
 	}
 
-	fmt.Printf("Finished generating trickplay frames for %s\n", videoPath)
+	log.Printf("Finished generating trickplay frames for %s\n", videoPath)
 	return nil
 }
 
@@ -224,7 +224,7 @@ func (tg *TrickplayGenerator) GenerateForDirectory(dirPath string) error {
 
 		if !info.IsDir() && isSupportedVideo(path) {
 			if err := tg.Generate(path); err != nil {
-				fmt.Printf("Error generating trickplay frames for %s: %v\n", path, err)
+				log.Printf("Error generating trickplay frames for %s: %v\n", path, err)
 			}
 		}
 		return nil
@@ -250,10 +250,10 @@ func (tg *TrickplayGenerator) Clean() error {
 		// Check if source file exists
 		if _, err := os.Stat(item.Path); os.IsNotExist(err) {
 			if _, err := os.Stat(trickplayVideoDir); err == nil {
-				fmt.Printf("Removing trickplay images for non-existent path: %s\n", item.Path)
-				fmt.Printf("  -> Mapping to: %s\n", trickplayVideoDir)
+				log.Printf("Removing trickplay images for non-existent path: %s\n", item.Path)
+				log.Printf("  -> Mapping to: %s\n", trickplayVideoDir)
 				if err := os.RemoveAll(trickplayVideoDir); err != nil {
-					fmt.Printf("Error removing %s: %v\n", trickplayVideoDir, err)
+					log.Printf("Error removing %s: %v\n", trickplayVideoDir, err)
 				}
 			}
 		} else {
@@ -277,9 +277,9 @@ func (tg *TrickplayGenerator) Clean() error {
 		hash := entry.Name()
 		if !validHashes[hash] {
 			trickplayVideoDir := filepath.Join(trickplayDir, hash)
-			fmt.Printf("Removing orphaned trickplay folder: %s (no active record in database)\n", hash)
+			log.Printf("Removing orphaned trickplay folder: %s (no active record in database)\n", hash)
 			if err := os.RemoveAll(trickplayVideoDir); err != nil {
-				fmt.Printf("Error removing %s: %v\n", trickplayVideoDir, err)
+				log.Printf("Error removing %s: %v\n", trickplayVideoDir, err)
 			}
 		}
 	}
@@ -451,6 +451,10 @@ func (tg *TrickplayGenerator) fillLength(path string) error {
 	return nil
 }
 
+// skipLoopFilter has the CPU's decoder skip the deblocking filters (H.264's, HEVC's, AV1's...):
+// 7-9% faster on 4K HEVC, and no difference to see at 320 pixels. A GPU decodes with them.
+var skipLoopFilter = []string{"-skip_loop_filter", "all"}
+
 // extractBatch makes the frames at the given times (seconds) in one ffmpeg process, each input
 // seeking like extractFrame does, and says which came out; decoded and scaled on gpu when given.
 // ffmpeg exits with success even when some inputs fail, so a frame counts only when its file was
@@ -474,6 +478,8 @@ func (tg *TrickplayGenerator) extractBatch(ctx context.Context, videoPath, dir, 
 		args = append(args, "-threads", "1")
 		if gpu != nil {
 			args = append(args, gpu.inputArgs()...)
+		} else {
+			args = append(args, skipLoopFilter...)
 		}
 		args = append(args, inputFilters(videoPath, matrix)...)
 		args = append(args, "-ss", fmt.Sprintf("%.3f", float64(i)), "-noaccurate_seek", "-i", videoPath)
@@ -503,6 +509,7 @@ func (tg *TrickplayGenerator) extractFrame(ctx context.Context, videoPath, out s
 	if codec == "h264" || codec == "hevc" {
 		matrix = codec + "_metadata=matrix_coefficients=1"
 	}
+	args = append(args, skipLoopFilter...)
 	args = append(args, inputFilters(videoPath, matrix)...)
 	args = append(args, "-ss", timestamp, "-noaccurate_seek", "-i", videoPath, "-vf", "scale=320:-1,format=yuvj420p", "-frames:v", "1", "-strict", "unofficial", "-y", out)
 
@@ -574,7 +581,7 @@ func (tg *TrickplayGenerator) generateDisc(ctx context.Context, path string, wai
 	info, err := LoadDisc(path)
 	if IsNotVideoDisc(err) {
 		// An installer or data disc: it never will have frames, so mark it done (with no title).
-		fmt.Printf("Not a video DVD, no frames to make: %s (%v)\n", path, err)
+		log.Printf("Not a video DVD, no frames to make: %s (%v)\n", path, err)
 		return markNoFrames(path)
 	}
 	if err != nil {
@@ -597,7 +604,7 @@ func (tg *TrickplayGenerator) generateDisc(ctx context.Context, path string, wai
 	}
 	removeParts(dir)
 	// As for files: a line when a disc starts and when it's done (or why it stopped, from the job).
-	fmt.Printf("Generating trickplay frames for %s (title %d, %s)\n", path, title.Number, formatLength(title.Duration))
+	log.Printf("Generating trickplay frames for %s (title %d, %s)\n", path, title.Number, formatLength(title.Duration))
 	for i, seg := range title.Segments {
 		if ctx.Err() != nil || (wait != nil && !wait()) {
 			return ctx.Err()
@@ -610,7 +617,7 @@ func (tg *TrickplayGenerator) generateDisc(ctx context.Context, path string, wai
 		return err
 	}
 	frames, _ := filepath.Glob(filepath.Join(dir, "frame-*.jpg"))
-	fmt.Printf("Finished generating trickplay frames for %s (%d frames)\n", path, len(frames))
+	log.Printf("Finished generating trickplay frames for %s (%d frames)\n", path, len(frames))
 	return nil
 }
 

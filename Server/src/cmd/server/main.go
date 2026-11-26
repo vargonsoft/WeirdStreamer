@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -74,6 +75,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	log.Printf("WeirdStreamer server %s (%s, %s/%s) starting", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	privateUmask()
 	media.UseBundledTools()
 	// A stop signal (a restart) cancels ctx: the background jobs stop and the server shuts down.

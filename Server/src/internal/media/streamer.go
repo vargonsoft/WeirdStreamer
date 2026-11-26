@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -53,18 +54,18 @@ func (s *Streamer) ServeContent(w http.ResponseWriter, r *http.Request, filePath
 	if !shouldTranscode && autoTranscode && s.needsTranscoding(filePath) {
 		shouldTranscode = true
 		reason = fmt.Sprintf("Browsers can't play %s files", ext)
-		fmt.Printf("Auto-transcoding %s for browser compatibility\n", filePath)
+		log.Printf("Auto-transcoding %s for browser compatibility\n", filePath)
 	}
 
 	if shouldTranscode {
 		if forceTranscode || bitrate != "" || resolution != "" {
-			fmt.Printf("Transcoding %s (requested: bitrate=%s, res=%s)\n", filePath, bitrate, resolution)
+			log.Printf("Transcoding %s (requested: bitrate=%s, res=%s)\n", filePath, bitrate, resolution)
 		}
 		return s.transcodeAndServe(w, r, filePath, startTime, bitrate, resolution, reason, tracks, sess)
 	}
 
 	// Serve original file
-	fmt.Printf("Serving original file: %s\n", filePath)
+	log.Printf("Serving original file: %s\n", filePath)
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -139,7 +140,7 @@ func (w *watchedFile) Read(p []byte) (int, error) {
 
 func logReadFailure(filePath string, file *watchedFile) {
 	if file.err != nil {
-		fmt.Printf("Stopped serving %s: %v\n", filePath, file.err)
+		log.Printf("Stopped serving %s: %v\n", filePath, file.err)
 	}
 }
 
@@ -235,7 +236,7 @@ func parseRange(s string, size int64) ([]httpRange, error) {
 
 // convertAndServeImage converts HEIC/HEIF images to JPEG on-the-fly and streams them
 func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, filePath string) error {
-	fmt.Printf("Converting HEIC/HEIF image to JPEG on-the-fly: %s\n", filePath)
+	log.Printf("Converting HEIC/HEIF image to JPEG on-the-fly: %s\n", filePath)
 
 	// Use heif-convert to properly handle tiled/grid HEIC images
 	// Create a temporary file since heif-convert doesn't support stdout
@@ -263,7 +264,7 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 	go func() {
 		select {
 		case <-r.Context().Done():
-			fmt.Printf("Client disconnected, killing conversion for: %s\n", filePath)
+			log.Printf("Client disconnected, killing conversion for: %s\n", filePath)
 			cmd.Process.Kill()
 		case <-done:
 			// Normal completion
@@ -276,7 +277,7 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 		for {
 			n, err := stderr.Read(buf)
 			if n > 0 {
-				fmt.Printf("heif-convert: %s", string(buf[:n]))
+				log.Printf("heif-convert: %s", string(buf[:n]))
 			}
 			if err != nil {
 				break
@@ -295,7 +296,7 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 		}
 
 		// Fallback: if heif-convert fails, it might actually be a JPEG file mislabeled
-		fmt.Printf("heif-convert failed for %s, trying to serve as original JPEG: %v\n", filePath, cmdErr)
+		log.Printf("heif-convert failed for %s, trying to serve as original JPEG: %v\n", filePath, cmdErr)
 		return s.serveOriginalFile(w, r, filePath, "image/jpeg")
 	}
 
@@ -320,7 +321,7 @@ func (s *Streamer) convertAndServeImage(w http.ResponseWriter, r *http.Request, 
 	// Stream the file
 	_, copyErr := io.Copy(w, file)
 
-	fmt.Printf("Image conversion finished for: %s\n", filePath)
+	log.Printf("Image conversion finished for: %s\n", filePath)
 
 	return copyErr
 }
@@ -400,9 +401,9 @@ func (s *Streamer) needsTranscoding(filePath string) bool {
 // transcodeAndServe transcodes video on-the-fly and streams to client
 func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, filePath string, startTime string, bitrate string, resolution string, reason string, tracks TrackOptions, sess *StreamSession) error {
 	if startTime != "" {
-		fmt.Printf("Starting transcoding from %s seconds for: %s\n", startTime, filePath)
+		log.Printf("Starting transcoding from %s seconds for: %s\n", startTime, filePath)
 	} else {
-		fmt.Printf("Starting transcoding from beginning for: %s\n", filePath)
+		log.Printf("Starting transcoding from beginning for: %s\n", filePath)
 	}
 
 	// FFmpeg command for fast transcoding
@@ -498,7 +499,7 @@ func (s *Streamer) runTranscode(w http.ResponseWriter, r *http.Request, filePath
 
 	err = spool.streamFrom(r.Context(), &trackedWriter{w: w, sess: sess, offset: -1}, offset)
 	if r.Context().Err() != nil {
-		fmt.Printf("Client disconnected from transcode for: %s\n", filePath)
+		log.Printf("Client disconnected from transcode for: %s\n", filePath)
 		return nil
 	}
 	return err

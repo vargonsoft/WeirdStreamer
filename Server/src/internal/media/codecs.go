@@ -3,6 +3,7 @@ package media
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -411,7 +412,7 @@ func (s *Streamer) transcodeAudioAndServe(w http.ResponseWriter, r *http.Request
 		"-f", "mp4",
 		"pipe:1",
 	)
-	fmt.Printf("Transcoding audio only for: %s\n", filePath)
+	log.Printf("Transcoding audio only for: %s\n", filePath)
 	info := TranscodeInfo{Reason: reason, Args: args, Container: "Fragmented MP4",
 		Video: "Copied (H.264)", Audio: audioInfo}
 	info.Start, _ = strconv.ParseFloat(startTime, 64)

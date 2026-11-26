@@ -471,7 +471,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   with one frame: if that works the GPU ran out of memory (a 6 GB GTX 1060 took 10 4K decoders, not 15), so
   batches keep to half the pixels from then on (`tooBig`, per GPU, logged once); if not, the GPU can't decode
   that video and its batches go back to the CPU (three such videos in a row rest the GPU for 10 minutes).
-  `cli trickplay` waits for the GPU check first (`WaitForHardware`). Keyframes-only decoding (`-skip_frame
+  `cli trickplay` waits for the GPU check first (`WaitForHardware`). The CPU's decodes skip the deblocking filters
+  (`-skip_loop_filter all`, `skipLoopFilter`): 3-9% faster, the same memory, nothing to see at 320 px. Keyframes-only decoding (`-skip_frame
   nokey`) was 11-15 times faster but shows the keyframe before each time, up to ~10 s early: not used.
 - **Trickplay memory** (`media/memory.go`): each frame of a trickplay batch is an ffmpeg input with a
   decoder of its own, so a batch's memory grows with the picture: about 60 MB a process plus 228 MB a
