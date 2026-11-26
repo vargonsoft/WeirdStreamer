@@ -45,6 +45,11 @@ Requests saved for later, newest last.
 - [ ] **Subtitles in downloads of a disc's titles.** A disc download (its main title as MP4) saves
       no subtitle tracks yet; the server now reads them (`DiscSubtitlesAsPGS` with from 0).
 
+## The Guide
+
+- [ ] **A live TV guide of pseudo-channels** made from the libraries, programmed the 80s/90s way.
+      The plan and its decisions are in [docs/GUIDE.md](docs/GUIDE.md).
+
 ## Platforms
 
 - [x] **Server packages for Linux arm64 and macOS (Apple Silicon)**, beside Linux amd64:

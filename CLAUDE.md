@@ -814,6 +814,11 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 
 ## Notes on the TODO items
 
+### The Guide
+
+The plan, its settled decisions and open questions are in `docs/GUIDE.md`: keep it up to date as the
+work goes, and follow its decisions.
+
 
 ### More server platforms (feasibility, 2026-11-22)
 
