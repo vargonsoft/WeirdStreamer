@@ -76,11 +76,19 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	log.Printf("WeirdStreamer server %s (%s, %s/%s) starting", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	if runService(serve) { // started by Windows' service manager
+		return
+	}
+	serve(context.Background())
+}
+
+// serve runs the server until parent ends (a Windows service's Stop), a stop signal, or cli server
+// stop|restart.
+func serve(parent context.Context) {
 	privateUmask()
 	media.UseBundledTools()
 	// A stop signal (a restart) cancels ctx: the background jobs stop and the server shuts down.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// Load configuration
@@ -92,6 +100,8 @@ func main() {
 	if err := config.Load(configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	serviceLog(config.GlobalConfig.Server.LogsPath)
+	log.Printf("WeirdStreamer server %s (%s, %s/%s) starting", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	if err := config.GlobalConfig.CheckJWTSecret(); err != nil {
 		log.Fatalf("Refusing to start: %v. Set it in %s to a long random string, for example the output of: openssl rand -hex 32", err, configPath)
 	}

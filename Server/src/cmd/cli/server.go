@@ -87,7 +87,7 @@ func handleServerCommand(args []string, configPath string) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	if !restart {
-		fmt.Println("Stopped. A service won't start it again by itself: sudo systemctl start weirdstreamer (or launchctl kickstart, or scripts/live.sh).")
+		fmt.Println("Stopped. A service won't start it again by itself: " + startHint + ".")
 		return
 	}
 	deadline = time.Now().Add(60 * time.Second)

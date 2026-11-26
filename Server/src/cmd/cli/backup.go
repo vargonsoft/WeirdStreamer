@@ -50,7 +50,7 @@ func handleBackupCommand(args []string) {
 		}
 		withConfig := len(args) > 2 && args[2] == "--with-config"
 		if serverRunning() {
-			fmt.Println("Error: the server is running: stop it first (sudo systemctl stop weirdstreamer, or Ctrl-C), then restore.")
+			fmt.Println("Error: the server is running: stop it first (" + stopHint + ", or Ctrl-C), then restore.")
 			os.Exit(1)
 		}
 		file := backup.Resolve(args[1])

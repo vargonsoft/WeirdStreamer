@@ -40,6 +40,10 @@ func main() {
 		os.Exit(1)
 	}
 	media.UseBundledTools()
+	if os.Args[1] == "service" { // the package's own config.yml, not CONFIG_PATH's
+		handleServiceCommand(os.Args[2:])
+		return
+	}
 
 	// Load configuration
 	configPath := os.Getenv("CONFIG_PATH")
@@ -129,6 +133,9 @@ func printUsage() {
 	fmt.Println("  cli server restart [--force]                           - Restart the server running here (no root needed;")
 	fmt.Println("                                                           --force even while someone is watching)")
 	fmt.Println("  cli server stop [--force]                              - Stop it (a service starts it again only when told)")
+	fmt.Println("  cli service install [--user <DOMAIN\\name>]             - Windows: run the server as a service, as this")
+	fmt.Println("                                                           user (asks for its password), at boot")
+	fmt.Println("  cli service remove | start | stop | status             - Windows: remove, start, stop or show it")
 	fmt.Println("  cli backup now                                         - Back up the databases and config.yml now")
 	fmt.Println("  cli backup list                                        - List the backups (database.backupPath)")
 	fmt.Println("  cli backup restore <file> [--with-config]              - Put a backup's databases back (the server")
