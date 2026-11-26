@@ -35,7 +35,6 @@
                 <div class="header-controls">
                     <button id="scan-btn" class="btn" data-icon="featureSearch" title="Scan Media" aria-label="Scan Media"></button>
                     <button id="regenerate-thumbnails-btn" class="btn" style="display: none;" data-icon="refresh" title="Regenerate Thumbnails" aria-label="Regenerate Thumbnails"></button>
-                    <button id="streams-btn" class="btn" style="display: none;" data-icon="liveTv" title="Streams" aria-label="Streams"></button>
                     <button id="settings-btn" class="btn" style="display: none;" data-icon="settings" title="Settings" aria-label="Settings"></button>
                     <button id="logout-btn" class="btn" data-icon="logout" title="Logout" aria-label="Logout"></button>
                 </div>
@@ -59,18 +58,6 @@
             <nav id="az-bar" class="az-bar" aria-label="Jump to letter" hidden></nav>
         </div>
 
-        <!-- Streams Screen (admins): what is playing right now -->
-        <div id="streams-screen" class="screen">
-            <div class="settings-container streams-container">
-                <h1 class="icon-heading" data-icon="liveTv">Active streams</h1>
-                <div class="streams-toolbar">
-                    <button id="close-streams-btn" class="btn">← Back to Media</button>
-                    <span id="streams-updated" class="streams-updated"></span>
-                </div>
-                <div id="streams-list" class="streams-list"></div>
-            </div>
-        </div>
-
         <!-- Settings Screen -->
         <div id="settings-screen" class="screen">
             <div class="settings-container">
@@ -85,6 +72,7 @@
                     <button class="settings-tab" data-tab="themes">Themes</button>
                     <button class="settings-tab" data-tab="server">Server & Media</button>
                     <button class="settings-tab" data-tab="users">Users</button>
+                    <button class="settings-tab" data-tab="streams">Streams</button>
                     <button class="settings-tab" data-tab="jobs">Jobs</button>
                 </div>
 
@@ -210,6 +198,17 @@
 
                 <!-- My Account Tab -->
                 <!-- Subtitles: how they look in this browser's player -->
+                <!-- Streams Tab (admins): what is playing right now, refreshed every 2 seconds while it's open -->
+                <div id="streams-tab" class="settings-tab-content">
+                    <div class="settings-group">
+                        <h3>Active Streams</h3>
+                        <div class="streams-toolbar">
+                            <span id="streams-updated" class="streams-updated"></span>
+                        </div>
+                        <div id="streams-list" class="streams-list"></div>
+                    </div>
+                </div>
+
                 <!-- Jobs Tab (admins): the background jobs, what they're doing and when they run -->
                 <div id="jobs-tab" class="settings-tab-content">
                     <div class="settings-group">

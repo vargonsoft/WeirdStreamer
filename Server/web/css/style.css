@@ -1330,15 +1330,19 @@ header h1 {
     max-height: 300px;
     overflow-y: auto;
 }
+/* One line of tabs: a narrow window scrolls it sideways rather than wrapping the names */
 .settings-tabs {
     display: flex;
-    gap: 10px;
+    gap: 6px;
     margin: 20px 0;
     border-bottom: 2px solid var(--border-color);
+    overflow-x: auto;
 }
 
 .settings-tab {
-    padding: 10px 20px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding: 10px 14px;
     background: none;
     border: none;
     cursor: pointer;

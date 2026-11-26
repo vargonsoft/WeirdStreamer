@@ -114,8 +114,6 @@ function setupEventListeners() {
     if (settingsBtn) {
         settingsBtn.addEventListener('click', () => showSettings());
     }
-    document.getElementById('streams-btn').addEventListener('click', () => showStreams());
-    document.getElementById('close-streams-btn').addEventListener('click', () => closeScreen('streams'));
     if (closeSettingsBtn) {
         closeSettingsBtn.addEventListener('click', () => closeScreen('settings'));
     }
@@ -130,6 +128,8 @@ function setupEventListeners() {
             document.getElementById(`${tabName}-tab`).classList.add('active');
             if (tabName === 'jobs') startJobsView();
             else stopJobsView();
+            if (tabName === 'streams') startStreamsView();
+            else stopStreamsView();
             
             // Load users when switching to users tab
             if (tabName === 'users') {
@@ -300,7 +300,6 @@ function showMainScreen() {
     if (scanBtn) {
         scanBtn.style.display = user.is_admin ? '' : 'none';
     }
-    document.getElementById('streams-btn').style.display = user.is_admin ? '' : 'none';
     
     // Update regenerate thumbnails button visibility
     updateRegenerateThumbnailsButton();
@@ -2930,10 +2929,12 @@ async function showSettings(pushHistory = true) {
     const serverTabBtn = document.querySelector('.settings-tab[data-tab="server"]');
     const usersTabBtn = document.querySelector('.settings-tab[data-tab="users"]');
     const jobsTabBtn = document.querySelector('.settings-tab[data-tab="jobs"]');
+    const streamsTabBtn = document.querySelector('.settings-tab[data-tab="streams"]');
 
     if (serverTabBtn) serverTabBtn.style.display = user.is_admin ? 'block' : 'none';
     if (usersTabBtn) usersTabBtn.style.display = user.is_admin ? 'block' : 'none';
     if (jobsTabBtn) jobsTabBtn.style.display = user.is_admin ? 'block' : 'none';
+    if (streamsTabBtn) streamsTabBtn.style.display = user.is_admin ? 'block' : 'none';
 
     // Settings opens on My Account (openLibrarySettings then goes to Server & Media)
     {
@@ -2994,15 +2995,15 @@ async function showSettings(pushHistory = true) {
 
 function hideSettings() {
     stopJobsView();
+    stopStreamsView();
     settingsScreen.classList.remove('active');
     mainScreen.classList.add('active');
 }
 
-// Settings and Streams are screens over the media view, each a history entry of its own (the
-// view's state plus `screen`), so the browser's Back leaves them for the view (see popstate).
+// Settings is a screen over the media view, a history entry of its own (the view's state plus
+// `screen`), so the browser's Back leaves it for the view (see popstate).
 const SCREENS = {
     settings: { element: () => settingsScreen, show: () => showSettings(false), hide: hideSettings },
-    streams: { element: () => document.getElementById('streams-screen'), show: () => showStreams(false), hide: hideStreams },
 };
 
 function openScreen() {
@@ -6316,24 +6317,19 @@ function createContinueCard(item) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Streams page (admins): every stream playing now, refreshed every few seconds
+// Settings → Streams (admins): every stream playing now, refreshed every 2 seconds while the tab is open
 
 let streamsTimer = null;
 
-function showStreams(pushHistory = true) {
-    if (pushHistory) pushScreenHistory('streams');
-    mainScreen.classList.remove('active');
-    document.getElementById('streams-screen').classList.add('active');
+function startStreamsView() {
+    if (streamsTimer) return;
     refreshStreams();
-    clearInterval(streamsTimer);
     streamsTimer = setInterval(refreshStreams, 2000);
 }
 
-function hideStreams() {
+function stopStreamsView() {
     clearInterval(streamsTimer);
     streamsTimer = null;
-    document.getElementById('streams-screen').classList.remove('active');
-    mainScreen.classList.add('active');
 }
 
 // ---------------------------------------------------------------------------------------------
