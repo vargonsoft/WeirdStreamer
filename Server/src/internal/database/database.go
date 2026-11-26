@@ -109,6 +109,9 @@ func (db *DB) initSchema() error {
 	if err := db.initUserCollections(); err != nil {
 		return err
 	}
+	if err := db.initGuide(); err != nil {
+		return err
+	}
 	if err := db.initPersonDetails(); err != nil {
 		return err
 	}

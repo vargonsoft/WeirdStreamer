@@ -471,9 +471,10 @@ func (s *Service) ensureMovie(ctx context.Context, client *Client, id int) (bool
 		ReleaseDate: d.ReleaseDate, Overview: d.Overview, Tagline: d.Tagline, Runtime: d.Runtime,
 		Genres: genreList(d.Genres), IMDBID: d.IMDBID,
 		PosterSource: posterSource, PosterManual: posterManual,
-		Poster:    s.download(ctx, client, "w500", posterSource, dir+"/poster"),
-		Backdrop:  s.download(ctx, client, "w1280", d.BackdropPath, dir+"/backdrop"),
-		Logo:      s.download(ctx, client, "w500", pickLogo(d.Images.Logos, client.language), dir+"/logo"),
+		Poster:   s.download(ctx, client, "w500", posterSource, dir+"/poster"),
+		Backdrop: s.download(ctx, client, "w1280", d.BackdropPath, dir+"/backdrop"),
+		Logo:     s.download(ctx, client, "w500", pickLogo(d.Images.Logos, client.language), dir+"/logo"),
+		Rating:   d.Rating(), GuideInfo: true,
 		UpdatedAt: time.Now(),
 	}
 	if d.BelongsToCollection != nil && d.BelongsToCollection.ID > 0 {
@@ -528,10 +529,14 @@ func (s *Service) ensureShow(ctx context.Context, client *Client, id int) (bool,
 		FirstAirDate: d.FirstAirDate, Overview: d.Overview, Tagline: d.Tagline, Genres: genreList(d.Genres),
 		IMDBID: d.ExternalIDs.IMDBID, Runtime: runtime,
 		PosterSource: posterSource, PosterManual: posterManual,
-		Poster:    s.download(ctx, client, "w500", posterSource, dir+"/poster"),
-		Backdrop:  s.download(ctx, client, "w1280", d.BackdropPath, dir+"/backdrop"),
-		Logo:      s.download(ctx, client, "w500", pickLogo(d.Images.Logos, client.language), dir+"/logo"),
+		Poster:   s.download(ctx, client, "w500", posterSource, dir+"/poster"),
+		Backdrop: s.download(ctx, client, "w1280", d.BackdropPath, dir+"/backdrop"),
+		Logo:     s.download(ctx, client, "w500", pickLogo(d.Images.Logos, client.language), dir+"/logo"),
+		Rating:   d.Rating(), GuideInfo: true,
 		UpdatedAt: time.Now(),
+	}
+	if len(d.Networks) > 0 {
+		sh.NetworkID, sh.Network = d.Networks[0].ID, d.Networks[0].Name
 	}
 
 	var credits []database.Credit
@@ -670,13 +675,15 @@ func collectionFresh(c *database.Collection) bool {
 	return c != nil && time.Since(c.UpdatedAt) < refreshDetails && (c.Poster == "" || artworkPresent(c.Poster))
 }
 
-// movieFresh reports whether a stored movie needs no refresh: recent, with its artwork on disk.
+// movieFresh reports whether a stored movie needs no refresh: recent, with the Guide's rating looked
+// up and its artwork on disk.
 func movieFresh(m *database.Movie) bool {
-	return m != nil && time.Since(m.UpdatedAt) < refreshDetails && artworkPresent(m.Poster, m.Backdrop)
+	return m != nil && m.GuideInfo && time.Since(m.UpdatedAt) < refreshDetails && artworkPresent(m.Poster, m.Backdrop)
 }
 
+// showFresh is movieFresh for a show (the Guide's network and rating).
 func showFresh(sh *database.Show) bool {
-	return sh != nil && time.Since(sh.UpdatedAt) < refreshDetails && artworkPresent(sh.Poster, sh.Backdrop)
+	return sh != nil && sh.GuideInfo && time.Since(sh.UpdatedAt) < refreshDetails && artworkPresent(sh.Poster, sh.Backdrop)
 }
 
 // artworkPresent reports whether every given (non-empty) artwork file exists.

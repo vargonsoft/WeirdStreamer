@@ -21,7 +21,23 @@ type Config struct {
 	Streaming StreamingConfig `json:"streaming" yaml:"streaming"`
 	Metadata  MetadataConfig  `json:"metadata" yaml:"metadata"`
 	Jobs      JobsConfig      `json:"jobs" yaml:"jobs"`
+	Guide     GuideConfig     `json:"guide" yaml:"guide"`
 }
+
+// GuideConfig is the Guide's (the live pseudo-channels made from the libraries Show in Guide puts
+// there; docs/GUIDE.md).
+type GuideConfig struct {
+	// The hour prime time starts, in the server's time zone: 20 (8 to 11 pm, the default) or 19
+	// (7 to 10 pm). The news hour follows it.
+	PrimeTime int `json:"primeTime" yaml:"primeTime"`
+}
+
+// Prime time's starts (GuideConfig.PrimeTime)
+const (
+	PrimeTimeEarly   = 19
+	PrimeTimeDefault = 20
+	PrimeTimeHours   = 3
+)
 
 // JobsConfig tunes the trickplay job, which the Jobs page changes live.
 type JobsConfig struct {
@@ -177,6 +193,13 @@ type MediaPath struct {
 	// screen's row, which blends the libraries, and the library's own), ContinueLibraryOnly, or
 	// ContinueOff (the default, also when empty).
 	ShowNewAdditions string `json:"showNewAdditions,omitempty" yaml:"showNewAdditions,omitempty"`
+	// Where this library's titles are on the Guide's channels: ContinueOn (the Guide on the home
+	// screen's Libraries row, and on the library's own page), ContinueLibraryOnly (only a Guide of its
+	// own on its page) or ContinueOff (the default, also when empty).
+	ShowInGuide string `json:"showInGuide,omitempty" yaml:"showInGuide,omitempty"`
+	// The Guide may take this library's short videos to fill the gaps between programs. They stay
+	// the library's: it's still browsed and played as usual.
+	GuideFiller bool `json:"guideFiller,omitempty" yaml:"guideFiller,omitempty"`
 }
 
 // Continue Watching modes (MediaPath.ContinueWatchingMode)
@@ -211,6 +234,18 @@ func (p MediaPath) OnNewAdditions(libraryPage bool) bool {
 	return false
 }
 
+// InGuide reports whether the library's titles are on the Guide's channels: the home screen's Guide
+// (libraryPage false), which blends the libraries, or the library's own (true).
+func (p MediaPath) InGuide(libraryPage bool) bool {
+	switch p.ShowInGuide {
+	case ContinueOn:
+		return true
+	case ContinueLibraryOnly:
+		return libraryPage
+	}
+	return false
+}
+
 // Library types. A library has at most one type; untyped libraries are plain folders.
 const (
 	LibraryTypeMovie = "movie"
@@ -218,6 +253,16 @@ const (
 )
 
 // DefaultGroup is the group new users start in: the first one listed ("" with none).
+// LibraryByID is the library with the ID.
+func (c *Config) LibraryByID(id string) (MediaPath, bool) {
+	for _, lib := range c.Media.Paths {
+		if lib.ID == id {
+			return lib, true
+		}
+	}
+	return MediaPath{}, false
+}
+
 func (c *Config) DefaultGroup() string {
 	if len(c.Groups) == 0 {
 		return ""
@@ -254,6 +299,13 @@ func (c *Config) CheckGroupName(name string) error {
 // Validate checks values that can't be expressed by the file's structure alone.
 func (c *Config) Validate() error {
 	c.Server.Name = strings.TrimSpace(c.Server.Name)
+	switch c.Guide.PrimeTime {
+	case 0:
+		c.Guide.PrimeTime = PrimeTimeDefault
+	case PrimeTimeEarly, PrimeTimeDefault:
+	default:
+		return fmt.Errorf("guide.primeTime must be %d (7 to 10 pm) or %d (8 to 11 pm)", PrimeTimeEarly, PrimeTimeDefault)
+	}
 	d := &c.Database
 	d.BackupSchedule = strings.ToLower(strings.TrimSpace(d.BackupSchedule))
 	if d.BackupSchedule == "" {
@@ -322,6 +374,9 @@ func (c *Config) Validate() error {
 		}
 		if p.ShowNewAdditions, err = canonicalMode(p.ShowNewAdditions); err != nil {
 			return fmt.Errorf("media path %q: invalid showNewAdditions %w", p.Name, err)
+		}
+		if p.ShowInGuide, err = canonicalMode(p.ShowInGuide); err != nil {
+			return fmt.Errorf("media path %q: invalid showInGuide %w", p.Name, err)
 		}
 	}
 	return nil

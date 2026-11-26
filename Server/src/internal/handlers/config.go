@@ -210,8 +210,13 @@ type settingsUpdate struct {
 			Type                 string   `json:"type"`
 			ContinueWatchingMode string   `json:"continueWatchingMode"`
 			ShowNewAdditions     string   `json:"showNewAdditions"`
+			ShowInGuide          string   `json:"showInGuide"`
+			GuideFiller          bool     `json:"guideFiller"`
 		} `json:"paths"`
 	} `json:"media"`
+	Guide struct {
+		PrimeTime int `json:"primeTime"`
+	} `json:"guide"`
 }
 
 // applyTo is a copy of current with the update's fields.
@@ -234,8 +239,10 @@ func (u settingsUpdate) applyTo(current *config.Config) *config.Config {
 	c.Media.Paths = make([]config.MediaPath, len(u.Media.Paths))
 	for i, p := range u.Media.Paths {
 		c.Media.Paths[i] = config.MediaPath{Name: p.Name, Path: p.Path, ID: p.ID, Groups: p.Groups, Type: p.Type,
-			ContinueWatchingMode: p.ContinueWatchingMode, ShowNewAdditions: p.ShowNewAdditions}
+			ContinueWatchingMode: p.ContinueWatchingMode, ShowNewAdditions: p.ShowNewAdditions,
+			ShowInGuide: p.ShowInGuide, GuideFiller: p.GuideFiller}
 	}
+	c.Guide.PrimeTime = u.Guide.PrimeTime
 	return &c
 }
 

@@ -61,6 +61,11 @@ media:
     # screen's row and the library's own page, the default), "libraryOnly" or "off".
     # showNewAdditions: where its newest videos show on Recently Added: "on" (the home screen's row
     # and the library's own page), "libraryOnly" or "off" (the default).
+    # showInGuide: where its titles are on the Guide's live channels: "on" (the Guide on the home
+    # screen and on the library's own page), "libraryOnly" (a Guide of its own on its page) or "off"
+    # (the default). With every library off there's no Guide.
+    # guideFiller: true lets the Guide fill the gaps between programs with its short videos (they
+    # stay the library's, browsed and played as usual).
     - name: Movies
       path: /path/to/media/movies
       groups: ["parents", "admins"]
@@ -170,3 +175,9 @@ jobs:
   # Decode trickplay frames on the CPU even with a hardware encoder chosen (whose GPU decodes them
   # otherwise): a CPU with many cores can be faster than a small GPU, at the cost of its time and memory
   trickplayCPUOnly: false
+
+# The Guide: live channels made from the libraries with showInGuide
+guide:
+  # The hour prime time starts (the server's time zone): 20 (8 to 11 pm) or 19 (7 to 10 pm). The
+  # news hour follows it.
+  primeTime: 20

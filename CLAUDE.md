@@ -819,6 +819,29 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
 The plan, its settled decisions and open questions are in `docs/GUIDE.md`: keep it up to date as the
 work goes, and follow its decisions.
 
+What's built (server):
+- **Data from TMDB.** Shows keep their first network and US rating, and movies their US certification
+  (`shows.network_id`, `network`, `rating`; `movies.rating`). A title without them (`guide_info` 0) is due
+  for the TMDB lookups job.
+- **Library settings.** `showInGuide` (on, libraryOnly, off: `MediaPath.InGuide`) and `guideFiller` on
+  each library. `guide.primeTime` (19 or 20) is in config.yml.
+- **`internal/guide`.**
+  - `Channels` groups one library's titles: a network with 4 or more shows gets a channel (named by
+    `CallSign`), the other shows and the movies go into genre buckets.
+  - `Plan` lays a channel out from a `State`, which `Record` builds from the stored slots, so each show
+    goes on to its next episode. In prime time each weekly position's shows take turns a season each;
+    the rest of the day is strips (a week's rotation per day part) or the movie aired longest ago.
+    Ratings depend on the day part. Gaps get filler clips (near the program's year first, none
+    repeated within 2 hours on the channel), then a bumper.
+  - `Service` plans 72 hours ahead, hourly and when settings change (the Jobs page's Guide job). When
+    a channel's titles change it plans again from 6 hours ahead. Slots are kept 35 days.
+- **Tables:** `guide_channels` (numbers: networks from 2, the rest from 14) and `guide_slots` (client
+  paths, a program's info as JSON), in `database/guide.go`.
+- **API** (`handlers/guide.go`): `GET /api/guide/available`, `GET /api/guide` (the grid),
+  `GET /api/guide/now?channel=` (the file, the offset, and the program on now and next) and
+  `POST /api/guide/watched?channel=`, each with an optional `lib=`. A channel is one library's, so access
+  is that library's.
+
 
 ### More server platforms (feasibility, 2026-11-22)
 

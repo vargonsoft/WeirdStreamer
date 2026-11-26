@@ -4,7 +4,8 @@ What we're working toward: a cable or satellite style TV guide made from the lib
 the libraries' shows and movies on a schedule, and you can watch only what's on now. The programming
 works the way 80s and 90s TV did, not the way modern TV does.
 
-Status: planned, nothing built yet. Decisions are marked as settled; open questions are at the end.
+Status: phase 1 (the server) is built on the `guide` branch: channels, the planner, filler and the API. The
+clients are next. Decisions are marked as settled; open questions are at the end.
 
 ## Decisions (settled)
 
@@ -87,9 +88,10 @@ The gap after each program (after its credits), packed to the second, in this or
 1. **Filler libraries' short videos** (Use for Guide Filler): shorts, cartoons, music videos, trailers,
    a folder of commercials. Clips are chosen whose lengths add up to the gap, suited to the time of day
    (by rating), not repeated soon on the same channel. The last one may be cut short.
-2. **Bumpers the server makes** (ffmpeg, cached): "Up next on Channel 7: *Title* at 8:30" with the
-   poster, the channel's badge and a clock, or "We'll be right back". They fill whatever is left, so a gap
-   is never empty.
+2. **Bumpers:** "Up next on Channel 7: *Title* at 8:30" with the poster, the channel's badge and a
+   clock, or "We'll be right back". They fill whatever is left, so a gap is never empty. A bumper is a
+   slot with no file: the player draws the card from `/api/guide/now`'s `next` (sharp at any size, no
+   encoding). The voice-overs may make some of them videos later.
 3. **Commercials are the admin's to add**, as a filler library. Two sources: the Internet Archive's
    *Classic TV Commercials* (about 8,500 user uploads, mostly 50s to 80s) and the *Prelinger Archives*.
    They're labeled public domain by their uploaders, but not checked, so the server neither bundles nor

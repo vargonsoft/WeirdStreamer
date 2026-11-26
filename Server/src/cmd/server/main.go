@@ -23,6 +23,7 @@ import (
 	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/database"
 	"github.com/weirdstreamer/server/internal/fileio"
+	"github.com/weirdstreamer/server/internal/guide"
 	"github.com/weirdstreamer/server/internal/handlers"
 	"github.com/weirdstreamer/server/internal/logs"
 	"github.com/weirdstreamer/server/internal/media"
@@ -212,8 +213,12 @@ func serve(parent context.Context) {
 			log.Printf("Warning: could not date the media files: %v", err)
 		}
 	}()
+	// The Guide's live channels, planned in the background from the libraries with Show in Guide
+	guideService := guide.NewService(db, metadataService)
+	guideService.Start(ctx)
+	guideHandler := handlers.NewGuideHandler(db, guideService)
 	// A token or library change saved through Settings starts a sync without a restart
-	configHandler.OnUpdate(func() { go metadataService.SyncAll(ctx) })
+	configHandler.OnUpdate(func() { go metadataService.SyncAll(ctx); guideHandler.Plan() })
 
 	// Setup router
 	r := mux.NewRouter()
@@ -258,6 +263,11 @@ func serve(parent context.Context) {
 	api.HandleFunc("/library/person", mediaHandler.GetLibraryPerson).Methods("GET")
 	api.HandleFunc("/library/theme", mediaHandler.GetLibraryTheme).Methods("GET", "HEAD")
 	api.HandleFunc("/library/usercollections", mediaHandler.ChangeUserCollection).Methods("POST", "PUT", "DELETE")
+	// The Guide: live channels
+	api.HandleFunc("/guide", guideHandler.Listings).Methods("GET")
+	api.HandleFunc("/guide/available", guideHandler.Available).Methods("GET")
+	api.HandleFunc("/guide/now", guideHandler.Now).Methods("GET")
+	api.HandleFunc("/guide/watched", guideHandler.Watched).Methods("POST")
 	api.HandleFunc("/library/new", mediaHandler.NewAdditions).Methods("GET")
 	api.HandleFunc("/playback/watched", mediaHandler.SetWatched).Methods("POST")
 	api.HandleFunc("/playback/sync", mediaHandler.SyncPlayback).Methods("POST")

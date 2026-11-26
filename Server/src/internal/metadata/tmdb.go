@@ -122,6 +122,42 @@ type MovieDetails struct {
 	Images Images `json:"images"`
 	// The collection (a film series) it belongs to, if any
 	BelongsToCollection *CollectionRef `json:"belongs_to_collection"`
+	// Each country's releases, with their certifications (the Guide's ratings)
+	ReleaseDates struct {
+		Results []struct {
+			Country  string `json:"iso_3166_1"`
+			Releases []struct {
+				Certification string `json:"certification"`
+				Type          int    `json:"type"` // 1 premiere, 2 limited, 3 theatrical, 4 digital, 5 physical, 6 TV
+			} `json:"release_dates"`
+		} `json:"results"`
+	} `json:"release_dates"`
+}
+
+// RatingCountry is the country whose ratings (certifications) the Guide uses.
+const RatingCountry = "US"
+
+// Rating is the movie's certification in RatingCountry (G, PG, PG-13, R, NC-17), "" if none: its
+// theatrical release's, else the first given.
+func (m *MovieDetails) Rating() string {
+	first := ""
+	for _, r := range m.ReleaseDates.Results {
+		if r.Country != RatingCountry {
+			continue
+		}
+		for _, rel := range r.Releases {
+			if rel.Certification == "" {
+				continue
+			}
+			if rel.Type == 3 {
+				return rel.Certification
+			}
+			if first == "" {
+				first = rel.Certification
+			}
+		}
+	}
+	return first
 }
 
 // PersonDetails is a person's TMDB record with their credits (movies and shows, as cast and crew).
@@ -212,7 +248,27 @@ type TVDetails struct {
 	AggregateCredits struct {
 		Cast []AggregateCast `json:"cast"`
 	} `json:"aggregate_credits"`
-	Images Images `json:"images"`
+	Images   Images `json:"images"`
+	Networks []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	} `json:"networks"`
+	ContentRatings struct {
+		Results []struct {
+			Country string `json:"iso_3166_1"`
+			Rating  string `json:"rating"`
+		} `json:"results"`
+	} `json:"content_ratings"`
+}
+
+// Rating is the show's rating in RatingCountry (TV-Y, TV-G, TV-PG, TV-14, TV-MA…), "" if none.
+func (t *TVDetails) Rating() string {
+	for _, r := range t.ContentRatings.Results {
+		if r.Country == RatingCountry {
+			return r.Rating
+		}
+	}
+	return ""
 }
 
 type Episode struct {
@@ -264,7 +320,7 @@ func (c *Client) SearchTV(ctx context.Context, title string, year int) ([]Search
 func (c *Client) Movie(ctx context.Context, id int) (*MovieDetails, error) {
 	var m MovieDetails
 	err := c.get(ctx, fmt.Sprintf("/movie/%d", id), url.Values{
-		"append_to_response":     {"credits,images"},
+		"append_to_response":     {"credits,images,release_dates"},
 		"include_image_language": {c.imageLanguages()},
 	}, &m)
 	return &m, err
@@ -290,7 +346,7 @@ func (c *Client) Collection(ctx context.Context, id int) (*CollectionDetails, er
 func (c *Client) TV(ctx context.Context, id int) (*TVDetails, error) {
 	var t TVDetails
 	err := c.get(ctx, fmt.Sprintf("/tv/%d", id), url.Values{
-		"append_to_response":     {"aggregate_credits,images,external_ids"},
+		"append_to_response":     {"aggregate_credits,images,external_ids,content_ratings"},
 		"include_image_language": {c.imageLanguages()},
 	}, &t)
 	return &t, err
