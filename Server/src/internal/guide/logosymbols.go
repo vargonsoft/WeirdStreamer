@@ -343,6 +343,125 @@ var symbols = map[string]func() path{
 		p.add(polygon(pt{.33, .16}, pt{.91, .04}, pt{.91, .18}, pt{.33, .3}))
 		return p
 	},
+	// The typed channels' symbols (logodesign.go's typedDesigns)
+	"martini": func() path { // a cocktail glass, an olive cut out of it
+		p := polygon(pt{.08, .06}, pt{.92, .06}, pt{.53, .5}, pt{.53, .86}, pt{.74, .9}, pt{.74, .97}, pt{.26, .97}, pt{.26, .9},
+			pt{.47, .86}, pt{.47, .5})
+		p.add(circleHole(pt{.4, .2}, .07))
+		return p
+	},
+	"moonstar": func() path { // a crescent and a star beside it
+		outer := arcPoints(pt{.42, .56}, .42, math.Pi*0.3, math.Pi*1.7, 48)
+		inner := reversed(arcPoints(pt{.58, .49}, .34, math.Pi*0.55, math.Pi*1.45, 48))
+		p := polygon(append(outer, inner...)...)
+		p.add(polygon(starPoints(pt{.82, .2}, .17, .07, 5)...))
+		return p
+	},
+	"kite": func() path { // a diamond kite, its tail of bows
+		p := polygon(pt{.5, 0}, pt{.86, .34}, pt{.5, .76}, pt{.14, .34})
+		p.add(polygon(pt{.49, .75}, pt{.52, .75}, pt{.6, 1}, pt{.57, 1}))
+		p.add(polygon(pt{.44, .82}, pt{.62, .9}, pt{.62, .8}, pt{.44, .92}))
+		return p
+	},
+	"balloon": func() path { // a balloon on its string, a shine cut out
+		p := ellipse(pt{.5, .37}, .3, .36, 0, false)
+		p.add(polygon(pt{.44, .78}, pt{.56, .78}, pt{.5, .7}))
+		p.add(polygon(pt{.49, .78}, pt{.51, .78}, pt{.58, 1}, pt{.56, 1}))
+		p.add(ellipse(pt{.39, .25}, .05, .1, .5, true))
+		return p
+	},
+	"pencil": func() path { // a pencil on a slant, its ferrule a cut line
+		d, n, w := pt{.7071, -.7071}, pt{.7071, .7071}, .11
+		at := func(o pt, dd, nn float64) pt { return pt{o.x + d.x*dd + n.x*nn, o.y + d.y*dd + n.y*nn} }
+		a, b := pt{.1, .9}, pt{.72, .28}
+		p := polygon(at(a, 0, -w), at(b, 0, -w), pt{.94, .06}, at(b, 0, w), at(a, 0, w))
+		c := at(a, .14, 0)
+		p.add(polygon(reversed([]pt{at(c, 0, -w*.8), at(c, .045, -w*.8), at(c, .045, w*.8), at(c, 0, w*.8)})...))
+		return p
+	},
+	"bone": func() path {
+		p := rect(.16, .41, .68, .18, 0)
+		for _, c := range []pt{{.17, .37}, {.17, .63}, {.83, .37}, {.83, .63}} {
+			p.add(circle(c, .14))
+		}
+		return p
+	},
+	"inkdrop": func() path { // a drop, a shine cut out
+		p := circle(pt{.5, .66}, .32)
+		p.add(polygon(pt{.5, 0}, pt{.79, .52}, pt{.21, .52}))
+		p.add(ellipse(pt{.39, .68}, .05, .11, .3, true))
+		return p
+	},
+	"mic": func() path { // a stand microphone, its grille cut in lines
+		p := rect(.33, 0, .34, .56, .17)
+		for _, y := range []float64{.14, .24, .34} {
+			p.add(polygon(reversed(rectPoints(.38, y, .24, .035))...))
+		}
+		p.add(sector(pt{.5, .36}, .23, .29, 0, math.Pi))
+		p.add(rect(.47, .64, .06, .26, 0))
+		p.add(rect(.28, .9, .44, .08, .03))
+		return p
+	},
+	"spotlight": func() path { // a lamp, its beam and the pool of light on the floor
+		p := rect(.36, 0, .28, .17, .04)
+		p.add(polygon(pt{.42, .17}, pt{.58, .17}, pt{.93, .8}, pt{.07, .8}))
+		p.add(polygon(reversed([]pt{{.47, .27}, {.53, .27}, {.8, .74}, {.2, .74}})...))
+		p.add(ellipse(pt{.5, .87}, .46, .12, 0, false))
+		return p
+	},
+	"door": func() path { // a stage door, a star cut out of it and its knob
+		p := rect(.2, 0, .6, 1, .03)
+		p.add(polygon(reversed(starPoints(pt{.5, .33}, .18, .075, 5))...))
+		p.add(circleHole(pt{.69, .6}, .045))
+		return p
+	},
+	"book": func() path { // an open book
+		p := polygon(pt{0, .14}, pt{.47, .22}, pt{.47, .96}, pt{0, .86})
+		p.add(polygon(pt{.53, .22}, pt{1, .14}, pt{1, .86}, pt{.53, .96}))
+		return p
+	},
+	"eye": func() path { // an almond eye, its iris and pupil
+		var top, bottom []pt
+		for k := 0; k <= 32; k++ {
+			t := float64(k) / 32
+			top = append(top, pt{t, .5 - .36*math.Sin(math.Pi*t)})
+			bottom = append(bottom, pt{1 - t, .5 + .36*math.Sin(math.Pi*(1-t))})
+		}
+		p := polygon(append(top, bottom[1:len(bottom)-1]...)...)
+		p.add(circleHole(pt{.5, .5}, .22))
+		p.add(circle(pt{.5, .5}, .11))
+		return p
+	},
+	"tombstone": func() path { // a rounded stone on the ground, a cross cut out
+		p := circle(pt{.5, .42}, .32)
+		p.add(rect(.18, .42, .64, .48, 0))
+		p.add(polygon(reversed([]pt{{.46, .26}, {.54, .26}, {.54, .38}, {.64, .38}, {.64, .46}, {.54, .46}, {.54, .68},
+			{.46, .68}, {.46, .46}, {.36, .46}, {.36, .38}, {.46, .38}})...))
+		p.add(rect(0, .9, 1, .1, 0))
+		return p
+	},
+	"ghost": func() path { // a sheet ghost, its eyes cut out
+		ps := arcPoints(pt{.5, .4}, .34, math.Pi, 2*math.Pi, 32)
+		ps = append(ps, pt{.84, 1}, pt{.73, .88}, pt{.61, 1}, pt{.5, .88}, pt{.39, 1}, pt{.27, .88}, pt{.16, 1})
+		p := polygon(ps...)
+		p.add(ellipse(pt{.39, .4}, .06, .09, 0, true))
+		p.add(ellipse(pt{.61, .4}, .06, .09, 0, true))
+		return p
+	},
+	"flame": func() path { // a flame, a smaller one cut out of it
+		p := polygon(pt{.5, 0}, pt{.64, .2}, pt{.82, .4}, pt{.86, .66}, pt{.73, .9}, pt{.5, 1}, pt{.27, .9}, pt{.14, .66},
+			pt{.2, .42}, pt{.32, .52}, pt{.34, .28})
+		p.add(polygon(reversed([]pt{{.5, .44}, {.62, .64}, {.58, .86}, {.42, .86}, {.38, .64}})...))
+		return p
+	},
+	"claw": func() path { // three claw marks
+		var p path
+		for i := range 3 {
+			x := .08 + .28*float64(i)
+			p.add(polygon(pt{x, .04}, pt{x + .13, 0}, pt{x + .34, .94}, pt{x + .27, 1}))
+		}
+		return p
+	},
 	"eye-less burst": func() path { // an eight-point burst, a hole in the middle
 		p := polygon(starPoints(pt{.5, .5}, .5, .32, 8)...)
 		p.add(circleHole(pt{.5, .5}, .18))

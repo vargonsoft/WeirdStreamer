@@ -67,6 +67,29 @@ func TestEpisodeTitle(t *testing.T) {
 	}
 }
 
+func TestFileNames(t *testing.T) {
+	for in, want := range map[string]string{
+		"a/Harbor.Lights.Vol.01.avi":           "Harbor Lights Vol 01",
+		"a/Sunset_Drive_-_Part_Two_1080.mp4":   "Sunset Drive - Part Two",
+		"a/Episode5_s05__1080p_h264.mp4":       "Episode5 s05",
+		"a/Weekly-Pick-2017-01-18-Pier-4k.mp4": "Weekly-Pick-2017-01-18-Pier",
+		"a/1987.avi":                           "1987",
+	} {
+		if got := fileTitle(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
+	}
+	for in, want := range map[string]string{
+		"Velvet Hour - S01E02 - The Pier": "The Pier",
+		"Velvet Hour - S01E02":            "S01E02",
+		"Velvet Hour":                     "Velvet Hour",
+	} {
+		if got := episodeSummary(in, "Velvet Hour"); got != want {
+			t.Errorf("summary %q: %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestFolderCollections(t *testing.T) {
 	var files []FolderFile
 	// a folder of differently named long videos, and one with short clips in small subfolders
@@ -142,7 +165,7 @@ func TestTypedChannelSplit(t *testing.T) {
 		t.Errorf("small: %v", got)
 	}
 	chans := TypedChannels("d", TypedLateNight, 4, groups)
-	if !chans[0].AnyTime || !chans[0].Network || chans[0].LibraryID != TypedLibraryID("d") {
+	if !chans[0].AnyTime || chans[0].Type != TypedLateNight || chans[0].LibraryID != TypedLibraryID("d") {
 		t.Errorf("channel %+v", chans[0])
 	}
 }
@@ -171,5 +194,32 @@ func TestPlanBlock(t *testing.T) {
 	}
 	if slots[2].End() != from.Add(20*time.Minute) || slots[3].End() != from.Add(halfHour) {
 		t.Errorf("times %v %v", slots[2].End(), slots[3].End())
+	}
+}
+
+func TestTypedNames(t *testing.T) {
+	taken := map[string]bool{}
+	var got []string
+	for range 5 {
+		n := TypedName("kids", taken)
+		taken[n] = true
+		got = append(got, n)
+	}
+	want := []string{"Kid Zone", "Playground", "Toy Box", "Jamboree", "Kid Zone 2"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("%v, want %v", got, want)
+		}
+	}
+	if !IsTypedName("kids", "Kid Zone 2") || IsTypedName("kids", "WKBT") || IsTypedName("comedy", "Kid Zone") {
+		t.Error("IsTypedName")
+	}
+	// every type's names have their logos
+	for typ, names := range TypedChannelNames {
+		for _, n := range names {
+			if a := LogoFor(n, TypedTypeName(typ), false); a == nil || a.Name != n {
+				t.Errorf("%s: no logo of its own", n)
+			}
+		}
 	}
 }

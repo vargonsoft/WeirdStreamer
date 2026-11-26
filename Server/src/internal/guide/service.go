@@ -205,8 +205,15 @@ func (s *Service) Refresh(ctx context.Context) error {
 				return err
 			}
 		}
-		if ch.Network && !IsStation(c.Name) { // named before the pool of stations
-			c.Name = pickStation(ch.Key, byKey)
+		rename := ""
+		switch {
+		case ch.Network && !IsStation(c.Name): // named before the pool of stations
+			rename = pickStation(ch.Key, byKey)
+		case ch.Type != "" && !IsTypedName(ch.Type, c.Name): // named before its type's names, or its type changed
+			rename = TypedName(ch.Type, takenNames(ch.Key, byKey))
+		}
+		if rename != "" {
+			c.Name = rename
 			if err := s.db.SetGuideChannelName(ch.Key, c.Name); err != nil {
 				return err
 			}
@@ -372,6 +379,9 @@ func programInfo(lib string, t *Title, item int) string {
 		if t.Kind == KindShow {
 			info.Season, info.Episode, info.EpisodeTitle, info.EpisodeOverview = it.Season, it.Episode, it.Name, it.Overview
 		}
+		if t.Folder && it.Name != "" {
+			info.Title, info.EpisodeTitle = t.Name+" - "+it.Name, "" // a folder's program: the folder and the file
+		}
 		if info.Poster == "" {
 			info.Poster = it.Poster
 		}
@@ -386,9 +396,9 @@ func fingerprint(ch Channel, clips []Clip, set Settings) string {
 	add := func(s string) { h = h*31 + hash(s) }
 	add(strconv.Itoa(set.PrimeTime))
 	for _, t := range ch.Titles {
-		add(t.Key + t.Rating)
+		add(t.Key + t.Rating + t.Name)
 		for _, it := range t.Items {
-			add(it.Path + it.Duration.String())
+			add(it.Path + it.Duration.String() + it.Name) // what's stored with its slots too: a new name is planned again
 		}
 	}
 	add(strconv.Itoa(len(clips)))
@@ -398,8 +408,11 @@ func fingerprint(ch Channel, clips []Clip, set Settings) string {
 // addChannel stores a new channel with the next free number of its block (numbers.go).
 func (s *Service) addChannel(ch Channel, existing map[string]database.GuideChannel, typed Typed) (database.GuideChannel, error) {
 	name := ch.Genre
-	if ch.Network {
+	switch {
+	case ch.Network:
 		name = pickStation(ch.Key, existing)
+	case ch.Type != "":
+		name = TypedName(ch.Type, takenNames(ch.Key, existing))
 	}
 	c := database.GuideChannel{Key: ch.Key, LibraryID: ch.LibraryID, Name: name, Genre: ch.Genre,
 		Kind: ch.Kind, Color: Colors[hash(ch.Key)%uint64(len(Colors))], Active: true}
@@ -673,6 +686,17 @@ func clipsBesides(ch Channel, clips []Clip) []Clip {
 	for _, c := range clips {
 		if !own[c.Path] {
 			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// takenNames are the names the active channels besides key have.
+func takenNames(key string, existing map[string]database.GuideChannel) map[string]bool {
+	out := map[string]bool{}
+	for k, c := range existing {
+		if k != key && c.Active {
+			out[c.Name] = true
 		}
 	}
 	return out

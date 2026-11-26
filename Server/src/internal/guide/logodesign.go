@@ -73,6 +73,46 @@ var stationDesigns = []design{
 	{"WNSF", "Nosifer-Regular", "", "beside", "triangle", false},
 }
 
+// The typed channels' logos (typed.go's TypedChannelNames: four for each type, in order).
+var typedDesigns = []design{
+	{"After Dark", "Limelight-Regular", "crescent", "beside", "ring", false},
+	{"Nightcap", "Damion-Regular", "martini", "beside", "disc", true},
+	{"Velvet Room", "Italiana-Regular", "diamond", "below", "rect", false},
+	{"Moonlight", "Parisienne-Regular", "moonstar", "beside", "square", true},
+	{"Kid Zone", "RammettoOne-Regular", "star", "beside", "block", false},
+	{"Playground", "Chicle-Regular", "kite", "beside", "disc", false},
+	{"Toy Box", "Sniglet-ExtraBold", "balloon", "below", "square", false},
+	{"Jamboree", "Boogaloo-Regular", "sunburst", "beside", "triangle", false},
+	{"Toon Time", "CherryBombOne-Regular", "bubble", "beside", "ring", false},
+	{"Doodle", "PatrickHand-Regular", "pencil", "beside", "bar", true},
+	{"Funnybones", "SigmarOne-Regular", "bone", "below", "disc", false},
+	{"Inkwell", "SpicyRice-Regular", "inkdrop", "beside", "square", false},
+	{"Laugh Track", "CarterOne", "mic", "beside", "rect", false},
+	{"Chuckles", "Galindo-Regular", "smile", "beside", "disc", false},
+	{"Punchline", "Bevan-Regular", "eye-less burst", "beside", "block", false},
+	{"Giggles", "EmilysCandy-Regular", "heart", "below", "ring", true},
+	{"Star Port", "Goldman-Bold", "starring", "beside", "square", false},
+	{"Nebula", "Quantico-Bold", "planet", "below", "triangle", false},
+	{"Warp Drive", "ZenDots-Regular", "rocket", "beside", "bar", false},
+	{"Orbit", "Aldrich-Regular", "atom", "beside", "disc", false},
+	{"Spotlight", "PlayfairDisplaySC-Black", "spotlight", "below", "ring", false},
+	{"Stage Door", "Federo-Regular", "door", "beside", "rect", false},
+	{"Curtain Call", "RozhaOne-Regular", "curtains", "below", "square", false},
+	{"Marquee", "YesevaOne-Regular", "reel", "beside", "block", false},
+	{"True Story", "Oswald[wght]", "book", "beside", "square", false},
+	{"Field Trip", "PatuaOne-Regular", "mountains", "beside", "disc", false},
+	{"Lookout", "FjallaOne-Regular", "eye", "beside", "bar", false},
+	{"Almanac", "OldStandard-Bold", "globe", "below", "ring", false},
+	{"Adrenaline", "BlackHanSans-Regular", "bolt", "beside", "triangle", false},
+	{"Blast Zone", "SairaStencilOne-Regular", "flame", "beside", "block", false},
+	{"Rapid Fire", "Iceberg-Regular", "chevrons", "beside", "bar", false},
+	{"Stunt Show", "SansitaOne-Regular", "arrow", "below", "rect", false},
+	{"Graveyard Shift", "Butcherman-Regular", "tombstone", "beside", "square", false},
+	{"Creature Feature", "Eater-Regular", "claw", "below", "ring", false},
+	{"Spook House", "Frijole-Regular", "ghost", "beside", "disc", false},
+	{"Haunt", "MetalMania-Regular", "bat", "below", "triangle", false},
+}
+
 // The channels of their own (not a library's titles): the Guide's listings, the weather and music.
 var channelDesigns = []design{
 	{"Guide", "Kanit-BlackItalic", "tv", "beside", "rect", false},
@@ -99,7 +139,7 @@ func Design(fontDir string) ([]Artwork, error) {
 		return f, nil
 	}
 	var out []Artwork
-	for i, ds := range [][]design{genreDesigns, stationDesigns, channelDesigns} {
+	for i, ds := range [][]design{genreDesigns, stationDesigns, channelDesigns, typedDesigns} {
 		for _, d := range ds {
 			f, err := load(d.font)
 			if err != nil {
@@ -111,6 +151,8 @@ func Design(fontDir string) ([]Artwork, error) {
 				id = "station-" + strings.ToLower(d.name)
 			case 2:
 				id = "channel-" + slug(d.name)
+			case 3:
+				id = "typed-" + slug(d.name)
 			}
 			p, bug := d.draw(f)
 			out = append(out, Artwork{ID: id, Name: d.name, Font: d.font, Bug: bug, Shapes: []artShape{{D: pathData(p)}}})

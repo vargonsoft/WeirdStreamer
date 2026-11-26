@@ -145,10 +145,10 @@ func LogoFor(name, genre string, network bool) *Artwork {
 			}
 		}
 	}
-	if a := lib.genres[genre]; a != nil {
+	if a := lib.genres[name]; a != nil { // its own (a typed channel's, a genre channel's)
 		return a
 	}
-	if a := lib.genres[name]; a != nil {
+	if a := lib.genres[genre]; a != nil {
 		return a
 	}
 	if a := lib.genres["Variety"]; a != nil {

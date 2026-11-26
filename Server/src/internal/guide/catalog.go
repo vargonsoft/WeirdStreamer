@@ -32,6 +32,7 @@ type Title struct {
 	Items     []Item // a show's episodes in order, or a movie's file
 	Library   string // the library it's from, where its channel isn't one library's (typed channels)
 	Block     bool   // its items are blocks of short clips (a folder collection's: no voice-overs)
+	Folder    bool   // read from a folder library's files: each program is titled "<Name> - <its item's Name>"
 }
 
 // TitleKey is a title's key, from its kind and TMDB ID.
@@ -61,6 +62,7 @@ type Clip struct {
 	Duration time.Duration
 	Year     int    // from its folder or name (1987/…, "… (1987) …"), 0 unknown: the planner prefers clips near the program's year
 	Poster   string // its thumbnail (a folder library's), "" none
+	Name     string // its file's name, cleaned up (a folder library's)
 }
 
 // MaxClip is the longest video used as filler.

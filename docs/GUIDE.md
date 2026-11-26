@@ -184,8 +184,12 @@ Guide library grouped by network and genre. For example a Kids type from two lib
   channel keeps its place (its key is its kind and its part), so its number does too.
 - **Numbers.** Each typed definition has a block of ten from 100 (100–109, 110–119…, 190–199), given when
   it's added and kept. The overflow of the regular blocks goes on from 200.
-- **Names and logos.** Late Night channels take call signs from the pool of made-up stations, like network
-  channels; genre types take their genre's name and logo.
+- **Names and logos** (settled 2026-11-26). Each type has four channel names, each with a logo of its own (a
+  symbol suited to it, in its own font), given in order to its channels: Late Night After Dark, Nightcap, Velvet
+  Room, Moonlight; Kids Kid Zone, Playground, Toy Box, Jamboree; Cartoons Toon Time, Doodle, Funnybones, Inkwell;
+  Comedy Laugh Track, Chuckles, Punchline, Giggles; Sci-Fi Star Port, Nebula, Warp Drive, Orbit; Drama Spotlight,
+  Stage Door, Curtain Call, Marquee; Real Life True Story, Field Trip, Lookout, Almanac; Action Adrenaline, Blast
+  Zone, Rapid Fire, Stunt Show; Horror Graveyard Shift, Creature Feature, Spook House, Haunt.
 - **Libraries without TMDB** (plain folder libraries) are read from their files:
   - A folder is a **series** when most of its videos share a name apart from their numbers ("Show
     S01E05", "Episode 5", "1987"), with `Season N` and `Specials` folders read as its seasons. Its
@@ -196,7 +200,9 @@ Guide library grouped by network and genre. For example a Kids type from two lib
   - A collection's **short clips** (15 minutes or less) air packed into half-hour blocks (an hour
     when they're long) named for their folder, and fill the gaps on the definition's other channels.
     Typed channels take no other filler: without clips of their own the gaps are bumpers.
-  - A program's picture is its video's own thumbnail; its name is the folder's (and the file's).
+  - A program's picture is its video's own thumbnail. Its title is the folder's and the file's: "Folder - The
+    Pier" (an episode's own title where its file name has one, else the file name without the series' name, its
+    extension and tags like 1080p, with _ as spaces); a block's is its first clip's "and 3 more".
 - **Scheduling** is a network channel's: prime-time positions weekly, strips through the day, the
   rest as the regular channels do. Collections and blocks are titles like shows, so they rotate too.
 - **Voice-overs** are made for series and long videos, not for blocks of clips.

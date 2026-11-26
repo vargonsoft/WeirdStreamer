@@ -30,6 +30,53 @@ var typedNames = map[string]string{TypedLateNight: "Late Night", "kids": "Kids",
 	"comedy": "Comedy", "scifi": "Sci-Fi", "drama": "Drama", "reallife": "Real Life", "action": "Action",
 	"horror": "Horror"}
 
+// TypedChannelNames are each type's channels' names, in the order they're given (each has its logo,
+// logodesign.go's typedDesigns). A type's fifth channel and on is its first name and a number.
+var TypedChannelNames = map[string][]string{
+	TypedLateNight: {"After Dark", "Nightcap", "Velvet Room", "Moonlight"},
+	"kids":         {"Kid Zone", "Playground", "Toy Box", "Jamboree"},
+	"cartoons":     {"Toon Time", "Doodle", "Funnybones", "Inkwell"},
+	"comedy":       {"Laugh Track", "Chuckles", "Punchline", "Giggles"},
+	"scifi":        {"Star Port", "Nebula", "Warp Drive", "Orbit"},
+	"drama":        {"Spotlight", "Stage Door", "Curtain Call", "Marquee"},
+	"reallife":     {"True Story", "Field Trip", "Lookout", "Almanac"},
+	"action":       {"Adrenaline", "Blast Zone", "Rapid Fire", "Stunt Show"},
+	"horror":       {"Graveyard Shift", "Creature Feature", "Spook House", "Haunt"},
+}
+
+// TypedName is the name a typed channel of type typ takes: the first of its type's names no other
+// channel has (taken), else the type's first name and the first number free.
+func TypedName(typ string, taken map[string]bool) string {
+	pool := TypedChannelNames[typ]
+	if len(pool) == 0 {
+		pool = []string{TypedTypeName(typ)}
+	}
+	for _, n := range pool {
+		if !taken[n] {
+			return n
+		}
+	}
+	for i := 2; ; i++ {
+		if n := pool[0] + " " + strconv.Itoa(i); !taken[n] {
+			return n
+		}
+	}
+}
+
+// IsTypedName says whether name is one a typed channel of type typ takes.
+func IsTypedName(typ, name string) bool {
+	pool := TypedChannelNames[typ]
+	if slices.Contains(pool, name) {
+		return true
+	}
+	if len(pool) == 0 {
+		return name == TypedTypeName(typ)
+	}
+	rest, ok := strings.CutPrefix(name, pool[0]+" ")
+	_, err := strconv.Atoi(rest)
+	return ok && err == nil
+}
+
 // TypedTypeName is a type's name.
 func TypedTypeName(t string) string {
 	if n, ok := typedNames[t]; ok {
@@ -82,7 +129,7 @@ const (
 // TypedChannels are a definition's channels: up to max, one per group with a day of content (the
 // smaller ones joining the largest), then the group with the most hours per channel split while each
 // part would have more than two weeks. Shows-like groups (series, long videos, clips) share channels;
-// movies have their own. lateNight channels air at any time and are named as stations.
+// movies have their own. Late Night channels air at any time. The service names them (TypedName).
 func TypedChannels(def, typ string, max int, groups map[string][]*Title) []Channel {
 	type group struct {
 		key    string
@@ -169,7 +216,7 @@ func TypedChannels(def, typ string, max int, groups map[string][]*Title) []Chann
 		}
 		for i, part := range splitTitles(g.titles, g.parts) {
 			out = append(out, Channel{Key: TypedLibraryID(def) + "/" + g.key + ":" + strconv.Itoa(i+1),
-				LibraryID: TypedLibraryID(def), Kind: kind, Genre: TypedTypeName(typ), Network: typ == TypedLateNight,
+				LibraryID: TypedLibraryID(def), Kind: kind, Genre: TypedTypeName(typ), Type: typ,
 				AnyTime: typ == TypedLateNight, Titles: part})
 		}
 	}

@@ -21,6 +21,7 @@ type Channel struct {
 	Genre     string // what it mostly airs: "Comedy", "Action Movies"…
 	Network   bool   // grouped by a TV network (named by a call sign rather than its genre)
 	AnyTime   bool   // any title at any time (a Late Night typed channel: no ratings by day part)
+	Type      string // a typed channel's type (named from its type's names, TypedName), "" for a library's
 	Titles    []*Title
 }
 

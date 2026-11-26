@@ -92,9 +92,9 @@ func FolderTitles(libraryID, libraryName string, files []FolderFile) (series, lo
 			continue
 		}
 		for i := range items {
-			items[i].Name = episodeTitle(items[i].Name, name(dir))
+			items[i].Name = episodeSummary(items[i].Name, name(dir))
 		}
-		series = append(series, &Title{Key: "folder:" + hashKey(libraryID+"/"+dir), Kind: KindShow, Name: name(dir), Items: items})
+		series = append(series, &Title{Key: "folder:" + hashKey(libraryID+"/"+dir), Kind: KindShow, Name: name(dir), Folder: true, Items: items})
 	}
 	// Small collections join their parent folder's, deepest first.
 	cdirs := make([]string, 0, len(collections))
@@ -133,18 +133,18 @@ func FolderTitles(libraryID, libraryName string, files []FolderFile) (series, lo
 			if f.Duration > MaxClip {
 				longItems = append(longItems, it)
 			} else {
-				short = append(short, Clip{Path: f.Path, Duration: f.Duration, Poster: f.Thumbnail})
+				short = append(short, Clip{Path: f.Path, Duration: f.Duration, Poster: f.Thumbnail, Name: it.Name})
 			}
 		}
 		key := hashKey(libraryID + "/" + dir)
 		if len(longItems) > 0 {
 			shuffle(longItems, "long|"+dir) // each once before any again: the planner goes through them in turn
-			long = append(long, &Title{Key: "folder:" + key + ":long", Kind: KindShow, Name: name(dir), Items: longItems})
+			long = append(long, &Title{Key: "folder:" + key + ":long", Kind: KindShow, Name: name(dir), Folder: true, Items: longItems})
 		}
 		if len(short) > 0 {
 			clips = append(clips, short...)
 			if b := packBlocks(short, "clips|"+dir); len(b) > 0 {
-				blocks = append(blocks, &Title{Key: "folder:" + key + ":clips", Kind: KindShow, Name: name(dir), Block: true, Items: b})
+				blocks = append(blocks, &Title{Key: "folder:" + key + ":clips", Kind: KindShow, Name: name(dir), Folder: true, Block: true, Items: b})
 			}
 		}
 	}
@@ -251,10 +251,30 @@ func seriesItems(fs []seriesFile) ([]Item, bool) {
 func fileTitle(rel string) string {
 	base := pathpkg.Base(rel)
 	base = strings.TrimSuffix(base, pathpkg.Ext(base))
-	t := strings.TrimSpace(nameTags.ReplaceAllString(base, " "))
-	t = strings.Join(strings.FieldsFunc(t, func(r rune) bool { return r == '_' || r == ' ' }), " ")
+	t := strings.ReplaceAll(base, "_", " ")
+	if !strings.Contains(t, " ") {
+		t = strings.ReplaceAll(t, ".", " ") // "Some.Name.Here"
+	}
+	t = nameTags.ReplaceAllString(t, " ")
+	t = strings.Trim(strings.Join(strings.Fields(t), " "), " -_.:")
 	if t == "" {
 		return base
+	}
+	return t
+}
+
+// episodeSummary is an episode's part of its program's title ("Velvet Hour - The Pier"): its own title
+// where the file name has one, else the file name without the series' name ("S01E02"), else all of it.
+func episodeSummary(title, series string) string {
+	if t := episodeTitle(title, series); t != "" {
+		return t
+	}
+	t := title
+	if len(t) > len(series) && strings.EqualFold(t[:len(series)], series) {
+		t = strings.Trim(t[len(series):], " -_.:")
+	}
+	if t == "" {
+		return title
 	}
 	return t
 }
@@ -323,6 +343,17 @@ func packBlocks(clips []Clip, seed string) []Item {
 	}
 	if len(cur.Parts) > 0 {
 		out = append(out, cur)
+	}
+	// a block's part of its title: its first clip's name, and how many follow
+	names := map[string]string{}
+	for _, c := range order {
+		names[c.Path] = c.Name
+	}
+	for i := range out {
+		out[i].Name = names[out[i].Parts[0].Path]
+		if n := len(out[i].Parts) - 1; n > 0 {
+			out[i].Name += " and " + strconv.Itoa(n) + " more"
+		}
 	}
 	return out
 }
