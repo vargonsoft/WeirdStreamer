@@ -3689,7 +3689,33 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
     padding: 12px 22px;
 }
 
+/* The Guide fills the window: the player and details stay put, only the grid scrolls. */
+#guide-screen {
+    padding: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+#guide-screen.active {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+}
+
+body:has(#guide-screen.active) {
+    overflow: hidden;
+}
+
+body:has(#guide-screen.active) > footer {
+    display: none;
+}
+
 .guide-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     background: var(--card-bg);
     padding: 20px;
     border-radius: 10px;
@@ -3709,6 +3735,7 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
 }
 
 .guide-top {
+    flex: none;
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
     gap: 20px;
@@ -3724,6 +3751,7 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
 .guide-player {
     position: relative;
     aspect-ratio: 16 / 9;
+    max-height: 48vh; /* room for the grid */
     background: #000;
     border-radius: 8px;
     overflow: hidden;
@@ -3797,6 +3825,7 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
     gap: 5%;
     padding: 6%;
     background: radial-gradient(circle at 30% 30%, var(--channel-color), #0b0b1e 75%);
+    cursor: pointer;
     color: #fff;
     text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
     container-type: inline-size;
@@ -3833,6 +3862,8 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
     display: flex;
     gap: 16px;
     min-width: 0;
+    max-height: 48vh;
+    overflow-y: auto;
 }
 
 .guide-info-poster {
@@ -3881,9 +3912,11 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
 
 .guide-grid {
     position: relative;
+    flex: 1;
+    min-height: 120px;
+    overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    overflow: hidden;
 }
 
 .guide-grid-row {
@@ -3893,6 +3926,9 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
 }
 
 .guide-grid-head {
+    position: sticky; /* the times stay over the channels as they scroll */
+    top: 0;
+    z-index: 3;
     min-height: 34px;
     border-top: none;
     background: var(--panel-bg);
@@ -3936,9 +3972,13 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
 }
 
 .guide-channel-name {
+    /* up to two lines, so names aren't cut short */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
     font-weight: bold;
 }
 
@@ -4011,8 +4051,7 @@ button.cast-member:hover .cast-face, button.cast-member:focus-visible .cast-face
 
 .guide-now-line {
     position: absolute;
-    top: 0;
-    bottom: 0;
+    top: 0; /* its height is the grid's whole height, set by placeTimeLine */
     width: 2px;
     background: var(--primary-color);
     pointer-events: none;

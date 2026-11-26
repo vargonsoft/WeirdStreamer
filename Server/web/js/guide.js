@@ -155,7 +155,9 @@ function renderGuideGrid() {
             if (l.start < from) cell.classList.add('continues');
             const info = l.info;
             cell.appendChild(el('span', 'guide-program-title', info ? info.title : 'Off the air'));
+            // A second line: the episode, or a movie's year
             if (info && info.season) cell.appendChild(el('span', 'guide-program-episode', episodeLabel(info)));
+            else if (info && info.kind === 'movie' && info.year) cell.appendChild(el('span', 'guide-program-episode', String(info.year)));
             cell.onclick = () => selectListing(c, l, true);
             cell.onfocus = () => selectListing(c, l, false);
             cell.dataset.start = l.start;
@@ -191,6 +193,7 @@ function placeTimeLine() {
     const { from, to } = guide.data;
     const f = Math.min(Math.max((serverNow() - from) / (to - from), 0), 1);
     line.style.left = `${head.offsetLeft + f * head.offsetWidth}px`;
+    line.style.height = `${line.parentElement.scrollHeight}px`;
     markOnNow();
 }
 
@@ -205,15 +208,13 @@ function markOnNow() {
     });
 }
 
-// A program chosen in the grid: its details show; one on now (clicked) tunes its channel, or goes
-// full screen when that's the channel playing.
+// A program chosen in the grid: its details show, and one on now (clicked) on another channel
+// tunes to it. Full screen is a click on the picture.
 function selectListing(c, l, clicked) {
     guide.selected = { channel: c, listing: l };
     showGuideDetails(c, l);
     const now = serverNow();
-    if (!clicked || !(l.start <= now && now < l.end)) return;
-    if (guide.channel === c.number) guideFullscreen();
-    else tune(c.number);
+    if (clicked && l.start <= now && now < l.end && guide.channel !== c.number) tune(c.number);
 }
 
 function showGuideDetails(c, l) {
@@ -442,8 +443,9 @@ function setupGuide() {
     updateGuideMute();
     document.getElementById('guide-fullscreen').innerHTML = iconSvg('fullscreen');
     document.getElementById('guide-fullscreen').onclick = guideFullscreen;
-    guideVideo.addEventListener('dblclick', guideFullscreen);
-    guideVideo.addEventListener('click', toggleGuideMute);
+    // A click on the picture (or a bumper's card) goes full screen and back.
+    guideVideo.addEventListener('click', guideFullscreen);
+    document.getElementById('guide-card').addEventListener('click', guideFullscreen);
     // Live TV doesn't pause: a pause (media keys, the browser's own controls) mutes instead.
     guideVideo.addEventListener('pause', () => {
         if (!guideScreen.classList.contains('active') || !guide.now || guideVideo.ended || !guideVideo.src) return;
