@@ -880,7 +880,8 @@ private struct JobCard: View {
     }
 }
 
-/// Trickplay's runners and frames per runner, saved to the server's settings.
+/// Trickplay's runners and frames per runner, saved to the server's settings (an empty field is automatic,
+/// sent as 0).
 private struct TrickplayBox: View {
     @Environment(AppModel.self) private var model
     let settings: TrickplaySettings
@@ -892,14 +893,17 @@ private struct TrickplayBox: View {
     @State private var message: (String, Bool)?
 
     var body: some View {
-        let r = Int(runners) ?? 0, f = Int(frames) ?? 0
+        let r = Int(runners) ?? 0, f = Int(frames) ?? 0 // 0: automatic
+        let (er, ef) = settings.effective(runners, frames)
         CardBox {
             Text("Trickplay").font(.headline)
             HStack(spacing: 8) {
-                PhoneTextField(label: "Runners", text: Binding(get: { runners }, set: { runners = $0.filter(\.isNumber); edited = true }), keyboard: .numberPad)
-                PhoneTextField(label: "Frames per runner", text: Binding(get: { frames }, set: { frames = $0.filter(\.isNumber); edited = true }), keyboard: .numberPad)
+                PhoneTextField(label: "Runners", text: Binding(get: { runners }, set: { runners = $0.filter(\.isNumber); edited = true }),
+                               placeholder: "Auto: \(settings.effective("", "").0)", keyboard: .numberPad)
+                PhoneTextField(label: "Frames per runner", text: Binding(get: { frames }, set: { frames = $0.filter(\.isNumber); edited = true }),
+                               placeholder: "Auto: \(settings.effective(runners, "").1)", keyboard: .numberPad)
             }
-            Text("\(trickplayMemoryText(r, f, settings.memory)) Runners 1 to \(settings.maxRunners ?? 8), frames per runner 1 to \(settings.maxFrames ?? 50), and at most \(settings.maxProduct ?? 100) frames at once.")
+            Text("\(trickplayMemoryText(er, ef, settings.memory)) Runners 1 to \(settings.maxRunners ?? 8), frames per runner 1 to \(settings.maxFrames ?? 50), and at most \(settings.maxProduct ?? 100) frames at once. Leave a field empty for automatic: a runner per disk the libraries are on, and as many frames as fill half the server's memory with 4K videos.")
                 .font(.caption).foregroundStyle(Palette.muted)
             HStack(spacing: 12) {
                 Button("Save") {
@@ -916,19 +920,20 @@ private struct TrickplayBox: View {
                     }
                 }
                 .buttonStyle(PhoneButtonStyle())
-                .disabled(r <= 0 || f <= 0)
                 MessageLine(message: message)
             }
         }
         .onAppear { sync() }
         .onChange(of: settings.runners) { sync() }
         .onChange(of: settings.framesPerRunner) { sync() }
+        .onChange(of: settings.autoRunners) { sync() }
+        .onChange(of: settings.autoFrames) { sync() }
     }
 
     private func sync() {
         guard !edited else { return }
-        runners = String(settings.runners ?? 3)
-        frames = String(settings.framesPerRunner ?? 25)
+        runners = settings.autoRunners == true ? "" : String(settings.runners ?? 1)
+        frames = settings.autoFrames == true ? "" : String(settings.framesPerRunner ?? 10)
     }
 }
 

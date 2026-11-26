@@ -481,7 +481,13 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   its decoders' pictures taken from the server's memory (not in ffmpeg's RSS, only its cgroup's); CUDA
   (a GTX 1060) 175 MB plus 124 MB of the server's memory and 60 MB plus 540 MB of the card's. The jobs
   reply's `trickplay.memory` carries the figures for the decoder in use (`decoder`, and `card_…` for CUDA).
-  The settings are used as they are (the user sizes them, swap included); the Jobs page's trickplay
+  The defaults (config.yml's 0, an empty field on the Jobs page; `media.TrickplayRunners`,
+  `TrickplayFramesPerRunner`) are automatic: a runner per disk the libraries are on (`LibraryDisks`: whole
+  disks, each network or FUSE mount, Windows drives), and as many frames as fill half the server's memory
+  with 4K videos for those runners (and fit in 90% of an NVIDIA card's own memory, which is trickplay's to use) (`AutoTrickplayFrames`; 1 to 50, at most 100
+  at once). The jobs reply gives what's in effect, `auto_runners`/`auto_frames`, and what automatic gives
+  (`auto_runners_value`, `auto_frames_for[r-1]`) for the fields' placeholders and the note.
+  Numbers set are used as they are (the user sizes them, swap included); the Jobs page's trickplay
   note shows what they take with 4K videos against the server's memory and swap (the jobs reply's
   `trickplay.memory`: `SystemMemory`, MemTotal or the cgroup's limit when lower, `hw.memsize` on macOS;
   `SystemSwap`; web `trickplayMemoryText`, Android `trickplayMemoryText` in `AdminSettings.kt`, iPhone

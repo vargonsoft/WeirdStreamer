@@ -25,20 +25,18 @@ type Config struct {
 
 // JobsConfig tunes the trickplay job, which the Jobs page changes live.
 type JobsConfig struct {
-	TrickplayRunners         int `json:"trickplayRunners" yaml:"trickplayRunners"`                 // videos made at once: 1 to 8 (0: 3)
-	TrickplayFramesPerRunner int `json:"trickplayFramesPerRunner" yaml:"trickplayFramesPerRunner"` // frames per ffmpeg process: 1 to 50 (0: 25)
+	TrickplayRunners         int `json:"trickplayRunners" yaml:"trickplayRunners"`                 // videos made at once: 1 to 8 (0: one per disk the libraries are on)
+	TrickplayFramesPerRunner int `json:"trickplayFramesPerRunner" yaml:"trickplayFramesPerRunner"` // frames per ffmpeg process: 1 to 50 (0: what fills half the memory)
 }
 
 const (
-	DefaultTrickplayRunners         = 3
-	DefaultTrickplayFramesPerRunner = 25
-	MaxTrickplayRunners             = 8  // the pool of runners the job starts with
-	MaxTrickplayFrames              = 50 // one process's frames: more ran out of memory
-	MaxTrickplayProduct             = 100
+	MaxTrickplayRunners = 8  // the pool of runners the job starts with
+	MaxTrickplayFrames  = 50 // one process's frames: more ran out of memory
+	MaxTrickplayProduct = 100
 )
 
 // The trickplay settings, read by its runners at every step while the Jobs page can change them:
-// kept apart from GlobalConfig so the reads are safe. Set when the config loads (0: the default).
+// kept apart from GlobalConfig so the reads are safe. Set when the config loads (0: automatic).
 var trickplayRunners, trickplayFrames atomic.Int64
 
 // SetTrickplaySettings sets the trickplay settings the job reads (Load does, and tests).
@@ -47,20 +45,17 @@ func SetTrickplaySettings(runners, framesPerRunner int) {
 	trickplayFrames.Store(int64(framesPerRunner))
 }
 
-// TrickplayRunners is how many videos the trickplay job makes frames for at once (live).
-func TrickplayRunners() int {
-	if n := int(trickplayRunners.Load()); n != 0 {
-		return min(max(n, 1), MaxTrickplayRunners)
+// TrickplaySettings are the trickplay job's settings as config.yml has them: 0 for automatic, which
+// media.TrickplayRunners and media.TrickplayFramesPerRunner work out (live).
+func TrickplaySettings() (runners, framesPerRunner int) {
+	r, f := int(trickplayRunners.Load()), int(trickplayFrames.Load())
+	if r != 0 {
+		r = min(max(r, 1), MaxTrickplayRunners)
 	}
-	return DefaultTrickplayRunners
-}
-
-// TrickplayFramesPerRunner is how many frames one process makes for a runner (live).
-func TrickplayFramesPerRunner() int {
-	if n := int(trickplayFrames.Load()); n != 0 {
-		return min(max(n, 1), MaxTrickplayFrames)
+	if f != 0 {
+		f = min(max(f, 1), MaxTrickplayFrames)
 	}
-	return DefaultTrickplayFramesPerRunner
+	return r, f
 }
 
 // UpdateJobs saves new trickplay settings to the config file and reloads them.
@@ -274,15 +269,9 @@ func (c *Config) Validate() error {
 	if d.BackupKeep < 1 || d.BackupKeep > MaxBackupKeep {
 		return fmt.Errorf("database.backupKeep must be 1 to %d", MaxBackupKeep)
 	}
-	if c.Jobs.TrickplayRunners == 0 {
-		c.Jobs.TrickplayRunners = DefaultTrickplayRunners
-	}
-	if c.Jobs.TrickplayFramesPerRunner == 0 {
-		c.Jobs.TrickplayFramesPerRunner = DefaultTrickplayFramesPerRunner
-	}
-	if r, f := c.Jobs.TrickplayRunners, c.Jobs.TrickplayFramesPerRunner; r < 1 || r > MaxTrickplayRunners || f < 1 || f > MaxTrickplayFrames {
-		return fmt.Errorf("trickplay runners must be 1 to %d, and frames per runner 1 to %d", MaxTrickplayRunners, MaxTrickplayFrames)
-	} else if r*f > MaxTrickplayProduct {
+	if r, f := c.Jobs.TrickplayRunners, c.Jobs.TrickplayFramesPerRunner; r < 0 || r > MaxTrickplayRunners || f < 0 || f > MaxTrickplayFrames {
+		return fmt.Errorf("trickplay runners must be 1 to %d, and frames per runner 1 to %d (0: automatic)", MaxTrickplayRunners, MaxTrickplayFrames)
+	} else if r > 0 && f > 0 && r*f > MaxTrickplayProduct {
 		return fmt.Errorf("runners times frames per runner can't exceed %d (about %d GB of memory)", MaxTrickplayProduct, MaxTrickplayProduct*110/1000)
 	}
 	if e := c.Streaming.HardwareEncoder; e != "" && !slices.Contains(HardwareEncoders, e) {

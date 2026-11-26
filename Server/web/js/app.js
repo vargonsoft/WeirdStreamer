@@ -6428,19 +6428,31 @@ function renderTrickplaySettings(tp) {
         document.getElementById('tp-save').onclick = saveTrickplaySettings;
     }
     if (box.dataset.edited !== '1') {
-        runners.value = tp.runners;
-        frames.value = tp.frames_per_runner;
+        // An empty field is automatic.
+        runners.value = tp.auto_runners ? '' : tp.runners;
+        frames.value = tp.auto_frames ? '' : tp.frames_per_runner;
     }
     trickplayHint();
+}
+
+// The runners and frames the fields give: an empty one is automatic, worked out as the server does
+// (one runner per disk the libraries are on; the frames that fill half the memory for those runners).
+function trickplayEffective(tp) {
+    const r = Number(document.getElementById('tp-runners').value) || tp.auto_runners_value || tp.runners;
+    const f = Number(document.getElementById('tp-frames').value) || (tp.auto_frames_for || [])[r - 1] || tp.frames_per_runner;
+    return [r, f];
 }
 
 function trickplayHint() {
     const tp = jobsView && jobsView.data && jobsView.data.trickplay;
     if (!tp) return;
-    const r = Number(document.getElementById('tp-runners').value) || 0;
-    const f = Number(document.getElementById('tp-frames').value) || 0;
+    const [r, f] = trickplayEffective(tp);
+    const runners = document.getElementById('tp-runners'), frames = document.getElementById('tp-frames');
+    runners.placeholder = `Auto: ${tp.auto_runners_value || tp.runners}`;
+    frames.placeholder = `Auto: ${(tp.auto_frames_for || [])[r - 1] || tp.frames_per_runner}`;
     document.getElementById('tp-hint').textContent = trickplayMemoryText(r, f, tp.memory) +
-        ` Runners 1 to ${tp.max_runners}, frames per runner 1 to ${tp.max_frames}, and at most ${tp.max_product} frames at once.`;
+        ` Runners 1 to ${tp.max_runners}, frames per runner 1 to ${tp.max_frames}, and at most ${tp.max_product} frames at once.` +
+        ' Leave a field empty for automatic: a runner per disk the libraries are on, and as many frames as fill half the server\'s memory with 4K videos.';
 }
 
 // The memory r runners of f frames take with 4K videos (each frame in a batch holds a decoder of its
@@ -6486,8 +6498,8 @@ function trickplayRamText(with4k, estimate, m) {
 async function saveTrickplaySettings() {
     const box = document.getElementById('trickplay-settings');
     const message = document.getElementById('tp-message');
-    const r = Number(document.getElementById('tp-runners').value);
-    const f = Number(document.getElementById('tp-frames').value);
+    const r = Number(document.getElementById('tp-runners').value) || 0; // 0: automatic
+    const f = Number(document.getElementById('tp-frames').value) || 0;
     try {
         const data = await api.setTrickplaySettings(r, f);
         delete box.dataset.edited;

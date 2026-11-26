@@ -162,7 +162,8 @@ metadata:
 
 # The trickplay job's speed (the Jobs page changes these)
 jobs:
-  # Videos it makes frames for at once: 1 to 8
-  trickplayRunners: 3
-  # Frames one ffmpeg process makes: 1 to 50. Runners times frames is at most 100 (memory).
-  trickplayFramesPerRunner: 25
+  # Videos it makes frames for at once: 1 to 8 (0: one per disk the libraries are on)
+  trickplayRunners: 0
+  # Frames one ffmpeg process makes: 1 to 50 (0: as many as fill half the server's memory with 4K
+  # videos). Runners times frames is at most 100 (memory).
+  trickplayFramesPerRunner: 0

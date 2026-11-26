@@ -382,12 +382,12 @@ type runners struct {
 }
 
 func newRunners() *runners {
-	return &runners{limit: config.TrickplayRunners(), moved: make(chan struct{})}
+	return &runners{limit: TrickplayRunners(), moved: make(chan struct{})}
 }
 
 // update applies a change of the setting (with mu held), waking the runners waiting on it.
 func (r *runners) update(j *jobs.Job) {
-	if lim := config.TrickplayRunners(); lim != r.limit {
+	if lim := TrickplayRunners(); lim != r.limit {
 		r.limit = lim
 		r.wake()
 		j.SetDetail(r.detail())

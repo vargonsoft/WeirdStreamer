@@ -310,10 +310,17 @@ data class JobsResponse(
     @SerializedName("trickplay") val trickplay: TrickplaySettings? = null
 )
 
-/** The trickplay job's settings (kept in the server's config.json) and their limits. */
+/** The trickplay job's settings (kept in the server's config.yml) and their limits. [runners] and
+ *  [framesPerRunner] are those in effect; [autoRunners] and [autoFrames] say they're automatic, which gives
+ *  [autoRunnersValue] runners (one per disk the libraries are on) and [autoFramesFor] frames for 1 to
+ *  [maxRunners] runners (`autoFramesFor[r - 1]`: what fills half the server's memory). */
 data class TrickplaySettings(
-    @SerializedName("runners") val runners: Int = 3,
-    @SerializedName("frames_per_runner") val framesPerRunner: Int = 25,
+    @SerializedName("runners") val runners: Int = 1,
+    @SerializedName("frames_per_runner") val framesPerRunner: Int = 10,
+    @SerializedName("auto_runners") val autoRunners: Boolean = false,
+    @SerializedName("auto_frames") val autoFrames: Boolean = false,
+    @SerializedName("auto_runners_value") val autoRunnersValue: Int = 0,
+    @SerializedName("auto_frames_for") val autoFramesFor: List<Int>? = null,
     @SerializedName("max_runners") val maxRunners: Int = 8,
     @SerializedName("max_frames") val maxFrames: Int = 50,
     @SerializedName("max_product") val maxProduct: Int = 100,

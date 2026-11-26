@@ -556,10 +556,32 @@ internal const val JOBS_ABOUT = "Jobs run at low priority, so playback gets the 
     "is busy (or, with the setting under Streaming, while anyone is streaming). Pause holds a job until you resume it, " +
     "or the server restarts."
 
-/** The trickplay settings' sum: frames at once, their memory with 4K videos, and the limits. */
-internal fun trickplayNote(runners: Int, frames: Int, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings) =
-    trickplayMemoryText(runners, frames, tp.memory) +
-        " Runners 1 to ${tp.maxRunners}, frames per runner 1 to ${tp.maxFrames}, and at most ${tp.maxProduct} frames at once."
+/** What a trickplay field shows: its number, or nothing when it's automatic. */
+internal fun trickplayField(auto: Boolean, value: Int) = if (auto) "" else value.toString()
+
+/** The runners and frames per runner the fields give: an empty one is automatic, worked out as the server does
+ *  (one runner per disk the libraries are on; the frames that fill half the memory for those runners). */
+internal fun trickplayEffective(runners: String, frames: String, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings): Pair<Int, Int> {
+    val r = runners.toIntOrNull()?.takeIf { it > 0 } ?: tp.autoRunnersValue.takeIf { it > 0 } ?: tp.runners
+    val f = frames.toIntOrNull()?.takeIf { it > 0 } ?: tp.autoFramesFor?.getOrNull(r - 1) ?: tp.framesPerRunner
+    return r to f
+}
+
+/** A trickplay field's placeholder: what automatic gives. */
+internal fun trickplayAutoRunners(tp: com.vargon.weirdstreamer.api.models.TrickplaySettings) =
+    "Auto: ${tp.autoRunnersValue.takeIf { it > 0 } ?: tp.runners}"
+
+internal fun trickplayAutoFrames(runners: String, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings) =
+    "Auto: ${trickplayEffective(runners, "", tp).second}"
+
+/** The trickplay settings' sum (from the fields, empty ones automatic): frames at once, their memory with 4K
+ *  videos, and the limits. */
+internal fun trickplayNote(runners: String, frames: String, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings): String {
+    val (r, f) = trickplayEffective(runners, frames, tp)
+    return trickplayMemoryText(r, f, tp.memory) +
+        " Runners 1 to ${tp.maxRunners}, frames per runner 1 to ${tp.maxFrames}, and at most ${tp.maxProduct} frames at once." +
+        " Leave a field empty for automatic: a runner per disk the libraries are on, and as many frames as fill half the server's memory with 4K videos."
+}
 
 /** The memory [r] runners of [f] frames take with 4K videos (each frame in a batch holds a decoder of its own),
  *  as the server measured it for the decoder it uses ([m].decoder: the CPU, an Intel or AMD GPU whose buffers are

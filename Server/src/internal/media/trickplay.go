@@ -116,7 +116,7 @@ func (tg *TrickplayGenerator) generate(ctx context.Context, videoPath string, wa
 		return err
 	}
 
-	// Generate frames every 10 seconds, in batches of config.TrickplayFramesPerRunner (one ffmpeg
+	// Generate frames every 10 seconds, in batches of TrickplayFramesPerRunner (one ffmpeg
 	// process each, read for every batch so a change applies at once; the Jobs page shows the memory
 	// that takes), on the GPU when Settings chose one (trickplayDecoder). A frame a batch doesn't make
 	// is tried again on its own on the CPU, so a failure is judged as it always was.
@@ -135,7 +135,7 @@ loop:
 		if ctx.Err() != nil || (wait != nil && !wait()) {
 			return ctx.Err()
 		}
-		n := min(config.TrickplayFramesPerRunner(), len(pending))
+		n := min(TrickplayFramesPerRunner(), len(pending))
 		if gpu != nil {
 			if limit := gpu.batchLimit(info.Width, info.Height); limit > 0 {
 				n = min(n, limit)

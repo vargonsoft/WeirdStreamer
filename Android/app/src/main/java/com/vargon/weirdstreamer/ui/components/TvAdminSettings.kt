@@ -692,7 +692,8 @@ fun TvJobsTab(server: ServerRepository, first: FocusRequester, up: FocusRequeste
     var firstUsed = false
     if (tp != null) {
         firstUsed = true
-        TvSettingsRow("Trickplay", "${tp.runners} runners × ${tp.framesPerRunner} frames per runner", focus = first, up = up,
+        val auto = { on: Boolean -> if (on) " (auto)" else "" }
+        TvSettingsRow("Trickplay", "${tp.runners} runners${auto(tp.autoRunners)} × ${tp.framesPerRunner} frames per runner${auto(tp.autoFrames)}", focus = first, up = up,
             onClick = { trickplay = true }) { TvChevron() }
     }
     d.jobs.forEachIndexed { i, j ->
@@ -762,24 +763,26 @@ private fun TvStorageText(storage: List<StorageUse>) {
 @Composable
 private fun TvTrickplayDialog(tp: TrickplaySettings, save: suspend (Int, Int) -> String?, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var runners by remember { mutableStateOf(tp.runners.toString()) }
-    var frames by remember { mutableStateOf(tp.framesPerRunner.toString()) }
+    var runners by remember { mutableStateOf(trickplayField(tp.autoRunners, tp.runners)) }
+    var frames by remember { mutableStateOf(trickplayField(tp.autoFrames, tp.framesPerRunner)) }
     var error by remember { mutableStateOf<String?>(null) }
     val field = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { field.requestFocus() } }
-    val r = runners.toIntOrNull() ?: 0
+    val r = runners.toIntOrNull() ?: 0 // empty: automatic (0)
     val f = frames.toIntOrNull() ?: 0
     val context = LocalContext.current
     TvDialogFrame("Trickplay", onDismiss) {
         val number = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
-        TextField(runners, { runners = it.filter(Char::isDigit) }, label = { FieldText("Runners") }, singleLine = true,
+        TextField(runners, { runners = it.filter(Char::isDigit) }, label = { FieldText("Runners") },
+            placeholder = { FieldText(trickplayAutoRunners(tp)) }, singleLine = true,
             colors = tvTextFieldColors(), keyboardOptions = number,
             modifier = Modifier.fillMaxWidth().tvFieldLeavesOnUpDown().focusRequester(field))
-        TextField(frames, { frames = it.filter(Char::isDigit) }, label = { FieldText("Frames per runner") }, singleLine = true,
+        TextField(frames, { frames = it.filter(Char::isDigit) }, label = { FieldText("Frames per runner") },
+            placeholder = { FieldText(trickplayAutoFrames(runners, tp)) }, singleLine = true,
             colors = tvTextFieldColors(), keyboardOptions = number, modifier = Modifier.fillMaxWidth().tvFieldLeavesOnUpDown())
-        TvNote(trickplayNote(r, f, tp))
+        TvNote(trickplayNote(runners, frames, tp))
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
-        TvDialogButtons("Save", onDismiss = onDismiss, enabled = r > 0 && f > 0) {
+        TvDialogButtons("Save", onDismiss = onDismiss) {
             scope.launch {
                 val err = save(r, f)
                 if (err == null) {

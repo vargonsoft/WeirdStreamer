@@ -602,13 +602,32 @@ struct JobLoad: Decodable {
 
 struct StorageUse: Decodable { let name: String; let bytes: Int64 }
 
+/// The trickplay job's settings and their limits. `runners` and `framesPerRunner` are those in effect;
+/// `autoRunners` and `autoFrames` say they're automatic, which gives `autoRunnersValue` runners (one per disk
+/// the libraries are on) and `autoFramesFor[r - 1]` frames for r runners (what fills half the server's memory).
 struct TrickplaySettings: Decodable {
     let runners: Int?
     let framesPerRunner: Int?
+    let autoRunners: Bool?
+    let autoFrames: Bool?
+    let autoRunnersValue: Int?
+    let autoFramesFor: [Int]?
     let maxRunners: Int?
     let maxFrames: Int?
     let maxProduct: Int?
     let memory: TrickplayMemory?
+}
+
+extension TrickplaySettings {
+    /// The runners and frames the fields give: an empty one is automatic, worked out as the server does.
+    /// As Android's trickplayEffective.
+    func effective(_ runners: String, _ frames: String) -> (Int, Int) {
+        let auto = (autoRunnersValue ?? 0) > 0 ? autoRunnersValue! : (self.runners ?? 1)
+        let r = Int(runners).flatMap { $0 > 0 ? $0 : nil } ?? auto
+        let list = autoFramesFor ?? []
+        let autoFrames = r >= 1 && r <= list.count ? list[r - 1] : (framesPerRunner ?? 10)
+        return (r, Int(frames).flatMap { $0 > 0 ? $0 : nil } ?? autoFrames)
+    }
 }
 
 /// For the estimate beside the trickplay settings, for the decoder trickplay uses (`decoder`: cpu, vaapi or

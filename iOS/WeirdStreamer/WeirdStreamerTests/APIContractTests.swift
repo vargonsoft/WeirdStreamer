@@ -88,6 +88,16 @@ struct APIContractTests {
          "memory":{"process_bytes_4k":62914560,"frame_bytes_4k":239075328,"total_bytes":4294967296,"swap_bytes":2147483648}}}
         """#)
         let m = try #require(jobs.trickplay?.memory)
+        // Automatic settings: an empty field takes what the server worked out.
+        let auto = try decode(TrickplaySettings.self, #"""
+        {"runners":2,"frames_per_runner":4,"auto_runners":true,"auto_frames":true,"auto_runners_value":2,
+         "auto_frames_for":[8,4,2,1,1,1,1,1]}
+        """#)
+        #expect(auto.autoRunners == true && auto.autoFrames == true)
+        for (fields, want) in [(("", ""), [2, 4]), (("1", ""), [1, 8]), (("3", "6"), [3, 6])] {
+            let (r, f) = auto.effective(fields.0, fields.1)
+            #expect([r, f] == want)
+        }
         #expect(m.frameBytes4K == 239_075_328 && m.totalBytes == 4_294_967_296 && m.swapBytes == 2_147_483_648)
         #expect(trickplayMemoryText(1, 20, m).hasSuffix("about 4.5 GB of memory at most, more than this server's 4.0 GB: the rest comes from its 2.0 GB of swap."))
         #expect(trickplayMemoryText(1, 10, m).hasSuffix("(this server has 4.0 GB and 2.0 GB of swap)."))

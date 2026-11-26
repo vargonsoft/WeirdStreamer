@@ -868,38 +868,38 @@ fun JobsTab(server: ServerRepository) {
     }
 }
 
-// Trickplay's runners and frames per runner, saved to the server's config.json. The tab refreshes
-// every few seconds, so the fields only follow the server while they aren't being edited. save
-// returns an error to show, or null.
+// Trickplay's runners and frames per runner, saved to the server's config.yml (an empty field is
+// automatic, sent as 0). The tab refreshes every few seconds, so the fields only follow the server while
+// they aren't being edited. save returns an error to show, or null.
 @Composable
 private fun TrickplaySettingsBox(tp: TrickplaySettings, save: suspend (Int, Int) -> String?) {
     val scope = rememberCoroutineScope()
-    var runners by remember { mutableStateOf(tp.runners.toString()) }
-    var frames by remember { mutableStateOf(tp.framesPerRunner.toString()) }
+    var runners by remember { mutableStateOf(trickplayField(tp.autoRunners, tp.runners)) }
+    var frames by remember { mutableStateOf(trickplayField(tp.autoFrames, tp.framesPerRunner)) }
     var edited by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    LaunchedEffect(tp.runners, tp.framesPerRunner) {
+    LaunchedEffect(tp.runners, tp.framesPerRunner, tp.autoRunners, tp.autoFrames) {
         if (!edited) {
-            runners = tp.runners.toString()
-            frames = tp.framesPerRunner.toString()
+            runners = trickplayField(tp.autoRunners, tp.runners)
+            frames = trickplayField(tp.autoFrames, tp.framesPerRunner)
         }
     }
-    val r = runners.toIntOrNull() ?: 0
+    val r = runners.toIntOrNull() ?: 0 // 0: automatic
     val f = frames.toIntOrNull() ?: 0
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Trickplay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(runners, { runners = it.filter(Char::isDigit); edited = true }, label = { Text("Runners") },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    placeholder = { Text(trickplayAutoRunners(tp)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f))
                 OutlinedTextField(frames, { frames = it.filter(Char::isDigit); edited = true }, label = { Text("Frames per runner") },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    placeholder = { Text(trickplayAutoFrames(runners, tp)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f))
             }
-            Text(trickplayNote(r, f, tp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(trickplayNote(runners, frames, tp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(shape = AppButtonShape, colors = phoneButtonColors(), enabled = r > 0 && f > 0, onClick = {
+                Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = {
                     scope.launch {
                         val err = save(r, f)
                         if (err == null) {
