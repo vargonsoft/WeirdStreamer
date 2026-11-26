@@ -95,6 +95,8 @@ enum Palette {
     static var button: Color { Color(hex: p.button) }
     static var buttonLabel: Color { Color(hex: p.buttonLabel) }
     static var text: Color { Color(hex: p.text) }
+    /// The text color as "rrggbb", for pictures the server draws in it (the Guide's channel logos).
+    static var textHex: String { String(format: "%06x", p.text & 0xFFFFFF) }
     static var muted: Color { Color(hex: p.muted) }
     static var accent: Color { Color(hex: p.accent) }
     static var onAccent: Color { Color(hex: p.onAccent) }

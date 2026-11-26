@@ -803,3 +803,72 @@ struct PersonFilm: Decodable, Identifiable {
     let inLibrary: Bool?
     var id: String { "\(kind)-\(tmdbId)" }
 }
+
+// MARK: The Guide: live channels the server plans (docs/GUIDE.md)
+
+/// GET /api/guide/available
+struct GuideAvailable: Decodable { let available: Bool? }
+
+/// GET /api/guide: the grid, from the current half hour (Unix ms).
+struct GuideListings: Decodable, Equatable {
+    let now: Int64
+    let from: Int64
+    let to: Int64
+    let channels: [GuideChannel]?
+}
+
+struct GuideChannel: Decodable, Hashable, Identifiable {
+    let number: Int
+    let name: String
+    let genre: String?
+    let color: String?
+    /// Its logo: GET this with w= (width), color= (rrggbb) or format=svg.
+    let logo: String?
+    let listings: [GuideListing]?
+    var id: Int { number }
+}
+
+/// A program in the grid, from its start to the next one's (Unix ms); no info: off the air.
+struct GuideListing: Decodable, Hashable {
+    let start: Int64
+    let end: Int64
+    let info: ProgramInfo?
+}
+
+struct ProgramInfo: Decodable, Hashable {
+    let kind: String?          // movie or show
+    let tmdbId: Int?
+    let library: String?
+    let title: String
+    let year: Int?
+    let rating: String?
+    let genres: [String]?
+    let overview: String?
+    let poster: String?
+    let season: Int?
+    let episode: Int?
+    let episodeTitle: String?
+    let episodeOverview: String?
+
+    /// "S2E5 · Name" for an episode, else nil.
+    var episodeLabel: String? {
+        guard let season, season > 0 else { return nil }
+        let code = "S\(season)E\(episode ?? 0)"
+        if let t = episodeTitle, !t.isEmpty { return "\(code) · \(t)" }
+        return code
+    }
+}
+
+/// GET /api/guide/now: what a channel airs (program, filler or bumper), and how far into it (seconds).
+struct GuideNow: Decodable, Equatable {
+    let channel: GuideChannel
+    let kind: String
+    let path: String?
+    let offset: Double?
+    let start: Int64
+    let end: Int64
+    let program: ProgramInfo?
+    let next: ProgramInfo?
+    let nextStart: Int64?
+    let serverTime: Int64
+}

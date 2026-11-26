@@ -5,7 +5,8 @@ the libraries' shows and movies on a schedule, and you can watch only what's on 
 works the way 80s and 90s TV did, not the way modern TV does.
 
 Status: on the `guide` branch, phase 1 (the server: channels, the planner, filler, the API), phase 2
-(the web: `js/guide.js`) and phases 3 and 4 (Android TV and phone) are built. The iPhone is next. Decisions are marked as settled; open questions are at the end.
+(the web: `js/guide.js`), phases 3 and 4 (Android TV and phone) and phase 5 (the iPhone; compiled and
+unit-tested, not yet tried on a simulator or phone) are built. Voice-overs are next. Decisions are marked as settled; open questions are at the end.
 
 ## Decisions (settled)
 

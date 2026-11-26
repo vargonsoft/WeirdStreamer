@@ -100,6 +100,12 @@ final class AppModel {
     // ---- Rows above the list ----
     private(set) var continueItems: [ContinueItem] = []
     private(set) var newRows: [(heading: String, items: [ContinueItem])] = []
+    /// The Guide row's: the library whose Guide it opens ("" the home screen's), nil for no row.
+    private(set) var guideRow: String?
+
+    // ---- The Guide (docs/GUIDE.md): live channels the server plans ----
+    /// The Guide open: "" the home screen's, a library's ID its own; nil when it's closed.
+    var guideOpen: String?
 
     // ---- Playback ----
     var playing: PlayRequest?
@@ -287,6 +293,8 @@ final class AppModel {
         openTitle = nil
         continueItems = []
         newRows = []
+        guideRow = nil
+        guideOpen = nil
         thumbnailListener?.cancel()
         thumbnailListener = nil
         reloadServers()
@@ -305,6 +313,8 @@ final class AppModel {
         if let server = servers.first(where: { $0.address == address }) { server.accountInUse = username; save() }
         continueItems = []
         newRows = []
+        guideRow = nil // nor the last account's Guide
+        guideOpen = nil
         libraryTypes = [:]
         Task {
             await refreshServerName(address)
@@ -741,7 +751,9 @@ final class AppModel {
 
     // MARK: Continue Watching and Recently Added
 
-    var hasTopRows: Bool { !continueItems.isEmpty || !newRows.isEmpty }
+    var hasTopRows: Bool { !continueItems.isEmpty || !newRows.isEmpty || guideRow != nil }
+
+    func openGuide(_ library: String) { guideOpen = library }
 
     /// A library's own page (Library view, or its top folder) shows its own videos; the server's
     /// front page shows every library's (Recently Added a row per library); deeper folders none.
@@ -752,6 +764,7 @@ final class AppModel {
         if !isLibraryView && !atLibraryRoot && !path.isEmpty {
             continueItems = []
             newRows = []
+            guideRow = nil
             return
         }
         let ownPage = isLibraryView || atLibraryRoot
@@ -772,6 +785,10 @@ final class AppModel {
                     return ("Recently Added in \(lib.libraryName)", items)
                 }
             }
+            // The Guide row: the home screen's Guide, or the library's own
+            let available: GuideAvailable? = try? await client.get("/api/guide/available",
+                                                                   query: libraryId.map { [("lib", $0)] } ?? [])
+            guideRow = available?.available == true ? (libraryId ?? "") : nil
         }
     }
 

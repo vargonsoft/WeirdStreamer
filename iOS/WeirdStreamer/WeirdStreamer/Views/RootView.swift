@@ -61,6 +61,10 @@ struct RootView: View {
         .fullScreenCover(item: Binding(get: { model.viewingPdf }, set: { model.viewingPdf = $0 })) { entry in
             PdfViewer(entry: entry).environment(model)
         }
+        // The Guide: live channels, over everything until its Back
+        .fullScreenCover(isPresented: Binding(get: { model.guideOpen != nil }, set: { if !$0 { model.guideOpen = nil } })) {
+            GuideScreen(library: model.guideOpen ?? "").environment(model)
+        }
         .fullScreenCover(item: Binding(get: { model.settingsOpen ? nil : model.playing }, set: { model.playing = $0 }),
                          onDismiss: { model.playerClosed() }) { request in
             PlayerView(request: request).environment(model)

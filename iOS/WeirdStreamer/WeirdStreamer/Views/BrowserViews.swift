@@ -196,7 +196,7 @@ private func infoLine(_ item: FileEntry) -> String {
 
 // MARK: Continue Watching and Recently Added
 
-/// Continue Watching, then the Recently Added rows (nothing when there are none).
+/// Continue Watching, then the Recently Added rows, then the Guide's button (nothing when there are none).
 struct ContinueRows: View {
     @Environment(AppModel.self) private var model
 
@@ -205,6 +205,12 @@ struct ContinueRows: View {
             VideoRow(heading: "Continue Watching", items: model.continueItems)
             ForEach(model.newRows, id: \.heading) { row in
                 VideoRow(heading: row.heading, items: row.items)
+            }
+            // The Guide's row last, just above the folders
+            if let library = model.guideRow {
+                Button { model.openGuide(library) } label: { Label("Guide", systemImage: "tv") }
+                    .buttonStyle(PhoneButtonStyle())
+                    .padding(.top, 12).padding(.bottom, 4)
             }
         }
     }

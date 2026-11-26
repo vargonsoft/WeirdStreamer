@@ -41,6 +41,12 @@ together.
   Collections (movie libraries, after Library view): collections admins make (a name, a description, movies by
   release date, a collage of the first four posters; admins create, edit, delete and add from a movie's page), then
   TMDB Collections: TMDB's collections, then a collection's films, missing ones dimmed.
+- **Guide:** live channels the server plans (docs/GUIDE.md), from the Guide button under Continue
+  Watching and Recently Added: the tuned channel plays at the top (no seeking; the speaker button
+  mutes, and a pause from outside mutes too), the program's details under it with Mark watched, and
+  the grid of channels and half hours below. A tap on a program on now tunes to its channel; a tap on
+  the picture goes full screen, sideways, where a swipe up or down changes channel. Admins set each
+  library's Show in Guide and Use for Guide Filler, and prime time, in Settings › Server.
 - **Player:** controls (Back and title, Transcode menu with its nine modes and what the
   stream does, Rotate; −10 s / play / +30 s and frame steps; trickplay frames, aspect ratio, speed,
   seek bar), pinch to zoom, Skip Intro / Skip Credits, the next episode at the end, progress every

@@ -884,6 +884,16 @@ What's built (server):
     change channel; there's a mute button.
   - Settings: each library's Show in Guide and Use for Guide Filler, and prime time
     (`AdminSettings.kt`; the phone's and the TV's screens).
+- **iPhone** (`Session/Guide.swift`: `GuideModel`; `Views/GuideView.swift`: `GuideScreen`), as the phone's:
+  - The Guide button ends `ContinueRows` (`AppModel.guideRow`); `openGuide` sets `guideOpen`, which
+    `RootView` shows as a full-screen cover. The last channel is kept per server and Guide (`UserDefaults`).
+  - An item plays as is (`OriginalLoader`, seeked) where `OfflinePlayback` says the phone plays it, else
+    through `HLSRelay` from where the channel is (H.264 copied, the audio kept where it plays), and after a
+    failure as a full transcode. A pause from outside mutes and plays on.
+  - The grid's half hours follow the programs' sideways scroll (`onGeometryChange`), and one time line
+    runs over them. Full screen asks the window to turn sideways; swipes change channel.
+  - Settings › Server: each library's Show in Guide and Use for Guide Filler, and prime time (`AdminTabs.swift`).
+  - Compiled and unit-tested (`GuideTests`) through `mac-ios`; not yet run on a simulator or phone.
 
 
 ### More server platforms (feasibility, 2026-11-22)
