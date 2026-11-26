@@ -27,6 +27,7 @@ const guide = {
 
 const GUIDE_HOURS = 3.5;
 const GUIDE_SLOT_MS = 30 * 60 * 1000;
+const GUIDE_SLOT_PX = 200; // a half hour's width in the grid, which scrolls on to the end of the plan
 
 // A channel's logo (one color, transparent around it) w pixels wide, in color (CSS hex; the
 // theme's text color by default).
@@ -106,9 +107,12 @@ function stopGuidePlayback() {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 
+// Loads the grid from the current half hour, keeping as many hours as were loaded.
 async function loadGuideGrid() {
     try {
-        const data = await api.guideListings(guide.lib, GUIDE_HOURS);
+        const first = Math.floor(serverNow() / GUIDE_SLOT_MS) * GUIDE_SLOT_MS;
+        const hours = Math.max(GUIDE_HOURS, guide.data ? (guide.data.to - first) / 3600000 : 0);
+        const data = await api.guideListings(guide.lib, hours);
         guide.skew = data.now - Date.now();
         guide.data = data;
     } catch (error) {
@@ -124,10 +128,49 @@ async function loadGuideGrid() {
     }, 15000);
 }
 
+// Loads the next 3 hours onto the grid (scrolled near its end), up to as far as the plan reaches.
+async function extendGuideGrid() {
+    const d = guide.data;
+    if (!d || guide.extending || (d.until && d.to >= d.until)) return;
+    guide.extending = true;
+    try {
+        const more = await api.guideListings(guide.lib, 3, d.to);
+        if (guide.data !== d) return; // reloaded meanwhile
+        const byNumber = new Map((more.channels || []).map(c => [c.number, c]));
+        guide.data = { ...d, to: more.to, until: more.until, channels: d.channels.map(c => {
+            const have = c.listings || [];
+            const add = ((byNumber.get(c.number) || {}).listings || []).filter(a => !have.some(h => h.start === a.start));
+            return { ...c, listings: have.concat(add) }; // a program across the boundary comes in both: kept once
+        }) };
+        renderGuideGrid();
+    } catch (error) {
+        // tried again on the next scroll
+    } finally {
+        guide.extending = false;
+    }
+}
+
+// The day at the grid's left edge, as it scrolls.
+function guideGridDay(grid) {
+    const corner = grid.querySelector('.guide-corner');
+    if (!corner || !guide.data) return;
+    const t = guide.data.from + Math.floor(grid.scrollLeft / GUIDE_SLOT_PX) * GUIDE_SLOT_MS;
+    corner.textContent = new Date(t).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 function renderGuideGrid() {
     const grid = document.getElementById('guide-grid');
+    // drawn anew keeping where it was scrolled to (a half hour less to the right when the grid moved on)
+    const shift = grid.dataset.from ? (guide.data.from - Number(grid.dataset.from)) / GUIDE_SLOT_MS * GUIDE_SLOT_PX : 0;
+    const scrollLeft = Math.max(grid.scrollLeft - shift, 0), scrollTop = grid.scrollTop;
+    grid.dataset.from = guide.data.from;
     grid.innerHTML = '';
     const { from, to, channels } = guide.data;
+    grid.style.setProperty('--programs-width', `${(to - from) / GUIDE_SLOT_MS * GUIDE_SLOT_PX}px`);
+    grid.onscroll = () => {
+        guideGridDay(grid);
+        if (grid.scrollLeft + grid.clientWidth > grid.scrollWidth - 3 * GUIDE_SLOT_PX) extendGuideGrid();
+    };
     if (!channels.length) {
         grid.textContent = 'There are no channels yet: the Guide is planned a minute after the server starts.';
         return;
@@ -139,7 +182,9 @@ function renderGuideGrid() {
     head.appendChild(el('div', 'guide-channel guide-corner', new Date(from).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })));
     const times = el('div', 'guide-programs');
     for (let t = from; t < to; t += GUIDE_SLOT_MS) {
-        const label = el('div', 'guide-time', guideTime(t));
+        const midnight = new Date(t).getHours() === 0 && new Date(t).getMinutes() === 0;
+        const label = el('div', 'guide-time', midnight
+            ? new Date(t).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : guideTime(t));
         label.style.left = pct(t - from);
         label.style.width = pct(Math.min(GUIDE_SLOT_MS, to - t));
         times.appendChild(label);
@@ -190,6 +235,9 @@ function renderGuideGrid() {
     grid.appendChild(line);
     placeTimeLine();
     markOnNow();
+    grid.scrollLeft = scrollLeft;
+    grid.scrollTop = scrollTop;
+    guideGridDay(grid);
     if (guide.selected) {
         // The same program selected again, now that the grid was drawn anew
         const c = channels.find(ch => ch.number === guide.selected.channel.number);
@@ -252,7 +300,10 @@ function showGuideDetails(c, l) {
     const text = el('div', 'guide-info-text');
     text.appendChild(el('h2', 'guide-info-title', info.title + (info.year ? ` (${info.year})` : '')));
     if (info.season) text.appendChild(el('div', 'guide-info-episode', episodeLabel(info)));
-    text.appendChild(el('div', 'guide-info-when', `${guideTime(l.start)} – ${guideTime(l.end)} · Channel ${c.number} · ${c.name}`));
+    // the day too when it isn't today
+    const day = new Date(l.start).toDateString() === new Date(serverNow()).toDateString() ? ''
+        : new Date(l.start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' ';
+    text.appendChild(el('div', 'guide-info-when', `${day}${guideTime(l.start)} – ${guideTime(l.end)} · Channel ${c.number} · ${c.name}`));
     const facts = [info.rating, (info.genres || []).join(', ')].filter(Boolean).join(' · ');
     if (facts) text.appendChild(el('div', 'guide-info-facts', facts));
     const overview = info.episode_overview || info.overview;

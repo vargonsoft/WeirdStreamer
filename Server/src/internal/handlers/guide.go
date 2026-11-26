@@ -51,8 +51,8 @@ func channelInfo(r *http.Request, c database.GuideChannel) guideChannel {
 	if lib := r.URL.Query().Get("lib"); lib != "" {
 		logo += "&lib=" + url.QueryEscape(lib)
 	}
-	// the logo changes with the channel's name and number: a new address for a new picture
-	logo += "&v=" + strconv.FormatUint(uint64(crc32.ChecksumIEEE([]byte(c.Name+"|"+c.Genre))), 36)
+	// the logo changes with the channel's name and number (it's drawn in it): a new address for a new picture
+	logo += "&v=" + strconv.FormatUint(uint64(crc32.ChecksumIEEE([]byte(c.Name+"|"+c.Genre+"|"+strconv.Itoa(c.Number)))), 36)
 	out := guideChannel{Number: c.Number, Name: c.Name, Genre: c.Genre, Color: c.Color, Logo: logo}
 	if sc, ok := guide.SpecialByKey(c.Key); ok {
 		out.Kind = sc.Kind
@@ -114,7 +114,8 @@ func (h *GuideHandler) Available(w http.ResponseWriter, r *http.Request) {
 }
 
 // Listings is the grid: GET /api/guide[?lib=][&from=<ms>][&hours=3]. From the current half hour
-// (or from) for hours (at most a day), each channel's programs.
+// (or from) for hours (at most a day, and not past until: as far as the plan reaches), each channel's
+// programs. The apps ask for the next hours (from= the last reply's to) as the grid scrolls on.
 func (h *GuideHandler) Listings(w http.ResponseWriter, r *http.Request) {
 	chans, ok := h.channels(r)
 	if !ok {
@@ -132,6 +133,11 @@ func (h *GuideHandler) Listings(w http.ResponseWriter, r *http.Request) {
 		hours = min(v, 24)
 	}
 	to := from.Add(time.Duration(hours * float64(time.Hour)))
+	// the plan reaches this far: the apps load more as they scroll, up to it
+	until := now.Add(guide.PlanAhead).Truncate(30 * time.Minute)
+	if to.After(until) {
+		to = until
+	}
 	out := []guideChannel{}
 	for _, c := range chans {
 		if sc, ok := guide.SpecialByKey(c.Key); ok {
@@ -150,7 +156,7 @@ func (h *GuideHandler) Listings(w http.ResponseWriter, r *http.Request) {
 		out = append(out, ch)
 	}
 	respondJSON(w, http.StatusOK, map[string]any{"now": now.UnixMilli(), "from": from.UnixMilli(), "to": to.UnixMilli(),
-		"channels": out})
+		"until": until.UnixMilli(), "channels": out})
 }
 
 // listings are a channel's programs overlapping from..to, each until the next one starts.

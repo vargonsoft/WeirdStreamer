@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -171,7 +172,9 @@ fun GuideListings(model: GuideModel, modifier: Modifier) {
             Box(Modifier.fillMaxSize().clipToBounds()) {
                 // enough copies to fill the box the whole way round, so the roll loops without a jump or a gap
                 val copies = maxOf(2, kotlin.math.ceil(boxHeight / (rowHeight * channels.size)).toInt() + 1)
-                Column(Modifier.offset(y = -(rowHeight * channels.size) * progress)) {
+                // its full height (taller than the box it rolls through): else the rows past the box are squeezed to nothing
+                Column(Modifier.wrapContentHeight(align = Alignment.Top, unbounded = true)
+                    .offset(y = -(rowHeight * channels.size) * progress)) {
                     repeat(copies) {
                         channels.forEach { c ->
                             Row(Modifier.fillMaxWidth().height(rowHeight)) {

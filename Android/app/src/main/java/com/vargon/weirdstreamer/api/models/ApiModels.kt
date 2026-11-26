@@ -910,6 +910,8 @@ data class GuideListings(
     @SerializedName("now") val now: Long = 0,
     @SerializedName("from") val from: Long = 0,
     @SerializedName("to") val to: Long = 0,
+    // as far as the plan reaches: the grid loads more (from = to) as it scrolls, up to this
+    @SerializedName("until") val until: Long = 0,
     @SerializedName("channels") val channels: List<GuideChannel> = emptyList(),
 )
 

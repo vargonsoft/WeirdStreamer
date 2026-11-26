@@ -195,19 +195,27 @@ private fun PhoneGuideGrid(model: GuideModel, logoColor: String, modifier: Modif
     val halfHours = ((data.to - data.from).toFloat() / GuideModel.HALF_HOUR)
     val width = PhoneHalfHour * halfHours
     val across = rememberScrollState() // every row's half hours scroll together
+    // scrolled near the end of what's loaded: the next hours
+    LaunchedEffect(across) {
+        androidx.compose.runtime.snapshotFlow { across.maxValue - across.value }.collect { left ->
+            if (across.maxValue > 0 && left < 600) model.extendGrid()
+        }
+    }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex =
         channels.indexOfFirst { it.number == model.channel }.coerceAtLeast(0))
     fun x(ms: Long) = PhoneHalfHour * ((ms - data.from).toFloat() / GuideModel.HALF_HOUR)
     androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().height(28.dp).background(MaterialTheme.colorScheme.surface)) {
-            Text(java.text.SimpleDateFormat("EEE, MMM d", java.util.Locale.getDefault()).format(java.util.Date(data.from)),
+            // the day at the grid's left edge, as it scrolls
+            val leftEdge = data.from + (across.value / with(LocalDensity.current) { PhoneHalfHour.toPx() } * GuideModel.HALF_HOUR).toLong()
+            Text(java.text.SimpleDateFormat("EEE, MMM d", java.util.Locale.getDefault()).format(java.util.Date(leftEdge)),
                 Modifier.width(PhoneChannelWidth).padding(start = 8.dp, top = 4.dp), style = MaterialTheme.typography.labelMedium)
             Box(Modifier.weight(1f).fillMaxHeight().horizontalScroll(across)) {
                 Box(Modifier.width(width).fillMaxHeight()) {
                     var t = data.from
                     while (t < data.to) {
-                        Text(guideTime(context, t), Modifier.offset(x = x(t)).padding(start = 6.dp, top = 4.dp),
+                        Text(guideTimeOrDay(context, t), Modifier.offset(x = x(t)).padding(start = 6.dp, top = 4.dp),
                             style = MaterialTheme.typography.labelMedium)
                         t += GuideModel.HALF_HOUR
                     }

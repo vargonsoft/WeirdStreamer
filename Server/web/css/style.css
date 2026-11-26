@@ -4255,13 +4255,14 @@ body:has(#guide-screen.active) > footer {
     position: relative;
     flex: 1;
     min-height: 120px;
-    overflow-y: auto;
+    overflow: auto; /* down the channels, and across the hours to the end of the plan */
     border: 1px solid var(--border-color);
     border-radius: 8px;
 }
 
 .guide-grid-row {
     display: flex;
+    min-width: max-content;
     min-height: 60px;
     border-top: 1px solid var(--border-color);
 }
@@ -4269,7 +4270,7 @@ body:has(#guide-screen.active) > footer {
 .guide-grid-head {
     position: sticky; /* the times stay over the channels as they scroll */
     top: 0;
-    z-index: 3;
+    z-index: 5; /* over the channels' names, which stay as the hours scroll */
     min-height: 34px;
     border-top: none;
     background: var(--panel-bg);
@@ -4279,6 +4280,9 @@ body:has(#guide-screen.active) > footer {
 .guide-channel {
     width: 230px;
     flex-shrink: 0;
+    position: sticky; /* the channels stay as the hours scroll */
+    left: 0;
+    z-index: 4;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -4344,8 +4348,8 @@ body:has(#guide-screen.active) > footer {
 
 .guide-programs {
     position: relative;
-    flex: 1;
-    min-width: 0;
+    flex: none;
+    width: var(--programs-width, 1400px);
 }
 
 .guide-time {

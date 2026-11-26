@@ -370,12 +370,14 @@ private struct GuideGrid: View {
             VStack(spacing: 0) {
                 // the day and the half hours, moved as the programs scroll
                 HStack(spacing: 0) {
-                    Text(Date(timeIntervalSince1970: Double(data.from) / 1000).formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                    // the day at the grid's left edge, as it scrolls
+                    Text(Date(timeIntervalSince1970: Double(data.from + Int64(-scrollX / halfHourWidth) * GuideModel.halfHour) / 1000)
+                        .formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
                         .font(.caption.weight(.medium)).padding(.leading, 8)
                         .frame(width: channelWidth, alignment: .leading)
                     ZStack(alignment: .leading) {
                         ForEach(Array(stride(from: data.from, to: data.to, by: Int(GuideModel.halfHour))), id: \.self) { t in
-                            Text(guideTime(t)).font(.caption.weight(.medium)).fixedSize()
+                            Text(guideTimeOrDay(t)).font(.caption.weight(.medium)).fixedSize()
                                 .offset(x: x(t, data) + 6)
                         }
                     }
@@ -398,7 +400,11 @@ private struct GuideGrid: View {
                                     ForEach(channels) { c in programRow(c, data) }
                                 }
                                 .frame(width: width, alignment: .leading)
-                                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("guidePrograms")).minX } action: { scrollX = $0 }
+                                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("guidePrograms")).minX } action: { x in
+                                    scrollX = x
+                                    // scrolled near the end of what's loaded: the next hours
+                                    if -x + geo.size.width - channelWidth > width - 3 * halfHourWidth { guide.extendGrid() }
+                                }
                             }
                             .coordinateSpace(name: "guidePrograms")
                         }

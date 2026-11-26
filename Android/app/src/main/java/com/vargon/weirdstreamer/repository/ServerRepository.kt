@@ -164,9 +164,10 @@ class ServerRepository(
         runCatching { apiService.guideAvailable(libraryId).body()?.available == true }.getOrDefault(false)
     }
 
-    suspend fun guideListings(libraryId: String?): Result<com.vargon.weirdstreamer.api.models.GuideListings> = withContext(Dispatchers.IO) {
+    /** The grid: [hours] from [from] (Unix ms; null: the current half hour). */
+    suspend fun guideListings(libraryId: String?, hours: Double = 3.5, from: Long? = null): Result<com.vargon.weirdstreamer.api.models.GuideListings> = withContext(Dispatchers.IO) {
         runCatching {
-            val r = apiService.guideListings(libraryId)
+            val r = apiService.guideListings(libraryId, hours, from)
             r.body()?.takeIf { r.isSuccessful } ?: throw Exception("Server error: ${r.code()}")
         }
     }

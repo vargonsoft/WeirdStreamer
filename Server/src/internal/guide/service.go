@@ -224,6 +224,9 @@ func (s *Service) Refresh(ctx context.Context) error {
 			}
 		}
 	}
+	if err := s.renumber(); err != nil {
+		return err
+	}
 	if err := s.db.DeleteGuideSlotsBefore(now.Add(-KeepHistory)); err != nil {
 		return err
 	}
@@ -318,46 +321,51 @@ func fingerprint(ch Channel, clips []Clip, set Settings) string {
 	return strconv.FormatUint(h, 36)
 }
 
-// addChannel stores a new channel with the next free number: network channels from 2 (the
-// broadcast channels), the others from 14 (cable).
+// addChannel stores a new channel with the next free number of its block (numbers.go).
 func (s *Service) addChannel(ch Channel, existing map[string]database.GuideChannel) (database.GuideChannel, error) {
-	taken := map[int]bool{}
-	for _, c := range existing {
-		taken[c.Number] = true
-	}
-	n := 14
-	if ch.Network {
-		n = 2
-	}
-	for taken[n] {
-		n++
-	}
 	name := ch.Genre
 	if ch.Network {
 		name = pickStation(ch.Key, existing)
 	}
-	c := database.GuideChannel{Key: ch.Key, LibraryID: ch.LibraryID, Number: n, Name: name, Genre: ch.Genre,
+	c := database.GuideChannel{Key: ch.Key, LibraryID: ch.LibraryID, Name: name, Genre: ch.Genre,
 		Kind: ch.Kind, Color: Colors[hash(ch.Key)%uint64(len(Colors))], Active: true}
+	c.Number = nextNumber(c, existing)
 	return c, s.db.AddGuideChannel(c)
 }
 
-// addSpecial stores a channel of its own: the Guide channel as 1, the others with the next free
-// number from 14.
+// addSpecial stores a channel of its own with the next free number of its block.
 func (s *Service) addSpecial(sc SpecialChannel, existing map[string]database.GuideChannel) (database.GuideChannel, error) {
-	taken := map[int]bool{}
-	for _, c := range existing {
-		taken[c.Number] = true
-	}
-	n := 14
-	if sc.Key == GuideChannelKey && !taken[GuideChannelNum] {
-		n = GuideChannelNum
-	}
-	for taken[n] {
-		n++
-	}
-	c := database.GuideChannel{Key: sc.Key, Number: n, Name: sc.Name, Genre: sc.Name, Kind: sc.Kind,
+	c := database.GuideChannel{Key: sc.Key, Name: sc.Name, Genre: sc.Name, Kind: sc.Kind,
 		Color: Colors[hash(sc.Key)%uint64(len(Colors))], Active: true}
+	c.Number = nextNumber(c, existing)
 	return c, s.db.AddGuideChannel(c)
+}
+
+// renumber moves the channels numbered outside their blocks into them (numbers.go): first to
+// numbers no channel can have, then to their own, so no two hold one number on the way.
+func (s *Service) renumber() error {
+	all, err := s.db.GuideChannels()
+	if err != nil {
+		return err
+	}
+	moves := Renumber(all)
+	if len(moves) == 0 {
+		return nil
+	}
+	i := 0
+	for key := range moves {
+		i++
+		if err := s.db.SetGuideChannelNumber(key, -i); err != nil {
+			return err
+		}
+	}
+	for key, n := range moves {
+		if err := s.db.SetGuideChannelNumber(key, n); err != nil {
+			return err
+		}
+	}
+	log.Printf("[GUIDE] Renumbered %d channels into their blocks", len(moves))
+	return nil
 }
 
 // pickStation is a call sign from the pool for a network channel, neither taken by another channel

@@ -811,10 +811,12 @@ struct GuideAvailable: Decodable { let available: Bool? }
 
 /// GET /api/guide: the grid, from the current half hour (Unix ms).
 struct GuideListings: Decodable, Equatable {
-    let now: Int64
-    let from: Int64
-    let to: Int64
-    let channels: [GuideChannel]?
+    var now: Int64
+    var from: Int64
+    var to: Int64
+    /// As far as the plan reaches: the grid loads more (from = to) as it scrolls, up to this.
+    var until: Int64? = nil
+    var channels: [GuideChannel]?
 }
 
 struct GuideChannel: Decodable, Hashable, Identifiable {
@@ -824,7 +826,7 @@ struct GuideChannel: Decodable, Hashable, Identifiable {
     let color: String?
     /// Its logo: GET this with w= (width), color= (rrggbb) or format=svg.
     let logo: String?
-    let listings: [GuideListing]?
+    var listings: [GuideListing]?
     /// A channel of its own's: guide or weather (the app draws it); nil for a library's channels.
     var kind: String? = nil
     var id: Int { number }

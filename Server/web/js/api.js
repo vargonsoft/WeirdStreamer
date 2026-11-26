@@ -332,8 +332,9 @@ class MediaAPI {
         return (await this.request('/api/guide/available' + this.guideQuery(lib))).available;
     }
 
-    async guideListings(lib = '', hours = 3.5) {
-        return this.request('/api/guide' + this.guideQuery(lib, { hours }));
+    // The grid: hours from from (Unix ms; the current half hour without it)
+    async guideListings(lib = '', hours = 3.5, from = undefined) {
+        return this.request('/api/guide' + this.guideQuery(lib, from === undefined ? { hours } : { hours, from }));
     }
 
     async guideWeather() {

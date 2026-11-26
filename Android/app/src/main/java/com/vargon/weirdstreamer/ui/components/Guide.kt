@@ -134,17 +134,43 @@ class GuideModel(
                 delay(1000)
                 clock = serverNow()
                 val from = data?.from ?: continue
-                if (serverNow() >= from + HALF_HOUR) loadGrid()
+                if (serverNow() >= from + HALF_HOUR) loadGrid() // keeps the hours loaded
             }
         }
     }
 
+    /** Loads the grid from the current half hour, keeping as many hours as were loaded (at least 3½). */
     suspend fun loadGrid() {
-        repo.guideListings(library).onSuccess {
+        val from = serverNow() / HALF_HOUR * HALF_HOUR
+        val hours = maxOf(3.5, ((data?.to ?: 0L) - from) / 3_600_000.0)
+        repo.guideListings(library, hours).onSuccess {
             skew = it.now - System.currentTimeMillis()
             data = it
             error = null
         }.onFailure { if (data == null) error = it.message }
+    }
+
+    private var extending = false
+
+    /** Loads the next 3 hours onto the grid (scrolled near its end), up to as far as the plan reaches. */
+    fun extendGrid() {
+        val d = data ?: return
+        if (extending || d.until in 1..d.to) return
+        extending = true
+        scope.launch {
+            repo.guideListings(library, 3.0, d.to).onSuccess { more ->
+                val current = data ?: return@onSuccess
+                if (current.to != d.to) return@onSuccess // reloaded meanwhile
+                val byNumber = more.channels.associateBy { it.number }
+                data = current.copy(to = more.to, until = more.until, channels = current.channels.map { c ->
+                    val add = byNumber[c.number]?.listings.orEmpty()
+                    val have = c.listings.orEmpty()
+                    // a program across the boundary comes in both: kept once
+                    c.copy(listings = have + add.filter { a -> have.none { it.start == a.start } })
+                })
+            }
+            extending = false
+        }
     }
 
     fun logoUrl(c: GuideChannel, width: Int, color: String = "ffffff") = repo.guideLogoUrl(c, width, color)
@@ -320,6 +346,20 @@ class GuideModel(
 /** A time of day as the device shows them ("8:30 PM"). */
 fun guideTime(context: Context, ms: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(ms))
 
+/** A day other than today as "Fri, Nov 27 " (before a time), else "". */
+fun guideDay(ms: Long): String {
+    val day = java.text.SimpleDateFormat("yyyyMMdd", Locale.getDefault())
+    if (day.format(Date(ms)) == day.format(Date())) return ""
+    return java.text.SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(Date(ms)) + " "
+}
+
+/** A half hour's label in the grid: its time, or the day at midnight ("Fri, Nov 27"). */
+fun guideTimeOrDay(context: Context, ms: Long): String {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = ms }
+    return if (c.get(java.util.Calendar.HOUR_OF_DAY) == 0 && c.get(java.util.Calendar.MINUTE) == 0)
+        java.text.SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(Date(ms)) else guideTime(context, ms)
+}
+
 /**
  * The Guide's player: what the channel airs, or the card between programs. One [player] for the
  * small window and full screen alike, so switching keeps playing.
@@ -459,7 +499,7 @@ fun guideExoPlayer(context: Context): ExoPlayer =
 
 /** A program's time slot, its rating and genres, for the details ("8:00 – 8:30 PM · TV-PG · Comedy"). */
 fun guideFacts(context: Context, c: GuideChannel, l: GuideListing): String = listOfNotNull(
-    guideTime(context, l.start) + " – " + guideTime(context, l.end),
+    guideDay(l.start) + guideTime(context, l.start) + " – " + guideTime(context, l.end),
     "Channel ${c.number} · ${c.name}",
     l.info?.rating?.takeIf { it.isNotBlank() },
     l.info?.genres?.takeIf { it.isNotEmpty() }?.joinToString(", "),

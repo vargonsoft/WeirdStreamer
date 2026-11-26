@@ -107,6 +107,12 @@ func (db *DB) SetGuideChannelName(key, name string) error {
 	return err
 }
 
+// SetGuideChannelNumber gives a channel another number (one no other channel has).
+func (db *DB) SetGuideChannelNumber(key string, number int) error {
+	_, err := db.mediaConn.Exec(`UPDATE guide_channels SET number = ? WHERE key = ?`, number, key)
+	return err
+}
+
 // SetGuideChannelColor changes a channel's badge color.
 func (db *DB) SetGuideChannelColor(key, color string) error {
 	_, err := db.mediaConn.Exec(`UPDATE guide_channels SET color = ? WHERE key = ?`, color, key)

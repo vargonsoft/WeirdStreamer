@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -175,42 +177,53 @@ private fun TvGuideGrid(model: GuideModel, logoColor: String, playerFocus: Focus
         Text("There are no channels yet: the Guide is planned a minute after the server starts.", modifier = modifier)
         return
     }
-    val span = (data.to - data.from).toFloat()
     // the tuned channel's program on now takes focus first
     val entry = remember { FocusRequester() }
     var focusedOnce by remember { mutableStateOf(false) }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex =
         channels.indexOfFirst { it.number == model.channel }.coerceAtLeast(0))
+    val across = rememberScrollState() // every row's half hours (and the times over them) scroll together
     BoxWithConstraints(modifier) {
+    // 3½ hours fit across; the rest scrolls in as focus moves right, loaded as it gets near the end
+    val halfHour = (maxWidth - ChannelWidth - 4.dp) / 7
+    val width = halfHour * ((data.to - data.from).toFloat() / GuideModel.HALF_HOUR)
+    fun x(ms: Long) = halfHour * ((ms - data.from).toFloat() / GuideModel.HALF_HOUR)
     Column(Modifier.fillMaxSize()) {
-        // the half hours across the top
+        // the half hours across the top (the day at midnight)
         Row(Modifier.fillMaxWidth().height(30.dp)) {
-            Text(DateFormatHelper.day(data.from), Modifier.width(ChannelWidth).padding(start = 8.dp),
+            // the day at the grid's left edge, as it scrolls
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val leftEdge = data.from + (across.value / with(density) { halfHour.toPx() } * GuideModel.HALF_HOUR).toLong()
+            Text(DateFormatHelper.day(leftEdge), Modifier.width(ChannelWidth).padding(start = 8.dp),
                 style = MaterialTheme.typography.labelLarge)
-            BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().padding(start = 4.dp)) { // as the rows' programs
-                val w = maxWidth
-                var t = data.from
-                while (t < data.to) {
-                    Text(guideTime(context, t), Modifier.offset(x = w * ((t - data.from) / span)).padding(start = 6.dp),
-                        style = MaterialTheme.typography.labelLarge)
-                    t += GuideModel.HALF_HOUR
+            Box(Modifier.weight(1f).fillMaxHeight().padding(start = 4.dp).horizontalScroll(across, enabled = false)) {
+                Box(Modifier.width(width).fillMaxHeight()) {
+                    var t = data.from
+                    while (t < data.to) {
+                        Text(guideTimeOrDay(context, t), Modifier.offset(x = x(t)).padding(start = 6.dp),
+                            style = MaterialTheme.typography.labelLarge)
+                        t += GuideModel.HALF_HOUR
+                    }
                 }
             }
         }
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             items(channels, key = { it.number }) { c ->
-                TvGuideRow(model, c, data.from, data.to, span, logoColor,
+                TvGuideRow(model, c, data.from, data.to, logoColor, across, width, ::x,
                     entry = if (c.number == model.channel) entry else null,
                     up = if (c == channels.first()) playerFocus else null)
             }
         }
     }
-    // the time line: one line from the half hours down to the last channel, over the programs
-    val programs = maxWidth - ChannelWidth - 4.dp
-    val f = ((model.clock.takeIf { it > 0 } ?: model.serverNow()) - data.from) / span
-    if (f in 0f..1f) Box(Modifier.offset(x = ChannelWidth + 4.dp + programs * f).width(2.dp)
-        .height(minOf(maxHeight, 30.dp + RowHeight * channels.size))
-        .background(guideAccent(MaterialTheme.colorScheme.primary)))
+    // the time line: one line from the half hours down to the last channel, over the programs; it
+    // moves with their scroll and hides behind the channels' column
+    val now = model.clock.takeIf { it > 0 } ?: model.serverNow()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val lineX = with(density) { (ChannelWidth + 4.dp + x(now)).roundToPx() } - across.value
+    if (now in data.from..data.to && lineX >= with(density) { (ChannelWidth + 4.dp).roundToPx() })
+        Box(Modifier.offset { androidx.compose.ui.unit.IntOffset(lineX, 0) }.width(2.dp)
+            .height(minOf(maxHeight, 30.dp + RowHeight * channels.size))
+            .background(guideAccent(MaterialTheme.colorScheme.primary)))
     }
     LaunchedEffect(model.channel, data) {
         if (!focusedOnce && model.channel != null) {
@@ -222,8 +235,9 @@ private fun TvGuideGrid(model: GuideModel, logoColor: String, playerFocus: Focus
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun TvGuideRow(model: GuideModel, c: GuideChannel, from: Long, to: Long, span: Float, logoColor: String,
-                       entry: FocusRequester?, up: FocusRequester?) {
+private fun TvGuideRow(model: GuideModel, c: GuideChannel, from: Long, to: Long, logoColor: String,
+                       across: androidx.compose.foundation.ScrollState, width: androidx.compose.ui.unit.Dp,
+                       x: (Long) -> androidx.compose.ui.unit.Dp, entry: FocusRequester?, up: FocusRequester?) {
     val tuned = model.channel == c.number
     Row(Modifier.fillMaxWidth().height(RowHeight).padding(vertical = 3.dp)) {
         // its logo, number and name
@@ -241,33 +255,40 @@ private fun TvGuideRow(model: GuideModel, c: GuideChannel, from: Long, to: Long,
                 Text(c.name, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().padding(start = 4.dp)) {
-            val w = maxWidth
-            val now = model.serverNow()
-            c.listings.orEmpty().forEach { l ->
-                val start = maxOf(l.start, from)
-                val end = minOf(l.end, to)
-                if (end <= start) return@forEach
-                val onNow = l.start <= now && now < l.end
-                var m = Modifier.offset(x = w * ((start - from) / span)).width(w * ((end - start) / span) - 3.dp).fillMaxHeight()
-                if (onNow && entry != null) m = m.focusRequester(entry)
-                if (up != null) m = m.focusProperties { this.up = up }
-                Box(m
-                    .background(if (onNow) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(6.dp))
-                    .onFocusChanged { if (it.isFocused) model.selected = c to l }
-                    .tvClickable(RoundedCornerShape(6.dp), 1f, 2.dp) {
-                        if (onNow && model.channel != c.number) model.tune(c.number)
-                        else if (onNow) model.fullscreen = true
-                    }
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                    contentAlignment = Alignment.CenterStart) {
-                    Column {
-                        Text(l.info?.title ?: "Off the air", style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val second = l.info?.episodeLabel ?: l.info?.takeIf { it.kind == "movie" }?.year?.toString()
-                        second?.let {
-                            Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Box(Modifier.weight(1f).fillMaxHeight().padding(start = 4.dp).horizontalScroll(across)) {
+            Box(Modifier.width(width).fillMaxHeight()) {
+                val now = model.serverNow()
+                c.listings.orEmpty().forEach { l ->
+                    val start = maxOf(l.start, from)
+                    val end = minOf(l.end, to)
+                    if (end <= start) return@forEach
+                    val onNow = l.start <= now && now < l.end
+                    var m = Modifier.offset(x = x(start)).width(x(end) - x(start) - 3.dp).fillMaxHeight()
+                    if (onNow && entry != null) m = m.focusRequester(entry)
+                    if (up != null) m = m.focusProperties { this.up = up }
+                    Box(m
+                        .background(if (onNow) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
+                            RoundedCornerShape(6.dp))
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                model.selected = c to l
+                                // near the end of what's loaded: the next hours
+                                if (l.end > to - 2 * GuideModel.HALF_HOUR) model.extendGrid()
+                            }
+                        }
+                        .tvClickable(RoundedCornerShape(6.dp), 1f, 2.dp) {
+                            if (onNow && model.channel != c.number) model.tune(c.number)
+                            else if (onNow) model.fullscreen = true
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.CenterStart) {
+                        Column {
+                            Text(l.info?.title ?: "Off the air", style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val second = l.info?.episodeLabel ?: l.info?.takeIf { it.kind == "movie" }?.year?.toString()
+                            second?.let {
+                                Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }

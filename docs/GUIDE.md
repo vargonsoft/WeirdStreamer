@@ -65,9 +65,12 @@ iPhone's again only compiled and unit-tested). The Music channel needs its plan;
   Shows from smaller networks go into **genre channels**: sitcoms, drama, sci-fi and fantasy,
   animation, kids, documentary and reality.
 - **Movies get genre and decade channels:** action, family, horror, comedy, 80s movies, and so on.
-- **Channel numbers stay put.** They're stored in a `guide_channels` table. Rebuilding the lineup
-  reuses a channel's number, and new channels take the next free one. Later, an admin may rename,
-  renumber or hide channels, and give them their own logos.
+- **Channel numbers come in blocks, and stay put** (settled 2026-11-26). Up to 3 digits, with gaps to grow
+  into: the Guide channel 1, network stations 2–19, Weather (and channels like it, later Music) 20–29, TV
+  genre channels 30–49, movie channels 50–69; a full block goes on from 100. Numbers are stored in the
+  `guide_channels` table: a new channel takes the next free number of its block, a channel keeps its number
+  while it's in its block, and one numbered outside it (before the blocks) moves in once. Later, an admin
+  may rename, renumber or hide channels, and give them their own logos.
 - **Names and logos.**
   - Genre channels are named for their genre. Network channels take the call sign of one of a pool of
     made-up stations (WKBT, KZXM…).
@@ -130,8 +133,8 @@ Channels of their own, not made from one library's titles: they're on the home s
 library's own) whenever it has channels, and the apps draw them from data the server gives. Nothing is
 encoded for them, and their text is sharp at any size.
 
-- **Numbers.** The Guide channel is 1 (network channels start at 2); Weather takes the next free number
-  from 14 when it's first made, and keeps it. Their logos are artwork like the others' (`channel-guide`,
+- **Numbers.** The Guide channel is 1, and Weather is in the block between the network stations and the genre
+  channels (20–29; the live server's stayed 27). Their logos are artwork like the others' (`channel-guide`,
   `channel-weather`, `channel-music`, each in a font of its own).
 - **The Guide channel** (the 80s listings channel):
   - The bottom half is every channel the viewer sees, scrolling slowly: its logo, number and name,

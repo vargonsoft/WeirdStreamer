@@ -835,7 +835,8 @@ What's built (server):
     repeated within 2 hours on the channel), then a bumper.
   - `Service` plans 72 hours ahead, hourly and when settings change (the Jobs page's Guide job). When
     a channel's titles change it plans again from 6 hours ahead. Slots are kept 35 days.
-- **Tables:** `guide_channels` (numbers: networks from 2, the rest from 14) and `guide_slots` (client
+- **Tables:** `guide_channels` (numbers in blocks, `guide/numbers.go`: Guide 1, networks 2–19, Weather 20–29, TV
+  genres 30–49, movies 50–69, overflow from 100; one outside its block moves in at the next refresh, `Renumber`) and `guide_slots` (client
   paths, a program's info as JSON), in `database/guide.go`.
 - **API** (`handlers/guide.go`): `GET /api/guide/available`, `GET /api/guide` (the grid),
   `GET /api/guide/now?channel=` (the file, the offset, and the program on now and next) and
@@ -890,8 +891,14 @@ What's built (server):
   that channel is tuned, the app sends `POST /api/guide/watched?channel=&start=<the program's start>`.
 - **TV:** OK on the tuned channel (its name or what's on now) goes full screen, since the picture is hard to
   reach with the arrows.
+- **The grid scrolls to the end of the plan:** `/api/guide` gives `until` (72 hours ahead) and takes `from=`;
+  every app loads the next 3 hours as its grid nears the end of what's loaded (`extendGrid`, web
+  `extendGuideGrid`), merging a program across the boundary once, and the half-hourly reload keeps the hours
+  loaded. A half hour has a fixed width (TV: 3½ hours fit; web 200 px); the TV's rows and times share one
+  ScrollState, moved by focus. The corner shows the day at the left edge, midnight's label is the day, and
+  the details name the day when it isn't today.
 - **Channels of their own** (`guide/special.go`; no library, `LibraryID` ""; the home screen's Guide only, while
-  it has a library's channel): the Guide channel (1) and Weather (the next free from 14), made by the planner's
+  it has a library's channel): the Guide channel (1) and Weather (20–29), made by the planner's
   refresh. Their grid half hours are `ProgramInfo` kind `channel`; the channel's `kind` says
   which screen the apps draw (`guide`, `weather`). `/now` gives `offset` (seconds into the file) and every
   client plays from `offset` plus the time since `server_time`.

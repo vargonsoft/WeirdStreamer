@@ -93,14 +93,43 @@ final class GuideModel {
         }
     }
 
+    /// Loads the grid from the current half hour, keeping as many hours as were loaded (at least 3½).
     func loadGrid() async {
+        let first = serverNow() / Self.halfHour * Self.halfHour
+        let hours = max(3.5, Double((data?.to ?? 0) - first) / 3_600_000)
         do {
-            let grid: GuideListings = try await client.get("/api/guide", query: libQuery)
+            let grid: GuideListings = try await client.get("/api/guide", query: libQuery + [("hours", String(hours))])
             skew = grid.now - Int64(Date().timeIntervalSince1970 * 1000)
             data = grid
             error = nil
         } catch {
             if data == nil { self.error = errorText(error) }
+        }
+    }
+
+    @ObservationIgnored private var extending = false
+
+    /// Loads the next 3 hours onto the grid (scrolled near its end), up to as far as the plan reaches.
+    func extendGrid() {
+        guard let d = data, !extending, d.until.map({ d.to < $0 }) ?? true else { return }
+        extending = true
+        Task {
+            defer { extending = false }
+            guard let more: GuideListings = try? await client.get("/api/guide",
+                query: libQuery + [("hours", "3"), ("from", "\(d.to)")]), data?.to == d.to else { return }
+            var grid = d
+            grid.to = more.to
+            grid.until = more.until
+            let byNumber = Dictionary((more.channels ?? []).map { ($0.number, $0) }, uniquingKeysWith: { a, _ in a })
+            grid.channels = d.channels?.map { c in
+                var c = c
+                let have = c.listings ?? []
+                // a program across the boundary comes in both: kept once
+                let add = (byNumber[c.number]?.listings ?? []).filter { a in !have.contains { $0.start == a.start } }
+                c.listings = have + add
+                return c
+            }
+            data = grid
         }
     }
 
@@ -336,6 +365,21 @@ final class GuideModel {
     }
 }
 
+/// A day other than today as "Fri, Nov 27 " (before a time), else "".
+func guideDay(_ ms: Int64) -> String {
+    let date = Date(timeIntervalSince1970: Double(ms) / 1000)
+    if Calendar.current.isDateInToday(date) { return "" }
+    return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()) + " "
+}
+
+/// A half hour's label in the grid: its time, or the day at midnight ("Fri, Nov 27").
+func guideTimeOrDay(_ ms: Int64) -> String {
+    let date = Date(timeIntervalSince1970: Double(ms) / 1000)
+    let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+    if parts.hour == 0 && parts.minute == 0 { return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()) }
+    return guideTime(ms)
+}
+
 /// A time of day as the phone shows them ("8:30 PM").
 func guideTime(_ ms: Int64) -> String {
     Date(timeIntervalSince1970: Double(ms) / 1000).formatted(date: .omitted, time: .shortened)
@@ -343,7 +387,7 @@ func guideTime(_ ms: Int64) -> String {
 
 /// A program's time slot, channel, rating and genres, for the details ("8:00 PM – 8:30 PM · Channel 4 · KBTV · TV-PG · Comedy").
 func guideFacts(_ c: GuideChannel, _ l: GuideListing) -> String {
-    var parts = ["\(guideTime(l.start)) – \(guideTime(l.end))", "Channel \(c.number) · \(c.name)"]
+    var parts = ["\(guideDay(l.start))\(guideTime(l.start)) – \(guideTime(l.end))", "Channel \(c.number) · \(c.name)"]
     if let r = l.info?.rating, !r.isEmpty { parts.append(r) }
     if let g = l.info?.genres, !g.isEmpty { parts.append(g.joined(separator: ", ")) }
     return parts.joined(separator: " · ")
