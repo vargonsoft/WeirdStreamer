@@ -307,8 +307,12 @@ interface ApiService {
     @GET("/api/guide/now")
     suspend fun guideNow(@Query("channel") channel: Int, @Query("lib") libraryId: String? = null): Response<com.vargon.weirdstreamer.api.models.GuideNow>
 
+    @GET("/api/guide/weather")
+    suspend fun guideWeather(): Response<com.vargon.weirdstreamer.api.models.GuideWeather>
+
     @POST("/api/guide/watched")
-    suspend fun guideWatched(@Query("channel") channel: Int, @Query("lib") libraryId: String? = null): Response<Unit>
+    suspend fun guideWatched(@Query("channel") channel: Int, @Query("lib") libraryId: String? = null,
+                             @Query("start") start: Long? = null): Response<Unit>
 
     @GET("/api/playback/continue")
     suspend fun continueWatching(@Query("lib") libraryId: String? = null): Response<List<ContinueItem>>

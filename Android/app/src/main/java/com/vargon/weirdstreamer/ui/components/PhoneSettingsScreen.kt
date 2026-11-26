@@ -125,6 +125,20 @@ fun PhoneSettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeCh
 
             item {
                 ListItem(
+                    headlineContent = { Text("Mark Guide shows watched") },
+                    supportingContent = { Text("A show the Guide plays to its end while you're on its channel is marked watched") },
+                    trailingContent = {
+                        Switch(
+                            checked = viewModel.guideMarksWatched,
+                            onCheckedChange = { viewModel.updateGuideMarksWatched(it) }
+                        )
+                    },
+                    modifier = Modifier.clickable { viewModel.updateGuideMarksWatched(!viewModel.guideMarksWatched) }
+                )
+            }
+
+            item {
+                ListItem(
                     headlineContent = { Text("Play theme music on title pages") },
                     supportingContent = { Text("A show's or movie's theme plays quietly while its page is open") },
                     trailingContent = {

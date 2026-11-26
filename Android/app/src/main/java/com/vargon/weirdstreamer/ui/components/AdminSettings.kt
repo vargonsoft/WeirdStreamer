@@ -105,6 +105,7 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
     var http2 by mutableStateOf(false)
     var pauseJobs by mutableStateOf(false)
     var primeTime by mutableStateOf("20") // the Guide's: the hour it starts
+    var weatherZip by mutableStateOf("") // the Weather channel's US ZIP code ("" New York City's)
     // Hardware encoding: what the server found, and the config's choice ("" the CPU, else "id|device")
     var hardware by mutableStateOf<HardwareReport?>(HardwareReport(checking = true)); private set
     var hwEncoder by mutableStateOf("")
@@ -154,6 +155,7 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
             pauseJobs = it.get("pauseJobsWhileStreaming")?.asBoolean ?: false
         }
         primeTime = c.getAsJsonObject("guide")?.get("primeTime")?.asInt?.takeIf { it > 0 }?.toString() ?: "20"
+        weatherZip = c.getAsJsonObject("guide")?.get("weatherZip")?.asString.orEmpty()
         hwEncoder = HardwareSettings.encoderOf(c); hwDevice = HardwareSettings.deviceOf(c)
         hwMax = HardwareSettings.maxOf(c).toString()
         c.getAsJsonObject("database")?.let {
@@ -220,6 +222,7 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
         }
         val guide = c.getAsJsonObject("guide") ?: JsonObject().also { c.add("guide", it) }
         guide.addProperty("primeTime", primeTime.toIntOrNull() ?: 20)
+        guide.addProperty("weatherZip", weatherZip.trim())
         val database = c.getAsJsonObject("database") ?: JsonObject().also { c.add("database", it) }
         database.addProperty("backupSchedule", backupSchedule)
         database.addProperty("backupDay", backupDay)

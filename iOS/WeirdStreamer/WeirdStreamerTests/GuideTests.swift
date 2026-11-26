@@ -61,4 +61,38 @@ struct GuideTests {
         #expect(n.next == nil)
         #expect(n.nextStart == nil)
     }
+
+    @Test func guideChannelBlock() throws {
+        let n = try decode(GuideNow.self, """
+        {"channel":{"number":1,"name":"Guide","logo":"/api/guide/logo?channel=1","kind":"guide"},
+         "kind":"promo","offset":12,"start":1,"end":2,"server_time":1,
+         "program":{"kind":"show","title":"Spartacus","season":1,"episode":3},
+         "airs":1764000900000,"airs_on":{"number":15,"name":"Variety","logo":"/api/guide/logo?channel=15"},
+         "music":{"url":"/api/guide/music?name=Local%20Forecast.mp3","title":"Local Forecast","credit":"\\"Local Forecast\\" by Kevin MacLeod",
+                  "offset":42.5,"start":1,"end":2}}
+        """)
+        #expect(n.channel.kind == "guide")
+        #expect(n.airs == 1764000900000)
+        #expect(n.airsOn?.number == 15)
+        #expect(n.music?.offset == 42.5)
+        #expect(n.music?.credit?.hasPrefix("\"Local Forecast\"") == true)
+    }
+
+    @Test func weather() throws {
+        let w = try decode(GuideWeather.self, """
+        {"place":"New York, NY","zip":"10001","updated":1,"radar":true,
+         "current":{"time":1,"station":"Central Park","conditions":"Cloudy","icon":"cloud","temp":43,"feels_like":35,
+                    "dewpoint":35,"humidity":73,"wind_dir":"ENE","wind":18,"pressure":30.46,"visibility":10},
+         "periods":[{"name":"Tonight","daytime":false,"temp":51,"forecast":"Heavy Rain","detail":"Rain.","icon":"rain","wind":"SE 13 mph","precip":100}],
+         "alerts":[{"event":"High Wind Warning","headline":"High Wind Warning until 6 PM","severity":"Severe"}]}
+        """)
+        #expect(w.current?.feelsLike == 35)
+        #expect(w.current?.windDir == "ENE")
+        #expect(w.periods?.first?.precip == 100)
+        #expect(w.periods?.first?.daytime == false)
+        #expect(w.alerts?.first?.headline == "High Wind Warning until 6 PM")
+        #expect(w.radar == true)
+        let failed = try decode(GuideWeather.self, #"{"zip":"00000","periods":[],"alerts":[],"radar":false,"error":"00000 isn't a US ZIP code"}"#)
+        #expect(failed.current == nil && failed.error != nil)
+    }
 }

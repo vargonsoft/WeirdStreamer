@@ -313,6 +313,11 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
                 }
                 Text("Guide", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
                 LibraryOptionMenu("Prime time (then the news hour)", primeTimes, m.primeTime) { m.primeTime = it }
+                OutlinedTextField(m.weatherZip, { v -> m.weatherZip = v.filter { it.isDigit() }.take(5) },
+                    label = { Text("Weather ZIP code") }, placeholder = { Text("10001") }, singleLine = true,
+                    supportingText = { Text("The Weather channel's forecast is the National Weather Service's for it (US only)") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                 Text("Hardware encoding", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
                 val report = m.hardware
                 if (report == null) {

@@ -336,12 +336,17 @@ class MediaAPI {
         return this.request('/api/guide' + this.guideQuery(lib, { hours }));
     }
 
+    async guideWeather() {
+        return this.request('/api/guide/weather');
+    }
+
     async guideNow(channel, lib = '') {
         return this.request('/api/guide/now' + this.guideQuery(lib, { channel }));
     }
 
-    async guideWatched(channel, lib = '') {
-        return this.request('/api/guide/watched' + this.guideQuery(lib, { channel }), { method: 'POST' });
+    // Marks the program that started at start (Unix ms) on a channel watched: it played to its end.
+    async guideWatched(channel, lib = '', start) {
+        return this.request('/api/guide/watched' + this.guideQuery(lib, { channel, start }), { method: 'POST' });
     }
 
     async newAdditions(lib = '') {

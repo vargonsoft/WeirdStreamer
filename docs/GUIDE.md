@@ -6,7 +6,8 @@ works the way 80s and 90s TV did, not the way modern TV does.
 
 Status: on the `guide` branch, phase 1 (the server: channels, the planner, filler, the API), phase 2
 (the web: `js/guide.js`), phases 3 and 4 (Android TV and phone) and phase 5 (the iPhone; compiled and
-unit-tested, not yet tried on a simulator or phone) are built. Voice-overs are next. Decisions are marked as settled; open questions are at the end.
+unit-tested, not yet tried on a simulator or phone) are built, and so are the Guide and Weather channels (the
+iPhone's again only compiled and unit-tested). The Music channel needs its plan; voice-overs are next. Decisions are marked as settled; open questions are at the end.
 
 ## Decisions (settled)
 
@@ -23,7 +24,8 @@ unit-tested, not yet tried on a simulator or phone) are built. Voice-overs are n
 - **Live only.** A channel plays what's on now, from the current second. There's no seeking and **no
   pause**: the player's pause control mutes instead. Leaving the Guide (or the full-screen channel) stops it.
 - **Progress isn't recorded.** Watching a channel adds no resume point and nothing on Continue Watching.
-  You can still **mark the current program watched** from its info.
+  A setting, **Mark Guide shows watched** (off by default, each device's), marks a show watched when it plays
+  to its end while its channel is on (settled 2026-11-26; the Mark watched button is gone).
 - **Credits stay in.** Programs play whole. Filler goes after the credits.
 - **Prime time is a server setting:** 7–10 pm or 8–11 pm, with the news hour after.
 - **News, for now:** no news source. The news hour is a late-night block (reruns or a late movie). A real
@@ -122,6 +124,42 @@ live, so a gap never waits on someone else's site:
     public domain), very 80s cable;
   - a "tonight on Channel 7" promo card.
 
+## The Guide, Weather and Music channels (settled 2026-11-26)
+
+Channels of their own, not made from one library's titles: they're on the home screen's Guide (not a
+library's own) whenever it has channels, and the apps draw them from data the server gives. Nothing is
+encoded for them, and their text is sharp at any size.
+
+- **Numbers.** The Guide channel is 1 (network channels start at 2); Weather takes the next free number
+  from 14 when it's first made, and keeps it. Their logos are artwork like the others' (`channel-guide`,
+  `channel-weather`, `channel-music`, each in a font of its own).
+- **The Guide channel** (the 80s listings channel):
+  - The bottom half is every channel the viewer sees, scrolling slowly: its logo, number and name,
+    and what's on now and in the next two half hours.
+  - The top half runs a cycle of 30-second blocks by the server's clock: a preview (30 seconds from
+    the middle of a program airing in the next few hours, with "Tonight at 8:00 on 15" over it), a
+    promo card for one ("Tonight at 8:00 · Channel 15 · Spartacus", poster and logo, with music), a
+    second preview, and a commercial from the filler libraries. It's worked out per request from the
+    channels and filler the viewer may see, so nothing is stored for it.
+- **The Weather channel** ("Local on the 8s"):
+  - Pages cycle every 10 seconds by the server's clock, so every screen shows the same one: current
+    conditions (temperature, sky, wind, humidity, pressure, visibility), today and tonight, the
+    extended forecast, and the radar. Warnings scroll in a red bar along the bottom.
+  - Data from the US National Weather Service (`api.weather.gov`, public domain; US only for now), for
+    the server's ZIP code (`guide.weatherZip`, default 10001, New York City; Settings › Server). The
+    ZIP code's position comes from the Census Bureau's ZIP code table (public domain), built into the
+    server. The server asks the Weather Service at most every 10 minutes, sending a generic
+    `User-Agent`, and serves `GET /api/guide/weather`.
+  - The radar is the Weather Service's latest image for the area's radar station, through
+    `/api/guide/weather/radar`. Condition icons are drawn by the server like the logos' symbols
+    (`/api/guide/weather/icon?name=`), so every app shows the same ones.
+- **Music** under the Weather channel and the Guide channel's promo cards: a playlist of the tracks in
+  `guide.musicPath` (default `guide-music` beside the thumbnails), shuffled each day and played by the
+  clock, so it's the same on every screen, like a station. Seeded with Kevin MacLeod's smooth jazz and
+  easy listening (incompetech.com, CC BY 4.0), each credited on screen while it plays (a `<track>.txt`
+  beside it holds the credit line).
+- **The Music channel** has its logo; what it plays needs its own plan.
+
 ## Voice-overs on the credits (later phase)
 
 As old shows did, while the credits roll: "Stay tuned for *Title*, next on Channel 7. And at 9, *Title*."
@@ -181,7 +219,8 @@ As old shows did, while the credits roll: "Stay tuned for *Title*, next on Chann
   offset. The player plays it through the usual stream URL with `start=`, so transcode modes, tracks and
   subtitles all work. When the item ends, the player asks again for the next one (filler, a bumper, the
   next program).
-- `POST /api/guide/watched` marks the current program watched (the only thing a channel writes).
+- `POST /api/guide/watched?channel=&start=` marks the program that started at start watched (the only thing
+  a channel writes): the apps send it when a show plays to its end, with the setting on.
 - Disc images (`.iso`, `VIDEO_TS`) are left out at first.
 
 ## The Guide screen

@@ -20,6 +20,9 @@ const guide = {
     codecs: new Map(), // path → codecs report
     digits: '',       // channel number being typed
     digitTimer: null,
+    weather: null,    // the Weather channel's data, and when it was read
+    weatherAt: 0,
+    screenTimer: null, // turns the Weather channel's pages
 };
 
 const GUIDE_HOURS = 3.5;
@@ -99,6 +102,7 @@ function stopGuidePlayback() {
     guideVideo.pause();
     guideVideo.removeAttribute('src');
     guideVideo.load();
+    setChannelScreen('');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 
@@ -112,6 +116,7 @@ async function loadGuideGrid() {
         return;
     }
     renderGuideGrid();
+    if (document.getElementById('guide-player').dataset.channelKind === 'guide') renderGuideListings();
     clearInterval(guide.gridTimer);
     guide.gridTimer = setInterval(() => {
         if (serverNow() >= guide.data.from + GUIDE_SLOT_MS) loadGuideGrid();
@@ -252,23 +257,6 @@ function showGuideDetails(c, l) {
     if (facts) text.appendChild(el('div', 'guide-info-facts', facts));
     const overview = info.episode_overview || info.overview;
     if (overview) text.appendChild(el('p', 'guide-info-overview', overview));
-    const now = serverNow();
-    if (guide.channel === c.number && l.start <= now && now < l.end) {
-        const watched = el('button', 'btn btn-small btn-secondary');
-        watched.type = 'button';
-        watched.innerHTML = iconSvg('check') + '<span class="btn-label">Mark watched</span>';
-        watched.onclick = async () => {
-            watched.disabled = true;
-            try {
-                await api.guideWatched(c.number, guide.lib);
-                watched.querySelector('.btn-label').textContent = 'Watched';
-            } catch (error) {
-                watched.disabled = false;
-                alert('Couldn’t mark it watched: ' + error.message);
-            }
-        };
-        text.appendChild(watched);
-    }
     box.appendChild(text);
 }
 
@@ -296,6 +284,12 @@ async function playGuideNow() {
     }
     if (request !== guide.request) return;
     guide.skew = now.server_time - Date.now();
+    // A show that just played to its end on this channel, with the setting on: marked watched
+    const ended = guide.now;
+    if (ended && ended.kind === 'program' && !ended.channel.kind && ended.channel.number === now.channel.number &&
+        now.start >= ended.end && guideMarksWatched()) {
+        api.guideWatched(now.channel.number, guide.lib, ended.start).catch(() => {});
+    }
     guide.now = now;
     // The details follow the channel when nothing else was picked on it.
     const c = guide.data && guide.data.channels.find(ch => ch.number === now.channel.number);
@@ -306,12 +300,25 @@ async function playGuideNow() {
             showGuideDetails(c, listing);
         }
     }
-    if (now.kind === 'bumper' || !now.path) {
-        guideVideo.pause();
-        guideVideo.removeAttribute('src');
+    const kind = now.channel.kind || '';
+    setChannelScreen(kind);
+    if (kind === 'weather') {
+        stopGuideVideo();
+        hideGuideCard();
+        playMusic(now.music);
+        showWeather();
+    } else if (kind === 'guide' && now.kind === 'promo') {
+        stopGuideVideo();
+        playMusic(now.music);
+        showPromo(now);
+    } else if (now.kind === 'bumper' || !now.path) {
+        stopMusic();
+        stopGuideVideo();
         showBumper(now);
     } else {
+        stopMusic();
         hideGuideCard();
+        showPreviewCaption(kind === 'guide' && now.kind === 'preview' ? now : null);
         await playGuideItem(now, request);
     }
     if (request !== guide.request) return;
@@ -332,7 +339,8 @@ async function playGuideItem(now, request) {
         }
         if (request !== guide.request) return;
     }
-    const offset = () => Math.max((serverNow() - now.start) / 1000, 0);
+    // Seconds into the file now: where the server said, plus the time since
+    const offset = () => Math.max((now.offset || 0) + (serverNow() - now.server_time) / 1000, 0);
     const track = codecs ? defaultAudioTrack(codecs) : null;
     const original = codecs && !originalProblem(codecs) && (!track || browserPlaysAudio(track));
     guideVideo.muted = guide.muted;
@@ -359,6 +367,269 @@ async function playGuideItem(now, request) {
     });
 }
 
+function stopGuideVideo() {
+    guideVideo.pause();
+    guideVideo.removeAttribute('src');
+    showPreviewCaption(null);
+}
+
+// ---- The channels of their own: the Guide channel and the Weather channel (docs/GUIDE.md) ----
+
+// Shows the screen a channel of its own draws ('guide', 'weather'), or none ('').
+function setChannelScreen(kind) {
+    const player = document.getElementById('guide-player');
+    if (player.dataset.channelKind === kind) return;
+    player.dataset.channelKind = kind;
+    player.classList.toggle('guide-player--listings', kind === 'guide');
+    document.getElementById('guide-listings').hidden = kind !== 'guide';
+    document.getElementById('guide-weather').hidden = kind !== 'weather';
+    clearInterval(guide.screenTimer);
+    guide.screenTimer = null;
+    if (kind === 'guide') renderGuideListings();
+    if (kind !== 'weather' && kind !== 'guide') stopMusic();
+    if (!kind) showPreviewCaption(null);
+}
+
+// The music under a card or the Weather channel: its track from where the clock says, credited.
+function playMusic(music) {
+    const audio = document.getElementById('guide-music');
+    if (!music) {
+        stopMusic();
+        return;
+    }
+    const at = () => Math.max(music.offset + (serverNow() - guide.now.server_time) / 1000, 0);
+    const src = api.getThumbnailUrl(music.url);
+    audio.muted = guide.muted;
+    if (audio.dataset.src !== src) {
+        audio.dataset.src = src;
+        audio.src = src;
+        audio.addEventListener('loadedmetadata', () => { audio.currentTime = at(); }, { once: true });
+    } else if (Math.abs(audio.currentTime - at()) > 3) {
+        audio.currentTime = at();
+    }
+    audio.dataset.credit = music.credit || music.title || '';
+    audio.play().catch(() => {});
+}
+
+function stopMusic() {
+    const audio = document.getElementById('guide-music');
+    audio.pause();
+    audio.removeAttribute('src');
+    delete audio.dataset.src;
+    delete audio.dataset.credit;
+}
+
+function musicCredit() {
+    const credit = document.getElementById('guide-music').dataset.credit;
+    return credit ? '♪ ' + credit : '';
+}
+
+// When and where a program airs: "Tonight at 8:00 PM", "Tomorrow at 9:00 AM", "Thursday at 7:00 PM".
+function airsWhen(ms) {
+    const at = new Date(ms), today = new Date(serverNow());
+    const days = Math.round((new Date(at.getFullYear(), at.getMonth(), at.getDate()) -
+        new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
+    const time = guideTime(ms);
+    if (days === 0) return (at.getHours() >= 17 ? 'Tonight' : 'Today') + ' at ' + time;
+    if (days === 1) return 'Tomorrow at ' + time;
+    return at.toLocaleDateString([], { weekday: 'long' }) + ' at ' + time;
+}
+
+// The Guide channel's card for a program ahead, with music.
+function showPromo(now) {
+    showPreviewCaption(null);
+    const p = now.program, on = now.airs_on;
+    if (!p || p.kind === 'channel' || !on) {
+        showGuideCard({ logo: guideLogoUrl(now.channel, 512, '#ffffff'), kicker: 'Stay tuned', title: 'The Guide Channel',
+            credit: musicCredit(), color: now.channel.color });
+        return;
+    }
+    showGuideCard({
+        logo: guideLogoUrl(on, 512, '#ffffff'),
+        kicker: `${airsWhen(now.airs)} on ${on.number}`,
+        title: p.title,
+        text: p.season ? episodeLabel(p) : (p.year ? String(p.year) : ''),
+        credit: musicCredit(),
+        poster: p.poster,
+        color: on.color,
+    });
+}
+
+// Over a preview: when and where it airs.
+function showPreviewCaption(now) {
+    const caption = document.getElementById('guide-caption');
+    if (!now || !now.program || !now.airs_on) {
+        caption.hidden = true;
+        return;
+    }
+    caption.innerHTML = '';
+    caption.append(el('div', 'guide-caption-when', `${airsWhen(now.airs)} · ${now.airs_on.number} ${now.airs_on.name}`),
+        el('div', 'guide-caption-title', now.program.title + (now.program.season ? ' · ' + episodeLabel(now.program) : '')));
+    caption.hidden = false;
+}
+
+// The Guide channel's lower half: every channel, now and the next two half hours, scrolling.
+function renderGuideListings() {
+    const box = document.getElementById('guide-listings');
+    box.innerHTML = '';
+    const channels = ((guide.data && guide.data.channels) || []).filter(c => c.kind !== 'guide');
+    if (!channels.length) return;
+    const first = Math.floor(serverNow() / GUIDE_SLOT_MS) * GUIDE_SLOT_MS;
+    const slots = [first, first + GUIDE_SLOT_MS, first + 2 * GUIDE_SLOT_MS];
+    const head = el('div', 'guide-listings-head');
+    head.append(el('div', 'guide-listings-day', new Date(first).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })),
+        ...slots.map(t => el('div', 'guide-listings-time', guideTime(t))));
+    const roll = el('div', 'guide-listings-roll');
+    const rows = () => channels.map(c => {
+        const row = el('div', 'guide-listings-row');
+        const id = el('div', 'guide-listings-channel');
+        const logo = el('img', 'guide-listings-logo');
+        logo.src = guideLogoUrl(c, 256, '#ffffff');
+        logo.alt = '';
+        id.append(logo, el('span', 'guide-listings-number', `${c.number} ${c.name}`));
+        row.appendChild(id);
+        slots.forEach(t => {
+            const l = (c.listings || []).find(x => x.start <= t && t < x.end);
+            const title = l && l.info ? l.info.title : '';
+            const started = l && l.start < t && l.info && l.info.kind !== 'channel'; // still on from before
+            row.appendChild(el('div', 'guide-listings-cell' + (started ? ' guide-listings-cont' : ''), title || '—'));
+        });
+        return row;
+    });
+    const list = el('div', 'guide-listings-list');
+    // enough copies to fill the box the whole way round (a row is 9% of the picture, the box 38%), so
+    // the roll loops without a jump or a gap; it moves by one copy
+    const copies = Math.max(2, Math.ceil(38 / (9 * channels.length)) + 1);
+    for (let i = 0; i < copies; i++) list.append(...rows());
+    list.style.setProperty('--roll', `${-100 / copies}%`);
+    list.style.animationDuration = `${channels.length * 3}s`;
+    roll.appendChild(list);
+    box.append(head, roll);
+}
+
+// ---- The Weather channel ----
+
+async function loadWeather() {
+    if (guide.weather && Date.now() - guide.weatherAt < 5 * 60 * 1000) return guide.weather;
+    try {
+        guide.weather = await api.guideWeather();
+        guide.weatherAt = Date.now();
+    } catch (error) {
+        if (!guide.weather) guide.weather = { error: error.message, periods: [], alerts: [] };
+    }
+    return guide.weather;
+}
+
+function weatherIconUrl(name, w = 256) {
+    return api.getThumbnailUrl(`/api/guide/weather/icon?name=${encodeURIComponent(name || 'cloud')}&w=${w}&color=ffffff`);
+}
+
+// The pages, turned every 10 seconds by the server's clock (every screen shows the same one).
+async function showWeather() {
+    await loadWeather();
+    renderWeather();
+    clearInterval(guide.screenTimer);
+    guide.screenTimer = setInterval(() => {
+        if (Date.now() - guide.weatherAt > 5 * 60 * 1000) loadWeather().then(renderWeather);
+        else renderWeather();
+    }, 1000);
+}
+
+function weatherPages(w) {
+    const pages = [];
+    if (w.current) pages.push('now');
+    if (w.periods && w.periods.length) pages.push('today', 'extended');
+    if (w.radar) pages.push('radar');
+    return pages;
+}
+
+function renderWeather() {
+    const box = document.getElementById('guide-weather');
+    const w = guide.weather || { periods: [], alerts: [] };
+    const pages = weatherPages(w);
+    const page = pages.length ? pages[Math.floor(serverNow() / 10000) % pages.length] : 'none';
+    const clock = new Date(serverNow()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    // only the clock changes within a page
+    const key = `${page}|${w.updated || 0}|${musicCredit()}`;
+    if (box.dataset.key === key) {
+        const c = box.querySelector('.weather-clock');
+        if (c) c.textContent = clock;
+        return;
+    }
+    box.dataset.key = key;
+    box.innerHTML = '';
+    const head = el('div', 'weather-head');
+    const titles = { now: 'Current Conditions', today: 'Local Forecast', extended: 'Extended Forecast', radar: 'Local Radar', none: 'Local Forecast' };
+    head.append(el('div', 'weather-title', titles[page]), el('div', 'weather-place', w.place || ''), el('div', 'weather-clock', clock));
+    const body = el('div', 'weather-body weather-' + page);
+    const icon = (name, cls) => {
+        const img = el('img', cls || 'weather-icon');
+        img.src = weatherIconUrl(name);
+        img.alt = '';
+        return img;
+    };
+    if (page === 'now') {
+        const c = w.current;
+        const left = el('div', 'weather-now-main');
+        left.append(icon(c.icon, 'weather-icon-big'), el('div', 'weather-now-temp', c.temp != null ? `${c.temp}°` : '—'),
+            el('div', 'weather-now-sky', c.conditions || ''));
+        const facts = el('div', 'weather-facts');
+        const fact = (label, value) => { if (value != null && value !== '') facts.append(el('div', 'weather-fact-label', label), el('div', 'weather-fact', value)); };
+        fact('Humidity', c.humidity != null ? `${c.humidity}%` : null);
+        fact('Dewpoint', c.dewpoint != null ? `${c.dewpoint}°` : null);
+        fact('Wind', c.wind != null ? (c.wind === 0 ? 'Calm' : `${c.wind_dir || ''} ${c.wind} mph`.trim()) : null);
+        fact('Gusts', c.gust != null ? `${c.gust} mph` : null);
+        fact('Pressure', c.pressure != null ? `${c.pressure.toFixed(2)} in` : null);
+        fact('Visibility', c.visibility != null ? `${c.visibility} mi` : null);
+        if (c.feels_like != null && c.feels_like !== c.temp) fact('Feels like', `${c.feels_like}°`);
+        body.append(left, facts);
+    } else if (page === 'today') {
+        w.periods.slice(0, 3).forEach(p => {
+            const col = el('div', 'weather-period');
+            col.append(el('div', 'weather-period-name', p.name), icon(p.icon), el('div', 'weather-period-temp' + (p.daytime ? '' : ' low'),
+                `${p.daytime ? 'High' : 'Low'} ${p.temp}°`), el('div', 'weather-period-sky', p.forecast));
+            if (p.precip) col.appendChild(el('div', 'weather-period-precip', `${p.precip}% chance`));
+            body.appendChild(col);
+        });
+    } else if (page === 'extended') {
+        // each day with the night after it: "Fri 57° / 44°"
+        const days = [];
+        w.periods.forEach((p, i) => {
+            if (!p.daytime) return;
+            const night = w.periods[i + 1] && !w.periods[i + 1].daytime ? w.periods[i + 1] : null;
+            days.push({ p, night });
+        });
+        days.slice(1, 6).forEach(({ p, night }) => {
+            const col = el('div', 'weather-day');
+            col.append(el('div', 'weather-period-name', p.name.split(' ')[0].slice(0, 3)), icon(p.icon),
+                el('div', 'weather-period-sky', p.forecast),
+                el('div', 'weather-day-temps', `${p.temp}°` + (night ? ` / ${night.temp}°` : '')));
+            body.appendChild(col);
+        });
+    } else if (page === 'radar') {
+        const img = el('img', 'weather-radar');
+        img.src = api.getThumbnailUrl('/api/guide/weather/radar?v=' + Math.floor(serverNow() / 300000));
+        img.alt = 'Radar';
+        body.appendChild(img);
+    } else {
+        body.appendChild(el('div', 'weather-error', w.error || 'The forecast isn’t in yet.'));
+    }
+    // warnings scroll along the bottom; else the music's credit
+    const foot = el('div', 'weather-foot');
+    if (w.alerts && w.alerts.length) {
+        foot.classList.add('weather-alerts');
+        const text = w.alerts.map(a => a.headline || a.event).join('   ✦   ');
+        const ticker = el('div', 'weather-ticker', text);
+        ticker.style.animationDuration = `${Math.max(15, text.length / 6)}s`;
+        foot.appendChild(ticker);
+    } else {
+        foot.textContent = musicCredit();
+    }
+    box.append(head, body);
+    if (foot.classList.contains('weather-alerts') && musicCredit()) box.appendChild(el('div', 'weather-credit', musicCredit()));
+    box.appendChild(foot);
+}
+
 // A bumper: the card between programs ("Up next…", or "We'll be right back" for a long gap).
 function showBumper(now) {
     if (!now.next) {
@@ -376,7 +647,7 @@ function showBumper(now) {
     });
 }
 
-function showGuideCard({ logo = '', kicker = '', title = '', text = '', poster = '', color = '' }) {
+function showGuideCard({ logo = '', kicker = '', title = '', text = '', poster = '', color = '', credit = '' }) {
     const card = document.getElementById('guide-card');
     card.innerHTML = '';
     card.style.setProperty('--channel-color', color || 'var(--button-bg)');
@@ -396,6 +667,7 @@ function showGuideCard({ logo = '', kicker = '', title = '', text = '', poster =
     if (kicker) words.appendChild(el('div', 'guide-card-kicker', kicker));
     words.appendChild(el('div', 'guide-card-title', title));
     if (text) words.appendChild(el('div', 'guide-card-line', text));
+    if (credit) words.appendChild(el('div', 'guide-card-credit', credit));
     card.appendChild(words);
     card.hidden = false;
 }
@@ -426,6 +698,7 @@ function showChannelBadge() {
 function toggleGuideMute() {
     guide.muted = !guide.muted;
     guideVideo.muted = guide.muted;
+    document.getElementById('guide-music').muted = guide.muted;
     updateGuideMute();
 }
 

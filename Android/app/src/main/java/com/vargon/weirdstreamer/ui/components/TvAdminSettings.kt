@@ -355,6 +355,9 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
     TvSettingsRow("Guide's prime time", "Then the news hour", stepValue = optionLabel(primeTimes, m.primeTime),
         onStep = { m.primeTime = stepOption(primeTimes, m.primeTime, it); m.saveSoon() },
         onClick = { m.primeTime = stepOption(primeTimes, m.primeTime, 1); m.saveSoon() }) { }
+    TvSettingsRow("Weather ZIP code", (m.weatherZip.ifBlank { "10001" }) + " · the Weather channel's forecast (US)", onClick = {
+        entry = TextEntry("Weather ZIP code", m.weatherZip, TvEntryKind.Number) { v -> m.weatherZip = v.filter { it.isDigit() }.take(5); m.save() }
+    }) { }
     TvSettingsRow("Hardware encoding", hardwareSummary(m.hardware, config),
         onClick = { if (m.hardware != null) showHardware = true }) { Icon(Icons.Default.Memory, contentDescription = null) }
 

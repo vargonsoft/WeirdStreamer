@@ -129,6 +129,13 @@ class CredentialManager(context: Context) {
 
     fun getRewindOnResume(): Boolean = sharedPreferences.getBoolean("rewind_on_resume", false)
 
+    // The Guide: a show that plays to its end while its channel is on is marked watched (this device's; off unless turned on)
+    fun setGuideMarksWatched(on: Boolean) {
+        sharedPreferences.edit().putBoolean("guide_marks_watched", on).apply()
+    }
+
+    fun getGuideMarksWatched(): Boolean = sharedPreferences.getBoolean("guide_marks_watched", false)
+
     // Theme music on title pages (this device's; on unless turned off)
     fun setThemeMusic(on: Boolean) {
         sharedPreferences.edit().putBoolean("theme_music", on).apply()

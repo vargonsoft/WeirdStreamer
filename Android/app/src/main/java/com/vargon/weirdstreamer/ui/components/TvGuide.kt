@@ -69,7 +69,7 @@ fun TvGuideScreen(viewModel: MediaViewModel) {
     val context = LocalContext.current
     val repo = viewModel.guideServer ?: run { viewModel.closeGuide(); return }
     val scope = rememberCoroutineScope()
-    val model = remember { GuideModel(repo, viewModel.guideOpen?.ifEmpty { null }, context.applicationContext, scope) }
+    val model = remember { GuideModel(repo, viewModel.guideOpen?.ifEmpty { null }, context.applicationContext, scope) { viewModel.guideMarksWatched } }
     val player = remember { guideExoPlayer(context) }
     LaunchedEffect(Unit) { model.start() }
     DisposableEffect(Unit) {
@@ -155,15 +155,6 @@ private fun TvGuideDetails(model: GuideModel, modifier: Modifier) {
             info?.episodeLabel?.let { Text(it, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
             Text(guideFacts(context, c, l), style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // Mark watched above the description, which takes what room is left
-            val now = model.serverNow()
-            if (info != null && model.channel == c.number && l.start <= now && now < l.end) {
-                var label by remember(l.start) { mutableStateOf("Mark watched") }
-                val scope = rememberCoroutineScope()
-                TvSecondaryButton(onClick = {
-                    scope.launch { label = if (model.markWatched().isSuccess) "Watched" else "Couldn't mark it watched" }
-                }) { Text(label) }
-            }
             (info?.episodeOverview?.takeIf { it.isNotBlank() } ?: info?.overview)?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, overflow = TextOverflow.Ellipsis)
             }
@@ -239,7 +230,8 @@ private fun TvGuideRow(model: GuideModel, c: GuideChannel, from: Long, to: Long,
         Row(Modifier.width(ChannelWidth).fillMaxHeight()
             .background(if (tuned) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface,
                 RoundedCornerShape(6.dp))
-            .tvClickable(RoundedCornerShape(6.dp), 1f, 2.dp) { model.tune(c.number) }
+            // OK on the tuned channel goes full screen (the picture is hard to reach with the arrows)
+            .tvClickable(RoundedCornerShape(6.dp), 1f, 2.dp) { if (tuned) model.fullscreen = true else model.tune(c.number) }
             .padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AsyncImage(model = model.logoUrl(c, 256, logoColor), contentDescription = c.name,
@@ -266,6 +258,7 @@ private fun TvGuideRow(model: GuideModel, c: GuideChannel, from: Long, to: Long,
                     .onFocusChanged { if (it.isFocused) model.selected = c to l }
                     .tvClickable(RoundedCornerShape(6.dp), 1f, 2.dp) {
                         if (onNow && model.channel != c.number) model.tune(c.number)
+                        else if (onNow) model.fullscreen = true
                     }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                     contentAlignment = Alignment.CenterStart) {

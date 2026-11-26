@@ -22,7 +22,13 @@ final class GuideModel {
     var selected: (channel: GuideChannel, listing: GuideListing)?
     /// Whether something plays (a program or filler); nil between programs, where the card shows.
     private(set) var playing = false
-    var muted = false { didSet { player.isMuted = muted } }
+    var muted = false { didSet { player.isMuted = muted; music.isMuted = muted } }
+    /// The Weather channel's forecast, while it's tuned.
+    private(set) var weather: GuideWeather?
+    @ObservationIgnored private var weatherAt = Date.distantPast
+    /// The music under the Weather channel and the Guide channel's cards.
+    let music = AVPlayer()
+    @ObservationIgnored private var musicURL: URL?
     var fullscreen = false
     /// Shown for a few seconds after tuning: the channel's number (or the digits being typed), and its logo.
     private(set) var osd: String?
@@ -42,9 +48,13 @@ final class GuideModel {
     @ObservationIgnored private var streamKey = ""
     @ObservationIgnored private let lastKey: String
 
-    init(client: ServerClient, library: String?) {
+    /// Settings' "Mark Guide shows watched": a show that plays to its end on the tuned channel is marked watched.
+    @ObservationIgnored private let marksWatched: Bool
+
+    init(client: ServerClient, library: String?, marksWatched: Bool = false) {
         self.client = client
         self.library = library
+        self.marksWatched = marksWatched
         lastKey = "guideChannel:\(client.baseURL.absoluteString):\(library ?? "")"
         // Live TV doesn't pause: a pause from outside (a headset's button, Control Center) mutes instead.
         pauseObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
@@ -145,6 +155,11 @@ final class GuideModel {
             }
             guard !Task.isCancelled && channel == number else { return }
             skew = n.serverTime - Int64(Date().timeIntervalSince1970 * 1000)
+            // A show that just played to its end on this channel, with the setting on: marked watched
+            if marksWatched, let ended = now, ended.kind == "program", ended.channel.number == number,
+               ended.channel.kind == nil, n.start >= ended.end {
+                markWatched(channel: number, start: ended.start)
+            }
             now = n
             fellBack = false
             // the details follow the channel unless something else on it was picked
@@ -153,9 +168,16 @@ final class GuideModel {
                selected?.channel.number != number || (selected?.listing.end ?? 0) <= serverNow() {
                 selected = (c, l)
             }
-            if let path = n.path, n.kind != "bumper" {
+            if n.channel.kind == "weather" { Task { await loadWeather() } }
+            // The Weather channel and the Guide channel's cards are drawn, with music; the rest plays
+            if n.channel.kind == "weather" || (n.channel.kind == "guide" && n.kind == "promo") {
+                stopItem()
+                playMusic(n)
+            } else if let path = n.path, n.kind != "bumper" {
+                stopMusic()
                 await play(n, path: path, transcode: false)
             } else {
+                stopMusic()
                 stopItem()
             }
             let wait = max(n.end - serverNow(), 0) + 50
@@ -173,7 +195,8 @@ final class GuideModel {
         guard !Task.isCancelled && channel == n.channel.number else { return }
         stopItem()
         streamKey = key
-        let offset = Double(max(serverNow() - n.start, 0)) / 1000
+        // where the server said it is in the file, plus the time since
+        let offset = max((n.offset ?? 0) + Double(serverNow() - n.serverTime) / 1000, 0)
         let item: AVPlayerItem
         if let codecs, OfflinePlayback.of(codecs, path: path).plays {
             // The file as it is, in byte ranges through the app (for the server's kept certificate).
@@ -220,7 +243,7 @@ final class GuideModel {
                     if let seek = pending, seek > 0.5 {
                         pending = nil
                         // where the channel is now, not where it was when the item was opened
-                        let start = self.now.map { Double(max(self.serverNow() - $0.start, 0)) / 1000 } ?? seek
+                        let start = self.now.map { max(($0.offset ?? 0) + Double(self.serverNow() - $0.serverTime) / 1000, 0) } ?? seek
                         self.player.seek(to: CMTime(seconds: start, preferredTimescale: 600),
                                          toleranceBefore: .zero, toleranceAfter: .zero)
                     }
@@ -250,18 +273,60 @@ final class GuideModel {
         relay = nil
     }
 
-    /// Marks the program on now watched for the account (the only thing a channel records).
-    func markWatched() async -> Bool {
-        guard let channel else { return false }
+    /// Marks the program that started at start on a channel watched: it played to its end.
+    private func markWatched(channel: Int, start: Int64) {
+        let query = [("channel", "\(channel)"), ("start", "\(start)")] + libQuery
+        Task { try? await client.execute("POST", "/api/guide/watched", query: query) }
+    }
+
+    /// Plays the item's music from where the clock says (going on if it's already that track).
+    private func playMusic(_ n: GuideNow) {
+        guard let m = n.music, let url = client.url(for: m.url) else { return stopMusic() }
+        let at = max(m.offset + Double(serverNow() - n.serverTime) / 1000, 0)
+        music.isMuted = muted
+        if musicURL == url, music.currentItem != nil {
+            if abs(music.currentTime().seconds - at) > 3 { music.seek(to: CMTime(seconds: at, preferredTimescale: 600)) }
+        } else {
+            musicURL = url
+            let item = AVPlayerItem(asset: OriginalLoader.asset(for: url, token: client.token))
+            music.replaceCurrentItem(with: item)
+            music.seek(to: CMTime(seconds: at, preferredTimescale: 600))
+        }
+        music.play()
+    }
+
+    private func stopMusic() {
+        musicURL = nil
+        music.pause()
+        music.replaceCurrentItem(with: nil)
+    }
+
+    /// The music's credit line while it plays ("♪ …"), else nil.
+    var musicCredit: String? {
+        guard let m = now?.music else { return nil }
+        let text = (m.credit?.isEmpty == false ? m.credit : m.title) ?? ""
+        return text.isEmpty ? nil : "♪ " + text
+    }
+
+    /// Reads the forecast (the server keeps it 10 minutes; asked again after 5).
+    func loadWeather() async {
+        if weather != nil && Date().timeIntervalSince(weatherAt) < 300 { return }
         do {
-            try await client.execute("POST", "/api/guide/watched", query: [("channel", "\(channel)")] + libQuery)
-            return true
+            weather = try await client.get("/api/guide/weather")
+            weatherAt = Date()
         } catch {
-            return false
+            if weather == nil { weather = GuideWeather(error: errorText(error)) }
         }
     }
 
+    func weatherIconPath(_ name: String?) -> String {
+        "/api/guide/weather/icon?name=\(name ?? "cloud")&w=256"
+    }
+
+    var weatherRadarPath: String { "/api/guide/weather/radar?v=\(serverNow() / 300_000)" }
+
     func stop() {
+        stopMusic()
         loop?.cancel()
         follow?.cancel()
         osdTask?.cancel()

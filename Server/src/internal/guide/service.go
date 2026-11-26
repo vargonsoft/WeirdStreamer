@@ -53,6 +53,24 @@ type Service struct {
 	job  *bgjobs.Job
 	mu   sync.Mutex // one refresh at a time
 	kick chan struct{}
+
+	clipsMu    sync.Mutex
+	clipsByLib map[string][]Clip // the filler libraries' clips, by library ID, from the last refresh
+}
+
+// FillerClips are the filler clips of the libraries may(id) says the viewer sees (the Guide
+// channel's commercials).
+func (s *Service) FillerClips(may func(libraryID string) bool) []Clip {
+	s.clipsMu.Lock()
+	defer s.clipsMu.Unlock()
+	var out []Clip
+	for id, clips := range s.clipsByLib {
+		if may(id) {
+			out = append(out, clips...)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
 }
 
 // NewService makes the Guide's planner; Start runs it.
@@ -127,6 +145,9 @@ func (s *Service) Refresh(ctx context.Context) error {
 		s.job.End("failed: " + err.Error())
 		return err
 	}
+	s.clipsMu.Lock()
+	s.clipsByLib = clipsByLib
+	s.clipsMu.Unlock()
 
 	active := map[string]bool{}
 	planned := 0
@@ -175,6 +196,23 @@ func (s *Service) Refresh(ctx context.Context) error {
 			planned += n
 		}
 		s.job.Step(1)
+	}
+	// The channels of their own, while there's a Guide
+	if len(active) > 0 {
+		for _, sc := range SpecialChannels {
+			active[sc.Key] = true
+			c, ok := byKey[sc.Key]
+			if !ok {
+				if c, err = s.addSpecial(sc, byKey); err != nil {
+					return err
+				}
+				byKey[sc.Key] = c
+			} else if !c.Active {
+				if err := s.db.SetGuideChannelActive(sc.Key, true); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	for _, c := range stored {
 		if c.Active && !active[c.Key] {
@@ -300,6 +338,25 @@ func (s *Service) addChannel(ch Channel, existing map[string]database.GuideChann
 	}
 	c := database.GuideChannel{Key: ch.Key, LibraryID: ch.LibraryID, Number: n, Name: name, Genre: ch.Genre,
 		Kind: ch.Kind, Color: Colors[hash(ch.Key)%uint64(len(Colors))], Active: true}
+	return c, s.db.AddGuideChannel(c)
+}
+
+// addSpecial stores a channel of its own: the Guide channel as 1, the others with the next free
+// number from 14.
+func (s *Service) addSpecial(sc SpecialChannel, existing map[string]database.GuideChannel) (database.GuideChannel, error) {
+	taken := map[int]bool{}
+	for _, c := range existing {
+		taken[c.Number] = true
+	}
+	n := 14
+	if sc.Key == GuideChannelKey && !taken[GuideChannelNum] {
+		n = GuideChannelNum
+	}
+	for taken[n] {
+		n++
+	}
+	c := database.GuideChannel{Key: sc.Key, Number: n, Name: sc.Name, Genre: sc.Name, Kind: sc.Kind,
+		Color: Colors[hash(sc.Key)%uint64(len(Colors))], Active: true}
 	return c, s.db.AddGuideChannel(c)
 }
 

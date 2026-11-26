@@ -75,7 +75,7 @@ fun PhoneGuideScreen(viewModel: MediaViewModel) {
     val context = LocalContext.current
     val repo = viewModel.guideServer ?: run { viewModel.closeGuide(); return }
     val scope = rememberCoroutineScope()
-    val model = remember { GuideModel(repo, viewModel.guideOpen?.ifEmpty { null }, context.applicationContext, scope) }
+    val model = remember { GuideModel(repo, viewModel.guideOpen?.ifEmpty { null }, context.applicationContext, scope) { viewModel.guideMarksWatched } }
     val player = remember { guideExoPlayer(context) }
     LaunchedEffect(Unit) { model.start() }
     DisposableEffect(Unit) {
@@ -174,14 +174,6 @@ private fun PhoneGuideDetails(model: GuideModel, modifier: Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             (info?.episodeOverview?.takeIf { it.isNotBlank() } ?: info?.overview)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall)
-            }
-            val now = model.serverNow()
-            if (info != null && model.channel == c.number && l.start <= now && now < l.end) {
-                var label by remember(l.start) { mutableStateOf("Mark watched") }
-                val scope = rememberCoroutineScope()
-                PhoneSecondaryButton(onClick = {
-                    scope.launch { label = if (model.markWatched().isSuccess) "Watched" else "Couldn't mark it watched" }
-                }) { Text(label) }
             }
         }
     }

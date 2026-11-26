@@ -2517,7 +2517,17 @@ function rewindOnResume() {
     try { return localStorage.getItem('rewindOnResume') === 'true'; } catch (e) { return false; }
 }
 
+// The Guide marks a show watched when it plays to its end on the channel being watched (off by default).
+function guideMarksWatched() {
+    try { return localStorage.getItem('guideMarksWatched') === 'true'; } catch (e) { return false; }
+}
+
 function setupPlaybackSettings() {
+    const marks = document.getElementById('guide-marks-watched');
+    marks.checked = guideMarksWatched();
+    marks.onchange = () => {
+        try { localStorage.setItem('guideMarksWatched', String(marks.checked)); } catch (e) { /* not kept */ }
+    };
     const box = document.getElementById('rewind-on-resume');
     box.checked = rewindOnResume();
     box.onchange = () => {
@@ -2964,6 +2974,7 @@ async function showSettings(pushHistory = true) {
             showHardwareSettings(config.streaming);
             showBackupSettings(config.database || {});
             document.getElementById('guide-prime-time').value = String((config.guide && config.guide.primeTime) || 20);
+            document.getElementById('guide-weather-zip').value = (config.guide && config.guide.weatherZip) || '';
             loadDamagedVideos();
             const metadata = config.metadata || {};
             document.getElementById('tmdb-token').value = metadata.tmdbAccessToken || '';
@@ -3871,6 +3882,7 @@ async function handleSaveSettings() {
         state.currentConfig.guide = {
             ...(state.currentConfig.guide || {}),
             primeTime: parseInt(document.getElementById('guide-prime-time').value) || 20,
+            weatherZip: document.getElementById('guide-weather-zip').value.trim(),
         };
         state.currentConfig.metadata = {
             ...(state.currentConfig.metadata || {}),

@@ -825,6 +825,8 @@ struct GuideChannel: Decodable, Hashable, Identifiable {
     /// Its logo: GET this with w= (width), color= (rrggbb) or format=svg.
     let logo: String?
     let listings: [GuideListing]?
+    /// A channel of its own's: guide or weather (the app draws it); nil for a library's channels.
+    var kind: String? = nil
     var id: Int { number }
 }
 
@@ -871,4 +873,59 @@ struct GuideNow: Decodable, Equatable {
     let next: ProgramInfo?
     let nextStart: Int64?
     let serverTime: Int64
+    /// The Guide channel's preview and promo blocks: when and where the program airs.
+    var airs: Int64? = nil
+    var airsOn: GuideChannel? = nil
+    /// What plays under the Weather channel and the Guide channel's cards.
+    var music: GuideMusic? = nil
+}
+
+/// A track of the Guide's music, from offset seconds; the next starts at end.
+struct GuideMusic: Decodable, Equatable {
+    let url: String
+    let title: String?
+    let credit: String?
+    let offset: Double
+    let start: Int64?
+    let end: Int64?
+}
+
+/// GET /api/guide/weather: the Weather channel's (the National Weather Service's, US units).
+struct GuideWeather: Decodable, Equatable {
+    var place: String? = nil
+    var zip: String? = nil
+    var updated: Int64? = nil
+    var current: WeatherNow? = nil
+    var periods: [WeatherPeriod]? = nil
+    var alerts: [WeatherAlert]? = nil
+    var radar: Bool? = nil
+    var error: String? = nil
+}
+
+struct WeatherNow: Decodable, Equatable {
+    let conditions: String?
+    let icon: String?
+    let temp: Int?
+    let feelsLike: Int?
+    let dewpoint: Int?
+    let humidity: Int?
+    let windDir: String?
+    let wind: Int?
+    let gust: Int?
+    let pressure: Double?
+    let visibility: Double?
+}
+
+struct WeatherPeriod: Decodable, Equatable {
+    let name: String
+    let daytime: Bool
+    let temp: Int
+    let forecast: String
+    let icon: String?
+    let precip: Int?
+}
+
+struct WeatherAlert: Decodable, Equatable {
+    let event: String
+    let headline: String?
 }

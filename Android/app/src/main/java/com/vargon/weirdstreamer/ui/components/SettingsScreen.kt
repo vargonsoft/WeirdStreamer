@@ -61,6 +61,7 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
     val hiddenFilesFocus = remember { FocusRequester() }
     val rewindFocus = remember { FocusRequester() }
     val themeMusicFocus = remember { FocusRequester() }
+    val guideWatchedFocus = remember { FocusRequester() }
     val clearCacheFocus = remember { FocusRequester() }
     val updateFocus = remember { FocusRequester() }
     val subtitleStyleFocus = remember { FocusRequester() }
@@ -196,13 +197,18 @@ fun SettingsScreen(viewModel: MediaViewModel, onBack: () -> Unit, onThemeChanged
                         viewModel.updateThemeVolume(THEME_VOLUMES[i - 1].first)
                         viewModel.updateThemeMusic(true)
                     }
-                    TvSettingsRow("Theme music on title pages", focus = themeMusicFocus, up = rewindFocus, down = subtitleStyleFocus,
+                    TvSettingsRow("Theme music on title pages", focus = themeMusicFocus, up = rewindFocus, down = guideWatchedFocus,
                         stepValue = themeChoices[themeChoice],
                         onStep = { by -> pickTheme((themeChoice + by).coerceIn(0, themeChoices.lastIndex)) },
                         onClick = { pickTheme((themeChoice + 1) % themeChoices.size) }) {}
+                    TvSettingsRow("Mark Guide shows watched", "When a show plays to its end on the channel you're watching",
+                        focus = guideWatchedFocus, up = themeMusicFocus, down = subtitleStyleFocus,
+                        onClick = { viewModel.updateGuideMarksWatched(!viewModel.guideMarksWatched) }) {
+                        Switch(checked = viewModel.guideMarksWatched, onCheckedChange = null, colors = tvSwitchColors())
+                    }
                     // Subtitle style: Android's caption settings, or our own
                     TvSettingsRow("Subtitle style", subtitleStyleSummary(SubtitleStyleStore.get(context)), subtitleStyleFocus,
-                        up = themeMusicFocus, down = clearCacheFocus, onClick = { showSubtitleStyle = true }) {
+                        up = guideWatchedFocus, down = clearCacheFocus, onClick = { showSubtitleStyle = true }) {
                         Icon(Icons.Default.ClosedCaption, contentDescription = null)
                     }
                     TvSettingsRow("Clear thumbnail cache", focus = clearCacheFocus, up = subtitleStyleFocus, down = updateFocus,

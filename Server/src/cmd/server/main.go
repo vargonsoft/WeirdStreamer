@@ -138,6 +138,9 @@ func serve(parent context.Context) {
 		config.GlobalConfig.Media.TempPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "tmp")
 	}
 	// Fixed copies of damaged videos, and the originals they replaced: beside the thumbnails by default
+	if config.GlobalConfig.Guide.MusicPath == "" {
+		config.GlobalConfig.Guide.MusicPath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "guide-music")
+	}
 	if config.GlobalConfig.Media.ThemePath == "" {
 		config.GlobalConfig.Media.ThemePath = filepath.Join(filepath.Dir(filepath.Clean(config.GlobalConfig.Media.ThumbnailPath)), "themes")
 	}
@@ -269,6 +272,10 @@ func serve(parent context.Context) {
 	api.HandleFunc("/guide/now", guideHandler.Now).Methods("GET")
 	api.HandleFunc("/guide/logo", guideHandler.Logo).Methods("GET")
 	api.HandleFunc("/guide/watched", guideHandler.Watched).Methods("POST")
+	api.HandleFunc("/guide/weather", guideHandler.Weather).Methods("GET")
+	api.HandleFunc("/guide/weather/radar", guideHandler.WeatherRadar).Methods("GET")
+	api.HandleFunc("/guide/weather/icon", guideHandler.WeatherIcon).Methods("GET")
+	api.HandleFunc("/guide/music", guideHandler.Music).Methods("GET")
 	api.HandleFunc("/library/new", mediaHandler.NewAdditions).Methods("GET")
 	api.HandleFunc("/playback/watched", mediaHandler.SetWatched).Methods("POST")
 	api.HandleFunc("/playback/sync", mediaHandler.SyncPlayback).Methods("POST")

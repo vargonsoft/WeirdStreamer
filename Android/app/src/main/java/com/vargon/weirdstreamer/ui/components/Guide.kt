@@ -79,6 +79,8 @@ class GuideModel(
     val library: String?,
     private val context: Context,
     private val scope: CoroutineScope,
+    /** Settings' "Mark Guide shows watched": a show that plays to its end on the tuned channel is marked watched. */
+    private val marksWatched: () -> Boolean = { false },
 ) {
     var data by mutableStateOf<GuideListings?>(null)
         private set
@@ -100,6 +102,13 @@ class GuideModel(
     /** Bumped each second, for the time line. */
     var clock by mutableStateOf(0L)
         private set
+    /** The Weather channel's forecast, while it's tuned. */
+    var weather by mutableStateOf<com.vargon.weirdstreamer.api.models.GuideWeather?>(null)
+        private set
+    private var weatherAt = 0L
+    /** The music under the Weather channel and the Guide channel's cards (its own player). */
+    val music: ExoPlayer by lazy { guideExoPlayer(context).also { it.volume = if (muted) 0f else 1f } }
+    private var musicUsed = false
 
     private var skew = 0L // the server's clock less this one's
     private var nowJob: Job? = null
@@ -198,15 +207,29 @@ class GuideModel(
                 continue
             }
             skew = n.serverTime - System.currentTimeMillis()
+            // A show that just played to its end on this channel, with the setting on: marked watched
+            val ended = now
+            if (ended != null && ended.kind == "program" && ended.channel.number == number && ended.channel.kind.isEmpty() &&
+                n.start >= ended.end && marksWatched()) {
+                scope.launch { repo.guideWatched(number, library, ended.start) }
+            }
             now = n
             fellBack = false
+            if (n.channel.kind == "weather") scope.launch { loadWeather() }
             // the details follow the channel unless something else on it was picked
             val c = data?.channels?.firstOrNull { it.number == number }
             val l = c?.listings?.firstOrNull { it.start <= n.start && n.start < it.end }
             if (c != null && l != null && (selected?.first?.number != number || (selected?.second?.end ?: 0) <= serverNow())) {
                 selected = c to l
             }
-            stream = n.path?.takeIf { n.kind != "bumper" }?.let { streamFor(n, it, transcode = false) }
+            // The Weather channel and the Guide channel's cards are drawn, with music; the rest plays
+            if (n.channel.kind == "weather" || n.channel.kind == "guide" && n.kind == "promo") {
+                stream = null
+                playMusic(n)
+            } else {
+                stopMusic()
+                stream = n.path?.takeIf { n.kind != "bumper" }?.let { streamFor(n, it, transcode = false) }
+            }
             delay((n.end - serverNow()).coerceAtLeast(0) + 50)
         }
     }
@@ -215,7 +238,8 @@ class GuideModel(
      *  stream from where the channel is (the video copied when it can be, the audio as it plays). */
     private suspend fun streamFor(n: GuideNow, path: String, transcode: Boolean): GuideStream {
         val key = "${n.channel.number}|${n.start}|$transcode"
-        val offset = (serverNow() - n.start).coerceAtLeast(0)
+        // where the server said it is in the file, plus the time since
+        val offset = ((n.offset * 1000).toLong() + serverNow() - n.serverTime).coerceAtLeast(0)
         val codecs = if (transcode) null else repo.codecs(path)
         if (codecs != null && OfflinePlayback.of(context, codecs, 0, 0).plays) {
             return GuideStream(repo.streamUrlFor(path), offset, key)
@@ -224,7 +248,7 @@ class GuideModel(
         val copy = !transcode && video?.codec == "h264" && video.pixFmt in listOf("yuv420p", "yuvj420p")
         val track = codecs?.audio?.let { list -> list.firstOrNull { it.isDefault } ?: list.firstOrNull() }
         val audio = if (transcode) AudioStep.STEREO else audioLadder(track, AudioOutput.current(context), small = false).first()
-        val start = (serverNow() - n.start).coerceAtLeast(0)
+        val start = offset
         val query = buildString {
             append(if (copy) "&transcode=audio" else "&transcode=1")
             append(audio.query)
@@ -243,13 +267,49 @@ class GuideModel(
         scope.launch { stream = streamFor(n, path, transcode = true) }
     }
 
-    /** Marks the program on now watched for the account (the only thing a channel records). */
-    suspend fun markWatched(): Result<Unit> = repo.guideWatched(channel ?: return Result.failure(Exception("No channel")), library)
+    /** Plays the item's music from where the clock says (going on if it's already that track). */
+    private fun playMusic(n: GuideNow) {
+        val m = n.music ?: return stopMusic()
+        val url = repo.absoluteUrl(m.url) ?: return
+        val at = ((m.offset * 1000).toLong() + serverNow() - n.serverTime).coerceAtLeast(0)
+        musicUsed = true
+        music.volume = if (muted) 0f else 1f
+        if (music.currentMediaItem?.mediaId == url && music.playbackState != Player.STATE_IDLE) {
+            if (kotlin.math.abs(music.currentPosition - at) > 3000) music.seekTo(at)
+        } else {
+            music.setMediaItem(MediaItem.Builder().setUri(url).setMediaId(url).build(), at)
+            music.prepare()
+        }
+        music.playWhenReady = true
+    }
+
+    private fun stopMusic() {
+        if (!musicUsed) return
+        music.stop()
+        music.clearMediaItems()
+    }
+
+    /** The music's credit line while it plays ("♪ …"), else null. */
+    fun musicCredit(): String? = now?.music?.let { m -> (m.credit.ifBlank { m.title }).takeIf { it.isNotBlank() }?.let { "♪ $it" } }
+
+    /** Reads the forecast (the server keeps it 10 minutes; asked again after 5). */
+    suspend fun loadWeather() {
+        if (weather != null && System.currentTimeMillis() - weatherAt < 5 * 60_000) return
+        repo.guideWeather().onSuccess {
+            weather = it
+            weatherAt = System.currentTimeMillis()
+        }.onFailure { if (weather == null) weather = com.vargon.weirdstreamer.api.models.GuideWeather(error = it.message) }
+    }
+
+    fun weatherIconUrl(name: String) = repo.weatherIconUrl(name)
+
+    fun weatherRadarUrl() = repo.weatherRadarUrl(serverNow())
 
     fun stop() {
         nowJob?.cancel()
         stream = null
         now = null
+        if (musicUsed) music.release()
     }
 
     companion object {
@@ -274,11 +334,16 @@ fun GuidePlayer(model: GuideModel, player: ExoPlayer, modifier: Modifier = Modif
             player.clearMediaItems()
             return@LaunchedEffect
         }
-        player.setMediaItem(MediaItem.fromUri(stream.url), stream.seekMs)
+        // Going full screen (or back) places this anew with the same player: what it already plays goes on.
+        if (player.currentMediaItem?.mediaId == stream.key && player.playbackState != Player.STATE_IDLE) return@LaunchedEffect
+        player.setMediaItem(MediaItem.Builder().setUri(stream.url).setMediaId(stream.key).build(), stream.seekMs)
         player.prepare()
         player.playWhenReady = true
     }
-    LaunchedEffect(model.muted) { player.volume = if (model.muted) 0f else 1f }
+    LaunchedEffect(model.muted) {
+        player.volume = if (model.muted) 0f else 1f
+        model.music.volume = if (model.muted) 0f else 1f
+    }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) = model.playerFailed()
@@ -293,19 +358,33 @@ fun GuidePlayer(model: GuideModel, player: ExoPlayer, modifier: Modifier = Modif
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
     }
+    val now = model.now
+    // A channel of its own: the Guide channel's picture on top with every channel's listings below;
+    // the Weather channel's pages over it all
+    val kind = now?.channel?.kind ?: model.data?.channels?.firstOrNull { it.number == model.channel }?.kind ?: ""
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
-        AndroidView(
-            factory = { ctx ->
-                (LayoutInflater.from(ctx).inflate(R.layout.texture_video_view, null) as PlayerView).apply {
-                    useController = false
-                    this.player = player
-                }
-            },
-            update = { it.player = player },
-            modifier = Modifier.fillMaxSize()
-        )
-        val now = model.now
-        if (stream == null) GuideCard(model, now)
+        Box(if (kind == "guide") Modifier.fillMaxWidth().fillMaxHeight(0.58f).align(Alignment.TopCenter) else Modifier.fillMaxSize()) {
+            AndroidView(
+                factory = { ctx ->
+                    (LayoutInflater.from(ctx).inflate(R.layout.texture_video_view, null) as PlayerView).apply {
+                        useController = false
+                        this.player = player
+                    }
+                },
+                update = { it.player = player },
+                // the view going (to full screen or back) lets go of the picture, so the new one gets it
+                onRelease = { it.player = null },
+                modifier = Modifier.fillMaxSize()
+            )
+            when {
+                kind == "weather" -> {}
+                kind == "guide" && stream == null -> GuidePromo(model, now)
+                stream == null -> GuideCard(model, now)
+                kind == "guide" && now?.kind == "preview" -> PreviewCaption(now, Modifier.align(Alignment.BottomStart))
+            }
+        }
+        if (kind == "guide") GuideListings(model, Modifier.fillMaxWidth().fillMaxHeight(0.42f).align(Alignment.BottomCenter))
+        if (kind == "weather") WeatherScreen(model, Modifier.fillMaxSize())
         // the channel's number and logo for a few seconds after tuning, as a cable box shows them
         model.osd?.let {
             GuideText(it, Modifier.align(Alignment.TopEnd).padding(12.dp), 28.sp, Color(0xFF7CFC00), mono = true)

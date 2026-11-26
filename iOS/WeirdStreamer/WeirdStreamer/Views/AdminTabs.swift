@@ -83,6 +83,7 @@ struct ServerSettingsTab: View {
     @State private var http2 = false
     @State private var pauseJobs = false
     @State private var primeTime = "20" // the Guide's: the hour it starts
+    @State private var weatherZip = "" // the Weather channel's US ZIP code ("" New York City's)
     // Hardware encoding: what the server found, and the choice ("" the CPU, else "id|device")
     @State private var hardware: HardwareReport? = HardwareReport(checking: true, gpus: nil, encoders: nil, problems: nil)
     @State private var hwEncoder = ""
@@ -177,6 +178,8 @@ struct ServerSettingsTab: View {
                 }
                 SectionTitle(text: "Guide")
                 OptionMenu(label: "Prime time (then the news hour)", options: primeTimes, value: $primeTime)
+                PhoneTextField(label: "Weather ZIP code", text: $weatherZip, placeholder: "10001", keyboard: .numberPad,
+                               hint: "The Weather channel's forecast is the National Weather Service's for it (US only)")
                 hardwareSection
                 backupSection
                 DamagedVideosSection()
@@ -414,6 +417,7 @@ struct ServerSettingsTab: View {
         http2 = streaming?["enableHTTP2"] as? Bool ?? false
         pauseJobs = streaming?["pauseJobsWhileStreaming"] as? Bool ?? false
         primeTime = ((c["guide"] as? [String: Any])?["primeTime"] as? Int).flatMap { $0 > 0 ? "\($0)" : nil } ?? "20"
+        weatherZip = (c["guide"] as? [String: Any])?["weatherZip"] as? String ?? ""
         hwEncoder = streaming?["hardwareEncoder"] as? String ?? ""
         hwDevice = streaming?["hardwareDevice"] as? String ?? ""
         hwMax = "\(streaming?["hardwareMaxTranscodes"] as? Int ?? 0)"
@@ -463,6 +467,7 @@ struct ServerSettingsTab: View {
         c["streaming"] = streaming
         var guide = c["guide"] as? [String: Any] ?? [:]
         guide["primeTime"] = Int(primeTime) ?? 20
+        guide["weatherZip"] = String(weatherZip.filter(\.isNumber).prefix(5))
         c["guide"] = guide
         var database = c["database"] as? [String: Any] ?? [:]
         database["backupSchedule"] = backupSchedule

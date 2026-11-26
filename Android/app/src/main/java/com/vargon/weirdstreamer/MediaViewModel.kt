@@ -151,6 +151,15 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var rewindOnResume by mutableStateOf(credentialManager.getRewindOnResume())
         private set
 
+    /** The Guide marks a show watched when it plays to its end on the channel you're watching (off by default). */
+    var guideMarksWatched by mutableStateOf(credentialManager.getGuideMarksWatched())
+        private set
+
+    fun updateGuideMarksWatched(on: Boolean) {
+        guideMarksWatched = on
+        credentialManager.setGuideMarksWatched(on)
+    }
+
     /** Title pages play their theme music (ThemeMusic.kt), at this volume: "low", "medium" or "high". */
     var themeMusic by mutableStateOf(credentialManager.getThemeMusic())
         private set

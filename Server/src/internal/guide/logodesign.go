@@ -73,6 +73,13 @@ var stationDesigns = []design{
 	{"WNSF", "Nosifer-Regular", "", "beside", "triangle", false},
 }
 
+// The channels of their own (not a library's titles): the Guide's listings, the weather and music.
+var channelDesigns = []design{
+	{"Guide", "Kanit-BlackItalic", "tv", "beside", "rect", false},
+	{"Weather", "DaysOne-Regular", "cloudsun", "beside", "disc", false},
+	{"Music", "SedgwickAveDisplay-Regular", "notes", "beside", "square", false},
+}
+
 // Design draws every logo's artwork with the fonts in fontDir (their .ttf files, by the names above).
 func Design(fontDir string) ([]Artwork, error) {
 	fonts := map[string]*sfnt.Font{}
@@ -92,15 +99,18 @@ func Design(fontDir string) ([]Artwork, error) {
 		return f, nil
 	}
 	var out []Artwork
-	for i, ds := range [][]design{genreDesigns, stationDesigns} {
+	for i, ds := range [][]design{genreDesigns, stationDesigns, channelDesigns} {
 		for _, d := range ds {
 			f, err := load(d.font)
 			if err != nil {
 				return nil, err
 			}
 			id := "genre-" + slug(d.name)
-			if i == 1 {
+			switch i {
+			case 1:
 				id = "station-" + strings.ToLower(d.name)
+			case 2:
+				id = "channel-" + slug(d.name)
 			}
 			p, bug := d.draw(f)
 			out = append(out, Artwork{ID: id, Name: d.name, Font: d.font, Bug: bug, Shapes: []artShape{{D: pathData(p)}}})

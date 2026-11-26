@@ -35,7 +35,7 @@ struct GuideScreen: View {
         .themed()
         .onAppear {
             guard guide == nil, let client = model.client else { return }
-            let g = GuideModel(client: client, library: library.isEmpty ? nil : library)
+            let g = GuideModel(client: client, library: library.isEmpty ? nil : library, marksWatched: model.guideMarksWatched)
             guide = g
             g.start()
         }
@@ -152,10 +152,32 @@ private struct GuidePicture: View {
     let guide: GuideModel
 
     var body: some View {
-        ZStack {
-            Color.black
-            GuideVideoLayer(player: guide.player)
-            if !guide.playing { GuideCard(guide: guide) }
+        // A channel of its own: the Guide channel's picture on top with every channel's listings below;
+        // the Weather channel's pages over it all
+        let kind = guide.now?.channel.kind ?? guide.data?.channels?.first { $0.number == guide.channel }?.kind
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                Color.black
+                ZStack(alignment: .bottomLeading) {
+                    GuideVideoLayer(player: guide.player)
+                    if kind == "weather" {
+                        EmptyView()
+                    } else if kind == "guide" && !guide.playing {
+                        GuidePromo(guide: guide, height: geo.size.height)
+                    } else if !guide.playing {
+                        GuideCard(guide: guide)
+                    } else if kind == "guide", let now = guide.now, now.kind == "preview" {
+                        PreviewCaption(now: now, height: geo.size.height)
+                    }
+                }
+                .frame(height: kind == "guide" ? geo.size.height * 0.58 : geo.size.height)
+                if kind == "guide" {
+                    GuideListingsRoll(guide: guide, height: geo.size.height)
+                        .frame(height: geo.size.height * 0.42)
+                        .offset(y: geo.size.height * 0.58)
+                }
+                if kind == "weather" { WeatherScreen(guide: guide, height: geo.size.height) }
+            }
         }
         .overlay(alignment: .topTrailing) {
             if let osd = guide.osd {
@@ -227,7 +249,7 @@ private struct GuideCard: View {
 }
 
 /// A channel's color ("#rrggbb"), else the theme's plum.
-private func guideColor(_ hex: String?) -> Color {
+func guideColor(_ hex: String?) -> Color {
     guard let hex, let value = UInt32(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) else {
         return Color(hex: 0x6A3A62)
     }
@@ -235,7 +257,7 @@ private func guideColor(_ hex: String?) -> Color {
 }
 
 /// Text over the picture: white (or color) with a dark shadow, for any background.
-private struct GuideText: View {
+struct GuideText: View {
     let text: String
     let size: CGFloat
     var color: Color = .white
@@ -285,7 +307,6 @@ struct GuideImage: View {
 
 private struct GuideDetails: View {
     let guide: GuideModel
-    @State private var watched: [Int64: String] = [:] // Mark watched's label, by the program's start
 
     var body: some View {
         if let picked = guide.selected {
@@ -303,14 +324,6 @@ private struct GuideDetails: View {
                         Text(guideFacts(c, l)).font(.caption).foregroundStyle(Palette.muted)
                         if let text = info?.episodeOverview.flatMap({ $0.isEmpty ? nil : $0 }) ?? info?.overview {
                             Text(text).font(.caption)
-                        }
-                        let now = guide.serverNow()
-                        if info != nil && guide.channel == c.number && l.start <= now && now < l.end {
-                            Button(watched[l.start] ?? "Mark watched") {
-                                Task { watched[l.start] = await guide.markWatched() ? "Watched" : "Couldn't mark it watched" }
-                            }
-                            .buttonStyle(PhoneSecondaryButtonStyle())
-                            .padding(.top, 6)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

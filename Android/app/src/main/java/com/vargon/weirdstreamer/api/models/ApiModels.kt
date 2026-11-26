@@ -921,6 +921,8 @@ data class GuideChannel(
     // its logo: GET this with w= (width), color= (rrggbb) or format=svg
     @SerializedName("logo") val logo: String = "",
     @SerializedName("listings") val listings: List<GuideListing>? = null,
+    // a channel of its own's: guide or weather (the app draws it); "" for a library's channels
+    @SerializedName("kind") val kind: String = "",
 )
 
 /** A program in the grid, from its start to the next one's (Unix ms); no info: off the air. */
@@ -964,4 +966,59 @@ data class GuideNow(
     @SerializedName("next") val next: ProgramInfo? = null,
     @SerializedName("next_start") val nextStart: Long = 0,
     @SerializedName("server_time") val serverTime: Long = 0,
+    // the Guide channel's preview and promo blocks: when and where the program airs
+    @SerializedName("airs") val airs: Long = 0,
+    @SerializedName("airs_on") val airsOn: GuideChannel? = null,
+    // what plays under the Weather channel and the Guide channel's cards
+    @SerializedName("music") val music: GuideMusic? = null,
+)
+
+/** A track of the Guide's music, from [offset] seconds; the next starts at [end]. */
+data class GuideMusic(
+    @SerializedName("url") val url: String = "",
+    @SerializedName("title") val title: String = "",
+    @SerializedName("credit") val credit: String = "",
+    @SerializedName("offset") val offset: Double = 0.0,
+    @SerializedName("start") val start: Long = 0,
+    @SerializedName("end") val end: Long = 0,
+)
+
+/** GET /api/guide/weather: the Weather channel's (the National Weather Service's, US units). */
+data class GuideWeather(
+    @SerializedName("place") val place: String = "",
+    @SerializedName("zip") val zip: String = "",
+    @SerializedName("updated") val updated: Long = 0,
+    @SerializedName("current") val current: WeatherNow? = null,
+    @SerializedName("periods") val periods: List<WeatherPeriod>? = null,
+    @SerializedName("alerts") val alerts: List<WeatherAlert>? = null,
+    @SerializedName("radar") val radar: Boolean = false,
+    @SerializedName("error") val error: String? = null,
+)
+
+data class WeatherNow(
+    @SerializedName("conditions") val conditions: String = "",
+    @SerializedName("icon") val icon: String = "cloud",
+    @SerializedName("temp") val temp: Int? = null,
+    @SerializedName("feels_like") val feelsLike: Int? = null,
+    @SerializedName("dewpoint") val dewpoint: Int? = null,
+    @SerializedName("humidity") val humidity: Int? = null,
+    @SerializedName("wind_dir") val windDir: String? = null,
+    @SerializedName("wind") val wind: Int? = null,
+    @SerializedName("gust") val gust: Int? = null,
+    @SerializedName("pressure") val pressure: Double? = null,
+    @SerializedName("visibility") val visibility: Double? = null,
+)
+
+data class WeatherPeriod(
+    @SerializedName("name") val name: String = "",
+    @SerializedName("daytime") val daytime: Boolean = true,
+    @SerializedName("temp") val temp: Int = 0,
+    @SerializedName("forecast") val forecast: String = "",
+    @SerializedName("icon") val icon: String = "cloud",
+    @SerializedName("precip") val precip: Int? = null,
+)
+
+data class WeatherAlert(
+    @SerializedName("event") val event: String = "",
+    @SerializedName("headline") val headline: String = "",
 )

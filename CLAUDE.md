@@ -884,6 +884,31 @@ What's built (server):
     change channel; there's a mute button.
   - Settings: each library's Show in Guide and Use for Guide Filler, and prime time
     (`AdminSettings.kt`; the phone's and the TV's screens).
+- **Marking shows watched:** no button. Each device's setting "Mark Guide shows watched" (off by default; web
+  My Account › Playback `localStorage.guideMarksWatched`, Android `guideMarksWatched`, iPhone
+  `guide_marks_watched`): when the item after a library channel's program starts at or after its end while
+  that channel is tuned, the app sends `POST /api/guide/watched?channel=&start=<the program's start>`.
+- **TV:** OK on the tuned channel (its name or what's on now) goes full screen, since the picture is hard to
+  reach with the arrows.
+- **Channels of their own** (`guide/special.go`; no library, `LibraryID` ""; the home screen's Guide only, while
+  it has a library's channel): the Guide channel (1) and Weather (the next free from 14), made by the planner's
+  refresh. Their grid half hours are `ProgramInfo` kind `channel`; the channel's `kind` says
+  which screen the apps draw (`guide`, `weather`). `/now` gives `offset` (seconds into the file) and every
+  client plays from `offset` plus the time since `server_time`.
+  - Guide channel: `GuideChannelBlock`, 30-second blocks by the clock (preview, its promo card, preview,
+    commercial), worked out per request from the viewer's channels and filler (`Service.FillerClips`); `/now`
+    adds `airs` and `airs_on`. The apps draw the picture in the top 58% and the listings roll below.
+  - Weather: `guide/weather.go`, the National Weather Service for `guide.weatherZip` (Settings › Server; default
+    10001), the ZIP's position from the embedded Census table (`zipcodes.txt.gz`); `GET /api/guide/weather`
+    (10-minute cache), `/weather/radar` (the radar station's latest GIF), `/weather/icon?name=` (drawn like the
+    logos' symbols, `weathericons.go`). Pages turn every 10 s by the server's clock.
+  - Music: `guide/music.go`, the tracks in `guide.musicPath` (default `guide-music` beside the thumbnails),
+    shuffled per day and played by the clock from midnight; `/now`'s `music` (url, offset, credit from
+    `<track>.txt`), `GET /api/guide/music?name=`. Under the Weather channel and the Guide channel's cards, with
+    the credit on screen (CC BY). The e2e server has Kevin MacLeod's tracks in `e2e/guide-music`.
+  - Clients: web `guide.js` (`setChannelScreen`, `renderGuideListings`, `showPromo`, `renderWeather`, the
+    `<audio id="guide-music">`), Android `GuideChannels.kt` (drawn inside `GuidePlayer`; the music is
+    `GuideModel.music`, its own ExoPlayer), iPhone `Views/GuideChannels.swift` (`GuideModel.music`, an AVPlayer).
 - **iPhone** (`Session/Guide.swift`: `GuideModel`; `Views/GuideView.swift`: `GuideScreen`), as the phone's:
   - The Guide button ends `ContinueRows` (`AppModel.guideRow`); `openGuide` sets `guideOpen`, which
     `RootView` shows as a full-screen cover. The last channel is kept per server and Guide (`UserDefaults`).

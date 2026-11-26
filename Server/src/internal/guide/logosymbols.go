@@ -308,6 +308,41 @@ var symbols = map[string]func() path{
 		}
 		return p
 	},
+	"tv": func() path { // a set with rabbit ears, the listings on its screen
+		p := polygon(pt{.25, 0}, pt{.31, 0}, pt{.5, .24}, pt{.69, 0}, pt{.75, 0}, pt{.53, .3}, pt{.47, .3})
+		p.add(rect(0, .28, 1, .66, .08))
+		p.add(polygon(reversed(rectPoints(.07, .36, .68, .5))...))
+		for i := range 3 {
+			p.add(rect(.13, .43+float64(i)*.14, .56-float64(i%2)*.16, .08, 0))
+		}
+		p.add(circleHole(pt{.875, .5}, .045))
+		p.add(circleHole(pt{.875, .7}, .045))
+		p.add(rect(.12, .94, .14, .06, 0))
+		p.add(rect(.74, .94, .14, .06, 0))
+		return p
+	},
+	"cloudsun": func() path { // the sun behind a cloud, its rays on the side the cloud leaves open
+		p := circle(pt{.36, .38}, .2)
+		for _, deg := range []float64{135, 180, 225, 270, 315} {
+			a := deg * math.Pi / 180
+			w := 0.15
+			p.add(polygon(pt{.36 + .25*math.Cos(a-w), .38 + .25*math.Sin(a-w)}, pt{.36 + .36*math.Cos(a), .38 + .36*math.Sin(a)},
+				pt{.36 + .25*math.Cos(a+w), .38 + .25*math.Sin(a+w)}))
+		}
+		p.add(circle(pt{.41, .7}, .18))
+		p.add(circle(pt{.64, .55}, .24))
+		p.add(circle(pt{.86, .72}, .14))
+		p.add(rect(.25, .68, .75, .22, .11))
+		return p
+	},
+	"notes": func() path { // two beamed eighth notes
+		p := ellipse(pt{.25, .8}, .15, .1, -0.35, false)
+		p.add(ellipse(pt{.76, .68}, .15, .1, -0.35, false))
+		p.add(rect(.33, .2, .07, .6, 0))
+		p.add(rect(.84, .08, .07, .6, 0))
+		p.add(polygon(pt{.33, .16}, pt{.91, .04}, pt{.91, .18}, pt{.33, .3}))
+		return p
+	},
 	"eye-less burst": func() path { // an eight-point burst, a hole in the middle
 		p := polygon(starPoints(pt{.5, .5}, .5, .32, 8)...)
 		p.add(circleHole(pt{.5, .5}, .18))
@@ -324,7 +359,11 @@ func symbolIn(name string, x, y, bw, bh float64) path {
 	if f == nil {
 		f = symbols["star"]
 	}
-	p := f()
+	return fitPath(f(), x, y, bw, bh)
+}
+
+// fitPath places a path in the box (x, y, bw, bh): centered, as big as fits, its shape kept.
+func fitPath(p path, x, y, bw, bh float64) path {
 	minX, minY, maxX, maxY := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
 	for _, sg := range p {
 		for _, q := range sg.p {

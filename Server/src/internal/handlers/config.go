@@ -215,7 +215,8 @@ type settingsUpdate struct {
 		} `json:"paths"`
 	} `json:"media"`
 	Guide struct {
-		PrimeTime int `json:"primeTime"`
+		PrimeTime  int    `json:"primeTime"`
+		WeatherZip string `json:"weatherZip"`
 	} `json:"guide"`
 }
 
@@ -243,6 +244,7 @@ func (u settingsUpdate) applyTo(current *config.Config) *config.Config {
 			ShowInGuide: p.ShowInGuide, GuideFiller: p.GuideFiller}
 	}
 	c.Guide.PrimeTime = u.Guide.PrimeTime
+	c.Guide.WeatherZip = strings.TrimSpace(u.Guide.WeatherZip)
 	return &c
 }
 

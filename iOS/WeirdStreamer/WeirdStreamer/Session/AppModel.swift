@@ -485,6 +485,12 @@ final class AppModel {
         return setting("show_hidden_files") == "true"
     }
 
+    /// The Guide marks a show watched when it plays to its end on the channel you're watching (Settings, off by default).
+    var guideMarksWatched: Bool {
+        _ = settingsVersion
+        return setting("guide_marks_watched") == "true"
+    }
+
     /// Resuming a paused video goes back 5 seconds first (Settings, off by default).
     var rewindOnResume: Bool {
         _ = settingsVersion

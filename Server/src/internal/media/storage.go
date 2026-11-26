@@ -93,6 +93,7 @@ func countFolders() {
 		{"Backups", db.BackupDir()},
 		{"Fixed videos", m.RepairPath},
 		{"Theme music", m.ThemePath},
+		{"Guide music", config.GlobalConfig.Guide.MusicPath},
 		{"Trash", m.TrashPath},
 	} {
 		if f.dir != "" {

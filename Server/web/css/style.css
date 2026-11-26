@@ -3874,6 +3874,331 @@ body:has(#guide-screen.active) > footer {
     font-size: 3.2cqw;
 }
 
+/* ---- The channels of their own: drawn over the picture, sized to it (container units) ---- */
+.guide-player {
+    container-type: size;
+}
+
+/* The Guide channel: the picture (or card) on top, every channel's listings below */
+.guide-player--listings video {
+    height: 58%;
+}
+
+.guide-player--listings .guide-card {
+    inset: 0 0 42% 0;
+    padding: 2% 6%;
+}
+
+.guide-player--listings .guide-card-logo {
+    width: 18cqw;
+    margin-bottom: 1cqw;
+}
+
+.guide-player--listings .guide-card-kicker {
+    font-size: 2.6cqw;
+}
+
+.guide-player--listings .guide-card-title {
+    font-size: 4.2cqw;
+    margin: 1cqw 0;
+}
+
+.guide-player--listings .guide-card-line {
+    font-size: 2.4cqw;
+}
+
+.guide-card-credit {
+    margin-top: 1.5cqw;
+    font-size: 1.6cqw;
+    opacity: 0.85;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 60cqw;
+}
+
+.guide-caption {
+    position: absolute;
+    left: 2cqw;
+    top: calc(58cqh - 11cqh);
+    max-width: 70%;
+    padding: 0.8cqh 1.6cqw;
+    background: rgba(0, 0, 40, 0.75);
+    color: #fff;
+    border-left: 0.8cqw solid #FFD23F;
+    pointer-events: none;
+}
+
+.guide-caption-when {
+    font: bold 2.8cqh/1.2 sans-serif;
+    color: #FFD23F;
+    text-transform: uppercase;
+}
+
+.guide-caption-title {
+    font: bold 3.6cqh/1.2 sans-serif;
+}
+
+.guide-listings {
+    position: absolute;
+    inset: 58% 0 0 0;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(#0a1a6a, #06104a);
+    color: #fff;
+    font-family: sans-serif;
+    pointer-events: none;
+}
+
+.guide-listings-head,
+.guide-listings-row {
+    display: grid;
+    grid-template-columns: 22% 26% 26% 26%;
+}
+
+.guide-listings-head {
+    background: #c8a000;
+    color: #1a1a1a;
+    font: bold 3.2cqh/1.6 sans-serif;
+}
+
+.guide-listings-head > div {
+    padding: 0 1cqw;
+}
+
+.guide-listings-roll {
+    flex: 1;
+    overflow: hidden;
+}
+
+.guide-listings-list {
+    animation: guide-roll linear infinite;
+}
+
+@keyframes guide-roll {
+    from { transform: translateY(0); }
+    to { transform: translateY(var(--roll, -50%)); }
+}
+
+.guide-listings-row {
+    height: 9cqh;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.guide-listings-channel {
+    display: flex;
+    align-items: center;
+    gap: 0.8cqw;
+    padding: 0 0.8cqw;
+    background: rgba(255, 255, 255, 0.08);
+    min-width: 0;
+}
+
+.guide-listings-logo {
+    height: 6cqh;
+    max-width: 45%;
+    object-fit: contain;
+}
+
+.guide-listings-number {
+    font: bold 2.6cqh/1.1 sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.guide-listings-cell {
+    display: flex;
+    align-items: center;
+    padding: 0 1cqw;
+    font: bold 3cqh/1.1 sans-serif;
+    border-left: 1px solid rgba(255, 255, 255, 0.15);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.guide-listings-cont {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* The Weather channel: an 80s local forecast, blue, with the warnings scrolling in red */
+.guide-weather {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(#1d3f9a, #0a1f5c 60%, #081640);
+    color: #fff;
+    font-family: sans-serif;
+    text-shadow: 0.3cqh 0.3cqh 0 rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+}
+
+.weather-head {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: baseline;
+    gap: 3cqw;
+    padding: 2.5cqh 4cqw 1.5cqh;
+    background: linear-gradient(#e6b800, #b38600);
+    color: #10204a;
+    text-shadow: none;
+}
+
+.weather-title {
+    font: 900 6cqh/1 sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.weather-place {
+    font: bold 4cqh/1 sans-serif;
+}
+
+.weather-clock {
+    font: bold 4cqh/1 monospace;
+}
+
+.weather-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 3cqh 4cqw;
+    min-height: 0;
+}
+
+.weather-icon {
+    width: 14cqh;
+    height: 14cqh;
+    filter: drop-shadow(0.4cqh 0.4cqh 0 rgba(0, 0, 0, 0.5));
+}
+
+.weather-icon-big {
+    width: 30cqh;
+    height: 30cqh;
+    filter: drop-shadow(0.5cqh 0.5cqh 0 rgba(0, 0, 0, 0.5));
+}
+
+.weather-now-main {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    column-gap: 3cqw;
+}
+
+.weather-now-temp {
+    font: 900 22cqh/1 sans-serif;
+}
+
+.weather-now-sky {
+    grid-column: 1 / -1;
+    font: bold 5cqh/1.2 sans-serif;
+    text-align: center;
+}
+
+.weather-facts {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 1.2cqh 3cqw;
+    font: bold 4.6cqh/1.1 sans-serif;
+}
+
+.weather-fact-label {
+    color: #9fc3ff;
+}
+
+.weather-period,
+.weather-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.2cqh;
+    flex: 1;
+    text-align: center;
+    padding: 0 1cqw;
+}
+
+.weather-period + .weather-period,
+.weather-day + .weather-day {
+    border-left: 0.3cqw solid rgba(255, 255, 255, 0.25);
+}
+
+.weather-period-name {
+    font: 900 4.6cqh/1.1 sans-serif;
+    color: #ffd23f;
+    text-transform: uppercase;
+}
+
+.weather-period-temp {
+    font: 900 6cqh/1 sans-serif;
+}
+
+.weather-period-temp.low {
+    color: #9fc3ff;
+}
+
+.weather-period-sky {
+    font: bold 3.6cqh/1.2 sans-serif;
+}
+
+.weather-period-precip {
+    font: bold 3.2cqh/1 sans-serif;
+    color: #9fc3ff;
+}
+
+.weather-day-temps {
+    font: 900 5cqh/1 sans-serif;
+}
+
+.weather-radar {
+    height: 100%;
+    max-width: 100%;
+    object-fit: contain;
+    border: 0.5cqh solid #fff;
+}
+
+.weather-error {
+    font: bold 5cqh/1.3 sans-serif;
+    text-align: center;
+}
+
+.weather-foot {
+    height: 7cqh;
+    display: flex;
+    align-items: center;
+    padding: 0 4cqw;
+    font: bold 3cqh/1 sans-serif;
+    background: rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.weather-credit {
+    padding: 0.6cqh 4cqw;
+    font: 2.6cqh/1.2 sans-serif;
+    color: #c9dcff;
+    text-align: right;
+}
+
+.weather-alerts {
+    background: #b00020;
+    padding: 0;
+}
+
+.weather-ticker {
+    display: inline-block;
+    padding-left: 100%;
+    font: bold 4cqh/1 sans-serif;
+    animation: weather-ticker linear infinite;
+}
+
+@keyframes weather-ticker {
+    from { transform: translateX(0); }
+    to { transform: translateX(-100%); }
+}
+
 .guide-info {
     display: flex;
     gap: 16px;

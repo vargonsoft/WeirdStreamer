@@ -181,3 +181,11 @@ guide:
   # The hour prime time starts (the server's time zone): 20 (8 to 11 pm) or 19 (7 to 10 pm). The
   # news hour follows it.
   primeTime: 20
+  # The US ZIP code the Weather channel's forecast is for (the National Weather Service's; New York
+  # City's, 10001, when empty).
+  weatherZip: "10001"
+  # Music for the Weather channel and the Guide channel's cards: the tracks in this folder (mp3, m4a,
+  # ogg, opus, flac, wav), shuffled each day. A <track>.txt beside a track holds its credit line,
+  # shown while it plays (a Creative Commons track's attribution). Default: guide-music beside the
+  # thumbnails folder.
+  # musicPath: ./var/guide-music

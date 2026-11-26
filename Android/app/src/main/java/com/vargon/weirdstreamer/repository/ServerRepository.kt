@@ -178,12 +178,27 @@ class ServerRepository(
         }
     }
 
-    suspend fun guideWatched(channel: Int, libraryId: String?): Result<Unit> = withContext(Dispatchers.IO) {
+    /** Marks the program that started at [start] on [channel] watched (it played to its end). */
+    suspend fun guideWatched(channel: Int, libraryId: String?, start: Long): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val r = apiService.guideWatched(channel, libraryId)
+            val r = apiService.guideWatched(channel, libraryId, start)
             if (!r.isSuccessful) throw Exception("Server error: ${r.code()}")
         }
     }
+
+    /** The Weather channel's forecast (the server reads it at most every 10 minutes). */
+    suspend fun guideWeather(): Result<com.vargon.weirdstreamer.api.models.GuideWeather> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.guideWeather()
+            r.body()?.takeIf { r.isSuccessful } ?: throw Exception("Server error: ${r.code()}")
+        }
+    }
+
+    /** A weather condition's icon, [width] pixels square, white. */
+    fun weatherIconUrl(name: String, width: Int = 256): String = "$requestBase/api/guide/weather/icon?name=$name&w=$width"
+
+    /** The area's radar image (a new address every 5 minutes, so it's fetched again). */
+    fun weatherRadarUrl(now: Long): String = "$requestBase/api/guide/weather/radar?v=${now / 300_000}"
 
     /** A channel's logo [width] pixels wide in [color] ("rrggbb"), transparent around it. */
     fun guideLogoUrl(channel: com.vargon.weirdstreamer.api.models.GuideChannel, width: Int, color: String = "ffffff"): String =

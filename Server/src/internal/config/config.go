@@ -30,6 +30,11 @@ type GuideConfig struct {
 	// The hour prime time starts, in the server's time zone: 20 (8 to 11 pm, the default) or 19
 	// (7 to 10 pm). The news hour follows it.
 	PrimeTime int `json:"primeTime" yaml:"primeTime"`
+	// The US ZIP code the Weather channel's forecast is for (New York City's, 10001, when empty).
+	WeatherZip string `json:"weatherZip,omitempty" yaml:"weatherZip,omitempty"`
+	// The folder of music for the Weather channel and the Guide channel's cards (default guide-music
+	// beside the thumbnails folder). A <track>.txt beside a track holds its credit line.
+	MusicPath string `json:"musicPath,omitempty" yaml:"musicPath,omitempty"`
 }
 
 // Prime time's starts (GuideConfig.PrimeTime)

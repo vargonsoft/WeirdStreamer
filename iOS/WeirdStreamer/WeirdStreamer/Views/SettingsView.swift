@@ -153,6 +153,12 @@ struct AppTab: View {
                                              set: { model.setSetting("rewind_on_resume", $0 ? "true" : "false") }))
                         .labelsHidden()
                 }
+                SettingsRow(title: "Mark Guide shows watched",
+                            detail: "A show the Guide plays to its end while you're on its channel is marked watched") {
+                    Toggle("", isOn: Binding(get: { model.guideMarksWatched },
+                                             set: { model.setSetting("guide_marks_watched", $0 ? "true" : "false") }))
+                        .labelsHidden()
+                }
                 SettingsRow(title: "Play theme music on title pages",
                             detail: "A show's or movie's theme plays quietly while its page is open") {
                     Toggle("", isOn: Binding(get: { model.themeMusic },

@@ -386,37 +386,7 @@ func pngOf(shapes []shape, width int) ([]byte, error) {
 			continue
 		}
 		z.Reset(width, height)
-		open := false
-		for _, sg := range s.p {
-			p := func(i int) (float32, float32) { return float32(sg.p[i].x * scale), float32(sg.p[i].y * scale) }
-			switch sg.op {
-			case opMove:
-				if open {
-					z.ClosePath()
-				}
-				x, y := p(0)
-				z.MoveTo(x, y)
-				open = true
-			case opLine:
-				x, y := p(0)
-				z.LineTo(x, y)
-			case opQuad:
-				x0, y0 := p(0)
-				x1, y1 := p(1)
-				z.QuadTo(x0, y0, x1, y1)
-			case opCube:
-				x0, y0 := p(0)
-				x1, y1 := p(1)
-				x2, y2 := p(2)
-				z.CubeTo(x0, y0, x1, y1, x2, y2)
-			case opClose:
-				z.ClosePath()
-				open = false
-			}
-		}
-		if open {
-			z.ClosePath()
-		}
+		addPath(z, s.p, scale)
 		z.Draw(dst, dst.Bounds(), paintImage(s.fill, scale), image.Point{})
 	}
 	var b bytes.Buffer
@@ -463,4 +433,39 @@ func (g *gradientImage) At(x, y int) color.Color {
 		}
 	}
 	return stops[len(stops)-1].c
+}
+
+// addPath adds a path to a rasterizer, scaled.
+func addPath(z *vector.Rasterizer, pth path, scale float64) {
+	open := false
+	for _, sg := range pth {
+		p := func(i int) (float32, float32) { return float32(sg.p[i].x * scale), float32(sg.p[i].y * scale) }
+		switch sg.op {
+		case opMove:
+			if open {
+				z.ClosePath()
+			}
+			x, y := p(0)
+			z.MoveTo(x, y)
+			open = true
+		case opLine:
+			x, y := p(0)
+			z.LineTo(x, y)
+		case opQuad:
+			x0, y0 := p(0)
+			x1, y1 := p(1)
+			z.QuadTo(x0, y0, x1, y1)
+		case opCube:
+			x0, y0 := p(0)
+			x1, y1 := p(1)
+			x2, y2 := p(2)
+			z.CubeTo(x0, y0, x1, y1, x2, y2)
+		case opClose:
+			z.ClosePath()
+			open = false
+		}
+	}
+	if open {
+		z.ClosePath()
+	}
 }
