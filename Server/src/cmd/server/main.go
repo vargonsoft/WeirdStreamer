@@ -226,6 +226,8 @@ func serve(parent context.Context) {
 	guideService := guide.NewService(db, metadataService)
 	guideService.Start(ctx)
 	guideHandler := handlers.NewGuideHandler(db, guideService)
+	// new videos, and lengths read, change the channels (planning never changes the next 6 hours)
+	mediaHandler.AfterScan(guideService.Kick)
 	// A token or library change saved through Settings starts a sync without a restart
 	configHandler.OnUpdate(func() { go metadataService.SyncAll(ctx); guideHandler.Plan() })
 

@@ -31,6 +31,7 @@ type Scanner struct {
 	thumbnailGenerator *ThumbnailGenerator
 	job                *jobs.Job
 	probed             int // files probed (new or changed) in the scan running
+	lengthsFilled      int // known videos without a length that the scan read one for
 }
 
 func NewScanner(db *database.DB) *Scanner {
@@ -54,6 +55,7 @@ func (s *Scanner) ScanMediaPaths() error {
 	defer scanning.Store(false)
 	s.job.Begin(0)
 	s.probed = 0
+	s.lengthsFilled = 0
 	// First pass: count total files
 	totalFiles := 0
 	for _, mediaPath := range config.GlobalConfig.Media.Paths {
@@ -89,7 +91,12 @@ func (s *Scanner) ScanMediaPaths() error {
 	if err := s.cleanupOrphanedThumbnails(); err != nil {
 		log.Printf("Warning: failed to cleanup thumbnails: %v\n", err)
 	}
-	s.job.End(fmt.Sprintf("%s checked, %d new or changed", plural(processedFiles, "file"), s.probed))
+	result := fmt.Sprintf("%s checked, %d new or changed", plural(processedFiles, "file"), s.probed)
+	if s.lengthsFilled > 0 {
+		result += fmt.Sprintf(", %d lengths filled in", s.lengthsFilled)
+		log.Printf("[SCAN] Read the lengths of %s the library had none for", plural(s.lengthsFilled, "video"))
+	}
+	s.job.End(result)
 
 	return nil
 }
@@ -155,6 +162,20 @@ func (s *Scanner) scanDirectory(root string, processed *int, total int) error {
 		s.job.Step(1)
 		if known, err := s.db.GetMediaItem(path); err == nil && known.Size == size {
 			*processed++
+			// A video without a length (scanned before ffprobe was installed, or when it failed): read
+			// now, as the Guide schedules only videos with lengths. ffprobe's header read is quick,
+			// and the trickplay job won't have to.
+			if known.Type == "video" && known.Duration <= 0 && !IsDiscImage(path) && ffmpegMissing() == "" {
+				if d, w, h, err := ProbeVideo(Playable(path)); err == nil && d > 0 {
+					known.Duration = d
+					if known.Width <= 0 && w > 0 {
+						known.Width, known.Height = w, h
+					}
+					if err := s.db.SaveMediaItem(known); err == nil {
+						s.lengthsFilled++
+					}
+				}
+			}
 			// A video scanned before format lines were (or since): its format read once, the rest kept
 			if known.Type == "video" && known.Format == "" {
 				return next(s.db.SetMediaFormat(path, videoFormat(path)))

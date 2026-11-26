@@ -42,6 +42,7 @@ type MediaHandler struct {
 	trickplay          *media.TrickplayJob    // nil until StartTrickplay
 	assCache           *media.AssJob          // nil until StartAssCache
 	repairs            *media.RepairJob       // nil until StartRepairs
+	afterScan          []func()               // run after each scan (the Guide's planner)
 	thumbnails         *thumbnailQueue        // missing thumbnails pages asked for
 }
 
@@ -802,7 +803,13 @@ func (h *MediaHandler) scan() {
 	if h.repairs != nil {
 		h.repairs.Wake() // and whether they're damaged
 	}
+	for _, f := range h.afterScan {
+		f() // the Guide plans with what the scan found (new videos, lengths read)
+	}
 }
+
+// AfterScan runs f after each scan (and its other jobs are woken).
+func (h *MediaHandler) AfterScan(f func()) { h.afterScan = append(h.afterScan, f) }
 
 // RegenerateThumbnails godoc
 // @Summary Regenerate thumbnails for a directory

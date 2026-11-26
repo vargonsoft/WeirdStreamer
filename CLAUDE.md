@@ -835,7 +835,11 @@ What's built (server):
 - **Library settings.** `showInGuide` (on, libraryOnly, off: `MediaPath.InGuide`) and `guideFiller` on
   each library. A filler library's videos get no trickplay frames (`config.InGuideFiller`): the trickplay job
   skips them (removing any made before, logged) and only reads a missing length, which the Guide plans with;
-  `cli trickplay` for a library or every video skips them too. `guide.primeTime` (19 or 20) is in config.yml.
+  `cli trickplay` for a library or every video skips them too.
+- **Lengths.** The Guide schedules only videos whose length is stored (`media_items.duration`). A scan reads a
+  known video's missing length (one scanned before ffprobe was installed, or when it failed: `lengthsFilled`,
+  logged), and each scan prompts the Guide to plan (`MediaHandler.AfterScan`; planning never changes the next
+  6 hours), so network channels appear once enough of their shows have lengths. `guide.primeTime` (19 or 20) is in config.yml.
 - **`internal/guide`.**
   - `Channels` groups one library's titles: a network with 4 or more shows gets a channel (named by
     `CallSign`), the other shows and the movies go into genre buckets.
