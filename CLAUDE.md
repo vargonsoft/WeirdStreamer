@@ -835,8 +835,10 @@ Checked by type-checking the server for each target and reading `release.sh` (wh
   which shares delete access and renames with POSIX semantics, and moves copy only across disks
   (`fileio.CrossDevice`). A file ffmpeg or another program has open still can't be moved there:
   Replace with fixed copy and Restore answer that it's in use (`fileio.InUse`). A new file
-  open/rename/serve uses `fileio`, not `os`. Still to do: transcodes write to stdout there (no
-  `ExtraFiles`), jobs don't wait for busy disks (no load readings), `private_other.go` locks nothing
+  open/rename/serve uses `fileio`, not `os`. A transcode's output can't go to fd 3 there (no
+  `ExtraFiles`): `separateOutput` (`transcache_windows.go`) makes a named pipe for it
+  (`\\.\pipe\weirdstreamer-<random>`, inbound, one instance, local clients) and gives ffmpeg its
+  name with `-y`. Still to do: jobs don't wait for busy disks (no load readings), `private_other.go` locks nothing
   (would need ACLs), no service or PowerShell scripts, and no `release.sh` package (needs MinGW on the
   build machine).
 - **Building:** either switch to pure-Go SQLite (`modernc.org/sqlite`; no C toolchains, every target

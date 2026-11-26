@@ -35,6 +35,3 @@ func windowsMemory() int64 {
 	}
 	return int64(m.totalPhys)
 }
-
-// extraPipes: exec's ExtraFiles isn't supported on Windows.
-const extraPipes = false
