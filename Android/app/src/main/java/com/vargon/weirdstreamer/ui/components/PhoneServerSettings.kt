@@ -861,7 +861,7 @@ fun JobsTab(server: ServerRepository) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp)) }
                 m.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
-            d.trickplay?.let { tp -> item { TrickplaySettingsBox(tp, m::saveTrickplay) } }
+            d.trickplay?.let { tp -> item { TrickplaySettingsBox(tp, m::saveTrickplay, m::saveTrickplayGpu) } }
             itemsIndexed(d.jobs, key = { _, j -> j.id }) { _, j -> JobCard(j, m.now, m::control) }
             item { StorageCard(d.storage.orEmpty()) }
         }
@@ -872,7 +872,7 @@ fun JobsTab(server: ServerRepository) {
 // automatic, sent as 0). The tab refreshes every few seconds, so the fields only follow the server while
 // they aren't being edited. save returns an error to show, or null.
 @Composable
-private fun TrickplaySettingsBox(tp: TrickplaySettings, save: suspend (Int, Int) -> String?) {
+private fun TrickplaySettingsBox(tp: TrickplaySettings, save: suspend (Int, Int) -> String?, saveGpu: suspend (Boolean) -> String?) {
     val scope = rememberCoroutineScope()
     var runners by remember { mutableStateOf(trickplayField(tp.autoRunners, tp.runners)) }
     var frames by remember { mutableStateOf(trickplayField(tp.autoFrames, tp.framesPerRunner)) }
@@ -897,7 +897,21 @@ private fun TrickplaySettingsBox(tp: TrickplaySettings, save: suspend (Int, Int)
                     placeholder = { Text(trickplayAutoFrames(runners, tp)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f))
             }
-            Text(trickplayNote(runners, frames, tp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Saved at once, apart from the fields.
+            tp.gpu?.takeIf { it.isNotEmpty() }?.let { gpu ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Decode on the GPU")
+                        Text("$gpu; off, the CPU decodes", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = tp.useGpu, onCheckedChange = { on ->
+                        scope.launch { saveGpu(on)?.let { message = it to true } }
+                    })
+                }
+            }
+            TrickplayMemoryTable(trickplayTable(runners, frames, tp), MaterialTheme.typography.bodySmall)
+            Text(trickplayLimits(tp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = {
                     scope.launch {

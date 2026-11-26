@@ -2444,8 +2444,18 @@ header h1 {
 .trickplay-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 14px; }
 .trickplay-settings[hidden] { display: none; }
 .trickplay-settings label { display: flex; align-items: center; gap: 8px; margin: 0; }
-.trickplay-settings input { width: 80px; }
+.trickplay-settings input { width: 100px; }
 .trickplay-settings .settings-hint { flex-basis: 100%; margin: 0; }
+.trickplay-settings #tp-gpu-row { flex-basis: 100%; }
+.trickplay-settings #tp-gpu-row[hidden] { display: none; }
+.trickplay-settings #tp-gpu { width: auto; }
+/* What the settings need with 4K videos against what the server has: one row for its memory, one for an NVIDIA card's */
+.tp-memory { flex-basis: 100%; max-width: 680px; border-collapse: collapse; font-size: 0.9em; }
+.tp-memory[hidden] { display: none; }
+.tp-memory th, .tp-memory td { text-align: left; padding: 3px 16px 3px 0; }
+.tp-memory th { color: var(--text-secondary, inherit); font-weight: 600; }
+.tp-memory .num { text-align: right; font-variant-numeric: tabular-nums; }
+.tp-memory .tp-warn { color: var(--danger-color, #c62828); }
 .job-card {
     border: 1px solid var(--border-color);
     border-radius: 10px;

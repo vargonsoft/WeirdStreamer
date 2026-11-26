@@ -29,6 +29,10 @@ type trickplaySettings struct {
 	FramesPerRunner int  `json:"frames_per_runner"` // in effect, for those runners
 	AutoRunners     bool `json:"auto_runners"`      // runners is one per disk (config.yml's 0)
 	AutoFrames      bool `json:"auto_frames"`       // frames per runner fill half the memory (0)
+	// The GPU trickplay can decode on (the hardware encoder's; "" none), and whether it does: the Jobs
+	// page can keep trickplay on the CPU. memory and auto_frames_for are for the decoder in use.
+	GPU    string `json:"gpu,omitempty"`
+	UseGPU bool   `json:"use_gpu"`
 	// What automatic gives: the runners (one per disk the libraries are on), and the frames for
 	// 1 to max_runners runners (auto_frames_for[r-1]), for the fields' hints while they're edited.
 	AutoRunnersValue int   `json:"auto_runners_value"`
@@ -45,7 +49,8 @@ func currentTrickplaySettings() trickplaySettings {
 	r, f := config.TrickplaySettings()
 	m := media.CurrentTrickplayMemory()
 	s := trickplaySettings{Runners: media.TrickplayRunners(), FramesPerRunner: media.TrickplayFramesPerRunner(),
-		AutoRunners: r == 0, AutoFrames: f == 0, AutoRunnersValue: min(media.LibraryDisks(), config.MaxTrickplayRunners),
+		AutoRunners: r == 0, AutoFrames: f == 0, GPU: media.TrickplayGPUName(), UseGPU: !config.TrickplayCPUOnly(),
+		AutoRunnersValue: min(media.LibraryDisks(), config.MaxTrickplayRunners),
 		MaxRunners: config.MaxTrickplayRunners, MaxFrames: config.MaxTrickplayFrames, MaxProduct: config.MaxTrickplayProduct,
 		Memory: m}
 	for n := 1; n <= config.MaxTrickplayRunners; n++ {
@@ -70,7 +75,8 @@ func (h *MediaHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 
 // ControlJob runs, pauses or resumes a job, or changes its settings (admins):
 // POST /api/admin/jobs/{id}/{run|pause|resume|settings}. Trickplay's settings ({"runners",
-// "frames_per_runner"}, 0 for automatic) are saved to config.yml and apply from its next batch.
+// "frames_per_runner"}, 0 for automatic, and "use_gpu"; those left out stay as they are) are saved to
+// config.yml and apply from its next batch.
 func (h *MediaHandler) ControlJob(w http.ResponseWriter, r *http.Request) {
 	if claims := auth.GetClaims(r.Context()); claims == nil || !claims.IsAdmin {
 		respondError(w, http.StatusForbidden, "Admin access required")
@@ -98,14 +104,25 @@ func (h *MediaHandler) ControlJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var body struct {
-			Runners         int `json:"runners"`
-			FramesPerRunner int `json:"frames_per_runner"`
+			Runners         *int  `json:"runners"`
+			FramesPerRunner *int  `json:"frames_per_runner"`
+			UseGPU          *bool `json:"use_gpu"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			respondError(w, http.StatusBadRequest, "Give runners and frames_per_runner (0: automatic)")
+			respondError(w, http.StatusBadRequest, "Give runners, frames_per_runner (0: automatic) or use_gpu")
 			return
 		}
-		if err := config.UpdateJobs(body.Runners, body.FramesPerRunner); err != nil {
+		settings := config.GlobalConfig.Jobs
+		if body.Runners != nil {
+			settings.TrickplayRunners = *body.Runners
+		}
+		if body.FramesPerRunner != nil {
+			settings.TrickplayFramesPerRunner = *body.FramesPerRunner
+		}
+		if body.UseGPU != nil {
+			settings.TrickplayCPUOnly = !*body.UseGPU
+		}
+		if err := config.UpdateJobs(settings); err != nil {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}

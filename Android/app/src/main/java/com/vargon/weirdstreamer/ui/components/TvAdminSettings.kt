@@ -680,6 +680,8 @@ private fun TvStreamText(s: AdminStream) {
 fun TvJobsTab(server: ServerRepository, first: FocusRequester, up: FocusRequester) {
     val m = rememberJobs(server)
     var trickplay by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val d = m.data
     if (d == null) {
         TvPlaceholderRow(m.error ?: "Loading…", first, up)
@@ -695,6 +697,13 @@ fun TvJobsTab(server: ServerRepository, first: FocusRequester, up: FocusRequeste
         val auto = { on: Boolean -> if (on) " (auto)" else "" }
         TvSettingsRow("Trickplay", "${tp.runners} runners${auto(tp.autoRunners)} × ${tp.framesPerRunner} frames per runner${auto(tp.autoFrames)}", focus = first, up = up,
             onClick = { trickplay = true }) { TvChevron() }
+        // Saved at once; a GPU can only be chosen when there's one trickplay can decode on.
+        tp.gpu?.takeIf { it.isNotEmpty() }?.let { gpu ->
+            TvSettingsRow("Decode trickplay on the GPU", if (tp.useGpu) gpu else "Off: the CPU decodes",
+                onClick = { scope.launch { m.saveTrickplayGpu(!tp.useGpu)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() } } }) {
+                Switch(checked = tp.useGpu, onCheckedChange = null, colors = tvSwitchColors())
+            }
+        }
     }
     d.jobs.forEachIndexed { i, j ->
         val isFirst = !firstUsed && i == 0
@@ -780,7 +789,8 @@ private fun TvTrickplayDialog(tp: TrickplaySettings, save: suspend (Int, Int) ->
         TextField(frames, { frames = it.filter(Char::isDigit) }, label = { FieldText("Frames per runner") },
             placeholder = { FieldText(trickplayAutoFrames(runners, tp)) }, singleLine = true,
             colors = tvTextFieldColors(), keyboardOptions = number, modifier = Modifier.fillMaxWidth().tvFieldLeavesOnUpDown())
-        TvNote(trickplayNote(runners, frames, tp))
+        TrickplayMemoryTable(trickplayTable(runners, frames, tp), MaterialTheme.typography.bodyMedium)
+        TvNote(trickplayLimits(tp))
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         TvDialogButtons("Save", onDismiss = onDismiss) {
             scope.launch {

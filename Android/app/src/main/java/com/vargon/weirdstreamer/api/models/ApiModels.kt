@@ -319,6 +319,10 @@ data class TrickplaySettings(
     @SerializedName("frames_per_runner") val framesPerRunner: Int = 10,
     @SerializedName("auto_runners") val autoRunners: Boolean = false,
     @SerializedName("auto_frames") val autoFrames: Boolean = false,
+    /** The GPU trickplay can decode on ("" none), and whether it does ([memory] and [autoFramesFor] are for the
+     *  decoder in use). */
+    @SerializedName("gpu") val gpu: String? = null,
+    @SerializedName("use_gpu") val useGpu: Boolean = false,
     @SerializedName("auto_runners_value") val autoRunnersValue: Int = 0,
     @SerializedName("auto_frames_for") val autoFramesFor: List<Int>? = null,
     @SerializedName("max_runners") val maxRunners: Int = 8,
@@ -341,9 +345,11 @@ data class TrickplayMemory(
     @SerializedName("swap_bytes") val swapBytes: Long = 0
 )
 
+/** Trickplay's settings to save; those left null stay as they are (Gson leaves nulls out). */
 data class TrickplaySettingsRequest(
-    @SerializedName("runners") val runners: Int,
-    @SerializedName("frames_per_runner") val framesPerRunner: Int
+    @SerializedName("runners") val runners: Int? = null,
+    @SerializedName("frames_per_runner") val framesPerRunner: Int? = null,
+    @SerializedName("use_gpu") val useGpu: Boolean? = null
 )
 
 /** One of the server's data folders and its size, for the Jobs tab's Storage card. */

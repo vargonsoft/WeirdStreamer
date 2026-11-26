@@ -91,17 +91,20 @@ struct APIContractTests {
         // Automatic settings: an empty field takes what the server worked out.
         let auto = try decode(TrickplaySettings.self, #"""
         {"runners":2,"frames_per_runner":4,"auto_runners":true,"auto_frames":true,"auto_runners_value":2,
+         "gpu":"NVIDIA GeForce GTX 1060 6GB","use_gpu":false,
          "auto_frames_for":[8,4,2,1,1,1,1,1]}
         """#)
         #expect(auto.autoRunners == true && auto.autoFrames == true)
+        #expect(auto.gpu == "NVIDIA GeForce GTX 1060 6GB" && auto.useGpu == false)
         for (fields, want) in [(("", ""), [2, 4]), (("1", ""), [1, 8]), (("3", "6"), [3, 6])] {
             let (r, f) = auto.effective(fields.0, fields.1)
             #expect([r, f] == want)
         }
         #expect(m.frameBytes4K == 239_075_328 && m.totalBytes == 4_294_967_296 && m.swapBytes == 2_147_483_648)
-        #expect(trickplayMemoryText(1, 20, m).hasSuffix("about 4.5 GB of memory at most, more than this server's 4.0 GB: the rest comes from its 2.0 GB of swap."))
-        #expect(trickplayMemoryText(1, 10, m).hasSuffix("(this server has 4.0 GB and 2.0 GB of swap)."))
-        #expect(trickplayMemoryText(3, 25, m).hasSuffix("those frames are then made one at a time."))
+        #expect(trickplayMemoryTable(1, 20, m).rows == [TrickplayRow(what: "Memory", needs: "4.5 GB", has: "4.0 GB + 2.0 GB swap", note: "Uses swap", warn: true)])
+        #expect(trickplayMemoryTable(1, 10, m).rows.first?.note == "Fits")
+        #expect(trickplayMemoryTable(3, 25, m).rows.first?.note == "Too much: frames are made one at a time")
+        #expect(trickplayMemoryTable(1, 20, m).summary == "1 × 20 = 20 frames at once, decoded on the CPU.")
 
         // An NVIDIA card: the server's memory, and the card's own.
         let gpu = try decode(TrickplayMemory.self, #"""
@@ -109,9 +112,10 @@ struct APIContractTests {
          "card_process_bytes_4k":62914560,"card_frame_bytes_4k":566231040,"card_bytes":6442450944}
         """#)
         #expect(gpu.decoder == "cuda" && gpu.cardFrameBytes4K == 566_231_040 && gpu.cardBytes == 6_442_450_944)
-        let text = trickplayMemoryText(1, 20, gpu)
-        #expect(text.contains(", decoded on the graphics card, about 2.6 GB"))
-        #expect(text.hasSuffix("The card needs about 10.6 GB, more than its 6.0 GB: batches are made smaller as it runs out."))
+        let table = trickplayMemoryTable(1, 20, gpu)
+        #expect(table.summary == "1 × 20 = 20 frames at once, decoded on the graphics card.")
+        #expect(table.rows == [TrickplayRow(what: "Memory", needs: "2.6 GB", has: "46.0 GB", note: "Fits", warn: false),
+                               TrickplayRow(what: "Graphics card", needs: "10.6 GB", has: "6.0 GB", note: "Too much: batches are made smaller", warn: true)])
     }
 
     @Test func backupList() throws {

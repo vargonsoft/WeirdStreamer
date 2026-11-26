@@ -255,11 +255,12 @@ class MediaAPI {
         return this.request(`/api/admin/jobs/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
     }
 
-    // Trickplay's runners and frames per runner (saved to config.yml; 0 is automatic); returns the jobs status.
-    async setTrickplaySettings(runners, framesPerRunner) {
+    // Trickplay's settings (saved to config.yml): any of { runners, frames_per_runner } (0 is automatic)
+    // and { use_gpu }; returns the jobs status.
+    async setTrickplaySettings(settings) {
         return this.request('/api/admin/jobs/trickplay/settings', {
             method: 'POST',
-            body: JSON.stringify({ runners, frames_per_runner: framesPerRunner }),
+            body: JSON.stringify(settings),
         });
     }
 

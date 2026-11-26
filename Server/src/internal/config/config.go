@@ -27,6 +27,9 @@ type Config struct {
 type JobsConfig struct {
 	TrickplayRunners         int `json:"trickplayRunners" yaml:"trickplayRunners"`                 // videos made at once: 1 to 8 (0: one per disk the libraries are on)
 	TrickplayFramesPerRunner int `json:"trickplayFramesPerRunner" yaml:"trickplayFramesPerRunner"` // frames per ffmpeg process: 1 to 50 (0: what fills half the memory)
+	// Decode trickplay frames on the CPU even with a hardware encoder chosen (whose GPU decodes them
+	// otherwise): a CPU with many cores can make them faster than a small GPU.
+	TrickplayCPUOnly bool `json:"trickplayCPUOnly" yaml:"trickplayCPUOnly"`
 }
 
 const (
@@ -38,6 +41,14 @@ const (
 // The trickplay settings, read by its runners at every step while the Jobs page can change them:
 // kept apart from GlobalConfig so the reads are safe. Set when the config loads (0: automatic).
 var trickplayRunners, trickplayFrames atomic.Int64
+
+var trickplayCPUOnly atomic.Bool
+
+// TrickplayCPUOnly says trickplay decodes on the CPU even with a hardware encoder chosen (live).
+func TrickplayCPUOnly() bool { return trickplayCPUOnly.Load() }
+
+// SetTrickplayCPUOnly sets it (Load does, and tests).
+func SetTrickplayCPUOnly(on bool) { trickplayCPUOnly.Store(on) }
 
 // SetTrickplaySettings sets the trickplay settings the job reads (Load does, and tests).
 func SetTrickplaySettings(runners, framesPerRunner int) {
@@ -59,9 +70,9 @@ func TrickplaySettings() (runners, framesPerRunner int) {
 }
 
 // UpdateJobs saves new trickplay settings to the config file and reloads them.
-func UpdateJobs(runners, frames int) error {
+func UpdateJobs(jobs JobsConfig) error {
 	c := *GlobalConfig
-	c.Jobs = JobsConfig{TrickplayRunners: runners, TrickplayFramesPerRunner: frames}
+	c.Jobs = jobs
 	if err := c.Validate(); err != nil {
 		return err
 	}

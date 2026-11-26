@@ -167,3 +167,6 @@ jobs:
   # Frames one ffmpeg process makes: 1 to 50 (0: as many as fill half the server's memory with 4K
   # videos). Runners times frames is at most 100 (memory).
   trickplayFramesPerRunner: 0
+  # Decode trickplay frames on the CPU even with a hardware encoder chosen (whose GPU decodes them
+  # otherwise): a CPU with many cores can be faster than a small GPU, at the cost of its time and memory
+  trickplayCPUOnly: false

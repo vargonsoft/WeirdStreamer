@@ -62,3 +62,36 @@ func TestTrickplaySettingsAuto(t *testing.T) {
 		t.Errorf("automatic frames: %d, want %d", TrickplayFramesPerRunner(), want)
 	}
 }
+
+// The Jobs page's CPU choice keeps trickplay off the GPU the hardware encoder chose, while the jobs
+// reply still names that GPU.
+func TestTrickplayCPUOnly(t *testing.T) {
+	saved := config.GlobalConfig
+	hardware.once.Do(func() {}) // no detection: the report below stands
+	hardware.Lock()
+	savedReport := hardware.report
+	hardware.report = HardwareReport{Encoders: []HardwareEncoder{{ID: "nvenc", Name: "NVENC", GPU: "NVIDIA GeForce GTX 1060 6GB"}}}
+	hardware.Unlock()
+	defer func() {
+		config.GlobalConfig = saved
+		config.SetTrickplayCPUOnly(false)
+		hardware.Lock()
+		hardware.report = savedReport
+		hardware.Unlock()
+	}()
+	config.GlobalConfig = &config.Config{Streaming: config.StreamingConfig{HardwareEncoder: "nvenc"}}
+
+	if g := trickplayDecoder(); g == nil || g.hwaccel != "cuda" {
+		t.Fatalf("with NVENC chosen: decoder %v, want cuda", g)
+	}
+	config.SetTrickplayCPUOnly(true)
+	if g := trickplayDecoder(); g != nil {
+		t.Errorf("CPU chosen on the Jobs page: decoder %v, want the CPU", g)
+	}
+	if name := TrickplayGPUName(); name != "NVIDIA GeForce GTX 1060 6GB" {
+		t.Errorf("GPU name %q with the CPU chosen", name)
+	}
+	if m := CurrentTrickplayMemory(); m.Decoder != "cpu" {
+		t.Errorf("memory estimate for %q, want cpu", m.Decoder)
+	}
+}

@@ -182,8 +182,11 @@ func HardwareSetting() string {
 			limit += " (the driver's limit)"
 		}
 	}
-	return "Hardware encoding: " + name + " encodes transcodes and downloads, " + limit + where +
-		"; it also decodes trickplay frames"
+	trickplay := "; it also decodes trickplay frames"
+	if config.TrickplayCPUOnly() {
+		trickplay = "; trickplay frames are decoded on the CPU (the Jobs page)"
+	}
+	return "Hardware encoding: " + name + " encodes transcodes and downloads, " + limit + where + trickplay
 }
 
 // Hardware is what DetectHardware found so far.

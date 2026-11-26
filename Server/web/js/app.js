@@ -6412,12 +6412,14 @@ function renderStorage(storage) {
 }
 
 // Trickplay's settings box. The page refreshes every few seconds, so the fields only follow the
-// server while they aren't being edited.
+// server while they aren't being edited. The GPU checkbox (shown when there's a GPU to decode on)
+// saves at once.
 function renderTrickplaySettings(tp) {
     const box = document.getElementById('trickplay-settings');
     if (!tp) return;
     box.hidden = false;
     const runners = document.getElementById('tp-runners'), frames = document.getElementById('tp-frames');
+    const gpu = document.getElementById('tp-gpu');
     runners.max = tp.max_runners;
     frames.max = tp.max_frames;
     if (!box.dataset.wired) {
@@ -6426,12 +6428,16 @@ function renderTrickplaySettings(tp) {
         runners.oninput = edited;
         frames.oninput = edited;
         document.getElementById('tp-save').onclick = saveTrickplaySettings;
+        gpu.onchange = () => saveTrickplaySettings({ use_gpu: gpu.checked });
     }
     if (box.dataset.edited !== '1') {
         // An empty field is automatic.
         runners.value = tp.auto_runners ? '' : tp.runners;
         frames.value = tp.auto_frames ? '' : tp.frames_per_runner;
     }
+    document.getElementById('tp-gpu-row').hidden = !tp.gpu;
+    document.getElementById('tp-gpu-label').textContent = `Decode on the GPU (${tp.gpu || ''}); unchecked, the CPU decodes`;
+    gpu.checked = !!tp.use_gpu;
     trickplayHint();
 }
 
@@ -6450,59 +6456,65 @@ function trickplayHint() {
     const runners = document.getElementById('tp-runners'), frames = document.getElementById('tp-frames');
     runners.placeholder = `Auto: ${tp.auto_runners_value || tp.runners}`;
     frames.placeholder = `Auto: ${(tp.auto_frames_for || [])[r - 1] || tp.frames_per_runner}`;
-    document.getElementById('tp-hint').textContent = trickplayMemoryText(r, f, tp.memory) +
-        ` Runners 1 to ${tp.max_runners}, frames per runner 1 to ${tp.max_frames}, and at most ${tp.max_product} frames at once.` +
-        ' Leave a field empty for automatic: a runner per disk the libraries are on, and as many frames as fill half the server\'s memory with 4K videos.';
+    const t = trickplayMemoryTable(r, f, tp.memory);
+    document.getElementById('tp-summary').textContent = t.summary;
+    const table = document.getElementById('tp-memory');
+    table.hidden = !t.rows.length;
+    const cell = (tag, text, cls) => Object.assign(document.createElement(tag), { textContent: text, className: cls || '' });
+    const head = document.createElement('tr');
+    head.append(cell('th', ''), cell('th', 'Needs with 4K', 'num'), cell('th', 'Has', 'num'), cell('th', ''));
+    table.replaceChildren(head, ...t.rows.map(row => {
+        const tr = document.createElement('tr');
+        tr.append(cell('td', row.what), cell('td', row.needs, 'num'), cell('td', row.has, 'num'), cell('td', row.note, row.warn ? 'tp-warn' : ''));
+        return tr;
+    }));
+    document.getElementById('tp-hint').textContent =
+        `Runners 1 to ${tp.max_runners}, frames per runner 1 to ${tp.max_frames}, at most ${tp.max_product} frames at once. ` +
+        'Empty is automatic: a runner per disk the libraries are on, and frames filling half the server\'s memory with 4K videos.';
 }
 
-// The memory r runners of f frames take with 4K videos (each frame in a batch holds a decoder of its
-// own), as the server measured it for the decoder it uses (m.decoder: the CPU, an Intel or AMD GPU
-// whose buffers are the server's memory, or an NVIDIA card with memory of its own), against the
-// server's memory and swap, and the card's. The server uses the settings as they are. As the apps'
-// trickplayMemoryText.
-function trickplayMemoryText(r, f, m) {
-    const gb = bytes => (bytes / 2 ** 30).toFixed(1);
-    const text = `${r} × ${f} = ${r * f} frames at once.`;
-    if (!m || !m.frame_bytes_4k) return text;
-    const estimate = r * (m.process_bytes_4k + f * m.frame_bytes_4k);
-    const decoded = { vaapi: ', decoded on the GPU (its buffers use the server\'s memory),', cuda: ', decoded on the graphics card,' }[m.decoder] || '';
-    const with4k = `${text} With 4K videos${decoded} about ${gb(estimate)} GB of memory at most`;
-    return trickplayRamText(with4k, estimate, m) + trickplayCardText(r, f, m);
-}
-
-// The NVIDIA card's part of the estimate ('' for other decoders).
-function trickplayCardText(r, f, m) {
-    if (!m.card_frame_bytes_4k) return '';
-    const gb = bytes => (bytes / 2 ** 30).toFixed(1);
-    const card = r * (m.card_process_bytes_4k + f * m.card_frame_bytes_4k);
-    if (!m.card_bytes) return ` The card needs about ${gb(card)} GB of its own memory.`;
-    if (card <= m.card_bytes) return ` The card needs about ${gb(card)} GB of its ${gb(m.card_bytes)} GB.`;
-    return ` The card needs about ${gb(card)} GB, more than its ${gb(m.card_bytes)} GB: batches are made smaller as it runs out.`;
-}
-
-// The server's memory and swap against the estimate.
-function trickplayRamText(with4k, estimate, m) {
-    const gb = bytes => (bytes / 2 ** 30).toFixed(1);
-    if (!m.total_bytes) return with4k + '.';
+// What r runners of f frames take with 4K videos (each frame in a batch holds a decoder of its own), as
+// the server measured it for the decoder it uses (m.decoder: the CPU, an Intel or AMD GPU whose buffers
+// are the server's memory, or an NVIDIA card with memory of its own), against the server's memory and
+// swap, and the card's: a summary line and a row each. The server uses the settings as they are. As
+// the apps' trickplayMemoryTable.
+function trickplayMemoryTable(r, f, m) {
+    const gb = bytes => `${(bytes / 2 ** 30).toFixed(1)} GB`;
+    const on = !m ? '' : { vaapi: ', decoded on the GPU', cuda: ', decoded on the graphics card' }[m.decoder] || ', decoded on the CPU';
+    const summary = `${r} × ${f} = ${r * f} frames at once${on}.`;
+    if (!m || !m.frame_bytes_4k) return { summary, rows: [] };
+    const rows = [];
+    const ram = r * (m.process_bytes_4k + f * m.frame_bytes_4k);
     const swap = m.swap_bytes || 0;
-    if (estimate <= m.total_bytes) {
-        return with4k + ` (this server has ${gb(m.total_bytes)} GB${swap ? ` and ${gb(swap)} GB of swap` : ''}).`;
+    const row = { what: m.decoder === 'vaapi' ? 'Memory (with the GPU\'s buffers)' : 'Memory', needs: gb(ram), has: '?', note: '', warn: false };
+    if (m.total_bytes) {
+        row.has = gb(m.total_bytes) + (swap ? ` + ${gb(swap)} swap` : '');
+        if (ram <= m.total_bytes) row.note = 'Fits';
+        else if (ram <= m.total_bytes + swap) Object.assign(row, { note: 'Uses swap', warn: true });
+        else Object.assign(row, { note: 'Too much: frames are made one at a time', warn: true });
     }
-    if (estimate <= m.total_bytes + swap) {
-        return with4k + `, more than this server's ${gb(m.total_bytes)} GB: the rest comes from its ${gb(swap)} GB of swap.`;
+    rows.push(row);
+    if (m.card_frame_bytes_4k) {
+        const card = r * (m.card_process_bytes_4k + f * m.card_frame_bytes_4k);
+        const c = { what: 'Graphics card', needs: gb(card), has: m.card_bytes ? gb(m.card_bytes) : '?', note: '', warn: false };
+        if (m.card_bytes) Object.assign(c, card <= m.card_bytes ? { note: 'Fits' } : { note: 'Too much: batches are made smaller', warn: true });
+        rows.push(c);
     }
-    return with4k + `, more than this server's ${gb(m.total_bytes)} GB${swap ? ` and ${gb(swap)} GB of swap` : ''}: ` +
-        'ffmpeg may run out of memory, and those frames are then made one at a time.';
+    return { summary, rows };
 }
 
-async function saveTrickplaySettings() {
+// Saves the fields (Save), or only what's given (the GPU checkbox: { use_gpu }).
+async function saveTrickplaySettings(only) {
     const box = document.getElementById('trickplay-settings');
     const message = document.getElementById('tp-message');
-    const r = Number(document.getElementById('tp-runners').value) || 0; // 0: automatic
-    const f = Number(document.getElementById('tp-frames').value) || 0;
+    const fields = !only || only instanceof Event;
+    const settings = fields ? {
+        runners: Number(document.getElementById('tp-runners').value) || 0, // 0: automatic
+        frames_per_runner: Number(document.getElementById('tp-frames').value) || 0,
+    } : only;
     try {
-        const data = await api.setTrickplaySettings(r, f);
-        delete box.dataset.edited;
+        const data = await api.setTrickplaySettings(settings);
+        if (fields) delete box.dataset.edited;
         message.textContent = 'Saved. Applies from the next batch.';
         message.style.color = '';
         if (jobsView) {

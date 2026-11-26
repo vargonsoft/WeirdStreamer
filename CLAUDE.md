@@ -471,7 +471,13 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   with one frame: if that works the GPU ran out of memory (a 6 GB GTX 1060 took 10 4K decoders, not 15), so
   batches keep to half the pixels from then on (`tooBig`, per GPU, logged once); if not, the GPU can't decode
   that video and its batches go back to the CPU (three such videos in a row rest the GPU for 10 minutes).
-  `cli trickplay` waits for the GPU check first (`WaitForHardware`). The CPU's decodes skip the deblocking filters
+  `cli trickplay` waits for the GPU check first (`WaitForHardware`). The Jobs page can keep trickplay on the CPU
+  anyway ("Decode on the GPU", shown when there's a GPU to decode on; `jobs.trickplayCPUOnly`,
+  `config.TrickplayCPUOnly`; the jobs reply's `gpu` names it and `use_gpu` says whether it's used; saved at once,
+  `{"use_gpu"}`, apart from the fields): measured on babylon5 (i7-14700K, 28 threads, GTX 1060) with a 31 Mb/s 4K
+  HEVC 10-bit clip, keyframes 10-20 s apart, the CPU at 2 × 30 made 2.0 frames/s (13.7 GB), at 1 × 30 1.7 (7 GB), and the GPU 1.2-1.3
+  (1 × 6 or 2 × 3, a few hundred MB: its decoder was the limit, and the desktop's 2.3 GB of the card left room for
+  only 6 4K decoders). The CPU's decodes skip the deblocking filters
   (`-skip_loop_filter all`, `skipLoopFilter`): 3-9% faster, the same memory, nothing to see at 320 px. Keyframes-only decoding (`-skip_frame
   nokey`) was 11-15 times faster but shows the keyframe before each time, up to ~10 s early: not used.
 - **Trickplay memory** (`media/memory.go`): each frame of a trickplay batch is an ffmpeg input with a
@@ -488,10 +494,10 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   at once). The jobs reply gives what's in effect, `auto_runners`/`auto_frames`, and what automatic gives
   (`auto_runners_value`, `auto_frames_for[r-1]`) for the fields' placeholders and the note.
   Numbers set are used as they are (the user sizes them, swap included); the Jobs page's trickplay
-  note shows what they take with 4K videos against the server's memory and swap (the jobs reply's
-  `trickplay.memory`: `SystemMemory`, MemTotal or the cgroup's limit when lower, `hw.memsize` on macOS;
-  `SystemSwap`; web `trickplayMemoryText`, Android `trickplayMemoryText` in `AdminSettings.kt`, iPhone
-  in `ServerModels.swift`). A batch the kernel kills is made again a frame at a time, and setup.sh's
+  table shows what they take with 4K videos against the server's memory and swap, and an NVIDIA card's (a
+  row each: needs, has, fits or not; the jobs reply's `trickplay.memory`: `SystemMemory`, MemTotal or the
+  cgroup's limit when lower, `hw.memsize` on macOS; `SystemSwap`; web `trickplayMemoryTable`, Android
+  `trickplayMemoryTable` in `AdminSettings.kt` drawn by `TrickplayMemoryTable.kt`, iPhone in `ServerModels.swift`). A batch the kernel kills is made again a frame at a time, and setup.sh's
   systemd unit has `OOMPolicy=continue`: by default an ffmpeg killed for memory made systemd stop and
   restart the whole server.
 - **Streams with track options:** file transcodes take `audio=N` (index among the audio tracks)

@@ -4,6 +4,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/weirdstreamer/server/internal/config"
 )
 
 // gpuDecoder decodes trickplay batches on the GPU Settings chose for hardware encoding: VA-API on
@@ -20,9 +22,34 @@ type gpuDecoder struct {
 // chooseTrickplayDecoder picks the GPU for a video's frames (tests choose their own).
 var chooseTrickplayDecoder = trickplayDecoder
 
-// trickplayDecoder is the GPU to decode trickplay frames on, nil for the CPU: none chosen in
-// Settings, VideoToolbox (untried), or the GPU turned out not to decode for a while (gpuOff).
+// trickplayDecoder is the GPU to decode trickplay frames on, nil for the CPU: the Jobs page chose
+// the CPU, or there's no GPU to decode on (trickplayGPU).
 func trickplayDecoder() *gpuDecoder {
+	if config.TrickplayCPUOnly() {
+		return nil
+	}
+	return trickplayGPU()
+}
+
+// TrickplayGPUName is the GPU trickplay can decode on (whether the Jobs page has it do so or not),
+// as the hardware report names it; "" when there's none.
+func TrickplayGPUName() string {
+	if trickplayGPU() == nil {
+		return ""
+	}
+	id, device, _ := hardwareChoice()
+	for _, e := range Hardware().Encoders {
+		if e.ID == id && (e.Device == device || id == "nvenc") {
+			return e.GPU
+		}
+	}
+	return ""
+}
+
+// trickplayGPU is the GPU trickplay can decode on: the one Settings chose for hardware encoding;
+// nil with none chosen, VideoToolbox (untried), or when the GPU turned out not to decode for a while
+// (gpuOff).
+func trickplayGPU() *gpuDecoder {
 	id, device, ok := hardwareChoice()
 	if !ok {
 		return nil

@@ -612,6 +612,10 @@ struct TrickplaySettings: Decodable {
     let autoFrames: Bool?
     let autoRunnersValue: Int?
     let autoFramesFor: [Int]?
+    /// The GPU trickplay can decode on (nil or "" for none), and whether it does (`memory` and `autoFramesFor`
+    /// are for the decoder in use).
+    let gpu: String?
+    let useGpu: Bool?
     let maxRunners: Int?
     let maxFrames: Int?
     let maxProduct: Int?
@@ -644,41 +648,54 @@ struct TrickplayMemory: Decodable {
     let cardBytes: Int64?
 }
 
-/// The memory `r` runners of `f` frames take with 4K videos (each frame in a batch holds a decoder of its own),
-/// as the server measured it for the decoder it uses (the CPU, an Intel or AMD GPU whose buffers are the
-/// server's memory, or an NVIDIA card with memory of its own), against the server's memory and swap, and the
-/// card's. The server uses the settings as they are. As Android's trickplayMemoryText.
-func trickplayMemoryText(_ r: Int, _ f: Int, _ m: TrickplayMemory?) -> String {
-    func gb(_ bytes: Int64) -> String { String(format: "%.1f", Double(bytes) / 1_073_741_824) }
-    let text = "\(r) × \(f) = \(r * f) frames at once."
-    guard let m, let process = m.processBytes4K, let frame = m.frameBytes4K, frame > 0 else { return text }
-    let estimate = Int64(r) * (process + Int64(f) * frame)
-    let decoded = switch m.decoder {
-    case "vaapi": ", decoded on the GPU (its buffers use the server's memory),"
-    case "cuda": ", decoded on the graphics card,"
-    default: ""
+/// A row of the trickplay memory table: what it's about, what the settings need with 4K videos, what the server
+/// has, and whether that fits (`warn` when it doesn't).
+struct TrickplayRow: Equatable { let what, needs, has, note: String; let warn: Bool }
+
+struct TrickplayTable { let summary: String; let rows: [TrickplayRow] }
+
+/// What r runners of f frames take with 4K videos (each frame in a batch holds a decoder of its own), as the server
+/// measured it for the decoder it uses (`m.decoder`: the CPU, an Intel or AMD GPU whose buffers are the server's
+/// memory, or an NVIDIA card with memory of its own), against the server's memory and swap, and the card's: a
+/// summary line and a row each. The server uses the settings as they are. As Android's trickplayMemoryTable.
+func trickplayMemoryTable(_ r: Int, _ f: Int, _ m: TrickplayMemory?) -> TrickplayTable {
+    func gb(_ bytes: Int64) -> String { String(format: "%.1f GB", Double(bytes) / 1_073_741_824) }
+    let decodedOn: String = switch m?.decoder {
+    case "vaapi": ", decoded on the GPU"
+    case "cuda": ", decoded on the graphics card"
+    default: ", decoded on the CPU"
     }
-    let with4k = "\(text) With 4K videos\(decoded) about \(gb(estimate)) GB of memory at most"
-    var out: String
+    let on = m == nil ? "" : decodedOn
+    let summary = "\(r) × \(f) = \(r * f) frames at once\(on)."
+    guard let m, let process = m.processBytes4K, let frame = m.frameBytes4K, frame > 0 else { return TrickplayTable(summary: summary, rows: []) }
+    var rows: [TrickplayRow] = []
+    let ram = Int64(r) * (process + Int64(f) * frame)
     let swap = m.swapBytes ?? 0
-    let andSwap = swap > 0 ? " and \(gb(swap)) GB of swap" : ""
+    let what = m.decoder == "vaapi" ? "Memory (with the GPU's buffers)" : "Memory"
     if let total = m.totalBytes, total > 0 {
-        if estimate <= total {
-            out = with4k + " (this server has \(gb(total)) GB\(andSwap))."
-        } else if estimate <= total + swap {
-            out = with4k + ", more than this server's \(gb(total)) GB: the rest comes from its \(gb(swap)) GB of swap."
+        let has = gb(total) + (swap > 0 ? " + \(gb(swap)) swap" : "")
+        if ram <= total {
+            rows.append(TrickplayRow(what: what, needs: gb(ram), has: has, note: "Fits", warn: false))
+        } else if ram <= total + swap {
+            rows.append(TrickplayRow(what: what, needs: gb(ram), has: has, note: "Uses swap", warn: true))
         } else {
-            out = with4k + ", more than this server's \(gb(total)) GB\(andSwap): ffmpeg may run out of memory, and those frames are then made one at a time."
+            rows.append(TrickplayRow(what: what, needs: gb(ram), has: has, note: "Too much: frames are made one at a time", warn: true))
         }
     } else {
-        out = with4k + "."
+        rows.append(TrickplayRow(what: what, needs: gb(ram), has: "?", note: "", warn: false))
     }
-    guard let cardFrame = m.cardFrameBytes4K, cardFrame > 0 else { return out }
-    let card = Int64(r) * ((m.cardProcessBytes4K ?? 0) + Int64(f) * cardFrame)
-    let cardTotal = m.cardBytes ?? 0
-    if cardTotal <= 0 { return out + " The card needs about \(gb(card)) GB of its own memory." }
-    if card <= cardTotal { return out + " The card needs about \(gb(card)) GB of its \(gb(cardTotal)) GB." }
-    return out + " The card needs about \(gb(card)) GB, more than its \(gb(cardTotal)) GB: batches are made smaller as it runs out."
+    if let cardFrame = m.cardFrameBytes4K, cardFrame > 0 {
+        let card = Int64(r) * ((m.cardProcessBytes4K ?? 0) + Int64(f) * cardFrame)
+        let cardTotal = m.cardBytes ?? 0
+        if cardTotal <= 0 {
+            rows.append(TrickplayRow(what: "Graphics card", needs: gb(card), has: "?", note: "", warn: false))
+        } else if card <= cardTotal {
+            rows.append(TrickplayRow(what: "Graphics card", needs: gb(card), has: gb(cardTotal), note: "Fits", warn: false))
+        } else {
+            rows.append(TrickplayRow(what: "Graphics card", needs: gb(card), has: gb(cardTotal), note: "Too much: batches are made smaller", warn: true))
+        }
+    }
+    return TrickplayTable(summary: summary, rows: rows)
 }
 
 struct JobsResponse: Decodable {

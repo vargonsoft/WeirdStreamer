@@ -222,6 +222,9 @@
                             <label>Frames per runner <input type="number" id="tp-frames" min="1" class="settings-input"></label>
                             <button type="button" id="tp-save" class="btn">Save</button>
                             <span id="tp-message" class="groups-message"></span>
+                            <label id="tp-gpu-row" hidden><input type="checkbox" id="tp-gpu"> <span id="tp-gpu-label">Decode on the GPU</span></label>
+                            <p id="tp-summary" class="settings-hint"></p>
+                            <table id="tp-memory" class="tp-memory" hidden></table>
                             <p id="tp-hint" class="settings-hint"></p>
                         </div>
                         <div id="jobs-list" class="jobs-list"></div>

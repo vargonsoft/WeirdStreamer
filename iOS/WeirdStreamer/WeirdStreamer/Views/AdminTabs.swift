@@ -880,6 +880,38 @@ private struct JobCard: View {
     }
 }
 
+/// The trickplay memory table: its summary, then a row for the server's memory and one for an NVIDIA card's, with
+/// what the settings need with 4K videos, what there is, and whether it fits.
+private struct TrickplayMemoryTableView: View {
+    let table: TrickplayTable
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(table.summary).font(.caption).foregroundStyle(Palette.muted)
+            if !table.rows.isEmpty {
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 2) {
+                    GridRow {
+                        Text("")
+                        Text("Needs with 4K").gridColumnAlignment(.trailing)
+                        Text("Has").gridColumnAlignment(.trailing)
+                        Text("")
+                    }
+                    .fontWeight(.semibold)
+                    ForEach(table.rows, id: \.what) { row in
+                        GridRow {
+                            Text(row.what)
+                            Text(row.needs).monospacedDigit()
+                            Text(row.has).monospacedDigit()
+                            Text(row.note).foregroundStyle(row.warn ? Color.red : Palette.muted)
+                        }
+                    }
+                }
+                .font(.caption).foregroundStyle(Palette.muted)
+            }
+        }
+    }
+}
+
 /// Trickplay's runners and frames per runner, saved to the server's settings (an empty field is automatic,
 /// sent as 0).
 private struct TrickplayBox: View {
@@ -903,7 +935,17 @@ private struct TrickplayBox: View {
                 PhoneTextField(label: "Frames per runner", text: Binding(get: { frames }, set: { frames = $0.filter(\.isNumber); edited = true }),
                                placeholder: "Auto: \(settings.effective(runners, "").1)", keyboard: .numberPad)
             }
-            Text("\(trickplayMemoryText(er, ef, settings.memory)) Runners 1 to \(settings.maxRunners ?? 8), frames per runner 1 to \(settings.maxFrames ?? 50), and at most \(settings.maxProduct ?? 100) frames at once. Leave a field empty for automatic: a runner per disk the libraries are on, and as many frames as fill half the server's memory with 4K videos.")
+            // Saved at once, apart from the fields.
+            if let gpu = settings.gpu, !gpu.isEmpty {
+                Toggle(isOn: Binding(get: { settings.useGpu ?? false }, set: { on in save(useGpu: on) })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Decode on the GPU")
+                        Text("\(gpu); off, the CPU decodes").font(.caption).foregroundStyle(Palette.muted)
+                    }
+                }
+            }
+            TrickplayMemoryTableView(table: trickplayMemoryTable(er, ef, settings.memory))
+            Text("Runners 1 to \(settings.maxRunners ?? 8), frames per runner 1 to \(settings.maxFrames ?? 50), at most \(settings.maxProduct ?? 100) frames at once. Empty is automatic: a runner per disk the libraries are on, and frames filling half the server's memory with 4K videos.")
                 .font(.caption).foregroundStyle(Palette.muted)
             HStack(spacing: 12) {
                 Button("Save") {
@@ -928,6 +970,17 @@ private struct TrickplayBox: View {
         .onChange(of: settings.framesPerRunner) { sync() }
         .onChange(of: settings.autoRunners) { sync() }
         .onChange(of: settings.autoFrames) { sync() }
+    }
+
+    private func save(useGpu: Bool) {
+        Task {
+            do {
+                struct Body: Encodable { let use_gpu: Bool }
+                if let reply: JobsResponse = try await model.client?.call("POST", "/api/admin/jobs/trickplay/settings", body: Body(use_gpu: useGpu)) {
+                    onSaved(reply)
+                }
+            } catch { message = (errorText(error), true) }
+        }
     }
 
     private func sync() {
