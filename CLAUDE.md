@@ -193,7 +193,12 @@ for each TODO item are at the end of this file.
 server tests, then builds `dist/<version>/`, the assets for a GitHub Release: a server package per
 platform (`weirdstreamer-server-<version>-<platform>.tar.gz`, `--platforms` picks: `linux-amd64`;
 `linux-arm64`, cross-compiled with `aarch64-linux-gnu-gcc` for SQLite's cgo; `darwin-arm64`, built on
-the Mac in `iOS/remote/remote.local` over SSH from `Server/src` as it is here, `build_darwin`. Each
+the Mac in `iOS/remote/remote.local` over SSH from `Server/src` as it is here, `build_darwin`;
+`windows-amd64`, built the same way on the Windows machine `Server/windows.local` describes
+(`VM_HOST`, `VM_USER`, `VM_KEY`, `VM_KNOWN_HOSTS`; Go, Git and MinGW-w64 gcc there; with `VM_START` and
+`VM_STOP` commands it starts a machine that doesn't answer and stops it after, only one it started), `build_windows`,
+packaged as a `.zip` with `bin\server.exe`, `bin\cli.exe`, `setup.cmd` and `setup.ps1` instead of
+setup.sh and check-ffmpeg.sh. Each
 has `bin/server`, `bin/cli`, the web UI with this APK to download, `setup.sh`, `config.example.yml`,
 LICENSE and VERSION, the Mac's also `build-ffmpeg.sh`; needs only ffmpeg where it runs), the APK, the
 iPhone app's IPA (`mac-ios ipa --ref` the release commit, which must be on origin; `--no-ipa` skips it;
@@ -211,7 +216,7 @@ release, nor moves a tag that's on another commit).
 
 The package's `setup.sh` (`Server/package/setup.sh`) asks only for the name, port and HTTPS and
 writes config.yml through `cli config init`, can create the admin user and install a systemd service
-(`setup.sh service`, `setup.sh remove-service`: `bin/server` as the user who ran setup, from the
+(Windows: `setup.ps1`, see More server platforms) (`setup.sh service`, `setup.sh remove-service`: `bin/server` as the user who ran setup, from the
 package's folder, after network mounts), then prints the web UI's address and offers to start the
 server and open it. On macOS (`mac=1`) it offers to build ffmpeg into the package
 (`FFMPEG_PREFIX=<package>/ffmpeg ./build-ffmpeg.sh`) when there's none with what check-ffmpeg.sh
@@ -459,7 +464,8 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   Libraries on network shares (SMB, NFS) and FUSE mounts (a mergerfs pool, sshfs, rclone: no block
   device, and a container's `/proc/diskstats` lists the host's disks) are judged by timing 64 KB reads
   from a big file in each instead (`isTimedFS`, `IsTimedMount`; above 60 ms where someone is playing,
-  500 ms otherwise), shown as Read times on the Jobs page.
+  500 ms otherwise), shown as Read times on the Jobs page. On Windows the readings come from Windows'
+  own counters (see "Windows x64" under More server platforms).
 - **Trickplay on the GPU** (`media/trickplaygpu.go`): a trickplay frame costs the CPU a decode of every
   frame from the keyframe before its time (up to a keyframe interval: on a 4K film about 1.6 CPU-seconds a
   frame here, 7 on a Core Ultra 5). With a hardware encoder chosen in Settings (`hardwareChoice`), batches
@@ -838,9 +844,30 @@ Checked by type-checking the server for each target and reading `release.sh` (wh
   open/rename/serve uses `fileio`, not `os`. A transcode's output can't go to fd 3 there (no
   `ExtraFiles`): `separateOutput` (`transcache_windows.go`) makes a named pipe for it
   (`\\.\pipe\weirdstreamer-<random>`, inbound, one instance, local clients) and gives ffmpeg its
-  name with `-y`. Still to do: jobs don't wait for busy disks (no load readings), `private_other.go` locks nothing
-  (would need ACLs), no service or PowerShell scripts, and no `release.sh` package (needs MinGW on the
-  build machine).
+  name with `-y`. The data is locked down with ACLs instead of modes (`fileio.OwnerOnly`,
+  `IsOwnerOnly`: the server's account, SYSTEM and Administrators, inherited by what a folder gets
+  later, since Windows has no umask): `keepDataPrivate` there also closes the databases' folders
+  (their WAL files come after startup), the backups' and config.yml, and `local.key`, a saved
+  config.yml and the backup folder get it as they're written. Jobs wait for busy disks there too
+  (`load_windows.go`): the CPU from `GetSystemTimes`, each disk's busy time from
+  `IOCTL_DISK_PERFORMANCE` on `\\.\PhysicalDriveN` (no admin rights needed; named by number,
+  "Disk 0"), a file's disk from its volume (`GetVolumePathName`,
+  `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS`; `disks_windows.go` numbers volumes by a hash of their
+  root), and a network share (`DRIVE_REMOTE`: UNC paths, mapped drives) is timed as SMB and NFS are
+  on Linux; there's no fadvise, so share probes may read cached pages. The server runs as a Windows
+  service (`cmd/server/service_windows.go`: `svc.IsWindowsService`, from the package folder, a log
+  file per start in the logs folder as live.sh keeps, Windows' Stop shuts down cleanly), installed
+  by `cli service install [--user DOMAIN\name] | remove | start | stop | status`
+  (`cmd/cli/service_windows.go`, an administrator PowerShell): as the installing user (its password
+  is checked with `LogonUser`, given to Windows and kept nowhere; the account gets "Log on as a
+  service", `SeServiceLogonRight`, through the LSA), started at boot with a delay (after the
+  network), restarted by its recovery actions when it stops by itself (a crash, or
+  `cli server restart`'s exit status 3), and let through Windows Firewall (a rule for
+  `bin\server.exe`). Tried on the VM: restart, stop, Windows' stop and a reboot. The package is
+  `release.sh`'s `windows-amd64` (below), set up by `setup.cmd` / `setup.ps1` (ffmpeg through
+  winget's Gyan.FFmpeg, config.yml through `cli config init`, a self-signed certificate through
+  `cli config self-signed`, the admin user and the service). `UseBundledTools` finds a package's
+  `ffmpeg\bin\ffmpeg.exe` and joins the PATH with `;` there.
 - **Building:** either switch to pure-Go SQLite (`modernc.org/sqlite`; no C toolchains, every target
   cross-compiles from the build machine and `release.sh` loops over them; benchmark the media DB
   first, it's slower than the C one), or keep CGO and build natively (GitHub Actions matrix, or

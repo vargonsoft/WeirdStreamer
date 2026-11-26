@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+// toolName is a program's file name: ffmpeg.exe on Windows.
+func toolName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
+}
+
 // UseBundledTools puts the tools beside the running binary first on the PATH: ffmpeg/bin next to
 // its bin folder (a package's own ffmpeg, built by build-ffmpeg.sh, or Server/ffmpeg/bin in the
 // repository). On macOS it also adds Homebrew's folders, which services (launchd) don't have on
@@ -16,7 +24,7 @@ func UseBundledTools() {
 	if exe, err := os.Executable(); err == nil {
 		if exe, err = filepath.EvalSymlinks(exe); err == nil {
 			dir := filepath.Join(filepath.Dir(filepath.Dir(exe)), "ffmpeg", "bin")
-			if _, err := os.Stat(filepath.Join(dir, "ffmpeg")); err == nil {
+			if _, err := os.Stat(filepath.Join(dir, toolName("ffmpeg"))); err == nil {
 				dirs = append(dirs, dir)
 			}
 		}
@@ -30,7 +38,8 @@ func UseBundledTools() {
 		}
 	}
 	if len(dirs) > 0 {
-		path = strings.Join(dirs, ":") + ":" + path
+		sep := string(os.PathListSeparator)
+		path = strings.Join(dirs, sep) + sep + path
 	}
 	os.Setenv("PATH", path)
 }

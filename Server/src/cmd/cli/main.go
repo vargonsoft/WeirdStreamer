@@ -55,6 +55,11 @@ func main() {
 		initConfig(os.Args[3:], configPath)
 		return
 	}
+	// Before there's a config, too: setup makes the certificate first.
+	if len(os.Args) >= 3 && os.Args[1] == "config" && os.Args[2] == "self-signed" {
+		handleSelfSigned(os.Args[3:])
+		return
+	}
 
 	if err := config.Load(configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
@@ -126,6 +131,8 @@ func printUsage() {
 	fmt.Println("  cli config init <template> [options]                   - Write a new config (CONFIG_PATH, else")
 	fmt.Println("                                                           config.yml) from the template")
 	fmt.Println("                                                           (config.example.yml); -h for the options")
+	fmt.Println("  cli config self-signed <dir> [host]                    - Write a self-signed cert.pem and key.pem")
+	fmt.Println("                                                           there (HTTPS; for host, localhost, 127.0.0.1)")
 	fmt.Println("  cli config add-path <path>                             - Add media directory")
 	fmt.Println("  cli config list-paths                                  - List media directories")
 	fmt.Println("  cli config set-cjk-font <path>                         - Set media.cjkFontPath (\"\" for the default)")

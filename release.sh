@@ -9,7 +9,11 @@
 #   --platforms LIST          the server packages to build, comma-separated (default: all of them):
 #                             linux-amd64, linux-arm64 (cross-built: needs aarch64-linux-gnu-gcc),
 #                             darwin-arm64 (built on the Mac in iOS/remote/remote.local's MAC_HOST,
-#                             over SSH: it needs Go and Xcode's command-line tools there)
+#                             over SSH: it needs Go and Xcode's command-line tools there),
+#                             windows-amd64 (built on the Windows machine Server/windows.local describes,
+#                             over SSH: VM_HOST, VM_USER, VM_KEY, VM_KNOWN_HOSTS; it needs Go, Git and
+#                             MinGW-w64 gcc there; with VM_START and VM_STOP commands there, a
+#                             machine that doesn't answer is started, and stopped after the build)
 #   --allow-dirty             build with uncommitted changes (the version then ends in "-dirty")
 #   --publish                 then publish it on GitHub: tag the commit v<version>, push the tag to the
 #                             "github" remote, and create the release with dist/<version>/'s files.
@@ -28,6 +32,9 @@
 #       chromaprint and libass).
 #       Where it runs it needs ffmpeg, and for HEIC photos heif-convert (libheif's tools). For CJK
 #       subtitle fonts it's optional: fontTools' pyftsubset and Noto Sans CJK (see the README).
+#   weirdstreamer-server-<version>-windows-amd64.zip    Windows' package instead: bin\server.exe and
+#       bin\cli.exe, setup.cmd and setup.ps1 (instead of setup.sh and check-ffmpeg.sh), and the same
+#       other files.
 #   WeirdStreamer-<version>.apk                         the Android app (TV and phone)
 #   WeirdStreamer-<version>.ipa                         the iPhone app, unsigned, for AltStore and
 #       SideStore (they sign it), built on the Mac (iOS/remote/mac-ios) from the release commit,
@@ -44,7 +51,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 root=$PWD
 
-web=1 tests=1 ipa=1 dirty_ok=0 publish=0 notes= notes_file= platforms=linux-amd64,linux-arm64,darwin-arm64
+web=1 tests=1 ipa=1 dirty_ok=0 publish=0 notes= notes_file= platforms=linux-amd64,linux-arm64,darwin-arm64,windows-amd64
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-web) web=0 ;;
@@ -79,6 +86,23 @@ fi
 problems=()
 problem() { problems+=("$*"); }
 newest() { ls -d "$@" 2>/dev/null | sort -V | tail -1 || true; } # the newest of the paths that exist
+
+# The Windows build machine (Server/windows.local, or WS_WINDOWS_LOCAL), reached by SSH with its key
+win_conf=${WS_WINDOWS_LOCAL:-Server/windows.local}
+win_value() { if [ -f "$win_conf" ]; then sed -n "s/^$1=//p" "$win_conf" | head -1; fi; }
+win_ssh() { ssh -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -i "$win_key" ${win_known:+-o UserKnownHostsFile="$win_known"} "$win_user@$win_host" "$@"; }
+win_scp() { scp -q -o BatchMode=yes -o IdentitiesOnly=yes -i "$win_key" ${win_known:+-o UserKnownHostsFile="$win_known"} "$@"; }
+# A machine that doesn't answer is started with its VM_START command (one that returns once SSH
+# answers, such as a VM's start script), and stopped with VM_STOP once the Windows build is done,
+# or when this script ends early: only a machine this script started.
+win_started=0
+stop_windows() {
+    if [ "$win_started" = 1 ]; then
+        win_started=0
+        echo "== Stopping the Windows build machine"
+        bash -c "$(win_value VM_STOP)" >/dev/null 2>&1 || echo "   It didn't stop: stop it yourself ($(win_value VM_STOP))." >&2
+    fi
+}
 
 # Go, for the server. Often installed off PATH (the go.dev tarball goes to /usr/local/go).
 if ! command -v go >/dev/null; then
@@ -116,7 +140,23 @@ for target in "${targets[@]}"; do
                 problem "Can't build darwin-arm64 on $mac_host: it isn't reachable by SSH without a password, or lacks Go or Xcode's command-line tools."
             fi
             ;;
-        *) problem "Unknown platform $target: linux-amd64, linux-arm64 or darwin-arm64." ;;
+        windows-amd64)
+            win_host=$(win_value VM_HOST) win_user=$(win_value VM_USER) win_key=$(win_value VM_KEY) win_known=$(win_value VM_KNOWN_HOSTS)
+            if [ -z "$win_host" ] || [ -z "$win_user" ] || [ -z "$win_key" ]; then
+                problem "windows-amd64 is built on a Windows machine over SSH: describe it in $win_conf (VM_HOST, VM_USER, VM_KEY, VM_KNOWN_HOSTS), or leave it out with --platforms."
+            else
+                if ! win_ssh 'go version; gcc --version' >/dev/null 2>&1 && [ -n "$(win_value VM_START)" ] && [ -n "$(win_value VM_STOP)" ]; then
+                    echo "== Starting the Windows build machine ($win_host)"
+                    win_started=1
+                    trap stop_windows EXIT
+                    bash -c "$(win_value VM_START)" >/dev/null 2>&1 || true
+                fi
+                if ! win_ssh 'go version; gcc --version' >/dev/null 2>&1; then
+                    problem "Can't build windows-amd64 on $win_host: it isn't reachable by SSH with its key (is it running? VM_START and VM_STOP in $win_conf let this script start it), or lacks Go or MinGW-w64 gcc."
+                fi
+            fi
+            ;;
+        *) problem "Unknown platform $target: linux-amd64, linux-arm64, darwin-arm64 or windows-amd64." ;;
     esac
 done
 # The server tests make test videos
@@ -247,7 +287,7 @@ if [ "$tests" = 1 ]; then
 fi
 
 stage=$(mktemp -d)
-trap 'rm -rf "$stage"; rm -f "${notes_tmp:-}"' EXIT
+trap 'rm -rf "$stage"; rm -f "${notes_tmp:-}"; stop_windows' EXIT
 ldflags="-s -w -X main.version=$version"
 # build_linux ARCH DIR: bin/server and bin/cli for Linux on ARCH, cross-compiled where it isn't
 # this machine's (cgo needs that architecture's C compiler).
@@ -280,13 +320,32 @@ build_darwin() {
             done
             COPYFILE_DISABLE=1 tar --no-xattrs -czf - -C \"\$tmp/out\" server cli" | tar -xzf - -C "$dir"
 }
+# build_windows DIR: bin\server.exe and bin\cli.exe for Windows on x64, built on the Windows machine
+# (cgo needs MinGW-w64): Server/src as it is here goes over SSH into a folder in that account's home,
+# and the binaries come back.
+build_windows() {
+    local dir=$1 work="ws-release-$$" built=0
+    mkdir -p "$dir"
+    git ls-files -z -co --exclude-standard Server/src | tar -czf "$stage/windows-src.tgz" --null -T -
+    win_scp "$stage/windows-src.tgz" "$win_user@$win_host:$work.tgz"
+    # PowerShell there: the home folder holds the work folder, removed after
+    if win_ssh "\$w = Join-Path \$HOME '$work'; New-Item -ItemType Directory (Join-Path \$w 'out') | Out-Null; tar -xzf (Join-Path \$HOME '$work.tgz') -C \$w; Remove-Item (Join-Path \$HOME '$work.tgz'); Set-Location (Join-Path \$w 'Server\\src'); \$env:CGO_ENABLED = '1'; \$env:GOOS = 'windows'; \$env:GOARCH = 'amd64'; foreach (\$c in 'server', 'cli') { go build -trimpath -ldflags '$ldflags' -o (Join-Path \$w \"out\\\$c.exe\") \"./cmd/\$c\" 2>&1 | % { \"\$_\" }; if (\$LASTEXITCODE -ne 0) { exit 1 } }" >&2; then
+        built=1
+    fi
+    if [ "$built" = 1 ]; then
+        win_scp "$win_user@$win_host:$work/out/server.exe" "$win_user@$win_host:$work/out/cli.exe" "$dir/" || true
+    fi
+    win_ssh "Remove-Item -Recurse -Force (Join-Path \$HOME '$work')" >/dev/null 2>&1 || true
+    [ -f "$dir/server.exe" ] && [ -f "$dir/cli.exe" ] || { echo "The Windows build failed." >&2; exit 1; }
+}
 for target in "${targets[@]}"; do
     echo "== Server for $target"
     case $target in
         linux-*) build_linux "${target#linux-}" "$stage/bin-$target" ;;
         darwin-arm64) build_darwin "$stage/bin-$target" ;;
+        windows-amd64) build_windows "$stage/bin-$target"; stop_windows ;;
     esac
-    file "$stage/bin-$target/server" 2>/dev/null | sed 's/^[^:]*: /   /' || true
+    file "$stage/bin-$target"/server* 2>/dev/null | sed 's/^[^:]*: /   /' || true
 done
 
 echo "== Android"
@@ -347,14 +406,21 @@ built = datetime.datetime.fromtimestamp(os.path.getmtime(sys.argv[2]), datetime.
 print(json.dumps({"version": element["versionName"], "build": element["versionCode"],
                   "size": os.path.getsize(sys.argv[2]), "built": built.isoformat(timespec="seconds")}))
 PY
-cp Server/package/setup.sh Server/scripts/check-ffmpeg.sh Server/config.example.yml LICENSE NOTICE "$pkg/"
+cp Server/config.example.yml LICENSE NOTICE "$pkg/"
 echo "$version ($commit)" >"$pkg/VERSION"
 # Each platform's package: the shared files and its own binaries (macOS's also build-ffmpeg.sh)
 for target in "${targets[@]}"; do
-    rm -rf "$pkg/bin" "$pkg/build-ffmpeg.sh"
+    rm -rf "$pkg/bin" "$pkg/build-ffmpeg.sh" "$pkg/setup.sh" "$pkg/check-ffmpeg.sh" "$pkg/setup.ps1" "$pkg/setup.cmd"
     cp -R "$stage/bin-$target" "$pkg/bin"
     [ "$target" = darwin-arm64 ] && cp Server/scripts/build-ffmpeg.sh "$pkg/"
-    tar -C "$stage" -czf "$out/weirdstreamer-server-$version-$target.tar.gz" "weirdstreamer-$version"
+    if [ "$target" = windows-amd64 ]; then
+        cp Server/package/setup.ps1 Server/package/setup.cmd "$pkg/"
+        # $out is relative to the repository and $root is absolute, so the zip goes to "$root/$out"
+        (cd "$stage" && python3 -m zipfile -c "$root/$out/weirdstreamer-server-$version-$target.zip" "weirdstreamer-$version")
+    else
+        cp Server/package/setup.sh Server/scripts/check-ffmpeg.sh "$pkg/"
+        tar -C "$stage" -czf "$out/weirdstreamer-server-$version-$target.tar.gz" "weirdstreamer-$version"
+    fi
 done
 
 (cd "$out" && sha256sum -- * >SHA256SUMS)
