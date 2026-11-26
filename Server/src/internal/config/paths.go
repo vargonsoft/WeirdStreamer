@@ -25,3 +25,17 @@ func InDir(path, dir string) bool {
 	}
 	return len(path) >= len(dir) && samePath(path[:len(dir)], dir)
 }
+
+// InGuideFiller reports whether a file (a disk path) is in a library lent to the Guide as filler
+// (Use for Guide Filler): short clips aired whole between programs, which get no trickplay frames.
+func InGuideFiller(path string) bool {
+	if GlobalConfig == nil {
+		return false
+	}
+	for _, lib := range GlobalConfig.Media.Paths {
+		if lib.GuideFiller && InDir(path, lib.Path) {
+			return true
+		}
+	}
+	return false
+}

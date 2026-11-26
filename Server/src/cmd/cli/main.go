@@ -353,6 +353,9 @@ func handleTrickplayCommand(db *database.DB, args []string) {
 		}
 
 		for _, item := range items {
+			if config.InGuideFiller(item.Path) {
+				continue // the Guide's filler gets no frames
+			}
 			if err := trickplayGenerator.Generate(item.Path); err != nil {
 				fmt.Printf("Error generating trickplay frames for %s: %v\n", item.Path, err)
 			}

@@ -509,7 +509,7 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 		// are made but that has no length stored gets its length read (making frames stores it
 		// too); those go first, being quick.
 		var todo, lengthOnly []string
-		total, already := 0, 0
+		total, already, fillerCleared := 0, 0, 0
 		for _, p := range paths {
 			// Gone files (cleanup forgets them), empty ones and a Mac's leftovers aren't videos to
 			// make frames for.
@@ -520,6 +520,17 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 			switch {
 			case failed[p]:
 				already++
+			case config.InGuideFiller(p):
+				// The Guide's filler gets no frames (its clips air whole, between programs): any made
+				// before go, and only a missing length is read (the Guide plans with it).
+				if HasTrickplay(p) && !noFramesMade(p) && RemoveTrickplay(p) == nil {
+					fillerCleared++
+				}
+				if noLength[p] {
+					lengthOnly = append(lengthOnly, p)
+				} else {
+					already++
+				}
 			case HasTrickplay(p) && noLength[p] && !noFramesMade(p):
 				// Not a video (marked so, with no frames): nothing to read a length from.
 				lengthOnly = append(lengthOnly, p)
@@ -528,6 +539,9 @@ func (j *TrickplayJob) Run(ctx context.Context) {
 			default:
 				todo = append(todo, p)
 			}
+		}
+		if fillerCleared > 0 {
+			log.Printf("trickplay: removed the frames of %d Guide filler clips (filler gets none)", fillerCleared)
 		}
 		isLengthOnly := make(map[string]bool, len(lengthOnly))
 		for _, p := range lengthOnly {

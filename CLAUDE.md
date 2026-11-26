@@ -833,7 +833,9 @@ What's built (server):
   (`shows.network_id`, `network`, `rating`; `movies.rating`). A title without them (`guide_info` 0) is due
   for the TMDB lookups job.
 - **Library settings.** `showInGuide` (on, libraryOnly, off: `MediaPath.InGuide`) and `guideFiller` on
-  each library. `guide.primeTime` (19 or 20) is in config.yml.
+  each library. A filler library's videos get no trickplay frames (`config.InGuideFiller`): the trickplay job
+  skips them (removing any made before, logged) and only reads a missing length, which the Guide plans with;
+  `cli trickplay` for a library or every video skips them too. `guide.primeTime` (19 or 20) is in config.yml.
 - **`internal/guide`.**
   - `Channels` groups one library's titles: a network with 4 or more shows gets a channel (named by
     `CallSign`), the other shows and the movies go into genre buckets.

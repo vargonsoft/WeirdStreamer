@@ -68,6 +68,15 @@ func noFramesMade(videoPath string) bool {
 	return len(frames) == 0
 }
 
+// RemoveTrickplay deletes a video's frames (they're made again only if it's taken up again).
+func RemoveTrickplay(videoPath string) error {
+	dir := config.GlobalConfig.Media.TrickplayPath
+	if dir == "" {
+		return nil
+	}
+	return os.RemoveAll(filepath.Join(dir, GenerateThumbnailHash(videoPath)))
+}
+
 // HasTrickplay says whether all of a video's frames have been made.
 func HasTrickplay(videoPath string) bool {
 	dir := config.GlobalConfig.Media.TrickplayPath
@@ -223,7 +232,7 @@ func (tg *TrickplayGenerator) GenerateForDirectory(dirPath string) error {
 			return nil
 		}
 
-		if !info.IsDir() && isSupportedVideo(path) {
+		if !info.IsDir() && isSupportedVideo(path) && !config.InGuideFiller(path) { // the Guide's filler gets none
 			if err := tg.Generate(path); err != nil {
 				log.Printf("Error generating trickplay frames for %s: %v\n", path, err)
 			}
