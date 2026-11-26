@@ -3,12 +3,16 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/weirdstreamer/server/internal/config"
 )
 
 func TestKeepDataPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no modes: TestKeepDataPrivateWindows")
+	}
 	dir := t.TempDir()
 	mk := func(p string) string {
 		p = filepath.Join(dir, p)
@@ -34,7 +38,7 @@ func TestKeepDataPrivate(t *testing.T) {
 	c.Media.SubtitlePath = filepath.Join(dir, "missing")
 	c.Media.Paths = []config.MediaPath{{Path: movies}}
 
-	keepDataPrivate(c)
+	keepDataPrivate(c, "")
 
 	for path, want := range map[string]os.FileMode{thumbs: 0o700, logs: 0o700, users: 0o600, wal: 0o600,
 		trickInLibrary: 0o755, movies: 0o755} {

@@ -141,3 +141,106 @@ func crossDevice(err error) bool {
 func inUse(err error) bool {
 	return errors.Is(err, windows.ERROR_SHARING_VIOLATION) || errors.Is(err, windows.ERROR_LOCK_VIOLATION)
 }
+
+// ownerOnly sets path's ACL to full control for this process's user, SYSTEM and Administrators,
+// protected from its folder's (inherited by a folder's contents). An ACL already that is left alone,
+// so a big folder isn't walked again at every start.
+func ownerOnly(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	allowed, err := ownerSIDs()
+	if err != nil {
+		return err
+	}
+	if sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION); err == nil && onlyAllowed(sd, allowed, true) {
+		return nil
+	}
+	inherit := uint32(windows.NO_INHERITANCE)
+	if info.IsDir() {
+		inherit = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
+	}
+	var entries []windows.EXPLICIT_ACCESS
+	for i, sid := range allowed {
+		kind := windows.TRUSTEE_IS_GROUP
+		if i == 0 {
+			kind = windows.TRUSTEE_IS_USER
+		}
+		entries = append(entries, windows.EXPLICIT_ACCESS{
+			AccessPermissions: windows.GENERIC_ALL,
+			AccessMode:        windows.SET_ACCESS,
+			Inheritance:       inherit,
+			Trustee: windows.TRUSTEE{TrusteeForm: windows.TRUSTEE_IS_SID, TrusteeType: windows.TRUSTEE_TYPE(kind),
+				TrusteeValue: windows.TrusteeValueFromSID(sid)},
+		})
+	}
+	acl, err := windows.ACLFromEntries(entries, nil)
+	if err != nil {
+		return err
+	}
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
+}
+
+// onlyAllowed tells whether sd's DACL grants access only to the allowed SIDs, and is protected
+// from its folder's if protected (a file inside an owner-only folder isn't: it inherits that ACL).
+func onlyAllowed(sd *windows.SECURITY_DESCRIPTOR, allowed []*windows.SID, protected bool) bool {
+	control, _, err := sd.Control()
+	if err != nil || protected && control&windows.SE_DACL_PROTECTED == 0 {
+		return false
+	}
+	acl, _, err := sd.DACL()
+	if err != nil || acl == nil {
+		return false // no DACL: everyone has access
+	}
+	for i := uint32(0); i < uint32(acl.AceCount); i++ {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(acl, i, &ace); err != nil {
+			return false
+		}
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
+			continue // a deny takes access away
+		}
+		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+		known := false
+		for _, a := range allowed {
+			if sid.Equals(a) {
+				known = true
+			}
+		}
+		if !known {
+			return false
+		}
+	}
+	return true
+}
+
+func isOwnerOnly(path string) (bool, error) {
+	allowed, err := ownerSIDs()
+	if err != nil {
+		return false, err
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return false, err
+	}
+	return onlyAllowed(sd, allowed, false), nil
+}
+
+// ownerSIDs: this process's user, SYSTEM and Administrators.
+func ownerSIDs() ([]*windows.SID, error) {
+	me, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return nil, err
+	}
+	system, err := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
+	if err != nil {
+		return nil, err
+	}
+	admins, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		return nil, err
+	}
+	return []*windows.SID{me.User.Sid, system, admins}, nil
+}

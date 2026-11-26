@@ -139,7 +139,7 @@ func main() {
 	if err := media.SetTempDir(config.GlobalConfig.Media.TempPath); err != nil {
 		log.Printf("Warning: could not prepare the temp folder %s: %v", config.GlobalConfig.Media.TempPath, err)
 	}
-	keepDataPrivate(config.GlobalConfig)
+	keepDataPrivate(config.GlobalConfig, configPath)
 	if err := handlers.WriteLocalKey(filepath.Join(filepath.Dir(configPath), "local.key")); err != nil {
 		log.Printf("Warning: could not write local.key (scripts/restart-live.sh can't see the streams): %v", err)
 	}

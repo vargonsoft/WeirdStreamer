@@ -187,6 +187,10 @@ func WriteLocalKey(path string) error {
 	if err := os.WriteFile(path, []byte(key+"\n"), 0o600); err != nil {
 		return err
 	}
+	if err := fileio.OwnerOnly(path); err != nil { // Windows: the mode doesn't keep others out
+		os.Remove(path)
+		return err
+	}
 	localKey = key
 	return nil
 }

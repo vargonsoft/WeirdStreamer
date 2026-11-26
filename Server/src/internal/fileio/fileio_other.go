@@ -23,3 +23,7 @@ func crossDevice(err error) bool {
 }
 
 func inUse(error) bool { return false }
+
+func ownerOnly(string) error { return nil }
+
+func isOwnerOnly(string) (bool, error) { return true, nil }

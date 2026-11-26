@@ -62,6 +62,9 @@ func Create(db *database.DB, version string) (Info, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Info{}, err
 	}
+	if err := fileio.OwnerOnly(dir); err != nil { // Windows: the mode doesn't keep others out
+		return Info{}, err
+	}
 	work, err := os.MkdirTemp(dir, ".making-")
 	if err != nil {
 		return Info{}, err

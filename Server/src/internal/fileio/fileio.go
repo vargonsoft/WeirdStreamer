@@ -50,6 +50,20 @@ func CrossDevice(err error) bool {
 	return crossDevice(err)
 }
 
+// OwnerOnly makes a file or folder readable and writable only by the server's account (and SYSTEM
+// and Administrators, as root on Unix) on Windows, where file modes don't do that: a protected ACL,
+// which a folder's files and subfolders inherit. Windows has no umask, so a file made later in such
+// a folder is private too. On Unix it does nothing: modes and the umask do it there.
+func OwnerOnly(path string) error {
+	return ownerOnly(path)
+}
+
+// IsOwnerOnly tells whether only the server's account (with SYSTEM and Administrators) has access
+// to path by its ACL, on Windows; elsewhere it's true (the mode says).
+func IsOwnerOnly(path string) (bool, error) {
+	return isOwnerOnly(path)
+}
+
 // InUse tells whether a rename or delete failed because another program has the file open without
 // allowing that (Windows only: ffmpeg, a player, an editor). Trying again once it's closed works.
 func InUse(err error) bool {

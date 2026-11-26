@@ -188,6 +188,11 @@ func writeFileKeepingMode(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
+	if mode&0o077 == 0 {
+		if err := fileio.OwnerOnly(tmp.Name()); err != nil { // Windows: the mode doesn't keep others out
+			return err
+		}
+	}
 	return fileio.Rename(tmp.Name(), path)
 }
 
