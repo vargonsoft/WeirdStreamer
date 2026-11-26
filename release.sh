@@ -406,7 +406,7 @@ built = datetime.datetime.fromtimestamp(os.path.getmtime(sys.argv[2]), datetime.
 print(json.dumps({"version": element["versionName"], "build": element["versionCode"],
                   "size": os.path.getsize(sys.argv[2]), "built": built.isoformat(timespec="seconds")}))
 PY
-cp Server/config.example.yml LICENSE NOTICE "$pkg/"
+cp Server/config.example.yml LICENSE NOTICE Server/package/guide-extras.tsv "$pkg/"
 echo "$version ($commit)" >"$pkg/VERSION"
 # Each platform's package: the shared files and its own binaries (macOS's also build-ffmpeg.sh)
 for target in "${targets[@]}"; do

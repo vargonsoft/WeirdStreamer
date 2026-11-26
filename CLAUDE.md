@@ -233,7 +233,16 @@ AMD's are assumed, untested on a card; a missing ffmpeg is reported and installe
 Before it, `packages_setup` (apt systems) offers ffmpeg (required) and then, in one question, what's
 missing of libheif-examples, fonttools and fonts-noto-cjk; elsewhere it prints notes. `apt_install`
 updates the package lists and tries once more when an install fails.
-`PCI_DEVICES` points it at a fake device folder for testing. `setup.sh upgrade [--check]` installs the latest
+`PCI_DEVICES` points it at a fake device folder for testing. Its Guide step (`guide_setup`; alone as
+`setup.sh guide [--check]`, after the admin user in a full setup; Windows `setup.ps1 guide [-Check]`,
+`Step-Guide`) offers the Guide's voice-overs and music as two questions, from `guide-extras.tsv` (shipped
+beside setup: each voice's and track's address and SHA-256; a file that doesn't match is thrown away):
+Piper (`piper-tts`, pinned `piper_version`) in its own Python environment in `var/piper` (Python 3.9+ with
+venv: apt's `python3-venv` offered; on Windows a real Python found by its `sys.executable`, else winget's
+Python 3.12, and the Visual C++ runtime onnxruntime needs, `Microsoft.VCRedist.2015+.x64`), Ryan's and HFC Female's voices (pinned to a piper-voices commit) in `var/piper-voices`, and the
+20 tracks with their credit lines in `var/guide-music`; then `cli config set-piper` and `set-guide-music`
+write config.yml. Run alone, it restarts a service of this folder's server (asking while someone watches).
+`setup.sh upgrade [--check]` installs the latest
 GitHub release over the package (`release_repo`, `WEIRDSTREAMER_REPO`): the tag from where `/releases/latest`
 redirects, this platform's tarball checked against SHA256SUMS, unpacked in `.upgrade/` and moved into place
 by renames (a running program, setup.sh included, keeps its old file), what it replaced kept in `.previous/`;

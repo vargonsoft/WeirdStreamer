@@ -137,6 +137,9 @@ func printUsage() {
 	fmt.Println("  cli config list-paths                                  - List media directories")
 	fmt.Println("  cli config set-cjk-font <path>                         - Set media.cjkFontPath (\"\" for the default)")
 	fmt.Println("  cli config set-subset-command <command>                - Set media.subsetCommand (\"\" for the default)")
+	fmt.Println("  cli config set-piper <command> <voices folder>         - Set guide.piperCommand and piperVoices, for the")
+	fmt.Println("                                                           Guide's voice-overs (\"\" \"\" for none)")
+	fmt.Println("  cli config set-guide-music <folder>                    - Set guide.musicPath (\"\" for the default)")
 	fmt.Println("  cli server restart [--force]                           - Restart the server running here (no root needed;")
 	fmt.Println("                                                           --force even while someone is watching)")
 	fmt.Println("  cli server stop [--force]                              - Stop it (a service starts it again only when told)")
@@ -447,6 +450,29 @@ func handleConfigCommand(args []string) {
 			log.Fatalf("Failed to save config: %v", err)
 		}
 		fmt.Printf("Set media.%s to %q\n", key, args[1])
+
+	case "set-piper":
+		// The Guide's voice-overs: Piper and its voices (setup.sh's Guide step sets them when it installs them)
+		if len(args) != 3 {
+			fmt.Println("Usage: cli config set-piper <command> <voices folder>")
+			os.Exit(1)
+		}
+		config.GlobalConfig.Guide.PiperCommand, config.GlobalConfig.Guide.PiperVoices = args[1], args[2]
+		if err := config.Save(config.Path(), config.GlobalConfig); err != nil {
+			log.Fatalf("Failed to save config: %v", err)
+		}
+		fmt.Printf("Set guide.piperCommand to %q and guide.piperVoices to %q\n", args[1], args[2])
+
+	case "set-guide-music":
+		if len(args) != 2 {
+			fmt.Println("Usage: cli config set-guide-music <folder>")
+			os.Exit(1)
+		}
+		config.GlobalConfig.Guide.MusicPath = args[1]
+		if err := config.Save(config.Path(), config.GlobalConfig); err != nil {
+			log.Fatalf("Failed to save config: %v", err)
+		}
+		fmt.Printf("Set guide.musicPath to %q\n", args[1])
 
 	default:
 		fmt.Printf("Unknown config subcommand: %s\n", subcommand)

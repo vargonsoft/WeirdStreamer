@@ -351,7 +351,7 @@ func (v *Voices) Make(ctx context.Context, a Announcer, line string, fixes bool)
 
 // runPiper says a piece into wav, giving Piper's phonemes for it.
 func runPiper(ctx context.Context, a Announcer, p piece, wav string) (string, error) {
-	cmdline := strings.Fields(config.GlobalConfig.Guide.PiperCommand)
+	cmdline := piperCommandLine(config.GlobalConfig.Guide.PiperCommand)
 	if len(cmdline) == 0 {
 		return "", errors.New("Piper isn't set up (guide.piperCommand)")
 	}
@@ -593,4 +593,14 @@ func writeAtomic(path string, b []byte, mode os.FileMode) error {
 		return err
 	}
 	return nil
+}
+
+// piperCommandLine is Piper's command as words: a file that exists is the program whole (a path with
+// spaces, as Windows' often have); else the words ("python3 -m piper").
+func piperCommandLine(command string) []string {
+	command = strings.TrimSpace(command)
+	if info, err := os.Stat(command); err == nil && !info.IsDir() {
+		return []string{command}
+	}
+	return strings.Fields(command)
 }

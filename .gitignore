@@ -35,6 +35,8 @@ go.work
 thumbnails/
 # Config and secrets
 config.yml
+# the Guide's announcers and fixes, beside config.yml (written with its defaults at the first start)
+guide-voices.yml
 config.json
 .env
 /Server/run

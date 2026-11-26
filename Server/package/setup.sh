@@ -8,6 +8,8 @@
 #   ./setup.sh service          install (or update) the service only
 #   ./setup.sh remove-service   stop and remove the service
 #   ./setup.sh gpu [--check]    set up the graphics card for hardware encoding (--check: only report)
+#   ./setup.sh guide [--check]  set up the Guide's voice-overs (Piper and two voices) and music
+#                               (--check: only report)
 #   ./setup.sh upgrade [--check] install the latest release from GitHub over this one (--check: only
 #                               say whether there's a newer one); it backs up the databases first
 #   ./setup.sh restore [FILE] [--with-config]
@@ -574,8 +576,143 @@ restart_service() {
     echo "The server restarted with the new version."
 }
 
+# The Guide's extras (docs/GUIDE.md), listed with their checksums in guide-extras.tsv: voice-overs on
+# the credits (Piper, a pinned piper-tts in var/piper, and two announcers' voices in var/piper-voices:
+# about 180 MB with Piper's own) and the music under the Weather channel and the Guide channel's cards
+# (20 tracks, about 140 MB, in var/guide-music). Each is asked about; config.yml is set through bin/cli
+# (guide.piperCommand and piperVoices, guide.musicPath). The files are in var/, which upgrades keep.
+#   guide_setup         ask, then install (a running service is restarted after, asking if someone watches)
+#   guide_setup flow    the same, from setup (the server isn't running yet)
+#   guide_setup check   only report
+piper_version=1.8.0
+
+guide_extra() { # guide_extra KIND -> lines "name<TAB>url<TAB>sha256"
+    awk -F'\t' -v k="$1" '$1 == k { print $2 "\t" $3 "\t" $4 }' "$dir/guide-extras.tsv"
+}
+
+sha256_of() {
+    if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+# Whether KIND's files are all in FOLDER.
+guide_have() {
+    local name url sum
+    while IFS=$'\t' read -r name url sum; do [ -f "$2/$name" ] || return 1; done < <(guide_extra "$1")
+}
+
+# Downloads KIND's files into FOLDER, each checked against its SHA-256 (one there already is kept);
+# returns 1 if any couldn't be had.
+fetch_checked() {
+    local name url sum failed=0
+    mkdir -p "$2"
+    while IFS=$'\t' read -r name url sum; do
+        [ -f "$2/$name" ] && [ "$(sha256_of "$2/$name")" = "$sum" ] && continue
+        echo "  $name"
+        if fetch "$url" "$2/$name.part" && [ "$(sha256_of "$2/$name.part")" = "$sum" ]; then
+            mv "$2/$name.part" "$2/$name"
+        else
+            rm -f "$2/$name.part"
+            echo "  $name couldn't be downloaded, or wasn't the file expected." >&2
+            failed=1
+        fi
+    done < <(guide_extra "$1")
+    return $failed
+}
+
+# Whether Piper says a line with Ryan's voice (writes nothing that stays).
+piper_works() {
+    local test="$dir/var/.piper-test.wav" ok=1
+    [ -x "$1/bin/piper" ] || return 1
+    echo "Stay tuned." | "$1/bin/piper" -m "$2/en_US-ryan-high.onnx" -f "$test" >/dev/null 2>&1 && [ -s "$test" ] && ok=0
+    rm -f "$test"
+    return $ok
+}
+
+# Python 3.9 or later with venv (Debian and Ubuntu split venv into python3-venv).
+python_ok() { python3 -c 'import sys, venv, ensurepip; sys.exit(sys.version_info < (3, 9))' 2>/dev/null; }
+
+guide_setup() {
+    local mode=${1:-ask} piper="$dir/var/piper" voices="$dir/var/piper-voices" music="$dir/var/guide-music"
+    local have_piper=0 have_voices=0 have_music=0 changed=0 apt=0
+    guide_have voice "$voices" && have_voices=1
+    [ $have_voices = 1 ] && piper_works "$piper" "$voices" && have_piper=1 # installed, and it runs
+    guide_have music "$music" && have_music=1
+    [ "$mac" = 0 ] && command -v apt-get >/dev/null && apt=1
+    if [ "$mode" = check ]; then
+        if [ $have_piper = 1 ] && [ $have_voices = 1 ]; then echo "Voice-overs: Piper and its voices are installed ($piper)."
+        else echo "Voice-overs: not set up (./setup.sh guide installs Piper and two voices, about 180 MB)."; fi
+        if [ $have_music = 1 ]; then echo "Music: the 20 tracks are in $music."
+        else echo "Music: not downloaded (./setup.sh guide downloads 20 tracks, about 140 MB)."; fi
+        grep -q '^  piperCommand:' config.yml 2>/dev/null || echo "config.yml has no guide.piperCommand: the server makes no voice-overs."
+        return 0
+    fi
+    [ -f config.yml ] || { echo "There's no config.yml yet: run ./setup.sh first." >&2; return 1; }
+    command -v curl >/dev/null || command -v wget >/dev/null || { echo "Downloading needs curl or wget." >&2; return 1; }
+
+    # Voice-overs: Piper in its own Python environment, and the announcers' voices
+    if [ $have_piper = 1 ] && [ $have_voices = 1 ]; then
+        echo "Voice-overs: Piper and its voices are installed."
+        if ! grep -q '^  piperCommand:' config.yml; then ./bin/cli config set-piper "$piper/bin/piper" "$voices" && changed=1; fi
+    elif ask_yes "Set up the Guide's voice-overs (\"Stay tuned for…\" over the credits): Piper and two voices, about 180 MB?" y; then
+        if ! python_ok; then
+            if [ "$apt" = 1 ] && ask_yes "Piper needs Python 3 with venv: install python3-venv (asks for sudo)?" y; then
+                apt_install python3 python3-venv || echo "Installing it failed: sudo apt install python3-venv installs it." >&2
+            elif [ "$mac" = 1 ]; then
+                echo "Piper needs Python 3.9 or later: brew install python, then ./setup.sh guide."
+            else
+                echo "Piper needs Python 3.9 or later with its venv module (your system's python3-venv), then ./setup.sh guide."
+            fi
+        fi
+        if python_ok; then
+            echo "Installing Piper into $piper"
+            if { [ -x "$piper/bin/pip" ] || python3 -m venv "$piper"; } &&
+                "$piper/bin/pip" install -q --disable-pip-version-check --force-reinstall "piper-tts==$piper_version" &&
+                echo "Downloading the voices" && fetch_checked voice "$voices" && piper_works "$piper" "$voices"; then
+                ./bin/cli config set-piper "$piper/bin/piper" "$voices" && changed=1
+                echo "Voice-overs are set up: the announcers and their fixes are in guide-voices.yml beside config.yml."
+            else
+                echo "Setting up voice-overs failed (see above); ./setup.sh guide tries again." >&2
+            fi
+        fi
+    fi
+
+    # Music
+    if [ $have_music = 1 ]; then
+        echo "Music: the tracks are downloaded."
+        if ! grep -q '^  musicPath:' config.yml; then ./bin/cli config set-guide-music "$music" && changed=1; fi
+    elif ask_yes "Download the Guide's music (Kevin MacLeod's smooth jazz, CC BY: 20 tracks, about 140 MB)?" y; then
+        echo "Downloading the music"
+        if fetch_checked music "$music"; then
+            local name url sum
+            while IFS=$'\t' read -r name url sum; do
+                printf '"%s" by Kevin MacLeod (incompetech.com), licensed under Creative Commons: By Attribution 4.0\n' \
+                    "${name%.mp3}" >"$music/${name%.mp3}.txt"
+            done < <(guide_extra music)
+            ./bin/cli config set-guide-music "$music" && changed=1
+        else
+            echo "Some tracks couldn't be downloaded; ./setup.sh guide tries again (the rest play meanwhile)." >&2
+            ./bin/cli config set-guide-music "$music" && changed=1
+        fi
+    fi
+
+    # The server reads these settings at start
+    if [ "$changed" = 1 ] && [ "$mode" = ask ] && service_installed; then
+        local active
+        active=$(active_streams)
+        if [ "${active:-0}" -gt 0 ] &&
+            ! ask_yes "$active stream(s) are being watched; restarting the server ends them. Restart it now?" n; then
+            echo "Restart the server when no one is watching (./setup.sh service) for these to take effect."
+        else
+            restart_service
+        fi
+    elif [ "$changed" = 1 ] && [ "$mode" = ask ]; then
+        echo "Restart the server for these to take effect."
+    fi
+}
+
 case "${1:-}" in
     service) install_service; exit ;;
+    guide) if [ "${2:-}" = --check ]; then guide_setup check; else guide_setup; fi; exit ;;
     upgrade) if [ "${2:-}" = --check ]; then upgrade check; else upgrade; fi; exit ;;
     restore) shift; restore "$@"; exit ;;
     gpu) if [ "${2:-}" = --check ]; then gpu_setup check; else gpu_setup; fi; exit ;;
@@ -689,6 +826,9 @@ if ask_yes "Create an admin user now?" y; then
     admin=$(ask "Admin username" "admin")
     ./bin/cli user create "$admin" --admin
 fi
+
+echo "== The Guide's voice-overs and music (optional)"
+guide_setup flow || true
 
 # The address to open: this machine's, and the one other devices on the network use.
 port=$(sed -n 's/^  port: *\([0-9]*\).*/\1/p' config.yml | head -1)

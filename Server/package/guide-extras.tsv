@@ -1,0 +1,29 @@
+# The Guide's extras that setup downloads (setup.sh guide, setup.ps1 -Guide): kind, the file's name, where
+# it comes from, and its SHA-256 (a file that doesn't match is thrown away). Tab-separated.
+#   voice: a Piper voice for the voice-overs (huggingface.co/rhasspy/piper-voices, MIT), into var/piper-voices
+#   music: a track for the Weather channel and the Guide channel's cards (Kevin MacLeod, incompetech.com,
+#          CC BY 4.0), into var/guide-music with a <track>.txt holding its credit line
+voice	en_US-ryan-high.onnx	https://huggingface.co/rhasspy/piper-voices/resolve/5ec43b186ef915a195d3ddbcfd9916e76c503c3f/en/en_US/ryan/high/en_US-ryan-high.onnx	b3990d7606e183ec8dbfba70a4607074f162de1a0c412e0180d1ff60bb154eca
+voice	en_US-ryan-high.onnx.json	https://huggingface.co/rhasspy/piper-voices/resolve/5ec43b186ef915a195d3ddbcfd9916e76c503c3f/en/en_US/ryan/high/en_US-ryan-high.onnx.json	c6d3b98f08315cb4bebf0d49d50fc4ff491b503c64b940cd3d5ca28543b48011
+voice	en_US-hfc_female-medium.onnx	https://huggingface.co/rhasspy/piper-voices/resolve/5ec43b186ef915a195d3ddbcfd9916e76c503c3f/en/en_US/hfc_female/medium/en_US-hfc_female-medium.onnx	5b3d6e36a33a1eb0e50b54900c229127e3059400885eb5e8f128ff04b31cd73c
+voice	en_US-hfc_female-medium.onnx.json	https://huggingface.co/rhasspy/piper-voices/resolve/5ec43b186ef915a195d3ddbcfd9916e76c503c3f/en/en_US/hfc_female/medium/en_US-hfc_female-medium.onnx.json	8c7ed7408e7a37602ad6aff4785f44ecb69616b0153ec6a23e920713eba51fac
+music	Airport Lounge.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Airport%20Lounge.mp3	e20d316b541c72690a3b0311c9f3d40fd00717359ab7567d7df82a9316c1dec4
+music	Backed Vibes Clean.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Backed%20Vibes%20Clean.mp3	e8dbe9ebab11de3e492fc6a95a4d9523d9a52845f289c4205569268224d521e9
+music	Bass Walker.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Bass%20Walker.mp3	094332b56f4bdd5446b17cbc87a40610518c3aec787c7e289ac6ef4e3eb3e817
+music	Bossa Antigua.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Bossa%20Antigua.mp3	322103dd6ac5fae4872122f91d32cccd4d964b86d300585a5a0cdfaf7048af5d
+music	Carefree.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Carefree.mp3	8433b770a630d9b1594fd484442c677907ece899a4d149954cd2e74fd733e311
+music	Cheery Monday.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Cheery%20Monday.mp3	841afe54871ec09fc0655ab4009222027c1679e17f653f82540dca4e98ebec3e
+music	Cool Vibes.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Cool%20Vibes.mp3	86e5afb1f71da4c45927bb693cc32e2f72954137cf010599a912fa89cfd4db2e
+music	Easy Lemon.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Easy%20Lemon.mp3	2486b8ecfe4575f9ab31613a2c03c2ee45e6e5280301d05b4dd7237c9e1c2531
+music	Fluffing a Duck.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Fluffing%20a%20Duck.mp3	cb23b1833c35e391de10d998d6a40cfc760565ce31d23014c86025523ca8239b
+music	Funkorama.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Funkorama.mp3	6be229815d85a0b99382b944d31098b882702c04ac7ad899e44ab7f8ba89b5ad
+music	Hep Cats.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Hep%20Cats.mp3	090cbdd911a87a6e1f87859082e07a7569993b94ebcdb41e3b17dcf42cbf3476
+music	Jazz Brunch.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Jazz%20Brunch.mp3	9e980a5a5ff7663d7f5ac22209190f34f1df465c5a6b588dd2c0bcbfc217e380
+music	Laid Back Guitars.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Laid%20Back%20Guitars.mp3	98e25c4618daf6bd6193e4f9dcbc005f6867cf0ba600fac44cca64ddb9a1d450
+music	Life of Riley.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Life%20of%20Riley.mp3	1916f05cd1860949f9241e17966d334c39852b531329e4a05802720bb154c564
+music	Lobby Time.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Lobby%20Time.mp3	bc47dc1f1a0b1fe4ff631cee89ca3987b8f7b52f533d06233665d51300331beb
+music	Local Forecast - Elevator.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Local%20Forecast%20-%20Elevator.mp3	8c46b44e65324bc339fbbc3e770611d671f6c74a40f3ec8dd50332c082b25cc9
+music	Local Forecast.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Local%20Forecast.mp3	c0b120cb91a62468f5024162c8942dd2310696c076b6a1df2b88892350575b87
+music	On the Ground.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/On%20the%20Ground.mp3	df899848714328fd6264153457488308f8d5160d76cc2e16f6a79510e33e86cb
+music	Smooth Lovin.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Smooth%20Lovin.mp3	97f914222378859a81de72f4c117cd456604d3b106e2041d6bf01cacaaf8801a
+music	Wallpaper.mp3	https://incompetech.com/music/royalty-free/mp3-royaltyfree/Wallpaper.mp3	9fa810e5193c88f1b360537366f210f16c2588106d5292f0659e9957fa274f96
