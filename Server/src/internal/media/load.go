@@ -1,24 +1,20 @@
 package media
 
 import (
-	"bufio"
 	"cmp"
 	"context"
 	"errors"
 	"math"
 	"math/rand/v2"
-	"os"
-	"regexp"
 	"slices"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/weirdstreamer/server/internal/fileio"
 )
 
-// LoadMonitor samples the machine's CPU and disk use (Linux /proc), so background jobs run only
+// LoadMonitor samples the machine's CPU and disk use (Linux /proc, Windows' disk performance
+// counters: readCPU and readDisks), so background jobs run only
 // with room to spare: busy above maxDisk of the busiest whole disk's time (the CPU is shown on
 // the Jobs page, but the jobs run at low priority instead of waiting for it),
 // smoothed over the last half-minute or so. The disks of network shares and FUSE pools (mergerfs)
@@ -278,47 +274,4 @@ func (m *LoadMonitor) Readings() (cpu, disk float64, ok bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.cpu, m.disk, m.ok
-}
-
-// readCPU returns the busy and total jiffies of all CPUs.
-func readCPU() (busy, total uint64, err error) {
-	f, err := os.Open("/proc/stat")
-	if err != nil {
-		return 0, 0, err
-	}
-	defer f.Close()
-	line, err := bufio.NewReader(f).ReadString('\n')
-	if err != nil {
-		return 0, 0, err
-	}
-	fields := strings.Fields(line) // cpu user nice system idle iowait irq softirq steal ...
-	for i, field := range fields[1:] {
-		v, _ := strconv.ParseUint(field, 10, 64)
-		total += v
-		if i != 3 && i != 4 { // idle and iowait aren't busy
-			busy += v
-		}
-	}
-	return busy, total, nil
-}
-
-// Whole disks (not partitions, loop or RAM devices): sda, nvme0n1, mmcblk0, md0, vda...
-var wholeDisk = regexp.MustCompile(`^(sd[a-z]+|vd[a-z]+|xvd[a-z]+|hd[a-z]+|nvme\d+n\d+|mmcblk\d+|md\d+)$`)
-
-// readDisks returns each whole disk's milliseconds spent doing I/O.
-func readDisks() (map[string]uint64, error) {
-	b, err := os.ReadFile("/proc/diskstats")
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]uint64{}
-	for _, line := range strings.Split(string(b), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 13 || !wholeDisk.MatchString(f[2]) {
-			continue
-		}
-		ms, _ := strconv.ParseUint(f[12], 10, 64)
-		out[f[2]] = ms
-	}
-	return out, nil
 }

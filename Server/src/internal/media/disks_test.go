@@ -3,6 +3,7 @@ package media
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -98,7 +99,6 @@ func TestLoadForFindsTheShare(t *testing.T) {
 // Devices are remembered by folder (one entry for a folder's files), and a symlinked file by the
 // folder of the file it points to.
 func TestDeviceOfByFolder(t *testing.T) {
-	skipOnWindows(t, "disks aren't told apart on Windows")
 	devices.mu.Lock()
 	devices.byDir = nil
 	devices.mu.Unlock()
@@ -110,6 +110,9 @@ func TestDeviceOfByFolder(t *testing.T) {
 	}
 	link := filepath.Join(dir, "link.mkv")
 	if err := os.Symlink(filepath.Join(other, "real.mkv"), link); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("can't make a symlink here (Windows needs Developer Mode or admin rights): %v", err)
+		}
 		t.Fatal(err)
 	}
 	for _, p := range []string{filepath.Join(dir, "a.mkv"), filepath.Join(dir, "b.mkv"), link} {
