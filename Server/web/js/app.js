@@ -665,8 +665,10 @@ function renderMedia() {
     const atLibrary = state.currentPath.split('/').filter(p => p).length === 1;
     if (!state.currentPath || atLibrary) {
         const path = state.currentPath;
+        // The Guide row comes last, just above the folders.
         Promise.all([createContinueRow(atLibrary ? state.libraryId : ''),
-            atLibrary ? createNewAdditionsRow(state.libraryId) : createNewAdditionsRows()]).then(rows => {
+            atLibrary ? createNewAdditionsRow(state.libraryId) : createNewAdditionsRows(),
+            createGuideRow(atLibrary ? state.libraryId : '')]).then(rows => {
             const shown = rows.flat().filter(Boolean);
             if (shown.length && state.view === 'folders' && state.currentPath === path) {
                 directoryList.innerHTML = '';
@@ -2961,6 +2963,7 @@ async function showSettings(pushHistory = true) {
             document.getElementById('pause-jobs-streaming').checked = !!config.streaming.pauseJobsWhileStreaming;
             showHardwareSettings(config.streaming);
             showBackupSettings(config.database || {});
+            document.getElementById('guide-prime-time').value = String((config.guide && config.guide.primeTime) || 20);
             loadDamagedVideos();
             const metadata = config.metadata || {};
             document.getElementById('tmdb-token').value = metadata.tmdbAccessToken || '';
@@ -3004,6 +3007,7 @@ function hideSettings() {
 // `screen`), so the browser's Back leaves it for the view (see popstate).
 const SCREENS = {
     settings: { element: () => settingsScreen, show: () => showSettings(false), hide: hideSettings },
+    guide: { element: () => guideScreen, show: () => showGuide(guide.lib, false), hide: () => hideGuide() }, // js/guide.js
 };
 
 function openScreen() {
@@ -3196,6 +3200,13 @@ const NEW_ADDITIONS_MODES = [
     { value: 'off', label: 'Recently Added: off' },
 ];
 
+// Where a library's titles are on the Guide's channels (the config's showInGuide)
+const GUIDE_MODES = [
+    { value: 'on', label: 'Show in Guide: on the home screen and the library' },
+    { value: 'libraryOnly', label: 'Show in Guide: in the library only' },
+    { value: 'off', label: 'Show in Guide: off' },
+];
+
 // Sets a media path's type, omitting the key for "no type" so the saved config stays clean.
 function setMediaPathType(mediaPath, type) {
     if (type) {
@@ -3235,6 +3246,8 @@ function mediaPathSummary(mediaPath, index) {
     row('Groups', (mediaPath.groups || []).length ? chips : 'None (no one sees it)');
     row('Continue Watching', where[mediaPath.continueWatchingMode || 'on'] || mediaPath.continueWatchingMode);
     row('Recently Added', where[mediaPath.showNewAdditions || 'off'] || mediaPath.showNewAdditions);
+    if (mediaPath.type) row('Show in Guide', where[mediaPath.showInGuide || 'off'] || mediaPath.showInGuide);
+    row('Guide filler', mediaPath.guideFiller ? 'Its short videos fill gaps between programs' : 'No');
     div.append(head, details);
     return div;
 }
@@ -3333,6 +3346,33 @@ function renderMediaPaths(paths) {
             state.currentConfig.media.paths[index].showNewAdditions = e.target.value;
         };
 
+        // The Guide airs movie and TV libraries' titles; any library can lend it filler.
+        const guideSelect = document.createElement('select');
+        guideSelect.className = 'settings-input';
+        guideSelect.style.cssText = 'margin-bottom: 5px; font-size: 12px;';
+        guideSelect.title = 'Where its titles are on the Guide’s live channels (movie and TV libraries)';
+        GUIDE_MODES.forEach(({ value, label }) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            guideSelect.appendChild(option);
+        });
+        guideSelect.value = mediaPath.showInGuide || 'off';
+        guideSelect.onchange = (e) => {
+            state.currentConfig.media.paths[index].showInGuide = e.target.value;
+        };
+        const fillerLabel = document.createElement('label');
+        fillerLabel.style.cssText = 'display: block; margin-bottom: 5px; font-size: 12px;';
+        fillerLabel.title = 'Its videos of 15 minutes or less can fill the gaps between the Guide’s programs; it stays a library as usual';
+        const filler = document.createElement('input');
+        filler.type = 'checkbox';
+        filler.checked = !!mediaPath.guideFiller;
+        filler.onchange = (e) => {
+            if (e.target.checked) state.currentConfig.media.paths[index].guideFiller = true;
+            else delete state.currentConfig.media.paths[index].guideFiller;
+        };
+        fillerLabel.append(filler, ' Use for Guide Filler');
+
         const pathDiv = document.createElement('div');
         pathDiv.style.cssText = 'display: flex; align-items: center; gap: 10px;';
         
@@ -3362,6 +3402,8 @@ function renderMediaPaths(paths) {
         div.appendChild(typeSelect);
         div.appendChild(continueSelect);
         div.appendChild(newAdditions);
+        if (mediaPath.type) div.appendChild(guideSelect);
+        div.appendChild(fillerLabel);
         div.appendChild(pathDiv);
         pathsList.appendChild(div);
     });
@@ -3825,6 +3867,10 @@ async function handleSaveSettings() {
             backupDay: document.getElementById('backup-day').value,
             backupTime: document.getElementById('backup-time').value || '04:00',
             backupKeep: Math.min(365, Math.max(1, parseInt(document.getElementById('backup-keep').value) || 7)),
+        };
+        state.currentConfig.guide = {
+            ...(state.currentConfig.guide || {}),
+            primeTime: parseInt(document.getElementById('guide-prime-time').value) || 20,
         };
         state.currentConfig.metadata = {
             ...(state.currentConfig.metadata || {}),

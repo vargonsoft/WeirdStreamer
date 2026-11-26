@@ -319,6 +319,31 @@ class MediaAPI {
         return this.request('/api/playback/continue' + (lib ? `?lib=${encodeURIComponent(lib)}` : ''));
     }
 
+    // The Guide (live channels): whether there is one, the grid, what a channel airs now, and
+    // marking the program on now watched. lib: a library's own Guide.
+    guideQuery(lib, extra = {}) {
+        const params = new URLSearchParams(extra);
+        if (lib) params.set('lib', lib);
+        const q = params.toString();
+        return q ? `?${q}` : '';
+    }
+
+    async guideAvailable(lib = '') {
+        return (await this.request('/api/guide/available' + this.guideQuery(lib))).available;
+    }
+
+    async guideListings(lib = '', hours = 3.5) {
+        return this.request('/api/guide' + this.guideQuery(lib, { hours }));
+    }
+
+    async guideNow(channel, lib = '') {
+        return this.request('/api/guide/now' + this.guideQuery(lib, { channel }));
+    }
+
+    async guideWatched(channel, lib = '') {
+        return this.request('/api/guide/watched' + this.guideQuery(lib, { channel }), { method: 'POST' });
+    }
+
     async newAdditions(lib = '') {
         return this.request('/api/library/new' + (lib ? `?lib=${encodeURIComponent(lib)}` : ''));
     }

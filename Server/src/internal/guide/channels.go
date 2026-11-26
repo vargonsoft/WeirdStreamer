@@ -184,8 +184,8 @@ func CallSign(key string) string {
 }
 
 // Channel colors (badges), an 80s palette
-var Colors = []string{"#E4572E", "#F3A712", "#29335C", "#4CB944", "#A23B72", "#2E86AB", "#F18F01", "#C73E1D",
-	"#3B1F2B", "#6A4C93", "#1B998B", "#ED217C"}
+var Colors = []string{"#E4572E", "#F3A712", "#3D5A98", "#4CB944", "#A23B72", "#2E86AB", "#F18F01", "#C73E1D",
+	"#8E5572", "#6A4C93", "#1B998B", "#ED217C"}
 
 func hash(s string) uint64 {
 	h := fnv.New64a()

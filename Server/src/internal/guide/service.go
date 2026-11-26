@@ -155,6 +155,12 @@ func (s *Service) Refresh(ctx context.Context) error {
 					return err
 				}
 			}
+			if !slices.Contains(Colors, c.Color) { // a color since taken out of the palette
+				c.Color = Colors[hash(ch.Key)%uint64(len(Colors))]
+				if err := s.db.SetGuideChannelColor(ch.Key, c.Color); err != nil {
+					return err
+				}
+			}
 			n, err := s.planChannel(ch, c, set, clips, now)
 			if err != nil {
 				return fmt.Errorf("channel %d: %w", c.Number, err)

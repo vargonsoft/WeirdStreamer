@@ -841,6 +841,19 @@ What's built (server):
   `GET /api/guide/now?channel=` (the file, the offset, and the program on now and next) and
   `POST /api/guide/watched?channel=`, each with an optional `lib=`. A channel is one library's, so access
   is that library's.
+- **Web** (`js/guide.js`, loaded after app.js and using its helpers): `createGuideRow` puts a Guide button
+  just above the folders (home, or a library's own page). The Guide is a screen like Settings
+  (`SCREENS.guide`).
+  - Top left is `#guide-video`. It tunes to the last channel watched in this browser
+    (`localStorage.guideChannel`).
+  - Each item from `/now` plays as is, seeked to the channel's offset, where the browser can play it
+    (`originalProblem`, the default audio track). Otherwise it plays through the server's stream with
+    `start=` (Compatibility (Auto)).
+  - A timer asks `/now` again when the item ends, by the server's clock (`guide.skew`).
+  - Bumpers are a card drawn over the picture (`showBumper`).
+  - There's no seeking, and a pause mutes instead. Typing a number tunes to that channel, and Up and
+    Down change channel in full screen.
+  - Settings has the libraries' Show in Guide and Use for Guide Filler, and Server › Guide's prime time.
 
 
 ### More server platforms (feasibility, 2026-11-22)

@@ -101,6 +101,12 @@ func (db *DB) SetGuideChannelActive(key string, active bool) error {
 	return err
 }
 
+// SetGuideChannelColor changes a channel's badge color.
+func (db *DB) SetGuideChannelColor(key, color string) error {
+	_, err := db.mediaConn.Exec(`UPDATE guide_channels SET color = ? WHERE key = ?`, color, key)
+	return err
+}
+
 // SetGuideFingerprint records what a channel was planned from.
 func (db *DB) SetGuideFingerprint(key, fingerprint string) error {
 	_, err := db.mediaConn.Exec(`UPDATE guide_channels SET fingerprint = ? WHERE key = ?`, fingerprint, key)

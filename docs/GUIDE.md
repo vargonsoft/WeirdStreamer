@@ -4,8 +4,8 @@ What we're working toward: a cable or satellite style TV guide made from the lib
 the libraries' shows and movies on a schedule, and you can watch only what's on now. The programming
 works the way 80s and 90s TV did, not the way modern TV does.
 
-Status: phase 1 (the server) is built on the `guide` branch: channels, the planner, filler and the API. The
-clients are next. Decisions are marked as settled; open questions are at the end.
+Status: on the `guide` branch, phase 1 (the server: channels, the planner, filler, the API) and phase 2
+(the web: `js/guide.js`) are built. Android TV is next. Decisions are marked as settled; open questions are at the end.
 
 ## Decisions (settled)
 
