@@ -352,6 +352,9 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
     TvSettingsRow("Enable HTTP/2", onClick = { m.http2 = !m.http2; m.saveSoon() }) { TvSwitch(m.http2) }
     TvSettingsRow("Pause background jobs while anyone is streaming", "Finding intros and credits, trickplay frames, cleanup",
         onClick = { m.pauseJobs = !m.pauseJobs; m.saveSoon() }) { TvSwitch(m.pauseJobs) }
+    TvSettingsRow("Guide's prime time", "Then the news hour", stepValue = optionLabel(primeTimes, m.primeTime),
+        onStep = { m.primeTime = stepOption(primeTimes, m.primeTime, it); m.saveSoon() },
+        onClick = { m.primeTime = stepOption(primeTimes, m.primeTime, 1); m.saveSoon() }) { }
     TvSettingsRow("Hardware encoding", hardwareSummary(m.hardware, config),
         onClick = { if (m.hardware != null) showHardware = true }) { Icon(Icons.Default.Memory, contentDescription = null) }
 
@@ -516,6 +519,15 @@ private fun TvLibraryDialog(m: ServerSettingsModel, p: PathEdit, onDismiss: () -
         TvValueRow("Recently Added", optionLabel(libraryRowModes, p.newAdditions),
             onStep = { p.newAdditions = stepOption(libraryRowModes, p.newAdditions, it); m.saveSoon() }) {
             onChoose(ChoiceEntry("Recently Added", libraryRowModes, p.newAdditions) { p.newAdditions = it; m.save() })
+        }
+        if (p.type.isNotEmpty()) {
+            TvValueRow("Show in Guide", optionLabel(libraryRowModes, p.showInGuide),
+                onStep = { p.showInGuide = stepOption(libraryRowModes, p.showInGuide, it); m.saveSoon() }) {
+                onChoose(ChoiceEntry("Show in Guide", libraryRowModes, p.showInGuide) { p.showInGuide = it; m.save() })
+            }
+        }
+        TvValueRow("Use for Guide Filler", if (p.guideFiller) "On" else "Off", onStep = { p.guideFiller = !p.guideFiller; m.saveSoon() }) {
+            p.guideFiller = !p.guideFiller; m.saveSoon()
         }
         Text("Groups that can see it", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp))

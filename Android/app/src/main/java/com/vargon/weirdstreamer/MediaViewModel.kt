@@ -634,8 +634,25 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     /** Phone: the Settings tab shown, by name; kept while a video plays over Settings. */
     var settingsTab by mutableStateOf("App")
 
-    /** Whether the page leads with a row of videos: Continue Watching, Recently Added or both. */
-    val hasTopRows: Boolean get() = continueItems.isNotEmpty() || newRows.isNotEmpty()
+    /** Whether the page leads with rows: Continue Watching, Recently Added, the Guide's. */
+    val hasTopRows: Boolean get() = continueItems.isNotEmpty() || newRows.isNotEmpty() || guideRow != null
+
+    // ---- The Guide (docs/GUIDE.md): live channels the server plans ----
+
+    /** The Guide row's: the library whose Guide it opens ("" the home screen's), null for no row. */
+    var guideRow by mutableStateOf<String?>(null)
+        private set
+
+    /** The Guide open: "" the home screen's, a library's ID its own; null when it's closed. */
+    var guideOpen by mutableStateOf<String?>(null)
+        private set
+
+    /** The server the Guide is on (the server open). */
+    val guideServer: ServerRepository? get() = serverRepository
+
+    fun openGuide(library: String) { guideOpen = library }
+
+    fun closeGuide() { guideOpen = null }
 
     /** False while the Continue Watching row is being asked for, so the TV can start focus on it. */
     var continueReady by mutableStateOf(true)
@@ -677,6 +694,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         val repo = serverRepository ?: run {
             continueItems = emptyList()
             newRows = emptyList()
+            guideRow = null
             continueReady = true
             return
         }
@@ -693,6 +711,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         if (!isLibraryView && !atLibraryRoot && repo.getParentPath(currentPath) != null) {
             continueItems = emptyList()
             newRows = emptyList()
+            guideRow = null
             continueReady = true
             return
         }
@@ -708,6 +727,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
                     repo.newAdditionsByLibrary().getOrNull().orEmpty()
                         .filter { it.items.isNotEmpty() }.map { "Recently Added in ${it.libraryName}" to it.items }
                 }
+                // The Guide row: the home screen's Guide, or the library's own
+                guideRow = if (repo.guideAvailable(libraryId)) libraryId.orEmpty() else null
             } finally {
                 continueReady = true
             }
@@ -1258,6 +1279,7 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
         currentRepository = null // the account's own libraries, not the last account's
         continueItems = emptyList() // nor the last account's videos in progress
         newRows = emptyList() // or recent additions
+        guideRow = null; guideOpen = null // or its Guide
         selectionMap.clear() // a fresh start, on Continue Watching
         val ready = if (provider.typeId == "SMB") credentialManager.useSmbAccount(address, username)
             else credentialManager.useServerAccount(address, username)

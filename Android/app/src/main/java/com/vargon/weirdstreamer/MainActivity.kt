@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
         UpdateChecks(viewModel)
 
         // Keep screen on when viewing media
-        val isViewingMedia = selectedVideo != null || selectedImage != null || selectedPdf != null
+        val isViewingMedia = selectedVideo != null || selectedImage != null || selectedPdf != null || viewModel.guideOpen != null
         DisposableEffect(isViewingMedia) {
             if (isViewingMedia) {
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -140,6 +140,10 @@ class MainActivity : ComponentActivity() {
                         onBack = { lastViewedPath -> viewModel.closePdf(lastViewedPath) }
                     )
                 }
+            }
+            // The Guide: live channels, with a player of their own
+            viewModel.guideOpen != null -> {
+                if (isTv) TvGuideScreen(viewModel) else PhoneGuideScreen(viewModel)
             }
             showSettings -> {
                 val credentialManager = remember { CredentialManager(applicationContext) }

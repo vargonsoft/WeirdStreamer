@@ -157,6 +157,41 @@ class ServerRepository(
         }
     }
 
+    // ---- The Guide (docs/GUIDE.md); libraryId: a library's own Guide, null the home screen's ----
+
+    /** Whether there's a Guide to show: the home screen's, or [libraryId]'s. */
+    suspend fun guideAvailable(libraryId: String? = null): Boolean = withContext(Dispatchers.IO) {
+        runCatching { apiService.guideAvailable(libraryId).body()?.available == true }.getOrDefault(false)
+    }
+
+    suspend fun guideListings(libraryId: String?): Result<com.vargon.weirdstreamer.api.models.GuideListings> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.guideListings(libraryId)
+            r.body()?.takeIf { r.isSuccessful } ?: throw Exception("Server error: ${r.code()}")
+        }
+    }
+
+    suspend fun guideNow(channel: Int, libraryId: String?): Result<com.vargon.weirdstreamer.api.models.GuideNow> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.guideNow(channel, libraryId)
+            r.body()?.takeIf { r.isSuccessful } ?: throw Exception(if (r.code() == 503) "This channel isn't planned yet" else "Server error: ${r.code()}")
+        }
+    }
+
+    suspend fun guideWatched(channel: Int, libraryId: String?): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val r = apiService.guideWatched(channel, libraryId)
+            if (!r.isSuccessful) throw Exception("Server error: ${r.code()}")
+        }
+    }
+
+    /** A channel's logo [width] pixels wide in [color] ("rrggbb"), transparent around it. */
+    fun guideLogoUrl(channel: com.vargon.weirdstreamer.api.models.GuideChannel, width: Int, color: String = "ffffff"): String =
+        "$requestBase${channel.logo}&w=$width&color=$color"
+
+    /** A file's stream by its client path: the original, or with [query] (transcode=…, start=…). */
+    fun streamUrlFor(clientPath: String, query: String = ""): String = getStreamUrl(clientPath) + query
+
     /** Videos in progress, most recent first, in [libraryId] or every library. */
     suspend fun continueWatching(libraryId: String? = null): Result<List<ContinueItem>> = withContext(Dispatchers.IO) {
         runCatching {

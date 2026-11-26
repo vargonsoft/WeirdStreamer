@@ -211,6 +211,8 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
                         }
                         LibrarySummaryRow("Continue Watching") { Text(libraryRowModes.firstOrNull { it.first == p.continueWatching }?.second ?: p.continueWatching, style = MaterialTheme.typography.bodyMedium) }
                         LibrarySummaryRow("Recently Added") { Text(libraryRowModes.firstOrNull { it.first == p.newAdditions }?.second ?: p.newAdditions, style = MaterialTheme.typography.bodyMedium) }
+                        if (p.type.isNotEmpty()) LibrarySummaryRow("Show in Guide") { Text(optionLabel(libraryRowModes, p.showInGuide), style = MaterialTheme.typography.bodyMedium) }
+                        LibrarySummaryRow("Guide filler") { Text(if (p.guideFiller) "Its short videos fill gaps" else "No", style = MaterialTheme.typography.bodyMedium) }
                     } else Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(p.name, { p.name = it }, label = { Text("Name") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth())
@@ -218,6 +220,15 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
                         LibraryOptionMenu("Library type", libraryTypes, p.type) { p.type = it }
                         LibraryOptionMenu("Continue Watching", libraryRowModes, p.continueWatching) { p.continueWatching = it }
                         LibraryOptionMenu("Recently Added", libraryRowModes, p.newAdditions) { p.newAdditions = it }
+                        if (p.type.isNotEmpty()) LibraryOptionMenu("Show in Guide", libraryRowModes, p.showInGuide) { p.showInGuide = it }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Use for Guide Filler")
+                                Text("Its videos of 15 minutes or less fill gaps between the Guide's programs", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = p.guideFiller, onCheckedChange = { p.guideFiller = it })
+                        }
                         Text(p.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Spacer(Modifier.weight(1f))
@@ -300,6 +311,8 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
                     }
                     Switch(checked = m.pauseJobs, onCheckedChange = { m.pauseJobs = it })
                 }
+                Text("Guide", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
+                LibraryOptionMenu("Prime time (then the news hour)", primeTimes, m.primeTime) { m.primeTime = it }
                 Text("Hardware encoding", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
                 val report = m.hardware
                 if (report == null) {

@@ -60,6 +60,9 @@ class PathEdit(val source: JsonObject, name: String, path: String, groups: List<
     // Where its videos in progress and its newest videos show (the web's defaults when unset)
     var continueWatching by mutableStateOf(source.get("continueWatchingMode")?.asString ?: "on")
     var newAdditions by mutableStateOf(source.get("showNewAdditions")?.asString ?: "off")
+    // The Guide: where its titles are on the channels (movie and TV libraries), and whether its short videos fill gaps
+    var showInGuide by mutableStateOf(source.get("showInGuide")?.asString ?: "off")
+    var guideFiller by mutableStateOf(source.get("guideFiller")?.asBoolean ?: false)
     // The phone shows it as it is, with Edit, so a stray tap can't change it; one just added opens for editing.
     var editing by mutableStateOf(source.size() == 0)
 
@@ -75,8 +78,12 @@ internal fun jsonNames(names: List<String>) = JsonArray().apply { names.forEach 
 
 internal val libraryTypes = listOf("" to "No type", "movie" to "Movies", "tv" to "TV Shows")
 
-// Where a library's Continue Watching and Recently Added rows show (continueWatchingMode, showNewAdditions)
+// Where a library's Continue Watching and Recently Added rows show (continueWatchingMode, showNewAdditions),
+// and its titles on the Guide's channels (showInGuide)
 internal val libraryRowModes = listOf("on" to "Home screen and library", "libraryOnly" to "Library only", "off" to "Off")
+
+// The Guide's prime time (guide.primeTime), the news hour after it
+internal val primeTimes = listOf("20" to "8 to 11 pm", "19" to "7 to 10 pm")
 
 /** An option's label among [options], or [key] itself. */
 internal fun optionLabel(options: List<Pair<String, String>>, key: String) = options.firstOrNull { it.first == key }?.second ?: key
@@ -97,6 +104,7 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
     var host by mutableStateOf("")
     var http2 by mutableStateOf(false)
     var pauseJobs by mutableStateOf(false)
+    var primeTime by mutableStateOf("20") // the Guide's: the hour it starts
     // Hardware encoding: what the server found, and the config's choice ("" the CPU, else "id|device")
     var hardware by mutableStateOf<HardwareReport?>(HardwareReport(checking = true)); private set
     var hwEncoder by mutableStateOf("")
@@ -145,6 +153,7 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
             http2 = it.get("enableHTTP2")?.asBoolean ?: false
             pauseJobs = it.get("pauseJobsWhileStreaming")?.asBoolean ?: false
         }
+        primeTime = c.getAsJsonObject("guide")?.get("primeTime")?.asInt?.takeIf { it > 0 }?.toString() ?: "20"
         hwEncoder = HardwareSettings.encoderOf(c); hwDevice = HardwareSettings.deviceOf(c)
         hwMax = HardwareSettings.maxOf(c).toString()
         c.getAsJsonObject("database")?.let {
@@ -191,6 +200,8 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
             // Only where set before or changed from the default, so config.yml changes only where it was changed.
             if (o.has("continueWatchingMode") || p.continueWatching != "on") o.addProperty("continueWatchingMode", p.continueWatching)
             if (o.has("showNewAdditions") || p.newAdditions != "off") o.addProperty("showNewAdditions", p.newAdditions)
+            if (o.has("showInGuide") || p.showInGuide != "off") o.addProperty("showInGuide", p.showInGuide)
+            if (p.guideFiller) o.addProperty("guideFiller", true) else o.remove("guideFiller")
             array.add(o)
         }
         c.getAsJsonObject("media").add("paths", array)
@@ -207,6 +218,8 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
         if (hardware?.encoders?.isNotEmpty() == true) {
             HardwareSettings.apply(c, HardwareSettings.key(hwEncoder, hwDevice), hwMax.toIntOrNull() ?: 0)
         }
+        val guide = c.getAsJsonObject("guide") ?: JsonObject().also { c.add("guide", it) }
+        guide.addProperty("primeTime", primeTime.toIntOrNull() ?: 20)
         val database = c.getAsJsonObject("database") ?: JsonObject().also { c.add("database", it) }
         database.addProperty("backupSchedule", backupSchedule)
         database.addProperty("backupDay", backupDay)

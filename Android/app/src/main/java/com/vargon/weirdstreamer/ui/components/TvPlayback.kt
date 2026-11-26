@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
@@ -66,19 +68,46 @@ fun TvContinueRow(
         if (viewModel.continueItems.isNotEmpty()) add("Continue Watching" to viewModel.continueItems)
         addAll(viewModel.newRows)
     }
+    // The Guide's row last, just above the folders
+    val guide = viewModel.guideRow
+    val count = rows.size + if (guide != null) 1 else 0
     // Each row's own requester: the top and bottom ones are the caller's (one row is both).
-    val middle = remember(rows.size) { List(rows.size) { FocusRequester() } }
+    val middle = remember(count) { List(count) { FocusRequester() } }
     fun requestersOf(i: Int) = buildList {
         if (i == 0) add(topRequester)
-        if (i == rows.lastIndex) add(bottomRequester)
+        if (i == count - 1) add(bottomRequester)
         if (isEmpty()) add(middle[i])
     }
     Column(modifier = modifier) {
         rows.forEachIndexed { i, (heading, items) ->
             TvVideoRow(viewModel, heading, items, requestersOf(i),
                 up = if (i == 0) up else requestersOf(i - 1).first(),
-                onDown = { if (i < rows.lastIndex) requestersOf(i + 1).first().tryFocus() else onDown() },
+                onDown = { if (i < count - 1) requestersOf(i + 1).first().tryFocus() else onDown() },
                 modifier = if (i > 0) Modifier.padding(top = 16.dp) else Modifier)
+        }
+        if (guide != null) {
+            val i = rows.size
+            TvGuideButton(requestersOf(i), up = if (i == 0) up else requestersOf(i - 1).first(), onDown = onDown,
+                modifier = if (i > 0) Modifier.padding(top = 16.dp) else Modifier) { viewModel.openGuide(guide) }
+        }
+    }
+}
+
+/** The Guide's row: one button that opens it. */
+@Composable
+private fun TvGuideButton(requesters: List<FocusRequester>, up: FocusRequester, onDown: () -> Boolean,
+                          modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Row(modifier.focusBleed()) {
+        androidx.tv.material3.Button(
+            onClick = onClick,
+            shape = tvButtonShape(),
+            colors = tvButtonColors(),
+            modifier = requesters.fold(Modifier.padding(FocusBleed)) { m, r -> m.focusRequester(r) }
+                .focusProperties { this.up = up }
+                .onPreviewKeyEvent { e -> e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown && onDown() }
+        ) {
+            Icon(androidx.compose.material.icons.Icons.Filled.LiveTv, contentDescription = null)
+            Text("Guide", modifier = Modifier.padding(start = 8.dp))
         }
     }
 }

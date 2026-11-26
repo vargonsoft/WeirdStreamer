@@ -868,6 +868,22 @@ What's built (server):
   - There's no seeking, and a pause mutes instead. Typing a number tunes to that channel, and Up and
     Down change channel in full screen.
   - Settings has the libraries' Show in Guide and Use for Guide Filler, and Server › Guide's prime time.
+- **Android** (`Guide.kt`: `GuideModel`, `GuidePlayer`, the cards; `TvGuide.kt`, `PhoneGuide.kt`):
+  - The Guide row is the last of the rows above the folders (`MediaViewModel.guideRow`, from
+    `/api/guide/available`): a button in `TvContinueRow` and `PhoneContinueRow`. `openGuide` sets
+    `guideOpen`, which `MainActivity` shows instead of the browser.
+  - `GuideModel` follows the tuned channel through `/now` (a timer at each item's end, by the
+    server's clock) and keeps the last channel per server and Guide (`SharedPreferences` "guide").
+  - An item plays as is, seeked, where `OfflinePlayback` says the device plays it. Otherwise it plays
+    through the server's stream from where the channel is (H.264 copied, `audioLadder`'s audio), and
+    after a player error as a full transcode.
+  - One ExoPlayer serves the small window and full screen.
+  - TV: the D-pad grid. OK on a program on now on another channel tunes to it; OK on the picture goes
+    full screen, where Up and Down change channel. Number keys tune, and Play/Pause mutes.
+  - Phone: the grid scrolls sideways. A tap on the picture goes full screen (sideways), where swipes
+    change channel; there's a mute button.
+  - Settings: each library's Show in Guide and Use for Guide Filler, and prime time
+    (`AdminSettings.kt`; the phone's and the TV's screens).
 
 
 ### More server platforms (feasibility, 2026-11-22)

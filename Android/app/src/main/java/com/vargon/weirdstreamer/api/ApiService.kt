@@ -297,6 +297,19 @@ interface ApiService {
     @GET("/api/library/new?by=library")
     suspend fun newAdditionsByLibrary(): Response<List<com.vargon.weirdstreamer.api.models.LibraryAdditions>>
 
+    // The Guide (lib: a library's own Guide)
+    @GET("/api/guide/available")
+    suspend fun guideAvailable(@Query("lib") libraryId: String? = null): Response<com.vargon.weirdstreamer.api.models.GuideAvailable>
+
+    @GET("/api/guide")
+    suspend fun guideListings(@Query("lib") libraryId: String? = null, @Query("hours") hours: Double = 3.5): Response<com.vargon.weirdstreamer.api.models.GuideListings>
+
+    @GET("/api/guide/now")
+    suspend fun guideNow(@Query("channel") channel: Int, @Query("lib") libraryId: String? = null): Response<com.vargon.weirdstreamer.api.models.GuideNow>
+
+    @POST("/api/guide/watched")
+    suspend fun guideWatched(@Query("channel") channel: Int, @Query("lib") libraryId: String? = null): Response<Unit>
+
     @GET("/api/playback/continue")
     suspend fun continueWatching(@Query("lib") libraryId: String? = null): Response<List<ContinueItem>>
 

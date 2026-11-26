@@ -899,3 +899,69 @@ data class PersonFilm(
     @SerializedName("role") val role: String? = null,
     @SerializedName("in_library") val inLibrary: Boolean = false
 )
+
+// ---- The Guide: live channels the server plans (docs/GUIDE.md) ----
+
+/** GET /api/guide/available */
+data class GuideAvailable(@SerializedName("available") val available: Boolean = false)
+
+/** GET /api/guide: the grid, from the current half hour (Unix ms) */
+data class GuideListings(
+    @SerializedName("now") val now: Long = 0,
+    @SerializedName("from") val from: Long = 0,
+    @SerializedName("to") val to: Long = 0,
+    @SerializedName("channels") val channels: List<GuideChannel> = emptyList(),
+)
+
+data class GuideChannel(
+    @SerializedName("number") val number: Int = 0,
+    @SerializedName("name") val name: String = "",
+    @SerializedName("genre") val genre: String = "",
+    @SerializedName("color") val color: String = "",
+    // its logo: GET this with w= (width), color= (rrggbb) or format=svg
+    @SerializedName("logo") val logo: String = "",
+    @SerializedName("listings") val listings: List<GuideListing>? = null,
+)
+
+/** A program in the grid, from its start to the next one's (Unix ms); no info: off the air. */
+data class GuideListing(
+    @SerializedName("start") val start: Long = 0,
+    @SerializedName("end") val end: Long = 0,
+    @SerializedName("info") val info: ProgramInfo? = null,
+)
+
+data class ProgramInfo(
+    @SerializedName("kind") val kind: String = "",
+    @SerializedName("tmdb_id") val tmdbId: Int = 0,
+    @SerializedName("library") val library: String = "",
+    @SerializedName("title") val title: String = "",
+    @SerializedName("year") val year: Int? = null,
+    @SerializedName("rating") val rating: String? = null,
+    @SerializedName("genres") val genres: List<String>? = null,
+    @SerializedName("overview") val overview: String? = null,
+    @SerializedName("poster") val poster: String? = null,
+    @SerializedName("season") val season: Int? = null,
+    @SerializedName("episode") val episode: Int? = null,
+    @SerializedName("episode_title") val episodeTitle: String? = null,
+    @SerializedName("episode_overview") val episodeOverview: String? = null,
+) {
+    /** "S2E5 · Name" for an episode, else null. */
+    val episodeLabel: String?
+        get() = season?.takeIf { it > 0 }?.let { s ->
+            "S${s}E${episode ?: 0}" + (episodeTitle?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
+        }
+}
+
+/** GET /api/guide/now: what a channel airs, and how far into it (seconds). */
+data class GuideNow(
+    @SerializedName("channel") val channel: GuideChannel = GuideChannel(),
+    @SerializedName("kind") val kind: String = "",
+    @SerializedName("path") val path: String? = null,
+    @SerializedName("offset") val offset: Double = 0.0,
+    @SerializedName("start") val start: Long = 0,
+    @SerializedName("end") val end: Long = 0,
+    @SerializedName("program") val program: ProgramInfo? = null,
+    @SerializedName("next") val next: ProgramInfo? = null,
+    @SerializedName("next_start") val nextStart: Long = 0,
+    @SerializedName("server_time") val serverTime: Long = 0,
+)

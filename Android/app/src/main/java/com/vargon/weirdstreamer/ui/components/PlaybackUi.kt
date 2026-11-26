@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -146,6 +147,14 @@ fun PhoneContinueRow(viewModel: MediaViewModel, modifier: Modifier = Modifier, s
         PhoneVideoRow(viewModel, "Continue Watching", viewModel.continueItems, sidePadding)
         viewModel.newRows.forEach { (heading, items) -> PhoneVideoRow(viewModel, heading, items, sidePadding) }
         PhoneDownloadsRow(viewModel, downloads, sidePadding)
+        // The Guide's row last, just above the folders
+        viewModel.guideRow?.let { lib ->
+            PhoneButton(onClick = { viewModel.openGuide(lib) },
+                modifier = Modifier.padding(start = sidePadding, end = sidePadding, top = 12.dp, bottom = 4.dp)) {
+                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.LiveTv, contentDescription = null)
+                Text("Guide", modifier = Modifier.padding(start = 8.dp))
+            }
+        }
     }
 }
 
