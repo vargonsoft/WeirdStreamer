@@ -267,6 +267,7 @@ func serve(parent context.Context) {
 	api.HandleFunc("/guide", guideHandler.Listings).Methods("GET")
 	api.HandleFunc("/guide/available", guideHandler.Available).Methods("GET")
 	api.HandleFunc("/guide/now", guideHandler.Now).Methods("GET")
+	api.HandleFunc("/guide/logo", guideHandler.Logo).Methods("GET")
 	api.HandleFunc("/guide/watched", guideHandler.Watched).Methods("POST")
 	api.HandleFunc("/library/new", mediaHandler.NewAdditions).Methods("GET")
 	api.HandleFunc("/playback/watched", mediaHandler.SetWatched).Methods("POST")

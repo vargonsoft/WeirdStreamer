@@ -169,20 +169,6 @@ func mainGenre(titles []*Title, buckets []bucket, fallback string) string {
 	return label
 }
 
-// CallSign is a made-up call sign for a network channel ("WKBT"): W or K and three letters, from
-// its key, so it stays the same.
-func CallSign(key string) string {
-	h := hash(key)
-	const letters = "ABCDEFGHJKLMNPRSTVWXZ"
-	b := []byte{"WK"[h%2]}
-	h /= 2
-	for range 3 {
-		b = append(b, letters[h%uint64(len(letters))])
-		h /= uint64(len(letters))
-	}
-	return string(b)
-}
-
 // Channel colors (badges), an 80s palette
 var Colors = []string{"#E4572E", "#F3A712", "#3D5A98", "#4CB944", "#A23B72", "#2E86AB", "#F18F01", "#C73E1D",
 	"#8E5572", "#6A4C93", "#1B998B", "#ED217C"}

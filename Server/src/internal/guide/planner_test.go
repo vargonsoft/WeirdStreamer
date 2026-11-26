@@ -84,8 +84,12 @@ func TestChannelsGroupTitles(t *testing.T) {
 	if strings.Join(got, " ") != want {
 		t.Errorf("channels = %v, want %s", got, want)
 	}
-	if CallSign("lib/network:6") != CallSign("lib/network:6") || len(CallSign("x")) != 4 {
-		t.Error("call sign isn't stable")
+	a := PickStation("lib/network:6", nil, nil)
+	if a != PickStation("lib/network:6", nil, nil) || !IsStation(a) {
+		t.Error("the station picked isn't stable")
+	}
+	if b := PickStation("lib/network:6", map[string]bool{a: true}, nil); b == a || !IsStation(b) {
+		t.Errorf("picked %s, which is taken", b)
 	}
 }
 

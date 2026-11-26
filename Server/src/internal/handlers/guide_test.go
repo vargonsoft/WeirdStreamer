@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,5 +95,23 @@ func TestGuideListingsAndNow(t *testing.T) {
 	}
 	if code, _ := get("family", "/api/guide?lib=tv2", h.Listings); code != 404 {
 		t.Errorf("a library the group can't see: %d", code)
+	}
+
+	// Each channel has a logo, as PNG (at the width asked) or SVG.
+	logo := func(url string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, url, nil)
+		r = r.WithContext(auth.WithUser(r.Context(), &models.User{ID: 1, Username: "u", Group: "family"}))
+		w := httptest.NewRecorder()
+		h.Logo(w, r)
+		return w
+	}
+	if w := logo("/api/guide/logo?channel=14&w=128"); w.Code != 200 || w.Header().Get("Content-Type") != "image/png" || w.Body.Len() < 1000 {
+		t.Errorf("logo: %d %s, %d bytes", w.Code, w.Header().Get("Content-Type"), w.Body.Len())
+	}
+	if w := logo("/api/guide/logo?channel=14&format=svg"); w.Code != 200 || !strings.HasPrefix(w.Body.String(), "<svg") {
+		t.Errorf("SVG logo: %d", w.Code)
+	}
+	if !strings.Contains(chans[0].(map[string]any)["logo"].(string), "/api/guide/logo?channel=14") {
+		t.Errorf("channel without its logo: %v", chans[0])
 	}
 }

@@ -155,6 +155,13 @@ func (s *Service) Refresh(ctx context.Context) error {
 					return err
 				}
 			}
+			if ch.Network && !IsStation(c.Name) { // named before the pool of stations
+				c.Name = pickStation(ch.Key, byKey)
+				if err := s.db.SetGuideChannelName(ch.Key, c.Name); err != nil {
+					return err
+				}
+				byKey[ch.Key] = c
+			}
 			if !slices.Contains(Colors, c.Color) { // a color since taken out of the palette
 				c.Color = Colors[hash(ch.Key)%uint64(len(Colors))]
 				if err := s.db.SetGuideChannelColor(ch.Key, c.Color); err != nil {
@@ -289,11 +296,29 @@ func (s *Service) addChannel(ch Channel, existing map[string]database.GuideChann
 	}
 	name := ch.Genre
 	if ch.Network {
-		name = CallSign(ch.Key)
+		name = pickStation(ch.Key, existing)
 	}
 	c := database.GuideChannel{Key: ch.Key, LibraryID: ch.LibraryID, Number: n, Name: name, Genre: ch.Genre,
 		Kind: ch.Kind, Color: Colors[hash(ch.Key)%uint64(len(Colors))], Active: true}
 	return c, s.db.AddGuideChannel(c)
+}
+
+// pickStation is a call sign from the pool for a network channel, neither taken by another channel
+// nor in another channel's font.
+func pickStation(key string, existing map[string]database.GuideChannel) string {
+	taken, fonts := map[string]bool{}, GenreFonts()
+	for k, c := range existing {
+		if k == key {
+			continue
+		}
+		taken[c.Name] = true
+		if c.Active {
+			if a := LogoFor(c.Name, c.Genre, IsStation(c.Name)); a != nil {
+				fonts[a.Font] = true
+			}
+		}
+	}
+	return PickStation(key, taken, fonts)
 }
 
 // titles are a library's titles as the planner takes them: client paths and file lengths.

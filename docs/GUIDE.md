@@ -65,8 +65,15 @@ Status: on the `guide` branch, phase 1 (the server: channels, the planner, fille
 - **Channel numbers stay put.** They're stored in a `guide_channels` table. Rebuilding the lineup
   reuses a channel's number, and new channels take the next free one. Later, an admin may rename,
   renumber or hide channels, and give them their own logos.
-- **Names and logos are generated.** Names come from the group ("Channel 7 · Comedy"). Logos are
-  simple badges the server draws: number, short name and a color per channel, in an 80s or 90s style.
+- **Names and logos.**
+  - Genre channels are named for their genre. Network channels take the call sign of one of a pool of
+    made-up stations (WKBT, KZXM…).
+  - Every channel has its own logo in its own font, in one color as real stations' were: a symbol
+    (a star, a bolt, a ringed planet, a bat…) or the number's holder, with the name beside or below
+    it. The number is in a ring, square or rectangle, or cut out of a disc, block, bar or triangle.
+  - The logos are artwork made once (`cmd/logoart`) with display fonts that aren't shipped. The server
+    stamps each channel's number into its logo, and serves it as SVG or as PNG at any size, for the
+    grid, the cards and filler.
 
 ## The schedule
 

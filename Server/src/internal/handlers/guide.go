@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"hash/crc32"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -32,7 +34,19 @@ type guideChannel struct {
 	Name     string         `json:"name"`
 	Genre    string         `json:"genre"`
 	Color    string         `json:"color"`
+	Logo     string         `json:"logo"` // its logo (GET /api/guide/logo: PNG, w= its width, format=svg)
 	Listings []guideListing `json:"listings,omitempty"`
+}
+
+// channelInfo is a channel as clients see it, without listings.
+func channelInfo(r *http.Request, c database.GuideChannel) guideChannel {
+	logo := "/api/guide/logo?channel=" + strconv.Itoa(c.Number)
+	if lib := r.URL.Query().Get("lib"); lib != "" {
+		logo += "&lib=" + url.QueryEscape(lib)
+	}
+	// the logo changes with the channel's name and number: a new address for a new picture
+	logo += "&v=" + strconv.FormatUint(uint64(crc32.ChecksumIEEE([]byte(c.Name+"|"+c.Genre))), 36)
+	return guideChannel{Number: c.Number, Name: c.Name, Genre: c.Genre, Color: c.Color, Logo: logo}
 }
 
 // guideListing is a program in the grid: from its start to the next program's (its filler and
@@ -103,7 +117,9 @@ func (h *GuideHandler) Listings(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "Failed to read the Guide")
 			return
 		}
-		out = append(out, guideChannel{Number: c.Number, Name: c.Name, Genre: c.Genre, Color: c.Color, Listings: listings})
+		ch := channelInfo(r, c)
+		ch.Listings = listings
+		out = append(out, ch)
 	}
 	respondJSON(w, http.StatusOK, map[string]any{"now": now.UnixMilli(), "from": from.UnixMilli(), "to": to.UnixMilli(),
 		"channels": out})
@@ -204,7 +220,7 @@ func (h *GuideHandler) Now(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s := slots[cur]
-	out := guideNow{Channel: guideChannel{Number: c.Number, Name: c.Name, Genre: c.Genre, Color: c.Color},
+	out := guideNow{Channel: channelInfo(r, *c),
 		Kind: s.Kind, Path: s.Path, Offset: now.Sub(s.Start).Seconds(), Start: s.Start.UnixMilli(),
 		End: s.Start.Add(s.Length).UnixMilli(), ServerTime: now.UnixMilli()}
 	for i := cur; i >= 0; i-- {
@@ -244,6 +260,45 @@ func (h *GuideHandler) Watched(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// Logo is a channel's logo: GET /api/guide/logo?channel=N[&lib=][&w=512][&color=rrggbb][&format=svg].
+// One color (white unless color= says), on a transparent background: a PNG w pixels wide (32 to
+// 4096, half as high), or SVG.
+func (h *GuideHandler) Logo(w http.ResponseWriter, r *http.Request) {
+	c, ok := h.channelByNumber(r)
+	if !ok {
+		respondError(w, http.StatusNotFound, "No such channel")
+		return
+	}
+	art := guide.LogoFor(c.Name, c.Genre, guide.IsStation(c.Name))
+	if art == nil {
+		respondError(w, http.StatusNotFound, "No logo")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	tint := guide.LogoColor(r.URL.Query().Get("color")) // rrggbb, white by default
+	if r.URL.Query().Get("format") == "svg" {
+		b, err := art.SVG(c.Number, tint)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to draw the logo")
+			return
+		}
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Write(b)
+		return
+	}
+	width, err := strconv.Atoi(r.URL.Query().Get("w"))
+	if err != nil {
+		width = 512
+	}
+	b, err := art.PNG(c.Number, width, tint)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to draw the logo")
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Write(b)
 }
 
 // Plan plans the Guide again soon (settings changed).

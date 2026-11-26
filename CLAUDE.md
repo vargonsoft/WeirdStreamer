@@ -841,6 +841,20 @@ What's built (server):
   `GET /api/guide/now?channel=` (the file, the offset, and the program on now and next) and
   `POST /api/guide/watched?channel=`, each with an optional `lib=`. A channel is one library's, so access
   is that library's.
+- **Logos** (`guide/logo.go`): every channel's own, in one color as stations' were: a symbol
+  (`logosymbols.go`) or the number's holder as the mark, with the name beside or below it.
+  - The number sits in a ring, square or rectangle, or is cut out of a disc, block, bar or triangle.
+  - Served as SVG or PNG at any width, transparent around it, in the color asked for
+    (`GET /api/guide/logo?channel=N&w=&color=rrggbb&format=svg`; the channel's `logo` in the replies).
+    The web draws them in the theme's text color, white on cards.
+  - The artwork is made once by `cmd/logoart` (designs in `logodesign.go`), drawn with Google Fonts'
+    OFL display faces. The fonts stay on the machine that ran it (`-fonts <folder>`; the families are
+    named in `logodesign.go`).
+  - The outlines are saved in `guide/logoart/*.json`, which the server embeds: a logo per genre
+    channel, and a pool of made-up stations that network channels take their call signs from
+    (`PickStation`: none taken twice, none in another channel's font).
+  - Each logo has its own font. The server only draws the channel's number, in Liberation Sans Bold
+    (`logofont/`, OFL). A solid holder takes the digits reversed (`reversePath`), so they cut it.
 - **Web** (`js/guide.js`, loaded after app.js and using its helpers): `createGuideRow` puts a Guide button
   just above the folders (home, or a library's own page). The Guide is a screen like Settings
   (`SCREENS.guide`).

@@ -25,6 +25,15 @@ const guide = {
 const GUIDE_HOURS = 3.5;
 const GUIDE_SLOT_MS = 30 * 60 * 1000;
 
+// A channel's logo (one color, transparent around it) w pixels wide, in color (CSS hex; the
+// theme's text color by default).
+function guideLogoUrl(c, w, color = '') {
+    const hex = (color || getComputedStyle(document.documentElement).getPropertyValue('--text-color') || '#ffffff')
+        .trim().replace('#', '');
+    const rrggbb = hex.length === 3 ? hex.split('').map(x => x + x).join('') : hex.slice(0, 6);
+    return api.getThumbnailUrl(`${c.logo}&w=${w}&color=${rrggbb}`);
+}
+
 function serverNow() {
     return Date.now() + guide.skew;
 }
@@ -139,9 +148,13 @@ function renderGuideGrid() {
         const name = el('button', 'guide-channel');
         name.type = 'button';
         name.title = `Watch channel ${c.number}`;
-        const badge = el('span', 'guide-badge', String(c.number));
-        badge.style.background = c.color || '';
-        name.append(badge, el('span', 'guide-channel-name', c.name));
+        // its logo (with its number in it), and the number and name beside it
+        const logo = el('img', 'guide-channel-logo');
+        logo.src = guideLogoUrl(c, 256);
+        logo.alt = '';
+        const words = el('span', 'guide-channel-words');
+        words.append(el('span', 'guide-channel-number', String(c.number)), el('span', 'guide-channel-name', c.name));
+        name.append(logo, words);
         name.onclick = () => tune(c.number);
         row.appendChild(name);
         const programs = el('div', 'guide-programs');
@@ -354,6 +367,7 @@ function showBumper(now) {
     }
     const long = now.next_start - serverNow() > 90000;
     showGuideCard({
+        logo: guideLogoUrl(now.channel, 512, '#ffffff'),
         kicker: long ? 'We’ll be right back' : `Up next on ${now.channel.number} ${now.channel.name}`,
         title: now.next.title,
         text: [now.next.season ? episodeLabel(now.next) : '', `at ${guideTime(now.next_start)}`].filter(Boolean).join(' · '),
@@ -362,7 +376,7 @@ function showBumper(now) {
     });
 }
 
-function showGuideCard({ kicker = '', title = '', text = '', poster = '', color = '' }) {
+function showGuideCard({ logo = '', kicker = '', title = '', text = '', poster = '', color = '' }) {
     const card = document.getElementById('guide-card');
     card.innerHTML = '';
     card.style.setProperty('--channel-color', color || 'var(--button-bg)');
@@ -373,6 +387,12 @@ function showGuideCard({ kicker = '', title = '', text = '', poster = '', color 
         card.appendChild(img);
     }
     const words = el('div', 'guide-card-text');
+    if (logo) {
+        const img = el('img', 'guide-card-logo');
+        img.src = logo;
+        img.alt = '';
+        words.appendChild(img);
+    }
     if (kicker) words.appendChild(el('div', 'guide-card-kicker', kicker));
     words.appendChild(el('div', 'guide-card-title', title));
     if (text) words.appendChild(el('div', 'guide-card-line', text));
@@ -384,14 +404,23 @@ function hideGuideCard() {
     document.getElementById('guide-card').hidden = true;
 }
 
-// The channel's number and name over the picture for a few seconds after tuning.
+// The channel's number over the picture for a few seconds after tuning, as a cable box shows it,
+// and its logo.
 function showChannelBadge() {
     const badge = document.getElementById('guide-osd');
     const c = guide.data && guide.data.channels.find(ch => ch.number === guide.channel);
     badge.textContent = c ? `${c.number}  ${c.name}` : String(guide.channel);
     badge.hidden = false;
+    const logo = document.getElementById('guide-osd-logo');
+    if (c && c.logo) {
+        logo.src = guideLogoUrl(c, 512, '#ffffff');
+        logo.hidden = false;
+    }
     clearTimeout(showChannelBadge.timer);
-    showChannelBadge.timer = setTimeout(() => { badge.hidden = true; }, 4000);
+    showChannelBadge.timer = setTimeout(() => {
+        badge.hidden = true;
+        document.getElementById('guide-osd-logo').hidden = true;
+    }, 4000);
 }
 
 function toggleGuideMute() {
