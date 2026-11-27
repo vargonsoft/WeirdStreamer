@@ -1509,6 +1509,10 @@ async function chooseSubtitleResult(p, r, button) {
 // (video::cue) and the preview.
 const SUBTITLE_STYLE_DEFAULTS = { mode: 'default', background: 'black', opacity: 0.5, foreground: 'white',
     textOpacity: 1, outline: false, font: 'default', size: 'normal' };
+// The fixed subtitle colours, the same in the apps (Material's 500s, and maroon); Themed and None aside.
+const SUBTITLE_COLORS = { white: '#ffffff', black: '#000000', yellow: '#ffeb3b', green: '#4caf50', red: '#f44336',
+    blue: '#2196f3', gray: '#9e9e9e', purple: '#9c27b0', orange: '#ff9800', pink: '#e91e63', maroon: '#800000',
+    teal: '#009688', lightgreen: '#8bc34a' };
 const SUBTITLE_SIZES = { tiny: 0.6, small: 0.8, normal: 1, large: 1.3, huge: 1.6 };
 const SUBTITLE_FONTS = {
     default: 'sans-serif',
@@ -1545,7 +1549,7 @@ function subtitleCss(style) {
         return { color: '#fff', background: 'rgba(0, 0, 0, 0.8)', 'font-family': SUBTITLE_FONTS.default, 'text-shadow': 'none', scale: 1 };
     }
     const theme = getComputedStyle(document.documentElement);
-    const named = { white: '#ffffff', black: '#000000' };
+    const named = SUBTITLE_COLORS;
     const accent = theme.getPropertyValue('--progress-color') || '#f6c445';
     const box = theme.getPropertyValue('--surface-color') || '#321b2f';
     const text = style.foreground === 'themed' ? accent : named[style.foreground] || '#ffffff';
@@ -1605,7 +1609,7 @@ let cutoutMasks = 0, cutoutMeasure = null;
 function drawCutoutSubtitles(container, lines, basePx) {
     const style = subtitleStyle();
     const theme = getComputedStyle(document.documentElement);
-    const named = { white: '#ffffff', black: '#000000' };
+    const named = SUBTITLE_COLORS;
     const back = style.background === 'themed' ? (theme.getPropertyValue('--surface-color') || '#321b2f').trim() : named[style.background];
     if (!back || !lines.length) return;
     const ns = 'http://www.w3.org/2000/svg';

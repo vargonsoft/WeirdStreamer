@@ -39,9 +39,28 @@ import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 // The look of text subtitles on this device (Settings → Subtitle style): Android's own caption
 // settings (Accessibility → Captions), or our own colours, outline, font and size.
 
-enum class SubtitleBackground(val label: String) { BLACK("Black"), WHITE("White"), THEMED("Themed"), NONE("None") }
+/** The fixed subtitle colours, the same on the web and the iPhone (Material's 500s, and maroon). */
+private val SUBTITLE_COLORS = mapOf(
+    "BLACK" to Color.Black, "WHITE" to Color.White, "YELLOW" to Color(0xFFFFEB3B), "GREEN" to Color(0xFF4CAF50),
+    "RED" to Color(0xFFF44336), "BLUE" to Color(0xFF2196F3), "GRAY" to Color(0xFF9E9E9E),
+    "PURPLE" to Color(0xFF9C27B0), "ORANGE" to Color(0xFFFF9800), "PINK" to Color(0xFFE91E63),
+    "MAROON" to Color(0xFF800000), "TEAL" to Color(0xFF009688), "LIGHT_GREEN" to Color(0xFF8BC34A),
+)
+
+// The box's colour, or the outline's with Outline on.
+enum class SubtitleBackground(val label: String) {
+    BLACK("Black"), WHITE("White"), YELLOW("Yellow"), GREEN("Green"), RED("Red"), BLUE("Blue"), GRAY("Gray"),
+    PURPLE("Purple"), ORANGE("Orange"), PINK("Pink"), MAROON("Maroon"), TEAL("Teal"),
+    LIGHT_GREEN("Light green"), THEMED("Themed"), NONE("None");
+    val color: Color? get() = SUBTITLE_COLORS[name]
+}
 // NONE: see-through letters, cut out of the box or the outline, so the picture shows through them.
-enum class SubtitleForeground(val label: String) { WHITE("White"), BLACK("Black"), THEMED("Themed"), NONE("None") }
+enum class SubtitleForeground(val label: String) {
+    WHITE("White"), BLACK("Black"), YELLOW("Yellow"), GREEN("Green"), RED("Red"), BLUE("Blue"), GRAY("Gray"),
+    PURPLE("Purple"), ORANGE("Orange"), PINK("Pink"), MAROON("Maroon"), TEAL("Teal"),
+    LIGHT_GREEN("Light green"), THEMED("Themed"), NONE("None");
+    val color: Color? get() = SUBTITLE_COLORS[name]
+}
 enum class SubtitleFont(val label: String) { DEFAULT("Default"), SERIF("Serif"), MONOSPACE("Monospace"), CASUAL("Casual"), CONDENSED("Condensed") }
 enum class SubtitleSize(val label: String, val scale: Float) {
     TINY("Tiny", 0.6f), SMALL("Small", 0.8f), NORMAL("Normal", 1f), LARGE("Large", 1.3f), HUGE("Huge", 1.6f)
@@ -156,17 +175,14 @@ fun resolvedSubtitleStyle(setting: SubtitleStyleSetting = SubtitleStyleStore.get
         }
     }
     val back = when (setting.background) {
-        SubtitleBackground.BLACK -> Color.Black
-        SubtitleBackground.WHITE -> Color.White
         SubtitleBackground.THEMED -> panel
-        SubtitleBackground.NONE -> null
+        else -> setting.background.color
     }
     return ResolvedSubtitleStyle(
         text = when (setting.foreground) {
-            SubtitleForeground.WHITE -> Color.White
-            SubtitleForeground.BLACK -> Color.Black
             SubtitleForeground.THEMED -> accent
             SubtitleForeground.NONE -> Color.Black // only its shape is used, to cut with
+            else -> setting.foreground.color ?: Color.White
         },
         box = back?.takeIf { !setting.outline }?.copy(alpha = setting.opacity),
         outline = back?.takeIf { setting.outline },

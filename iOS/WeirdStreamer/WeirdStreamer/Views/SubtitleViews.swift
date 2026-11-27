@@ -60,16 +60,25 @@ struct SubtitleOverlay: View {
 /// MediaAccessibility), or our own box or outline, colors, font and size.
 struct SubtitleStyle: Equatable {
     var system = true
-    var background = "Black"      // Black, White, Themed, None
+    var background = "Black"      // Black, White, the colors, Themed, None
     var opacity = 0.5             // the box's (or outline's)
-    var foreground = "White"      // White, Black, Themed, None (see-through letters)
+    var foreground = "White"      // White, Black, the colors, Themed, None (see-through letters)
     var textOpacity = 1.0
     var outline = false           // the background color outlines the text instead of a box
     var font = "Default"          // Default, Serif, Monospace, Casual, Condensed
     var size = "Normal"           // Tiny, Small, Normal, Large, Huge
 
-    static let backgrounds = ["Black", "White", "Themed", "None"]
-    static let foregrounds = ["White", "Black", "Themed", "None"]
+    /// The fixed colors, the same on Android and the web (Material's 500s, and maroon).
+    static let colors: [String: Color] = [
+        "Black": .black, "White": .white, "Yellow": Color(hex: 0xFFEB3B), "Green": Color(hex: 0x4CAF50),
+        "Red": Color(hex: 0xF44336), "Blue": Color(hex: 0x2196F3), "Gray": Color(hex: 0x9E9E9E),
+        "Purple": Color(hex: 0x9C27B0), "Orange": Color(hex: 0xFF9800), "Pink": Color(hex: 0xE91E63),
+        "Maroon": Color(hex: 0x800000), "Teal": Color(hex: 0x009688), "Light green": Color(hex: 0x8BC34A),
+    ]
+    static let shades = ["Yellow", "Green", "Red", "Blue", "Gray", "Purple", "Orange", "Pink", "Maroon", "Teal",
+                         "Light green"]
+    static let backgrounds = ["Black", "White"] + shades + ["Themed", "None"]
+    static let foregrounds = ["White", "Black"] + shades + ["Themed", "None"]
     static let fonts = ["Default", "Serif", "Monospace", "Casual", "Condensed"]
     static let sizes = ["Tiny", "Small", "Normal", "Large", "Huge"]
     static let opacities = [0.25, 0.5, 0.75, 1.0]
@@ -88,10 +97,9 @@ struct SubtitleStyle: Equatable {
             return color.opacity(Double(MACaptionAppearanceGetForegroundOpacity(.user, nil)))
         }
         switch foreground {
-        case "Black": return .black.opacity(textOpacity)
         case "Themed": return Palette.accent.opacity(textOpacity)
         case "None": return nil
-        default: return .white.opacity(textOpacity)
+        default: return (Self.colors[foreground] ?? .white).opacity(textOpacity)
         }
     }
 
@@ -103,10 +111,9 @@ struct SubtitleStyle: Equatable {
             return Color(MACaptionAppearanceCopyBackgroundColor(.user, nil).takeRetainedValue()).opacity(alpha)
         }
         switch background {
-        case "White": return .white.opacity(opacity)
         case "Themed": return Palette.panel.opacity(opacity)
         case "None": return nil
-        default: return .black.opacity(opacity)
+        default: return (Self.colors[background] ?? .black).opacity(opacity)
         }
     }
 
@@ -116,9 +123,8 @@ struct SubtitleStyle: Equatable {
     /// with the text's opacity, applied to it as a whole).
     var outlineColor: Color {
         switch background {
-        case "White": return .white
         case "Themed": return Color(hex: ThemeStore.shared.palette.panel)
-        default: return .black
+        default: return Self.colors[background] ?? .black
         }
     }
 
