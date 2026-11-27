@@ -883,7 +883,8 @@ What's built (server):
 - **Web** (`js/guide.js`, loaded after app.js and using its helpers): on the home screen the Guide is a
   folder-sized tile after the TV Shows and Movies libraries (`createGuideTile`, placed by `renderMedia`); on a
   library's own page `createGuideRow` puts a Guide button just above the folders. The Guide is a screen like Settings
-  (`SCREENS.guide`).
+  (`SCREENS.guide`). A screen's history entry keeps what it shows (`pushScreenHistory`: Settings' `tab`, kept by
+  `selectSettingsTab`; the Guide's `guideLib`), so a reload or Forward opens it again as it was, over the view the URL names.
   - Top left is `#guide-video`. It tunes to the last channel watched in this browser
     (`localStorage.guideChannel`).
   - Each item from `/now` plays as is, seeked to the channel's offset, where the browser can play it

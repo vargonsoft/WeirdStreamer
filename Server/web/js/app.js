@@ -129,21 +129,7 @@ function setupEventListeners() {
     document.querySelectorAll('.settings-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             tab.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
-            const tabName = tab.dataset.tab;
-            document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
-            tab.classList.add('active');
-            document.getElementById(`${tabName}-tab`).classList.add('active');
-            if (tabName === 'jobs') startJobsView();
-            else stopJobsView();
-            if (tabName === 'streams') startStreamsView();
-            else stopStreamsView();
-            if (tabName === 'guide') loadGuideSettings();
-            
-            // Load users when switching to users tab
-            if (tabName === 'users') {
-                loadUsers();
-            }
+            selectSettingsTab(tab.dataset.tab);
         });
     });
     
@@ -180,7 +166,7 @@ function setupEventListeners() {
             }
         }
         if (screen && SCREENS[screen]) {
-            if (open !== screen && api.isAuthenticated()) SCREENS[screen].show();
+            if (open !== screen && api.isAuthenticated()) SCREENS[screen].show(e.state);
             return;
         }
         if (e.state && api.isAuthenticated()) {
@@ -402,10 +388,14 @@ function showMainScreen() {
     if (history.state && typeof history.state.scrollY === 'number') {
         pendingScroll = history.state.scrollY; // a reload: back where it was
     }
-    if (history.state && history.state.screen) {
-        // A reload opens on the view, not Settings or Streams.
-        const { screen, ...view } = history.state;
-        history.replaceState(view, '');
+    // A reload of Settings or the Guide opens the view under it (below), then the screen again, as it was
+    // (its tab, its library), from its history entry.
+    // After every script has run: the Guide's is js/guide.js, loaded after this one.
+    const reloadScreen = history.state && SCREENS[history.state.screen] ? history.state : null;
+    if (reloadScreen) {
+        const open = () => SCREENS[reloadScreen.screen].show(reloadScreen);
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', open, { once: true });
+        else open();
     }
     if (!history.state) {
         // So Back to this first page has a state to restore it from.
@@ -2934,11 +2924,28 @@ function formatDuration(seconds) {
 }
 
 // Settings Functions
+
+// Opens a Settings tab and starts what it shows. Its history entry keeps the tab (`tab`), so a reload
+// or Forward opens Settings on it again.
+function selectSettingsTab(tabName) {
+    const tab = document.querySelector(`.settings-tab[data-tab="${tabName}"]`);
+    if (!tab || tab.style.display === 'none') tabName = 'account'; // an admin's tab for another account
+    document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
+    document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.toggle('active', c.id === `${tabName}-tab`));
+    if (tabName === 'jobs') startJobsView();
+    else stopJobsView();
+    if (tabName === 'streams') startStreamsView();
+    else stopStreamsView();
+    if (tabName === 'guide') loadGuideSettings();
+    if (tabName === 'users') loadUsers();
+    if (history.state && history.state.screen === 'settings' && history.state.tab !== tabName) {
+        history.replaceState({ ...history.state, tab: tabName }, '');
+    }
+}
+
 // Settings' Server & Media tab, at Media Paths: where a server with no libraries gets its first one.
 async function openLibrarySettings() {
-    await showSettings();
-    document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'server'));
-    document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.toggle('active', c.id === 'server-tab'));
+    await showSettings(true, 'server');
     document.getElementById('no-libraries-hint').scrollIntoView({ block: 'center' });
     document.getElementById('new-path-input').focus({ preventScroll: true });
 }
@@ -2959,7 +2966,8 @@ async function showCertificateWarning(isAdmin) {
     } catch (e) { /* no warning */ }
 }
 
-async function showSettings(pushHistory = true) {
+// tab: the tab it opens on (a reload's, from the history entry), else My Account.
+async function showSettings(pushHistory = true, tab = 'account') {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     // The account signed in (watch status is kept per account)
     document.getElementById('account-signed-in').textContent =
@@ -2983,14 +2991,11 @@ async function showSettings(pushHistory = true) {
     if (streamsTabBtn) streamsTabBtn.style.display = user.is_admin ? 'block' : 'none';
     if (guideTabBtn) guideTabBtn.style.display = user.is_admin ? 'block' : 'none';
 
-    // Settings opens on My Account (openLibrarySettings then goes to Server & Media)
-    {
-        document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
-        const accountTabBtn = document.querySelector('.settings-tab[data-tab="account"]');
-        if (accountTabBtn) accountTabBtn.classList.add('active');
-        document.getElementById('account-tab').classList.add('active');
-    }
+    // Settings opens on My Account, or the tab asked for (openLibrarySettings' Server & Media, a reload's).
+    // Its history entry comes first, so the tab is kept in it.
+    if (pushHistory) pushScreenHistory('settings'); // first, keeping the view's scroll position
+    selectSettingsTab(tab);
+    document.querySelector('.settings-tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
     showCertificateWarning(user.is_admin);
 
@@ -3035,7 +3040,6 @@ async function showSettings(pushHistory = true) {
     applyTheme(); // marks the theme in use in the picker
 
     // Show settings screen
-    if (pushHistory) pushScreenHistory('settings'); // first, keeping the view's scroll position
     mainScreen.classList.remove('active');
     settingsScreen.classList.add('active');
 }
@@ -3049,20 +3053,22 @@ function hideSettings() {
 
 // Settings is a screen over the media view, a history entry of its own (the view's state plus
 // `screen`), so the browser's Back leaves it for the view (see popstate).
+// show(entry) opens it from its history entry (Forward, a reload): Settings on its tab, the Guide on its library's.
 const SCREENS = {
-    settings: { element: () => settingsScreen, show: () => showSettings(false), hide: hideSettings },
-    guide: { element: () => guideScreen, show: () => showGuide(guide.lib, false), hide: () => hideGuide() }, // js/guide.js
+    settings: { element: () => settingsScreen, show: (s) => showSettings(false, s && s.tab), hide: hideSettings },
+    guide: { element: () => guideScreen, show: (s) => showGuide(s && s.guideLib !== undefined ? s.guideLib : guide.lib, false), hide: () => hideGuide() }, // js/guide.js
 };
 
 function openScreen() {
     return Object.keys(SCREENS).find(name => SCREENS[name].element().classList.contains('active')) || null;
 }
 
-function pushScreenHistory(name) {
+// extra: what the screen keeps in its entry to open again the same (the Guide's guideLib; Settings adds its tab).
+function pushScreenHistory(name, extra = {}) {
     if (history.state && history.state.screen === name) return;
     rememberScroll();
-    const { screen, scrollY, ...view } = history.state || {};
-    history.pushState({ ...view, screen: name }, '');
+    const { screen, scrollY, tab, guideLib, ...view } = history.state || {};
+    history.pushState({ ...view, ...extra, screen: name }, '');
 }
 
 // A screen's close button: back through its history entry (popstate hides it), or just hidden.

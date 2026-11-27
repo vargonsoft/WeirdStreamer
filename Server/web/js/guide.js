@@ -86,7 +86,7 @@ async function createGuideTile() {
 
 async function showGuide(lib = '', pushHistory = true) {
     guide.lib = lib;
-    if (pushHistory) pushScreenHistory('guide');
+    if (pushHistory) pushScreenHistory('guide', { guideLib: lib }); // a reload opens it again on this library's
     mainScreen.classList.remove('active');
     guideScreen.classList.add('active');
     window.scrollTo(0, 0);
