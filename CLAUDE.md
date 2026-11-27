@@ -190,7 +190,8 @@ for each TODO item are at the end of this file.
 ## Release builds
 
 `./release.sh` (repo root, on the build machine: it has the signing key) checks the tools, runs the
-server tests, then builds `dist/<version>/`, the assets for a GitHub Release: a server package per
+server tests, then builds (the Windows server and the Mac's server and IPA in the background, `lane`, while
+this machine tests and builds its own; each lane's log is shown when it's done, `wait_lanes`) `dist/<version>/`, the assets for a GitHub Release: a server package per
 platform (`weirdstreamer-server-<version>-<platform>.tar.gz`, `--platforms` picks: `linux-amd64`;
 `linux-arm64`, cross-compiled with `aarch64-linux-gnu-gcc` for SQLite's cgo; `darwin-arm64`, built on
 the Mac in `iOS/remote/remote.local` over SSH from `Server/src` as it is here, `build_darwin`;

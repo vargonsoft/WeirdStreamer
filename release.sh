@@ -47,6 +47,9 @@
 #
 # The version is the app's: 0.0.1.<commit count>, the same build number as the APK.
 # It installs on no device: Android/deploy-release.sh does that.
+# What's built elsewhere (the Windows server; the Mac's server and IPA) runs in the background while
+# this machine runs the tests and builds the Linux servers and the APK; each such build's output is
+# shown when it's done.
 set -euo pipefail
 cd "$(dirname "$0")"
 root=$PWD
@@ -281,15 +284,10 @@ echo "== Release $version ($commit)"
 rm -rf "$out"
 mkdir -p "$out"
 
-if [ "$tests" = 1 ]; then
-    echo "== Server tests"
-    # Not ./...: stray main files in Server/src break it
-    (cd Server/src && go vet ./internal/... ./cmd/... && go test ./internal/... >/dev/null) ||
-        { echo "Server tests failed (rerun them in Server/src to see why)." >&2; exit 1; }
-fi
-
 stage=$(mktemp -d)
-trap 'rm -rf "$stage"; rm -f "${notes_tmp:-}"; stop_windows' EXIT
+# Ending early also stops the builds still running elsewhere (see "At once" below).
+stop_lanes() { local p; for p in $(jobs -p); do pkill -P "$p" 2>/dev/null; kill "$p" 2>/dev/null; done; wait 2>/dev/null; }
+trap 'stop_lanes; rm -rf "$stage"; rm -f "${notes_tmp:-}"; stop_windows' EXIT
 ldflags="-s -w -X main.version=$version"
 # build_linux ARCH DIR: bin/server and bin/cli for Linux on ARCH, cross-compiled where it isn't
 # this machine's (cgo needs that architecture's C compiler).
@@ -340,14 +338,64 @@ build_windows() {
     win_ssh "Remove-Item -Recurse -Force (Join-Path \$HOME '$work')" >/dev/null 2>&1 || true
     [ -f "$dir/server.exe" ] && [ -f "$dir/cli.exe" ] || { echo "The Windows build failed." >&2; exit 1; }
 }
+# build_ipa FILE: the iPhone app, built on the Mac from the release commit (or, dirty, with the
+# uncommitted changes).
+build_ipa() {
+    if [ -n "$dirty" ]; then
+        iOS/remote/mac-ios ipa -o "$1" 2>&1 | sed 's/^/   /'
+    else
+        iOS/remote/mac-ios ipa --ref "$(git rev-parse HEAD)" -o "$1" 2>&1 | sed 's/^/   /'
+    fi
+}
+
+# At once: what's built on other machines (the Windows one; the Mac's server, then the IPA) runs in
+# the background while this machine tests and builds its own (the tests first, so nothing here
+# slows them). Each background lane writes its own log, shown when it's done; one that fails stops
+# the release.
+lane_names=() lane_pids=()
+lane() { # lane NAME COMMAND...: runs COMMAND in the background, its output in $stage/NAME.log
+    local name=$1; shift
+    ( start=$SECONDS; "$@"; status=$?; echo "   ($((SECONDS - start)) s)"; exit $status ) >"$stage/lane-$name.log" 2>&1 &
+    lane_names+=("$name") lane_pids+=($!)
+    echo "== Started: $name (in the background)"
+}
+mac_lane() {
+    if [ -n "$mac_host" ]; then echo "== Server for darwin-arm64"; build_darwin "$stage/bin-darwin-arm64"; fi
+    if [ "$ipa" = 1 ]; then echo "== iPhone"; build_ipa "$out/WeirdStreamer-$version.ipa"; fi
+}
 for target in "${targets[@]}"; do
-    echo "== Server for $target"
+    [ "$target" = windows-amd64 ] && lane "Windows server" build_windows "$stage/bin-$target"
+done
+if [ -n "$mac_host" ] || [ "$ipa" = 1 ]; then
+    lane "Mac (macOS server, iPhone app)" mac_lane
+fi
+# wait_lanes: waits for each lane, showing its log; the first that failed ends the release.
+wait_lanes() {
+    local i
+    for i in "${!lane_pids[@]}"; do
+        if wait "${lane_pids[$i]}"; then
+            echo "== Done: ${lane_names[$i]}"
+            cat "$stage/lane-${lane_names[$i]}.log"
+        else
+            echo "== Failed: ${lane_names[$i]}" >&2
+            cat "$stage/lane-${lane_names[$i]}.log" >&2
+            exit 1
+        fi
+        if [ "${lane_names[$i]}" = "Windows server" ]; then stop_windows; fi
+    done
+}
+
+if [ "$tests" = 1 ]; then
+    echo "== Server tests"
+    # Not ./...: stray main files in Server/src break it
+    (cd Server/src && go vet ./internal/... ./cmd/... && go test ./internal/... >/dev/null) ||
+        { echo "Server tests failed (rerun them in Server/src to see why)." >&2; exit 1; }
+fi
+
+for target in "${targets[@]}"; do
     case $target in
-        linux-*) build_linux "${target#linux-}" "$stage/bin-$target" ;;
-        darwin-arm64) build_darwin "$stage/bin-$target" ;;
-        windows-amd64) build_windows "$stage/bin-$target"; stop_windows ;;
+        linux-*) echo "== Server for $target"; build_linux "${target#linux-}" "$stage/bin-$target" ;;
     esac
-    file "$stage/bin-$target"/server* 2>/dev/null | sed 's/^[^:]*: /   /' || true
 done
 
 echo "== Android"
@@ -361,14 +409,14 @@ if [ "$built" != "${version%-dirty}" ]; then
 fi
 cp -p "$apk" "$out/WeirdStreamer-$version.apk"
 
+wait_lanes
+for target in "${targets[@]}"; do
+    echo "== Server for $target:"
+    file "$stage/bin-$target"/server* 2>/dev/null | sed 's/^[^:]*: /   /' || true
+done
+
 if [ "$ipa" = 1 ]; then
-    echo "== iPhone"
     ipa_file="$out/WeirdStreamer-$version.ipa"
-    if [ -n "$dirty" ]; then
-        iOS/remote/mac-ios ipa -o "$ipa_file" 2>&1 | sed 's/^/   /' # with the uncommitted changes
-    else
-        iOS/remote/mac-ios ipa --ref "$(git rev-parse HEAD)" -o "$ipa_file" 2>&1 | sed 's/^/   /'
-    fi
     [ -f "$ipa_file" ] || { echo "The iPhone app didn't build (iOS/remote/mac-ios log says why)." >&2; exit 1; }
     built=$(python3 -c 'import plistlib,sys,zipfile
 z = zipfile.ZipFile(sys.argv[1])
