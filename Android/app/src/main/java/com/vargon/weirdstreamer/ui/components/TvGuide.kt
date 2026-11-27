@@ -155,7 +155,8 @@ fun TvGuideScreen(viewModel: MediaViewModel) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 /** Full screen's channel banner, along the bottom: the channel's logo, number and name, and what it airs now (its
- *  title, episode, times and description); the tuned channel's from what plays, another's from the grid. */
+ *  title, episode, times and description; the tuned channel's from what plays, another's from the grid), and the
+ *  time at its lower right. */
 @Composable
 private fun TvChannelBanner(model: GuideModel, c: GuideChannel, modifier: Modifier) {
     val context = LocalContext.current
@@ -176,8 +177,13 @@ private fun TvChannelBanner(model: GuideModel, c: GuideChannel, modifier: Modifi
             (info?.episodeOverview?.takeIf { it.isNotBlank() } ?: info?.overview)?.let {
                 androidx.compose.material3.Text(it, color = Color.White, fontSize = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
-            GuideText(if (tuned) "▲▼ other channels · Back to close" else "OK to watch · ▲▼ other channels · Back to close",
-                fontSize = 15.sp, color = Color(0xFFAAAAAA))
+            // the hints, and the time at the lower right: the banner grows upward with its program's text, so the
+            // bottom line stays put as Up and Down go through the channels
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                GuideText(if (tuned) "▲▼ other channels · Back to close" else "OK to watch · ▲▼ other channels · Back to close",
+                    Modifier.weight(1f), fontSize = 15.sp, color = Color(0xFFAAAAAA))
+                GuideText(guideTime(context, model.clock.takeIf { it > 0 } ?: model.serverNow()), fontSize = 26.sp, mono = true) // clock ticks each second
+            }
         }
     }
 }

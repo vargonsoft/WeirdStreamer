@@ -918,7 +918,7 @@ What's built (server):
   - TV: the D-pad grid. OK on a program on now on another channel tunes to it; OK on the picture goes
     full screen, where Up and Down change channel. There OK shows the channel banner (`TvChannelBanner`,
     `GuideModel.banner`): the channel's logo, number and name and its program on now (title, episode, times,
-    description); with it up, Up and Down show the other channels' without tuning, OK tunes to the one shown,
+    description, and the time at its lower right, which stays put as the banner's height changes); with it up, Up and Down show the other channels' without tuning, OK tunes to the one shown,
     Back hides it, and it hides itself after 6 seconds untouched (`BANNER_MS`). Number keys tune, and Play/Pause mutes.
   - Phone: the grid scrolls sideways. A tap on the picture goes full screen (sideways), where swipes
     change channel; there's a mute button.
