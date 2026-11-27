@@ -2,6 +2,9 @@ package com.vargon.weirdstreamer.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,7 +66,9 @@ import kotlinx.coroutines.launch
  * TV: the Guide. The channel plays top left (OK makes it full screen), the program's details beside
  * it, and the grid below: channels down, half hours across, moved through with the D-pad. A program
  * shows its details when focused; OK on one on now tunes to its channel. Full screen, Up and Down
- * change channel, the number keys tune, Play/Pause mutes (live TV doesn't pause), Back returns.
+ * change channel, OK shows the channel banner (the channel and its program; Up and Down then show the
+ * other channels' without tuning, OK tunes to the one shown, Back hides it), the number keys tune,
+ * Play/Pause mutes (live TV doesn't pause), Back returns.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -97,21 +102,35 @@ fun TvGuideScreen(viewModel: MediaViewModel) {
     }
 
     if (model.fullscreen) {
-        BackHandler { model.fullscreen = false }
+        BackHandler { model.hideBanner(); model.fullscreen = false }
+        BackHandler(enabled = model.banner != null) { model.hideBanner() } // Back first hides the banner
         val focus = remember { FocusRequester() }
-        GuidePlayer(model, player, keys.fillMaxSize().focusRequester(focus).focusable()
-            .onKeyEvent { e ->
-                if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
-                when (e.key) {
-                    Key.DirectionUp -> { model.surf(-1); true }
-                    Key.DirectionDown -> { model.surf(1); true }
-                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                        model.channel?.let { n -> model.osd = "$n"; model.osdLogo = model.data?.channels?.firstOrNull { it.number == n } }
-                        true
+        Box(Modifier.fillMaxSize()) {
+            GuidePlayer(model, player, keys.fillMaxSize().focusRequester(focus).focusable()
+                .onKeyEvent { e ->
+                    if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    val banner = model.banner
+                    when (e.key) {
+                        // with the banner up, the channels' programs; without it, the channels themselves
+                        Key.DirectionUp -> { if (banner != null) model.moveBanner(-1) else model.surf(-1); true }
+                        Key.DirectionDown -> { if (banner != null) model.moveBanner(1) else model.surf(1); true }
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            when {
+                                banner == null -> model.channel?.let { model.showBanner(it) }
+                                banner != model.channel -> { model.hideBanner(); model.tune(banner) }
+                                else -> model.hideBanner()
+                            }
+                            true
+                        }
+                        else -> false
                     }
-                    else -> false
+                })
+            model.banner?.let { n ->
+                model.data?.channels?.firstOrNull { it.number == n }?.let { c ->
+                    TvChannelBanner(model, c, Modifier.align(Alignment.BottomCenter))
                 }
-            })
+            }
+        }
         LaunchedEffect(Unit) { focus.tryFocus() }
         return
     }
@@ -135,6 +154,34 @@ fun TvGuideScreen(viewModel: MediaViewModel) {
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
+/** Full screen's channel banner, along the bottom: the channel's logo, number and name, and what it airs now (its
+ *  title, episode, times and description); the tuned channel's from what plays, another's from the grid. */
+@Composable
+private fun TvChannelBanner(model: GuideModel, c: GuideChannel, modifier: Modifier) {
+    val context = LocalContext.current
+    val tuned = c.number == model.channel
+    val listing = model.listingNow(c)
+    val info = (if (tuned) model.now?.program else null) ?: listing?.info
+    Row(modifier.fillMaxWidth().background(Brush.verticalGradient(0f to Color.Transparent, 0.25f to Color(0xE6000000), 1f to Color(0xF2000000)))
+        .padding(start = 48.dp, end = 48.dp, top = 96.dp, bottom = 32.dp),
+        horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.Bottom) {
+        Column(Modifier.width(220.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            AsyncImage(model = model.logoUrl(c, 512), contentDescription = null, modifier = Modifier.fillMaxWidth())
+            GuideText("${c.number}  ${c.name}", fontSize = 22.sp, color = Color(0xFF7CFC00), mono = true)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            GuideText((info?.title ?: "Off the air") + (info?.year?.let { " ($it)" } ?: ""), fontSize = 30.sp, color = Color(0xFFFFD23F))
+            info?.episodeLabel?.let { GuideText(it, fontSize = 20.sp) }
+            if (listing != null) GuideText(guideFacts(context, c, listing), fontSize = 18.sp, color = Color(0xFFDDDDDD))
+            (info?.episodeOverview?.takeIf { it.isNotBlank() } ?: info?.overview)?.let {
+                androidx.compose.material3.Text(it, color = Color.White, fontSize = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+            GuideText(if (tuned) "▲▼ other channels · Back to close" else "OK to watch · ▲▼ other channels · Back to close",
+                fontSize = 15.sp, color = Color(0xFFAAAAAA))
+        }
+    }
+}
+
 @Composable
 private fun TvGuideDetails(model: GuideModel, modifier: Modifier) {
     val context = LocalContext.current

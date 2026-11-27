@@ -74,6 +74,9 @@ data class GuideStream(val url: String, val seekMs: Long, val key: String, val f
  * The Guide's state: the grid, the channel tuned, what it airs and how it plays. [library] is the
  * library whose own Guide it is, null the home screen's.
  */
+/** How long the TV's full-screen channel banner stays without a key. */
+const val BANNER_MS = 6000L
+
 class GuideModel(
     private val repo: ServerRepository,
     val library: String?,
@@ -99,6 +102,12 @@ class GuideModel(
     /** Shown for a few seconds after tuning: the channel's number (or the digits being typed). */
     var osd by mutableStateOf<String?>(null)
     var osdLogo by mutableStateOf<GuideChannel?>(null)
+    /** The TV's full-screen channel banner: the channel whose logo, number and program on now it shows (the tuned
+     *  one when it opens; Up and Down move it through the channels, OK tunes to it), null while hidden. It hides
+     *  after [BANNER_MS] untouched. */
+    var banner by mutableStateOf<Int?>(null)
+        private set
+    private var bannerJob: Job? = null
     /** Bumped each second, for the time line. */
     var clock by mutableStateOf(0L)
         private set
@@ -202,6 +211,35 @@ class GuideModel(
         if (channels.isEmpty()) return
         val i = channels.indexOfFirst { it.number == channel }
         tune(channels[((i + step) % channels.size + channels.size) % channels.size].number)
+    }
+
+    /** Shows the banner on channel [number] (or keeps it there), hiding it after [BANNER_MS] untouched. */
+    fun showBanner(number: Int) {
+        banner = number
+        bannerJob?.cancel()
+        bannerJob = scope.launch {
+            delay(BANNER_MS)
+            banner = null
+        }
+    }
+
+    /** Moves the banner to the next or previous channel in the grid's order, without tuning. */
+    fun moveBanner(step: Int) {
+        val channels = data?.channels.orEmpty()
+        if (channels.isEmpty()) return
+        val i = channels.indexOfFirst { it.number == (banner ?: channel) }
+        showBanner(channels[((i + step) % channels.size + channels.size) % channels.size].number)
+    }
+
+    fun hideBanner() {
+        bannerJob?.cancel()
+        banner = null
+    }
+
+    /** What [c] airs now, from the grid. */
+    fun listingNow(c: GuideChannel): GuideListing? {
+        val t = serverNow()
+        return c.listings?.firstOrNull { it.start <= t && t < it.end }
     }
 
     /** A digit of a channel's number typed: tunes once the typing stops. */
