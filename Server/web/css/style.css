@@ -778,6 +778,11 @@ body {
     gap: 10px;
 }
 
+.media-path-move:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
 .media-path-names {
     flex: 1;
     min-width: 0;

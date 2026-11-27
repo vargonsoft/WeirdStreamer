@@ -103,6 +103,17 @@ func TestSaveKeepsComments(t *testing.T) {
 	if data, _ := os.ReadFile(path); strings.Contains(string(data), "type:") {
 		t.Errorf("emptied setting kept:\n%s", data)
 	}
+	// Reordered: the libraries move with their settings, and the comment above the first stays at
+	// the top (it's the list's).
+	c = *GlobalConfig
+	c.Media.Paths = []MediaPath{c.Media.Paths[1], c.Media.Paths[0]}
+	if err := Save(path, &c); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); !strings.Contains(string(data), "  paths:\n    # The films\n    # The shows\n    - name: TV\n      path: /s\n") ||
+		!strings.Contains(string(data), "      groups: [parents]\n    - name: Movies\n      path: /m\n") {
+		t.Errorf("reordered:\n%s", data)
+	}
 }
 
 func TestSaveFromTemplate(t *testing.T) {

@@ -24,8 +24,8 @@ object HomeTiles {
      */
     fun arrange(items: List<FileItem>, guide: Boolean, columns: Int?): List<FileItem> {
         val up = items.filter { it.name == ".." || it.path == "UP" } // the phone's way back to the sources stays first
-        val typed = items.filter { it.libraryType == "tv" || it.libraryType == "movie" }.sortedBy { it.name.lowercase() }
-        val rest = items.filter { it !in typed && it !in up }
+        val typed = items.filter { it.libraryType == "tv" || it.libraryType == "movie" }.sortedBy { it.libraryOrder } // as config.yml lists them
+        val rest = items.filter { it !in typed && it !in up }.sortedBy { it.libraryOrder } // as config.yml lists them too
         val first = typed + if (guide) listOf(FileItem(name = "Guide", path = GUIDE, isDirectory = true)) else emptyList()
         if (first.isEmpty()) return up + rest
         val ends = when {

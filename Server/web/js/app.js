@@ -564,7 +564,7 @@ async function loadMedia(pushHistory = true) {
     setView('folders');
     try {
         const data = await api.browseDirectory(state.currentPath);
-        state.directories = data.dirs || [];
+        state.directories = (data.dirs || []).map((d, i) => ({ ...d, order: i })); // order: a library's place in config.yml
         state.mediaItems = data.items || [];
         state.libraryType = data.library_type || '';
         
@@ -656,10 +656,10 @@ function renderMedia() {
     
     // Render directories and media items in the same grid. On the home screen the TV Shows and Movies
     // libraries come first, with the Guide's tile after them (createGuideTile, once the server says
-    // there's a Guide); the other libraries start the next row.
+    // there's a Guide); the other libraries start the next row. All in config.yml's order.
     const home = !state.currentPath;
-    const typed = home ? state.directories.filter(d => d.library_type) : [];
-    const rest = home ? state.directories.filter(d => !d.library_type) : state.directories;
+    const typed = home ? state.directories.filter(d => d.library_type).sort((a, b) => a.order - b.order) : []; // as config.yml lists them
+    const rest = home ? state.directories.filter(d => !d.library_type).sort((a, b) => a.order - b.order) : state.directories;
     typed.forEach(dir => mediaGrid.appendChild(createDirectoryElement(dir)));
     const rowEnd = home ? el('div', 'grid-row-end') : null;
     if (rowEnd && typed.length) mediaGrid.appendChild(rowEnd);
@@ -2442,6 +2442,7 @@ const MATERIAL_ICONS = {
     visibilityOff: 'M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z',
     personAdd: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
     arrowUpward: 'M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z',
+    arrowDownward: 'M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z',
     folder: 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z',
     movie: 'M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z',
     image: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
@@ -3257,6 +3258,27 @@ function setMediaPathType(mediaPath, type) {
 // a stray click can't change one. A library just added opens for editing.
 const editingPaths = new Set();
 
+// Moves a library up (-1) or down (1) the list: config.yml's order, the home screen's.
+// Saved with the rest of Settings.
+function moveButton(index, by) {
+    const paths = state.currentConfig.media.paths;
+    const b = el('button', 'btn btn-small btn-secondary media-path-move');
+    b.type = 'button';
+    b.title = by < 0 ? 'Move up' : 'Move down';
+    b.setAttribute('aria-label', b.title);
+    b.innerHTML = iconSvg(by < 0 ? 'arrowUpward' : 'arrowDownward');
+    const to = index + by;
+    b.disabled = to < 0 || to >= paths.length;
+    b.onclick = () => {
+        [paths[index], paths[to]] = [paths[to], paths[index]];
+        const editing = [...editingPaths].map(i => i === index ? to : i === to ? index : i);
+        editingPaths.clear();
+        editing.forEach(i => editingPaths.add(i));
+        renderMediaPaths(paths);
+    };
+    return b;
+}
+
 // A library as it is, read-only: its name and folder, then its type, groups and rows.
 function mediaPathSummary(mediaPath, index) {
     const div = el('div', 'media-path');
@@ -3268,7 +3290,7 @@ function mediaPathSummary(mediaPath, index) {
     edit.dataset.icon = 'edit';
     edit.innerHTML = iconSvg('edit') + '<span class="btn-label">Edit</span>';
     edit.onclick = () => { editingPaths.add(index); renderMediaPaths(state.currentConfig.media.paths); };
-    head.append(names, edit);
+    head.append(names, moveButton(index, -1), moveButton(index, 1), edit);
     // A label and its value per row: the type, the groups (as chips) and where its rows show.
     const details = el('dl', 'media-path-details');
     const row = (term, value) => {

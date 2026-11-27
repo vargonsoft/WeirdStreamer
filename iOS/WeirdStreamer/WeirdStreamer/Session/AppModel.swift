@@ -20,6 +20,7 @@ struct FileEntry: Identifiable, Hashable {
     var fixable = false            // a folder standing for one title, whose match an admin can fix
     var format: String? = nil      // a video's: "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"
     var libraryType: String? = nil // a library on the home screen: "movie" or "tv"
+    var libraryOrder = 0           // a library's place in the server's config (the home screen's order for TV Shows and Movies)
 
     var id: String { path }
     var isVideo: Bool { type == "video" }
@@ -428,8 +429,8 @@ final class AppModel {
                 } else if let type = directory.libraryType, let lib = currentLibraryId {
                     libraryTypes[lib] = type
                 }
-                entries = (directory.dirs ?? []).map { FileEntry(name: $0.name, path: $0.id, isDirectory: true, thumbnailUrl: $0.thumbnailUrl, fixable: $0.fixable ?? false,
-                                                                 libraryType: newPath.isEmpty ? $0.libraryType : nil) }
+                entries = (directory.dirs ?? []).enumerated().map { i, d in FileEntry(name: d.name, path: d.id, isDirectory: true, thumbnailUrl: d.thumbnailUrl, fixable: d.fixable ?? false,
+                                                                 libraryType: newPath.isEmpty ? d.libraryType : nil, libraryOrder: i) }
                     .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                     + (directory.items ?? []).map {
                         FileEntry(name: $0.name, path: $0.path, isDirectory: false, type: $0.type, size: $0.size ?? 0,

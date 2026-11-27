@@ -459,7 +459,8 @@ fun TvServerTab(server: ServerRepository, first: FocusRequester, up: FocusReques
     library?.let { i ->
         val p = m.paths.getOrNull(i)
         if (p == null) library = null
-        else TvLibraryDialog(m, p, onDismiss = { library = null }, onEdit = { entry = it }, onChoose = { choice = it })
+        else TvLibraryDialog(m, p, i, onDismiss = { library = null }, onEdit = { entry = it }, onChoose = { choice = it },
+            onMove = { by -> m.movePath(p, by)?.let { library = it; m.saveSoon() } })
     }
     group?.let { g ->
         TvGroupDialog(m, g, onDismiss = { group = null }, onRename = {
@@ -497,8 +498,8 @@ private fun TvDamagedDialog(v: com.vargon.weirdstreamer.api.models.DamagedVideo,
 
 /** A library's settings: each saved as it changes. */
 @Composable
-private fun TvLibraryDialog(m: ServerSettingsModel, p: PathEdit, onDismiss: () -> Unit,
-                            onEdit: (TextEntry) -> Unit, onChoose: (ChoiceEntry) -> Unit) {
+private fun TvLibraryDialog(m: ServerSettingsModel, p: PathEdit, index: Int, onDismiss: () -> Unit,
+                            onEdit: (TextEntry) -> Unit, onChoose: (ChoiceEntry) -> Unit, onMove: (Int) -> Unit) {
     var removing by remember { mutableStateOf(false) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
@@ -526,6 +527,10 @@ private fun TvLibraryDialog(m: ServerSettingsModel, p: PathEdit, onDismiss: () -
             TvValueRow(g, if (on) "On" else "Off", onStep = { p.toggleGroup(g, m.groupNames); m.saveSoon() }) {
                 p.toggleGroup(g, m.groupNames); m.saveSoon()
             }
+        }
+        // config.yml's order, the home screen's: Left and Right move it, OK one down
+        TvValueRow("Place in the list", "${index + 1} of ${m.paths.size}", onStep = onMove) {
+            onMove(if (index < m.paths.lastIndex) 1 else -1)
         }
         Spacer(Modifier.height(4.dp))
         TvValueRow("Remove this library", destructive = true) { removing = true }

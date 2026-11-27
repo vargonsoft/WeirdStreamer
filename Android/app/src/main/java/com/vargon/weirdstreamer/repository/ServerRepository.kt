@@ -309,14 +309,14 @@ class ServerRepository(
                     val cacheVersion = credentialManager.getThumbnailCacheVersion(serverUrl, path)
                     
                     directory.libraryType?.let { if (path.isNotEmpty()) libraryTypes[libraryIdOf(path)] = it }
-                    directory.dirs?.forEach { dir ->
+                    directory.dirs?.forEachIndexed { index, dir ->
                         if (!dir.id.contains("/") && !dir.name.contains("/")) {
                             shareMap[dir.id] = dir.name
                             dir.libraryType?.let { libraryTypes[dir.id] = it }
                         }
                         items.add(FileItem(name = dir.name, path = dir.id, isDirectory = true, fixable = dir.fixable,
                             thumbnailUrl = dir.thumbnailUrl?.let { if (it.startsWith("http")) it else "$requestBase$it" },
-                            libraryType = if (path.isEmpty()) dir.libraryType else null))
+                            libraryType = if (path.isEmpty()) dir.libraryType else null, libraryOrder = index))
                     }
                     
                     directory.items?.forEach { mediaItem ->

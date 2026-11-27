@@ -123,6 +123,8 @@ struct ServerSettingsTab: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 SectionTitle(text: "Media paths")
+                Text("The home screen shows the libraries in this order (TV Shows and Movies first) (the arrows move one).")
+                    .font(.caption).foregroundStyle(Palette.muted)
                 ForEach($paths) { $p in libraryCard($p) }
                 PhoneTextField(label: "New path on the server", text: $newPath, placeholder: "/path/to/media")
                 OptionMenu(label: "Library type", options: libraryTypes, value: $newType)
@@ -196,12 +198,26 @@ struct ServerSettingsTab: View {
         }
     }
 
+    /// Moves a library up (-1) or down (1): config.yml's order, the home screen's
+    /// (Android's ServerSettingsModel.movePath). Saved with Save.
+    private func movePath(_ i: Int, by: Int) {
+        let to = i + by
+        guard paths.indices.contains(i), paths.indices.contains(to) else { return }
+        paths.swapAt(i, to)
+        message = ("Moved. Save to apply.", false)
+    }
+
     private func libraryCard(_ p: Binding<PathEdit>) -> some View {
         CardBox {
             if !p.wrappedValue.editing {
                 HStack {
                     Text(p.wrappedValue.name.isEmpty ? "(no name)" : p.wrappedValue.name).font(.headline)
                     Spacer()
+                    let i = paths.firstIndex { $0.id == p.wrappedValue.id } ?? 0
+                    IconButton(system: "chevron.up", label: "Move up") { movePath(i, by: -1) }
+                        .disabled(i == 0).opacity(i == 0 ? 0.35 : 1)
+                    IconButton(system: "chevron.down", label: "Move down") { movePath(i, by: 1) }
+                        .disabled(i == paths.count - 1).opacity(i == paths.count - 1 ? 0.35 : 1)
                     IconButton(system: "pencil", label: "Edit") { p.wrappedValue.editing = true }
                 }
                 Text(p.wrappedValue.path).font(.caption).foregroundStyle(Palette.muted)

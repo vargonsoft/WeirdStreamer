@@ -286,6 +286,12 @@ func mergeNode(old, fresh *yaml.Node, t reflect.Type, commentOut bool) {
 			mergeNode(match, n, elem, false)
 			content = append(content, match)
 		}
+		// The comment above the list's first item is the list's: it stays at the top when the items
+		// are reordered or the first removed.
+		if len(old.Content) > 0 && len(content) > 0 && old.Content[0] != content[0] && old.Content[0].HeadComment != "" {
+			content[0].HeadComment = joinComments(old.Content[0].HeadComment, content[0].HeadComment)
+			old.Content[0].HeadComment = ""
+		}
 		old.Content = content
 	case yaml.ScalarNode:
 		if old.Value != fresh.Value || old.ShortTag() != fresh.ShortTag() {

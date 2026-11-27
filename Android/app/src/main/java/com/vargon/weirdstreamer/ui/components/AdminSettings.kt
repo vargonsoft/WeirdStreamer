@@ -283,6 +283,18 @@ class ServerSettingsModel(val server: ServerRepository, private val scope: Corou
         }
     }
 
+    /** Moves [p] up (-1) or down (1) the list: config.yml's order, the home screen's.
+     *  Its new place, or null when it can't go further. Not saved. */
+    fun movePath(p: PathEdit, by: Int): Int? {
+        val i = paths.indexOf(p)
+        val to = i + by
+        if (i < 0 || to !in paths.indices) return null
+        paths[i] = paths[to]
+        paths[to] = p
+        message = "Moved. Save to apply." to false
+        return to
+    }
+
     fun removePath(p: PathEdit) {
         paths.remove(p)
         message = "Removed. Save to apply." to false

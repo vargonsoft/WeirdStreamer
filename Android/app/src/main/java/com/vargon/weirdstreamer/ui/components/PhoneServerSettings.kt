@@ -18,6 +18,8 @@ import androidx.compose.ui.graphics.takeOrElse
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
 import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -187,11 +189,22 @@ fun ServerSettingsTab(server: ServerRepository, onPlay: (path: String, name: Str
         loaded == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else -> LazyColumn(contentPadding = PaddingValues(16.dp)) {
             item { SectionTitle("Media paths") }
-            itemsIndexed(paths, key = { i, p -> "$i:${p.source.get("id")?.asString}" }) { _, p ->
+            item {
+                Text("The home screen shows the libraries in this order (TV Shows and Movies first) (the arrows move one).",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp))
+            }
+            itemsIndexed(paths, key = { i, p -> "$i:${p.source.get("id")?.asString}" }) { i, p ->
                 Card(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                     if (!p.editing) Column(Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(p.name.ifBlank { "(no name)" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { m.movePath(p, -1) }, enabled = i > 0, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move up")
+                            }
+                            IconButton(onClick = { m.movePath(p, 1) }, enabled = i < paths.lastIndex, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move down")
+                            }
                             IconButton(onClick = { p.editing = true }, modifier = Modifier.size(36.dp)) {
                                 Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(20.dp))
                             }

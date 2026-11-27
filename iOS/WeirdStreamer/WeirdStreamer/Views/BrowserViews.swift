@@ -12,8 +12,8 @@ struct FileBrowserScreen: View {
         let all = model.filteredEntries
         let home = model.isServerRoot
         let typed = home ? all.filter { $0.libraryType == "tv" || $0.libraryType == "movie" }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } : []
-        let rest = all.filter { !typed.contains($0) }
+            .sorted { $0.libraryOrder < $1.libraryOrder } : [] // as config.yml lists them
+        let rest = home ? all.filter { !typed.contains($0) }.sorted { $0.libraryOrder < $1.libraryOrder } : all.filter { !typed.contains($0) }
         let guide = home && model.guideRow == ""
         let items = typed + rest
         let letters = alphabetIndex(items.map(\.name), groups: items.map { $0.isDirectory ? 0 : 1 })

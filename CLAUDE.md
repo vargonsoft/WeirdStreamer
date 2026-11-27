@@ -710,9 +710,9 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   title. Thumbnails under 1 KB count as broken, so a video black throughout still gets none. Existing
   thumbnails stay until they're regenerated.
 - **The home screen's libraries** (web `renderMedia`, Android `HomeTiles`, iPhone `FileBrowserScreen`): the TV
-  Shows and Movies libraries come first, by name, each with its kind's icon on its folder (Material movie and
+  Shows and Movies libraries come first, in config.yml's order (each client keeps the order the server listed them in; Settings' library list moves them: arrows on the web, phone and iPhone, the TV library dialog's Place in the list, `movePath`; `config/file.go` keeps the comment above the first library at the top), each with its kind's icon on its folder (Material movie and
   TV; in a corner badge over a folder picture; the browse response's `library_type`), then the Guide's tile,
-  then the other libraries by name from the next row (the TV's grid fills the row with empty cells, as it
+  then the other libraries from the next row, also in config.yml's order (the TV's grid fills the row with empty cells, as it
   moves focus by index; the phone's grid spans a break; the iPhone draws two grids).
 - **Folder pictures:** in folder view every folder shows a picture inside its folder icon (posters are only the Library view's) (web
   `folderPreview`, Android `FolderPreview` in `FolderThumbnails.kt`, iPhone `FolderPreview`): the
