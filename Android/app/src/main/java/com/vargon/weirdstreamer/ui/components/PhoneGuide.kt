@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.ui.components
 
+import androidx.compose.foundation.border
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -275,20 +276,20 @@ private fun PhoneGuideRow(model: GuideModel, c: GuideChannel, from: Long, to: Lo
                             onNow -> MaterialTheme.colorScheme.surfaceVariant
                             else -> MaterialTheme.colorScheme.surface
                         }, RoundedCornerShape(4.dp))
+                        // a line round each program, as the web's grid, so where one ends and the next starts shows
+                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f), RoundedCornerShape(4.dp))
                         .clickable {
                             model.selected = c to l
                             if (onNow && model.channel != c.number) model.tune(c.number)
                         }
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                         contentAlignment = Alignment.CenterStart) {
-                        Column {
-                            Text(l.info?.title ?: "Off the air", style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            val second = l.info?.episodeLabel ?: l.info?.takeIf { it.kind == "movie" }?.year?.toString()
-                            second?.let {
-                                Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
+                        val density = LocalDensity.current
+                        GridProgramText(l.info?.title ?: "Off the air",
+                            l.info?.episodeLabel ?: l.info?.takeIf { it.kind == "movie" }?.year?.toString(), across,
+                            with(density) { (x(start) + 8.dp).toPx() }, with(density) { (x(end) - 8.dp).toPx() },
+                            (l.start < from), (l.end > to), MaterialTheme.typography.bodySmall, MaterialTheme.typography.labelSmall,
+                            MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }

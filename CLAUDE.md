@@ -952,7 +952,9 @@ What's built (server):
   `extendGuideGrid`), merging a program across the boundary once, and the half-hourly reload keeps the hours
   loaded. A half hour has a fixed width (TV: 3½ hours fit; web 200 px); the TV's rows and times share one
   ScrollState, moved by focus. The corner shows the day at the left edge, midnight's label is the day, and
-  the details name the day when it isn't today.
+  the details name the day when it isn't today. Each program has a line round it, and its title stays in the part of its cell that shows, with ◀ when
+  it started before what's shown (or before the grid, in the past) and ▶ when it ends after; a sliver shows no text
+  (web `placeGuideTitles`, Android `GridProgramText` reading the scroll at layout, iPhone `programRow`'s `view`).
 - **Channels of their own** (`guide/special.go`; no library, `LibraryID` ""; the home screen's Guide only, while
   it has a library's channel): the Guide channel (1) and Weather (20–29), made by the planner's
   refresh. Their grid half hours are `ProgramInfo` kind `channel`; the channel's `kind` says

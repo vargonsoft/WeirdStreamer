@@ -4617,6 +4617,31 @@ body:has(#guide-screen.active) > footer {
     border-left-style: dashed;
 }
 
+/* ◀ and ▶ at the shown part's edges (placeGuideTitles): the program started before what's shown, or ends after */
+.guide-program.starts-before::before,
+.guide-program.ends-after::after {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+}
+
+.guide-program.starts-before::before {
+    content: '◀';
+    left: calc(var(--shift-start, 0px) + 6px);
+}
+
+.guide-program.ends-after::after {
+    content: '▶';
+    right: calc(var(--shift-end, 0px) + 6px);
+}
+
+.guide-program.sliver > *,
+.guide-program.sliver::before,
+.guide-program.sliver::after {
+    visibility: hidden;
+}
+
 .guide-program.on-now {
     background: var(--surface-hover);
 }

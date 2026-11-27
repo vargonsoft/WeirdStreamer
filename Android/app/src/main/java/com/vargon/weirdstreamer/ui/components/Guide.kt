@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.ui.components
 
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -680,3 +681,46 @@ fun ReportVoiceOver(model: GuideModel, channel: Int, button: @Composable (String
     }
 }
 
+/**
+ * A program's title and second line in the main grid (TV and phone), kept within the part of its cell the row
+ * shows: a program that started before what's shown (or before the grid, in the past) has ◀ before its title, one
+ * that ends after it ▶ after. [left] and [right] are the cell's edges in the scrolled row (px), [cutStart] and
+ * [cutEnd] whether the grid itself cuts the program off. The scroll is read at layout, so scrolling doesn't
+ * recompose the rows.
+ */
+@Composable
+internal fun GridProgramText(title: String, second: String?, across: androidx.compose.foundation.ScrollState,
+                             left: Float, right: Float, cutStart: Boolean, cutEnd: Boolean,
+                             titleStyle: androidx.compose.ui.text.TextStyle, secondStyle: androidx.compose.ui.text.TextStyle,
+                             color: Color) {
+    val before = { cutStart || across.value > left + 1 }
+    val after = { cutEnd || right > across.value + across.viewportSize + 1 }
+    Row(Modifier.keepInView(across, left, right), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Text("◀", Modifier.shownWhen(before).padding(end = 4.dp), style = titleStyle, color = color)
+        Column(Modifier.weight(1f, fill = false)) {
+            androidx.compose.material3.Text(title, style = titleStyle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = color)
+            second?.let { androidx.compose.material3.Text(it, style = secondStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, color = color) }
+        }
+        androidx.compose.material3.Text("▶", Modifier.shownWhen(after).padding(start = 4.dp), style = titleStyle, color = color)
+    }
+}
+
+/** Lays the content out within the part of its cell ([left] to [right] in the scrolled row, px) that [across] shows; none
+ *  when less than 48 dp of it shows. */
+private fun Modifier.keepInView(across: androidx.compose.foundation.ScrollState, left: Float, right: Float) =
+    layout { measurable, constraints ->
+        val shiftStart = (across.value - left).coerceAtLeast(0f)
+        val shiftEnd = (right - (across.value + across.viewportSize)).coerceAtLeast(0f)
+        val width = (constraints.maxWidth - shiftStart - shiftEnd).toInt().coerceIn(0, constraints.maxWidth)
+        // a sliver of a cell (a program ending just past the left edge) shows no text, not a lone arrow
+        if (width < 48.dp.roundToPx()) return@layout layout(constraints.maxWidth, 0) {}
+        val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = width))
+        layout(constraints.maxWidth, placeable.height) { placeable.place(shiftStart.toInt().coerceAtMost(constraints.maxWidth - placeable.width).coerceAtLeast(0), 0) }
+    }
+
+/** Takes no room unless [show] (read at layout). */
+private fun Modifier.shownWhen(show: () -> Boolean) = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    if (show()) layout(placeable.width, placeable.height) { placeable.place(0, 0) } else layout(0, 0) {}
+}

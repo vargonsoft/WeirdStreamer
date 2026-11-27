@@ -415,7 +415,9 @@ private struct GuideGrid: View {
                             .frame(width: channelWidth)
                             ScrollView(.horizontal, showsIndicators: false) {
                                 VStack(spacing: 0) {
-                                    ForEach(channels) { c in programRow(c, data) }
+                                    ForEach(channels) { c in
+                                        programRow(c, data, view: -scrollX...(-scrollX + max(geo.size.width - channelWidth, 1)))
+                                    }
                                 }
                                 .frame(width: width, alignment: .leading)
                                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("guidePrograms")).minX } action: { x in
@@ -465,7 +467,10 @@ private struct GuideGrid: View {
         .accessibilityLabel("Channel \(c.number), \(c.name)")
     }
 
-    private func programRow(_ c: GuideChannel, _ data: GuideListings) -> some View {
+    /// A channel's programs. Each title stays in the part of its cell `view` (the programs' visible stretch, in the row's
+    /// points) shows, with ◀ before it when the program started before what's shown (or before the grid, in the past)
+    /// and ▶ after it when it ends after; a sliver shows no text. As Android's GridProgramText.
+    private func programRow(_ c: GuideChannel, _ data: GuideListings, view: ClosedRange<CGFloat>) -> some View {
         let now = guide.serverNow()
         return ZStack(alignment: .topLeading) {
             ForEach(c.listings ?? [], id: \.start) { l in
@@ -477,17 +482,27 @@ private struct GuideGrid: View {
                         guide.selected = (c, l)
                         if onNow && guide.channel != c.number { guide.tune(c.number) }
                     } label: {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(l.info?.title ?? "Off the air").font(.footnote.weight(.bold)).lineLimit(1)
-                            if let second = l.info?.episodeLabel ?? (l.info?.kind == "movie" ? l.info?.year.map(String.init) : nil) {
-                                Text(second).font(.caption2).lineLimit(1)
+                        let left = x(start, data) + 2, cellWidth = max(x(end, data) - x(start, data) - 4, 0)
+                        let shiftStart = max(view.lowerBound - left, 0), shiftEnd = max(left + cellWidth - view.upperBound, 0)
+                        let before = l.start < data.from || shiftStart > 1, after = l.end > data.to || shiftEnd > 1
+                        HStack(spacing: 4) {
+                            if before { Text("◀").font(.caption2) }
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(l.info?.title ?? "Off the air").font(.footnote.weight(.bold)).lineLimit(1)
+                                if let second = l.info?.episodeLabel ?? (l.info?.kind == "movie" ? l.info?.year.map(String.init) : nil) {
+                                    Text(second).font(.caption2).lineLimit(1)
+                                }
                             }
+                            if after { Text("▶").font(.caption2) }
                         }
+                        .opacity(cellWidth - shiftStart - shiftEnd < 48 ? 0 : 1) // a sliver: no lone arrow
                         .foregroundStyle(Palette.text)
-                        .padding(.horizontal, 6)
-                        .frame(width: max(x(end, data) - x(start, data) - 4, 0), height: rowHeight - 4, alignment: .leading)
+                        .padding(.leading, 6 + shiftStart).padding(.trailing, 6 + shiftEnd)
+                        .frame(width: cellWidth, height: rowHeight - 4, alignment: .leading)
                         .background(picked ? Palette.accent.opacity(0.35) : onNow ? Palette.raised : Palette.panel,
                                     in: RoundedRectangle(cornerRadius: 4))
+                        // a line round each program, as the web's grid, so where one ends and the next starts shows
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Palette.text.opacity(0.22), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .offset(x: x(start, data) + 2, y: 2)

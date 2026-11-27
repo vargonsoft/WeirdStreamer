@@ -189,6 +189,8 @@ function renderGuideGrid() {
     grid.style.setProperty('--programs-width', `${(to - from) / GUIDE_SLOT_MS * GUIDE_SLOT_PX}px`);
     grid.onscroll = () => {
         guideGridDay(grid);
+        cancelAnimationFrame(guide.titlesFrame);
+        guide.titlesFrame = requestAnimationFrame(placeGuideTitles);
         if (grid.scrollLeft + grid.clientWidth > grid.scrollWidth - 3 * GUIDE_SLOT_PX) extendGuideGrid();
     };
     if (!channels.length) {
@@ -258,13 +260,36 @@ function renderGuideGrid() {
     grid.scrollLeft = scrollLeft;
     grid.scrollTop = scrollTop;
     guideGridDay(grid);
-
+    placeGuideTitles();
     if (guide.selected) {
         // The same program selected again, now that the grid was drawn anew
         const c = channels.find(ch => ch.number === guide.selected.channel.number);
         const l = c && (c.listings || []).find(x => x.start === guide.selected.listing.start);
         if (c && l) showGuideDetails(c, l);
     }
+}
+
+// Each program's title stays in the part of its cell the grid shows, with ◀ before it when the program started
+// before what's shown (or before the grid, in the past) and ▶ after it when it ends after; a sliver of a cell shows
+// no text. As the apps' GridProgramText.
+function placeGuideTitles() {
+    const grid = document.getElementById('guide-grid');
+    const name = grid && grid.querySelector('.guide-grid-row:not(.guide-grid-head) .guide-channel');
+    if (!name || !guide.data) return;
+    const viewStart = grid.scrollLeft, viewEnd = grid.scrollLeft + grid.clientWidth - name.offsetWidth;
+    grid.querySelectorAll('.guide-program').forEach(cell => {
+        const left = cell.offsetLeft, right = left + cell.offsetWidth;
+        const shiftStart = Math.max(viewStart - left, 0), shiftEnd = Math.max(right - viewEnd, 0);
+        const before = Number(cell.dataset.start) < guide.data.from || shiftStart > 1;
+        const after = Number(cell.dataset.end) > guide.data.to || shiftEnd > 1;
+        cell.classList.toggle('starts-before', before);
+        cell.classList.toggle('ends-after', after);
+        cell.classList.toggle('sliver', right - left - shiftStart - shiftEnd < 48);
+        cell.style.setProperty('--shift-start', `${shiftStart}px`);
+        cell.style.setProperty('--shift-end', `${shiftEnd}px`);
+        cell.style.paddingLeft = `${8 + shiftStart + (before ? 16 : 0)}px`;
+        cell.style.paddingRight = `${8 + shiftEnd + (after ? 16 : 0)}px`;
+    });
 }
 
 function episodeLabel(info) {
@@ -1113,6 +1138,7 @@ function setupGuide() {
         document.getElementById('guide-fullscreen').innerHTML = iconSvg(document.fullscreenElement ? 'fullscreenExit' : 'fullscreen');
     });
     window.addEventListener('resize', placeTimeLine);
+    window.addEventListener('resize', placeGuideTitles);
 }
 
 setupGuide();
