@@ -1375,6 +1375,13 @@ header h1 {
     margin: 20px 0;
     border-bottom: 2px solid var(--border-color);
     overflow-x: auto;
+    /* Scrolls sideways when the tabs don't fit, without a scrollbar over their labels (the wheel scrolls
+       it too, and a chosen tab scrolls into view: app.js) */
+    scrollbar-width: none;
+}
+
+.settings-tabs::-webkit-scrollbar {
+    display: none;
 }
 
 .settings-tab {

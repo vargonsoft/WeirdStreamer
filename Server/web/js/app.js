@@ -118,9 +118,17 @@ function setupEventListeners() {
         closeSettingsBtn.addEventListener('click', () => closeScreen('settings'));
     }
     
-    // Settings tabs
+    // Settings tabs. Their bar has no scrollbar: when they don't fit, the mouse wheel scrolls it sideways,
+    // and a chosen tab scrolls into view.
+    const settingsTabs = document.querySelector('.settings-tabs');
+    settingsTabs?.addEventListener('wheel', (e) => {
+        if (settingsTabs.scrollWidth <= settingsTabs.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+        settingsTabs.scrollLeft += e.deltaY;
+        e.preventDefault();
+    }, { passive: false });
     document.querySelectorAll('.settings-tab').forEach(tab => {
         tab.addEventListener('click', () => {
+            tab.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
             const tabName = tab.dataset.tab;
             document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
