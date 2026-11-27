@@ -1,5 +1,11 @@
 package com.vargon.weirdstreamer.ui.components
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import android.content.Context
 import android.view.LayoutInflater
 import androidx.annotation.OptIn
@@ -70,13 +76,17 @@ import java.util.Locale
 /** What the player plays: a file from [seekMs] (the original) or a stream from where the channel is. */
 data class GuideStream(val url: String, val seekMs: Long, val key: String, val fileStartMs: Long = 0) // fileStartMs: where a stream starts in the file
 
+/** How long the TV's full-screen channel banner stays without a key. */
+const val BANNER_MS = 6000L
+
+/** The Guide channel's clips fade out over their last second, and what follows fades in over this. */
+const val CLIP_FADE_MS = 1000L
+const val CLIP_FADE_IN_MS = 300
+
 /**
  * The Guide's state: the grid, the channel tuned, what it airs and how it plays. [library] is the
  * library whose own Guide it is, null the home screen's.
  */
-/** How long the TV's full-screen channel banner stays without a key. */
-const val BANNER_MS = 6000L
-
 class GuideModel(
     private val repo: ServerRepository,
     val library: String?,
@@ -475,10 +485,34 @@ fun GuidePlayer(model: GuideModel, player: ExoPlayer, modifier: Modifier = Modif
         player.prepare()
         player.playWhenReady = true
     }
-    // muted, or lowered under the announcer
-    LaunchedEffect(model.muted, model.voiceOverOn) {
-        player.volume = if (model.muted) 0f else if (model.voiceOverOn != null) 0.3f else 1f
-        model.music.volume = if (model.muted) 0f else 1f
+    // The Guide channel's clips (its previews and commercials) fade out, picture and sound, over their last
+    // CLIP_FADE_MS, by the server's clock; the next item fades in once its first frame shows (so the last one's
+    // last frame doesn't flash back first).
+    val fade = remember { Animatable(1f) }
+    val playing = model.now
+    LaunchedEffect(playing?.start, playing?.channel?.number, playing?.path) {
+        val n = playing ?: return@LaunchedEffect
+        if (n.channel.kind != "guide" || n.path == null) return@LaunchedEffect
+        val left = n.end - model.serverNow()
+        if (left > CLIP_FADE_MS) delay(left - CLIP_FADE_MS)
+        fade.animateTo(0f, tween(minOf(left, CLIP_FADE_MS).toInt().coerceAtLeast(1), easing = LinearEasing))
+    }
+    val fadeScope = rememberCoroutineScope()
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                fadeScope.launch { fade.animateTo(1f, tween(CLIP_FADE_IN_MS)) }
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+    // muted, or lowered under the announcer, and faded with the picture
+    LaunchedEffect(player) {
+        snapshotFlow { Triple(model.muted, model.voiceOverOn, fade.value) }.collect { (muted, voice, f) ->
+            player.volume = (if (muted) 0f else if (voice != null) 0.3f else 1f) * f
+            model.music.volume = if (muted) 0f else 1f
+        }
     }
     // where the player is in the file: its position plus where its stream started
     DisposableEffect(player, stream?.key) {
@@ -529,7 +563,7 @@ fun GuidePlayer(model: GuideModel, player: ExoPlayer, modifier: Modifier = Modif
                 update = { it.player = player },
                 // the view going (to full screen or back) lets go of the picture, so the new one gets it
                 onRelease = { it.player = null },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }
             )
             when {
                 kind == "weather" -> {}

@@ -163,7 +163,7 @@ private struct GuidePicture: View {
                 // under the squeezed picture: the background and what's next
                 if squeezed { UpNextCard(guide: guide, size: geo.size).transition(.opacity.combined(with: .move(edge: .trailing))) }
                 ZStack(alignment: .bottomLeading) {
-                    GuideVideoLayer(player: guide.player)
+                    GuideVideoLayer(player: guide.player).opacity(guide.clipFade)
                     if kind == "weather" {
                         EmptyView()
                     } else if kind == "guide" && !guide.playing {

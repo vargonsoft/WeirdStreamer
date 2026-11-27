@@ -344,6 +344,8 @@ function tune(number) {
 async function playGuideNow() {
     const request = ++guide.request;
     clearTimeout(guide.timer);
+    clearTimeout(guide.fadeTimer);
+    cancelAnimationFrame(guide.fadeFrame);
     let now;
     try {
         now = await api.guideNow(guide.channel, guide.lib);
@@ -394,8 +396,32 @@ async function playGuideNow() {
     }
     if (request !== guide.request) return;
     scheduleVoiceOver(now, request);
+    scheduleClipFade(now, request);
     // What comes next, when this ends (by the server's clock).
     guide.timer = setTimeout(playGuideNow, Math.max(now.end - serverNow(), 0) + 50);
+}
+
+const CLIP_FADE_MS = 1000;   // the Guide channel's clips fade out over their last second
+const CLIP_FADE_IN_MS = 300; // and what follows fades in
+
+// The Guide channel's clips (its previews and commercials) fade out, picture and sound together, over
+// their last CLIP_FADE_MS by the server's clock, instead of cutting off.
+function scheduleClipFade(now, request) {
+    if ((now.channel.kind || '') !== 'guide' || !now.path) return;
+    const fade = () => {
+        if (request !== guide.request) return;
+        const ms = Math.max(Math.min(now.end - serverNow(), CLIP_FADE_MS), 1);
+        const from = guideVideo.volume, started = performance.now();
+        guideVideo.style.transition = `opacity ${ms}ms linear`;
+        guideVideo.style.opacity = '0';
+        const step = () => {
+            const k = Math.min((performance.now() - started) / ms, 1);
+            guideVideo.volume = from * (1 - k);
+            if (k < 1 && request === guide.request) guide.fadeFrame = requestAnimationFrame(step);
+        };
+        guide.fadeFrame = requestAnimationFrame(step);
+    };
+    guide.fadeTimer = setTimeout(fade, Math.max(now.end - serverNow() - CLIP_FADE_MS, 0));
 }
 
 // Plays a program or clip from where the channel is in it: the file itself where the browser
@@ -677,6 +703,30 @@ function showPreviewCaption(now) {
 }
 
 // The Guide channel's lower half: every channel, now and the next two half hours, scrolling.
+// What a channel airs from `from` to `to`, each program clipped to that window, the gaps between as spans
+// of their own ({ start, end, listing }, listing null for a gap): the Guide channel's listings draw each as
+// wide as its time. A channel of its own's half hours with the same title (the Weather channel's "Local
+// Forecast") are one span. As the apps' listingSpans.
+function listingSpans(c, from, to) {
+    const spans = [];
+    let t = from;
+    for (const l of [...(c.listings || [])].sort((a, b) => a.start - b.start)) {
+        if (l.end <= t || l.start >= to) continue;
+        if (l.start > t) spans.push({ start: t, end: l.start, listing: null });
+        const end = Math.min(l.end, to);
+        const last = spans[spans.length - 1];
+        if (last && last.listing && last.end === l.start && l.info && l.info.kind === 'channel' &&
+            last.listing.info && last.listing.info.title === l.info.title) {
+            last.end = end;
+        } else {
+            spans.push({ start: Math.max(l.start, t), end, listing: l });
+        }
+        t = end;
+    }
+    if (t < to) spans.push({ start: t, end: to, listing: null });
+    return spans;
+}
+
 function renderGuideListings() {
     const box = document.getElementById('guide-listings');
     box.innerHTML = '';
@@ -684,6 +734,7 @@ function renderGuideListings() {
     if (!channels.length) return;
     const first = Math.floor(serverNow() / GUIDE_SLOT_MS) * GUIDE_SLOT_MS;
     const slots = [first, first + GUIDE_SLOT_MS, first + 2 * GUIDE_SLOT_MS];
+    const end = first + 3 * GUIDE_SLOT_MS;
     const head = el('div', 'guide-listings-head');
     head.append(el('div', 'guide-listings-day', new Date(first).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })),
         ...slots.map(t => el('div', 'guide-listings-time', guideTime(t))));
@@ -696,12 +747,16 @@ function renderGuideListings() {
         logo.alt = '';
         id.append(logo, el('span', 'guide-listings-number', `${c.number} ${c.name}`));
         row.appendChild(id);
-        slots.forEach(t => {
-            const l = (c.listings || []).find(x => x.start <= t && t < x.end);
-            const title = l && l.info ? l.info.title : '';
-            const started = l && l.start < t && l.info && l.info.kind !== 'channel'; // still on from before
-            row.appendChild(el('div', 'guide-listings-cell' + (started ? ' guide-listings-cont' : ''), title || '—'));
+        // each program as wide as its time in the hour and a half shown, a line where it starts (as the main grid)
+        const spans = el('div', 'guide-listings-spans');
+        listingSpans(c, first, end).forEach(span => {
+            const share = (span.end - span.start) / (end - first);
+            // a sliver (a program just ending or starting at the edge) keeps its line but no title
+            const cell = el('div', 'guide-listings-cell', share < 0.06 ? '' : (span.listing && span.listing.info && span.listing.info.title) || '—');
+            cell.style.flexBasis = `${share * 100}%`;
+            spans.appendChild(cell);
         });
+        row.appendChild(spans);
         return row;
     });
     const list = el('div', 'guide-listings-list');
@@ -957,6 +1012,14 @@ function setupGuide() {
     // A click on the picture (or a bumper's card) goes full screen and back.
     guideVideo.addEventListener('click', guideFullscreen);
     document.getElementById('guide-card').addEventListener('click', guideFullscreen);
+    // A clip faded out (scheduleClipFade): what plays next fades in once its first frame is there, so the
+    // last one's last frame doesn't flash back first.
+    guideVideo.addEventListener('loadeddata', () => {
+        if (guideVideo.style.opacity !== '0') return;
+        guideVideo.style.transition = `opacity ${CLIP_FADE_IN_MS}ms linear`;
+        guideVideo.style.opacity = '1';
+        guideVideo.volume = 1;
+    });
     // Live TV doesn't pause: a pause (media keys, the browser's own controls) mutes instead.
     guideVideo.addEventListener('pause', () => {
         if (!guideScreen.classList.contains('active') || !guide.now || guideVideo.ended || !guideVideo.src) return;

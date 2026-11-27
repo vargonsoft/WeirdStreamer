@@ -4077,6 +4077,16 @@ body:has(#guide-screen.active) > footer {
     grid-template-columns: 22% 26% 26% 26%;
 }
 
+.guide-listings-row {
+    grid-template-columns: 22% 78%;
+}
+
+/* a channel's programs, each as wide as its time (flex-basis from listingSpans) */
+.guide-listings-spans {
+    display: flex;
+    min-width: 0;
+}
+
 .guide-listings-head {
     background: #c8a000;
     color: #1a1a1a;
@@ -4129,6 +4139,9 @@ body:has(#guide-screen.active) > footer {
 }
 
 .guide-listings-cell {
+    flex: 0 0 auto;
+    min-width: 0;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     padding: 0 1cqw;
@@ -4137,10 +4150,6 @@ body:has(#guide-screen.active) > footer {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.guide-listings-cont {
-    color: rgba(255, 255, 255, 0.6);
 }
 
 /* The Weather channel: an 80s local forecast, blue, with the warnings scrolling in red */

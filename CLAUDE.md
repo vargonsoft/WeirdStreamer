@@ -960,7 +960,11 @@ What's built (server):
   client plays from `offset` plus the time since `server_time`.
   - Guide channel: `GuideChannelBlock`, 30-second blocks by the clock (preview, its promo card, preview,
     commercial), worked out per request from the viewer's channels and filler (`Service.FillerClips`); `/now`
-    adds `airs` and `airs_on`. The apps draw the picture in the top 58% and the listings roll below.
+    adds `airs` and `airs_on`. The apps draw the picture in the top 58% and the listings roll below: each
+    program as wide as its time in the hour and a half shown, with a line where it starts, as the main grid (`listingSpans`; a
+    channel of its own's same-titled half hours are one; a sliver has no title). Its clips (previews, commercials) fade out,
+    picture and sound, over their last second by the server's clock (`CLIP_FADE_MS`; web `scheduleClipFade`, iPhone
+    `clipFade`), and what plays next fades in once its first frame is there.
   - Weather: `guide/weather.go`, the National Weather Service for `guide.weatherZip` (Settings › Guide; default
     10001), the ZIP's position from the embedded Census table (`zipcodes.txt.gz`); `GET /api/guide/weather`
     (10-minute cache), `/weather/radar` (the radar station's latest GIF), `/weather/icon?name=` (drawn like the

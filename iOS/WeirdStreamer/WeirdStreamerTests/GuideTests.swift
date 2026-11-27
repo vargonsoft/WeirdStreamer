@@ -66,6 +66,25 @@ struct GuideTests {
         #expect(g.channels?[1].listings == nil)
     }
 
+    @Test func listingSpans() throws {
+        // The Guide channel's listings: each program clipped to the window, the gaps as spans of their own, a
+        // channel of its own's same-titled half hours as one span.
+        let c = try decode(GuideChannel.self, #"""
+        {"number":50,"name":"Movies","listings":[
+         {"start":0,"end":5400000,"info":{"kind":"movie","title":"Annie"}},
+         {"start":7200000,"end":9000000,"info":{"kind":"movie","title":"Aladdin"}}]}
+        """#)
+        let spans = WeirdStreamer.listingSpans(c, from: 1_800_000, to: 7_200_000)
+        #expect(spans.map { [$0.start, $0.end] } == [[1_800_000, 5_400_000], [5_400_000, 7_200_000]])
+        #expect(spans.map { $0.listing?.info?.title } == ["Annie", nil])
+        let weather = try decode(GuideChannel.self, #"""
+        {"number":20,"name":"Weather","kind":"weather","listings":[
+         {"start":0,"end":1800000,"info":{"kind":"channel","title":"Local Forecast"}},
+         {"start":1800000,"end":3600000,"info":{"kind":"channel","title":"Local Forecast"}}]}
+        """#)
+        #expect(WeirdStreamer.listingSpans(weather, from: 0, to: 5_400_000).map { [$0.start, $0.end] } == [[0, 3_600_000], [3_600_000, 5_400_000]])
+    }
+
     @Test func now() throws {
         let n = try decode(GuideNow.self, """
         {"channel":{"number":15,"name":"Variety","genre":"Variety","color":"#204060","logo":"/api/guide/logo?channel=15"},

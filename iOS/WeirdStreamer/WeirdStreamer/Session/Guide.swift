@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Observation
+import SwiftUI
 
 // The Guide (docs/GUIDE.md): live channels the server plans, as Android's GuideModel. A channel
 // plays only what's on now, from where it is: no seeking, and a pause mutes instead. GuideView.swift
@@ -22,6 +23,11 @@ final class GuideModel {
     var selected: (channel: GuideChannel, listing: GuideListing)?
     /// Whether something plays (a program or filler); nil between programs, where the card shows.
     private(set) var playing = false
+    /// The picture's opacity (and, times the volume, its sound): the Guide channel's clips fade out over their last
+    /// second, and what plays next fades in once it's ready (Android's CLIP_FADE_MS).
+    private(set) var clipFade: Double = 1
+    @ObservationIgnored private var fadeTask: Task<Void, Never>?
+    static let clipFadeMs: Int64 = 1000
     var muted = false { didSet { player.isMuted = muted; music.isMuted = muted } }
     /// The program's voice-over while it plays (the program is lowered under it), for a report.
     private(set) var voiceOverOn: GuideVoiceOver?
@@ -178,6 +184,7 @@ final class GuideModel {
     // Follows the channel: what it airs, and when that ends, what's next.
     private func follow(_ number: Int) async {
         while !Task.isCancelled && channel == number {
+            fadeTask?.cancel()
             let n: GuideNow
             do {
                 n = try await client.get("/api/guide/now", query: [("channel", "\(number)")] + libQuery)
@@ -217,6 +224,7 @@ final class GuideModel {
                 stopItem()
             }
             scheduleVoiceOver(n)
+            scheduleClipFade(n)
             let wait = max(n.end - serverNow(), 0) + 50
             try? await Task.sleep(for: .milliseconds(wait))
         }
@@ -273,6 +281,34 @@ final class GuideModel {
         player.play()
     }
 
+    /// The Guide channel's clips (its previews and commercials) fade out, picture and sound together, over their last
+    /// second by the server's clock, instead of cutting off.
+    private func scheduleClipFade(_ n: GuideNow) {
+        guard n.channel.kind == "guide", n.path != nil, n.kind != "promo", playing else { return }
+        fadeTask = Task { [weak self] in
+            guard let self else { return }
+            let left = n.end - self.serverNow()
+            if left > Self.clipFadeMs { try? await Task.sleep(for: .milliseconds(left - Self.clipFadeMs)) }
+            guard !Task.isCancelled else { return }
+            let ms = Double(max(min(n.end - self.serverNow(), Self.clipFadeMs), 1))
+            withAnimation(.linear(duration: ms / 1000)) { self.clipFade = 0 }
+            let started = Date()
+            while !Task.isCancelled {
+                let k = min(Date().timeIntervalSince(started) * 1000 / ms, 1)
+                self.player.volume = Float(1 - k)
+                if k >= 1 { break }
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+        }
+    }
+
+    /// What plays next is ready: it fades in (after a clip faded out).
+    private func fadeIn() {
+        guard clipFade < 1 else { return }
+        withAnimation(.linear(duration: 0.3)) { clipFade = 1 }
+        player.volume = voiceOverOn == nil ? 1 : 0.3
+    }
+
     private func observe(_ item: AVPlayerItem, seekTo offset: Double?) {
         var pending = offset
         itemObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
@@ -281,6 +317,7 @@ final class GuideModel {
                 guard self.player.currentItem === item else { return }
                 switch item.status {
                 case .readyToPlay:
+                    self.fadeIn()
                     if let seek = pending, seek > 0.5 {
                         pending = nil
                         // where the channel is now, not where it was when the item was opened

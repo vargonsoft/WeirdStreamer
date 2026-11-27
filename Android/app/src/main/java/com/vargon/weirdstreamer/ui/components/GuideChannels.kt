@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.vargon.weirdstreamer.api.models.GuideNow
+import com.vargon.weirdstreamer.api.models.GuideChannel
+import com.vargon.weirdstreamer.api.models.GuideListing
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -144,6 +146,30 @@ fun PreviewCaption(now: GuideNow, modifier: Modifier) {
     }
 }
 
+/** A stretch of a channel's listings: a program (or [listing] null for time nothing is planned in), clipped to the
+ *  window it's drawn in. */
+internal class ListingSpan(val start: Long, val end: Long, val listing: GuideListing?)
+
+/** What [c] airs from [from] to [to], each program clipped to that window, the gaps between as spans of their own:
+ *  the Guide channel's listings draw each as wide as its time. A channel of its own's half hours with the same title
+ *  (the Weather channel's "Local Forecast") are one span. As the web's listingSpans. */
+internal fun listingSpans(c: GuideChannel, from: Long, to: Long): List<ListingSpan> {
+    val spans = mutableListOf<ListingSpan>()
+    var t = from
+    for (l in c.listings.orEmpty().sortedBy { it.start }) {
+        if (l.end <= t || l.start >= to) continue
+        if (l.start > t) spans += ListingSpan(t, l.start, null)
+        val end = minOf(l.end, to)
+        val last = spans.lastOrNull()
+        if (last?.listing != null && last.end == l.start && l.info?.kind == "channel" && last.listing.info?.title == l.info.title)
+            spans[spans.lastIndex] = ListingSpan(last.start, end, last.listing)
+        else spans += ListingSpan(maxOf(l.start, t), end, l)
+        t = end
+    }
+    if (t < to) spans += ListingSpan(t, to, null)
+    return spans
+}
+
 /** The Guide channel's lower half: every channel, now and the next two half hours, rolling up. */
 @Composable
 fun GuideListings(model: GuideModel, modifier: Modifier) {
@@ -152,6 +178,7 @@ fun GuideListings(model: GuideModel, modifier: Modifier) {
     if (channels.isEmpty()) return
     val first = model.serverNow() / GuideModel.HALF_HOUR * GuideModel.HALF_HOUR
     val slots = listOf(first, first + GuideModel.HALF_HOUR, first + 2 * GuideModel.HALF_HOUR)
+    val end = first + 3 * GuideModel.HALF_HOUR
     val weights = listOf(0.22f, 0.26f, 0.26f, 0.26f)
     val roll = rememberInfiniteTransition(label = "listings")
     val progress by roll.animateFloat(0f, 1f, infiniteRepeatable(tween(channels.size * 3000, easing = LinearEasing), RepeatMode.Restart),
@@ -186,13 +213,16 @@ fun GuideListings(model: GuideModel, modifier: Modifier) {
                                         modifier = Modifier.height(s.dp(6f)).width(s.dp(14f)))
                                     ScaledText("${c.number} ${c.name}", s.sp(2.6f))
                                 }
-                                slots.forEachIndexed { i, t ->
-                                    val l = c.listings?.firstOrNull { it.start <= t && t < it.end }
-                                    val continued = l != null && l.start < t && l.info?.kind != "channel"
-                                    Box(Modifier.weight(weights[i + 1]).fillMaxHeight().padding(horizontal = s.dp(1f)),
-                                        contentAlignment = Alignment.CenterStart) {
-                                        ScaledText(l?.info?.title ?: "—", s.sp(3f),
-                                            color = if (continued) Color.White.copy(alpha = 0.6f) else Color.White)
+                                // each program as wide as its time in the hour and a half shown, a line where it starts (as
+                                // the main grid)
+                                listingSpans(c, first, end).forEach { span ->
+                                    val share = (span.end - span.start).toFloat() / (end - first)
+                                    Row(Modifier.weight(0.78f * share).fillMaxHeight()) {
+                                        Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.15f)))
+                                        Box(Modifier.weight(1f).fillMaxHeight().padding(horizontal = s.dp(1f)), contentAlignment = Alignment.CenterStart) {
+                                            // a sliver (a program just ending or starting at the edge) keeps its line but no title
+                                            if (share >= 0.06f) ScaledText(span.listing?.info?.title ?: "—", s.sp(3f))
+                                        }
                                     }
                                 }
                             }

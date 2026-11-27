@@ -111,6 +111,32 @@ struct PreviewCaption: View {
     }
 }
 
+/// A stretch of a channel's listings: a program (or `listing` nil for time nothing is planned in), clipped to the
+/// window it's drawn in.
+struct ListingSpan { let start: Int64; var end: Int64; let listing: GuideListing? }
+
+/// What a channel airs from `from` to `to`, each program clipped to that window, the gaps between as spans of their
+/// own: the Guide channel's listings draw each as wide as its time. A channel of its own's half hours with the same
+/// title (the Weather channel's "Local Forecast") are one span. As Android's listingSpans.
+func listingSpans(_ c: GuideChannel, from: Int64, to: Int64) -> [ListingSpan] {
+    var spans: [ListingSpan] = []
+    var t = from
+    for l in (c.listings ?? []).sorted(by: { $0.start < $1.start }) {
+        if l.end <= t || l.start >= to { continue }
+        if l.start > t { spans.append(ListingSpan(start: t, end: l.start, listing: nil)) }
+        let end = min(l.end, to)
+        if let last = spans.last, let lastListing = last.listing, last.end == l.start, l.info?.kind == "channel",
+           lastListing.info?.title == l.info?.title {
+            spans[spans.count - 1].end = end
+        } else {
+            spans.append(ListingSpan(start: max(l.start, t), end: end, listing: l))
+        }
+        t = end
+    }
+    if t < to { spans.append(ListingSpan(start: t, end: to, listing: nil)) }
+    return spans
+}
+
 /// The Guide channel's lower half: every channel, now and the next two half hours, rolling up.
 struct GuideListingsRoll: View {
     let guide: GuideModel
@@ -122,6 +148,7 @@ struct GuideListingsRoll: View {
         let channels = (guide.data?.channels ?? []).filter { $0.kind != "guide" }
         let first = guide.serverNow() / GuideModel.halfHour * GuideModel.halfHour
         let slots = [first, first + GuideModel.halfHour, first + 2 * GuideModel.halfHour]
+        let end = first + 3 * GuideModel.halfHour
         let row = h * 9
         let listHeight = row * CGFloat(max(channels.count, 1))
         // enough copies to fill the box the whole way round, so the roll loops without a jump or a gap
@@ -144,20 +171,29 @@ struct GuideListingsRoll: View {
                 VStack(spacing: 0) {
                     ForEach(0..<copies, id: \.self) { copy in
                         ForEach(channels) { c in
-                            HStack(spacing: 0) {
-                                HStack(spacing: h * 1) {
-                                    GuideImage(relative: guide.logoPath(c, width: 256)).frame(width: h * 12, height: h * 6)
-                                    Scaled("\(c.number) \(c.name)", h * 2.6)
-                                }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                                .padding(.horizontal, h * 1)
-                                .background(.white.opacity(0.08))
-                                ForEach(slots, id: \.self) { t in
-                                    let l = c.listings?.first { $0.start <= t && t < $0.end }
-                                    let continued = l.map { $0.start < t && $0.info?.kind != "channel" } ?? false
-                                    Scaled(l?.info?.title ?? "—", h * 3, color: continued ? .white.opacity(0.6) : .white)
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                                        .padding(.horizontal, h * 1)
+                            GeometryReader { g in
+                                HStack(spacing: 0) {
+                                    HStack(spacing: h * 1) {
+                                        GuideImage(relative: guide.logoPath(c, width: 256)).frame(width: h * 12, height: h * 6)
+                                        Scaled("\(c.number) \(c.name)", h * 2.6)
+                                    }
+                                    .padding(.horizontal, h * 1)
+                                    .frame(width: g.size.width / 4, height: g.size.height, alignment: .leading)
+                                    .background(.white.opacity(0.08))
+                                    // each program as wide as its time in the hour and a half shown, a line where it
+                                    // starts (as the main grid)
+                                    ForEach(listingSpans(c, from: first, to: end), id: \.start) { span in
+                                        let share = Double(span.end - span.start) / Double(end - first)
+                                        HStack(spacing: 0) {
+                                            Color.white.opacity(0.15).frame(width: 1)
+                                            // a sliver (a program just ending or starting at the edge) keeps its line but no title
+                                            Scaled(share < 0.06 ? "" : span.listing?.info?.title ?? "—", h * 3)
+                                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                                                .padding(.horizontal, h * 1)
+                                        }
+                                        .frame(width: g.size.width * 0.75 * share, height: g.size.height)
+                                        .clipped()
+                                    }
                                 }
                             }
                             .frame(height: row)
