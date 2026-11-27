@@ -76,7 +76,9 @@
     --button-secondary-text: #FFF2D8;
 }
 
+/* Cinema Blue: a theater's deep navy and gold */
 :root[data-theme="cinema-blue"] {
+    color-scheme: dark; /* inputs, menus and scrollbars drawn dark too */
     --primary-color: #FBB024;
     --primary-dark: #D97706;
     --secondary-color: #3B82F6;
@@ -84,13 +86,32 @@
     --text-color: #E5E7EB;
     --surface-color: #1E3A8A;
     --surface-hover: #3B82F6;
+    --card-bg: #142563; /* Settings, dialogs and cards: dark, as the theme's text is light */
+    --panel-bg: #1B3278;
+    --placeholder-bg: #22398A;
+    --hover-bg: #1E3780;
+    --border-color: #2E4A9E;
+    --muted-text: #B4C0E6;
+    --strong-text: #E5E7EB;
+    --success-bg: #2f7a4b;
+    --danger-bg: #8f3a33;
+    --danger-hover: #7a302a;
+    --button-bg: #2D4AA8;
+    --button-hover: #3B5BC0;
+    --button-text: #E5E7EB;
+    --button-focus: #FBB024;
+    --button-focus-text: #0F172A;
+    --heading-color: #FBB024;
+    --placeholder-gradient: linear-gradient(135deg, #22398A 0%, #142563 100%);
     --progress-color: #FBB024; /* progress lines on thumbnails, the watched check */
     --progress-label: #0F172A;
-    --button-secondary-bg: #DCE4F7; /* quieter buttons (btn-secondary), outlined in the button color */
-    --button-secondary-text: #1E3A8A;
+    --button-secondary-bg: #1B3278; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #E5E7EB;
 }
 
+/* Cinema Red: a velvet curtain's deep burgundy and gold */
 :root[data-theme="cinema-red"] {
+    color-scheme: dark;
     --primary-color: #FBB024;
     --primary-dark: #D97706;
     --secondary-color: #DC2626;
@@ -98,10 +119,27 @@
     --text-color: #E5E7EB;
     --surface-color: #991B1B;
     --surface-hover: #DC2626;
+    --card-bg: #5E1515;
+    --panel-bg: #721B1B;
+    --placeholder-bg: #852222;
+    --hover-bg: #7A1F1F;
+    --border-color: #9C3434;
+    --muted-text: #E8BDBD;
+    --strong-text: #F3E4E4;
+    --success-bg: #2f7a4b;
+    --danger-bg: #3d1010;
+    --danger-hover: #2e0b0b;
+    --button-bg: #A32A2A;
+    --button-hover: #B93838;
+    --button-text: #F3E4E4;
+    --button-focus: #FBB024;
+    --button-focus-text: #5E1515;
+    --heading-color: #FBB024;
+    --placeholder-gradient: linear-gradient(135deg, #852222 0%, #5E1515 100%);
     --progress-color: #FBB024; /* progress lines on thumbnails, the watched check */
     --progress-label: #7F1D1D;
-    --button-secondary-bg: #F7DCDC; /* quieter buttons (btn-secondary), outlined in the button color */
-    --button-secondary-text: #7F1D1D;
+    --button-secondary-bg: #721B1B; /* quieter buttons (btn-secondary), outlined in the button color */
+    --button-secondary-text: #F3E4E4;
 }
 
 /* Teal: deep sea teal with aqua (the Android theme's colors) */
@@ -2802,22 +2840,22 @@ header h1 {
 }
 
 /* Dark, Ember and the colored themes: pieces whose light colors aren't theme variables */
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-badge.state-playing { background: #1d3a26; color: #7ee2a0; }
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-badge.state-paused { background: #3d3216; color: #f2cf6b; }
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-badge.state-streaming { background: #232c52; color: #a9b6ff; }
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-badge.mode-transcode { background: #4a2220; color: #ff9c92; }
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-bar-sent { background: #3b416b; }
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .modal-content,
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .settings-container,
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .user-item,
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .match-hit,
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .match-poster,
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-card {
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-badge.state-playing { background: #1d3a26; color: #7ee2a0; }
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-badge.state-paused { background: #3d3216; color: #f2cf6b; }
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-badge.state-streaming { background: #232c52; color: #a9b6ff; }
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-badge.mode-transcode { background: #4a2220; color: #ff9c92; }
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-bar-sent { background: #3b416b; }
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .modal-content,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .settings-container,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .user-item,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .match-hit,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .match-poster,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .stream-card {
     color: var(--text-color);
 }
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .settings-input,
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) #login-form input,
-:root:is([data-theme="dark"], [data-theme="default"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .player-controls select {
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .settings-input,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) #login-form input,
+:root:is([data-theme="dark"], [data-theme="default"], [data-theme="cinema-blue"], [data-theme="cinema-red"], [data-theme="teal"], [data-theme="orange"], [data-theme="brown"], [data-theme="purple"], [data-theme="gray"], [data-theme="yellow"], [data-theme="green"], [data-theme="harbor-lights"], [data-theme="moss-and-rose"], [data-theme="desert-bloom"], [data-theme="arctic-berry"], [data-theme="copper-sea"], [data-theme="neon-arcade"], [data-theme="terminal-green"], [data-theme="terminal-amber"]) .player-controls select {
     background: var(--panel-bg);
     color: var(--text-color);
 }
