@@ -29,8 +29,36 @@ func TestAutoTrickplayFrames(t *testing.T) {
 		{"a 6 GB card, 2 runners", 2, cuda, 5}, // (2765-60)/540
 		{"memory unknown", 1, TrickplayMemory{FrameBytes4K: trickplayCPU.frame}, 10},
 	} {
-		if got := AutoTrickplayFrames(c.r, c.m); got != c.want {
+		if got := AutoTrickplayFrames(c.r, c.m, 0); got != c.want {
 			t.Errorf("%s: %d frames, want %d", c.name, got, c.want)
+		}
+	}
+	// Smaller videos take more frames: each tier's memory per frame, and its own caps.
+	for _, c := range []struct {
+		name    string
+		r, tier int
+		m       TrickplayMemory
+		want    int
+	}{
+		{"4 GB, the CPU, 1080p", 1, 1, cpu, 23}, // (2048-60)/84
+		{"4 GB, the CPU, 720p", 1, 2, cpu, 48},  // (2048-60)/41
+		{"4 GB, the CPU, SD", 1, 3, cpu, 96},    // (2048-60)/20.5
+		{"24 GB, VA-API, 2 runners, 1080p", 2, 1, TrickplayMemory{TotalBytes: 24 * gb, ProcessBytes4K: trickplayVAAPI.process, FrameBytes4K: trickplayVAAPI.frame}, 44}, // (6144-40)/136.9
+		{"64 GB, the CPU, SD", 1, 3, TrickplayMemory{TotalBytes: 64 * gb, ProcessBytes4K: trickplayCPU.process, FrameBytes4K: trickplayCPU.frame}, 200},                 // SD's cap
+		{"64 GB, the CPU, 4 runners, 720p", 4, 2, TrickplayMemory{TotalBytes: 64 * gb, ProcessBytes4K: trickplayCPU.process, FrameBytes4K: trickplayCPU.frame}, 75},     // 300 at once
+	} {
+		if got := AutoTrickplayFrames(c.r, c.m, c.tier); got != c.want {
+			t.Errorf("%s: %d frames, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+func TestTrickplayTier(t *testing.T) {
+	for _, c := range []struct{ w, h, tier int }{
+		{3840, 2160, 0}, {2560, 1440, 0}, {0, 0, 0}, {1920, 800, 1}, {1920, 1080, 1}, {1280, 720, 2}, {720, 576, 3}, {640, 480, 3},
+	} {
+		if got := TrickplayTier(c.w, c.h); got != c.tier {
+			t.Errorf("%d×%d: tier %d, want %d", c.w, c.h, got, c.tier)
 		}
 	}
 }
@@ -53,13 +81,16 @@ func TestCountDisks(t *testing.T) {
 
 func TestTrickplaySettingsAuto(t *testing.T) {
 	defer config.SetTrickplaySettings(0, 0)
-	config.SetTrickplaySettings(3, 7)
-	if r, f := TrickplayRunners(), TrickplayFramesPerRunner(); r != 3 || f != 7 {
-		t.Errorf("set: %d × %d, want 3 × 7", r, f)
+	config.SetTrickplaySettings(3, 7, 0, 0, 30)
+	if r, f, sd := TrickplayRunners(), TrickplayFramesPerRunner(0), TrickplayFramesPerRunner(3); r != 3 || f != 7 || sd != 30 {
+		t.Errorf("set: %d × %d (SD %d), want 3 × 7 (SD 30)", r, f, sd)
+	}
+	if want := AutoTrickplayFrames(3, CurrentTrickplayMemory(), 1); TrickplayFramesPerRunner(1) != want {
+		t.Errorf("automatic 1080p frames: %d, want %d", TrickplayFramesPerRunner(1), want)
 	}
 	config.SetTrickplaySettings(2, 0)
-	if want := AutoTrickplayFrames(2, CurrentTrickplayMemory()); TrickplayFramesPerRunner() != want {
-		t.Errorf("automatic frames: %d, want %d", TrickplayFramesPerRunner(), want)
+	if want := AutoTrickplayFrames(2, CurrentTrickplayMemory(), 0); TrickplayFramesPerRunner(0) != want {
+		t.Errorf("automatic frames: %d, want %d", TrickplayFramesPerRunner(0), want)
 	}
 }
 

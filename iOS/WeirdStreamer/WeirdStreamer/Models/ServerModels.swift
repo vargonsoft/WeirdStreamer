@@ -613,35 +613,48 @@ struct WaitLimits: Decodable, Equatable {
 
 struct StorageUse: Decodable { let name: String; let bytes: Int64 }
 
-/// The trickplay job's settings and their limits. `runners` and `framesPerRunner` are those in effect;
-/// `autoRunners` and `autoFrames` say they're automatic, which gives `autoRunnersValue` runners (one per disk
-/// the libraries are on) and `autoFramesFor[r - 1]` frames for r runners (what fills half the server's memory).
+/// The trickplay job's settings and their limits. `runners` is in effect; `autoRunners` says it's automatic,
+/// which gives `autoRunnersValue` runners (one per disk the libraries are on). Each tier (a size of video) has its
+/// frames per runner the same way, with `autoFramesFor[r - 1]` for r runners (what fills half the server's memory).
 struct TrickplaySettings: Decodable {
     let runners: Int?
-    let framesPerRunner: Int?
     let autoRunners: Bool?
-    let autoFrames: Bool?
     let autoRunnersValue: Int?
-    let autoFramesFor: [Int]?
-    /// The GPU trickplay can decode on (nil or "" for none), and whether it does (`memory` and `autoFramesFor`
-    /// are for the decoder in use).
+    /// Frames per runner by the video's size, largest first (4K, 1080p, 720p, SD)
+    let tiers: [TrickplayTier]?
+    /// The GPU trickplay can decode on (nil or "" for none), and whether it does (`memory` and the tiers'
+    /// `autoFramesFor` are for the decoder in use).
     let gpu: String?
     let useGpu: Bool?
     let maxRunners: Int?
-    let maxFrames: Int?
-    let maxProduct: Int?
     let memory: TrickplayMemory?
 }
 
+/// One size of video's frames per runner: in effect, whether automatic, its limits, its memory per frame against
+/// 4K's (`scale`) and what automatic gives for 1 to maxRunners runners (Android's TrickplayTier).
+struct TrickplayTier: Decodable {
+    let id: String
+    let name: String
+    let frames: Int?
+    let auto: Bool?
+    let maxFrames: Int?
+    let maxProduct: Int?
+    let scale: Double?
+    let autoFramesFor: [Int]?
+}
+
 extension TrickplaySettings {
-    /// The runners and frames the fields give: an empty one is automatic, worked out as the server does.
-    /// As Android's trickplayEffective.
-    func effective(_ runners: String, _ frames: String) -> (Int, Int) {
+    /// The runners and each tier's frames the fields give: an empty one is automatic, worked out as the server
+    /// does. As Android's trickplayEffective.
+    func effective(_ runners: String, _ frames: [String]) -> (Int, [Int]) {
         let auto = (autoRunnersValue ?? 0) > 0 ? autoRunnersValue! : (self.runners ?? 1)
         let r = Int(runners).flatMap { $0 > 0 ? $0 : nil } ?? auto
-        let list = autoFramesFor ?? []
-        let autoFrames = r >= 1 && r <= list.count ? list[r - 1] : (framesPerRunner ?? 10)
-        return (r, Int(frames).flatMap { $0 > 0 ? $0 : nil } ?? autoFrames)
+        let f = (tiers ?? []).enumerated().map { i, t in
+            let list = t.autoFramesFor ?? []
+            let autoFrames = r >= 1 && r <= list.count ? list[r - 1] : (t.frames ?? 10)
+            return (i < frames.count ? Int(frames[i]) : nil).flatMap { $0 > 0 ? $0 : nil } ?? autoFrames
+        }
+        return (r, f)
     }
 }
 
@@ -659,51 +672,59 @@ struct TrickplayMemory: Decodable {
     let cardBytes: Int64?
 }
 
-/// A row of the trickplay memory table: what it's about, what the settings need with 4K videos, what the server
-/// has, and whether that fits (`warn` when it doesn't).
-struct TrickplayRow: Equatable { let what, needs, has, note: String; let warn: Bool }
+/// A row of the trickplay memory table: the size it's about, its runners × frames, what that needs, what the
+/// server (or card) has, and whether that fits (`warn` when it doesn't).
+struct TrickplayRow: Equatable { let what, frames, needs, has, note: String; let warn: Bool }
 
 struct TrickplayTable { let summary: String; let rows: [TrickplayRow] }
 
-/// What r runners of f frames take with 4K videos (each frame in a batch holds a decoder of its own), as the server
-/// measured it for the decoder it uses (`m.decoder`: the CPU, an Intel or AMD GPU whose buffers are the server's
-/// memory, or an NVIDIA card with memory of its own), against the server's memory and swap, and the card's: a
-/// summary line and a row each. The server uses the settings as they are. As Android's trickplayMemoryTable.
-func trickplayMemoryTable(_ r: Int, _ f: Int, _ m: TrickplayMemory?) -> TrickplayTable {
-    func gb(_ bytes: Int64) -> String { String(format: "%.1f GB", Double(bytes) / 1_073_741_824) }
+/// What r runners take with videos of each size, `frames[i]` per runner for `tiers[i]` (each frame in a batch
+/// holds a decoder of its own), as the server measured it at 4K for the decoder it uses (`m.decoder`: the CPU, an
+/// Intel or AMD GPU whose buffers are the server's memory, or an NVIDIA card with memory of its own) and scaled for
+/// each size, against the server's memory and swap, and the card's: a summary line and a row per size (and per
+/// size on the card). The server uses the settings as they are. As Android's trickplayMemoryTable.
+func trickplayMemoryTable(_ r: Int, _ frames: [Int], _ tiers: [TrickplayTier], _ m: TrickplayMemory?) -> TrickplayTable {
+    func gb(_ bytes: Double) -> String { String(format: "%.1f GB", bytes / 1_073_741_824) }
     let decodedOn: String = switch m?.decoder {
     case "vaapi": ", decoded on the GPU"
     case "cuda": ", decoded on the graphics card"
     default: ", decoded on the CPU"
     }
     let on = m == nil ? "" : decodedOn
-    let summary = "\(r) × \(f) = \(r * f) frames at once\(on)."
+    let summary = "\(r) runner\(r == 1 ? "" : "s")\(on); a runner's frames depend on its video's size."
     guard let m, let process = m.processBytes4K, let frame = m.frameBytes4K, frame > 0 else { return TrickplayTable(summary: summary, rows: []) }
     var rows: [TrickplayRow] = []
-    let ram = Int64(r) * (process + Int64(f) * frame)
-    let swap = m.swapBytes ?? 0
-    let what = m.decoder == "vaapi" ? "Memory (with the GPU's buffers)" : "Memory"
-    if let total = m.totalBytes, total > 0 {
-        let has = gb(total) + (swap > 0 ? " + \(gb(swap)) swap" : "")
-        if ram <= total {
-            rows.append(TrickplayRow(what: what, needs: gb(ram), has: has, note: "Fits", warn: false))
-        } else if ram <= total + swap {
-            rows.append(TrickplayRow(what: what, needs: gb(ram), has: has, note: "Uses swap", warn: true))
+    let swap = Double(m.swapBytes ?? 0)
+    for (i, t) in tiers.enumerated() {
+        let f = i < frames.count ? frames[i] : (t.frames ?? 10)
+        let ram = Double(r) * (Double(process) + Double(f) * Double(frame) * (t.scale ?? 1))
+        let at = "\(r) × \(f)"
+        if let total = m.totalBytes, total > 0 {
+            let has = gb(Double(total)) + (swap > 0 ? " + \(gb(swap)) swap" : "")
+            if ram <= Double(total) {
+                rows.append(TrickplayRow(what: t.name, frames: at, needs: gb(ram), has: has, note: "Fits", warn: false))
+            } else if ram <= Double(total) + swap {
+                rows.append(TrickplayRow(what: t.name, frames: at, needs: gb(ram), has: has, note: "Uses swap", warn: true))
+            } else {
+                rows.append(TrickplayRow(what: t.name, frames: at, needs: gb(ram), has: has, note: "Too much: frames are made one at a time", warn: true))
+            }
         } else {
-            rows.append(TrickplayRow(what: what, needs: gb(ram), has: has, note: "Too much: frames are made one at a time", warn: true))
+            rows.append(TrickplayRow(what: t.name, frames: at, needs: gb(ram), has: "?", note: "", warn: false))
         }
-    } else {
-        rows.append(TrickplayRow(what: what, needs: gb(ram), has: "?", note: "", warn: false))
     }
     if let cardFrame = m.cardFrameBytes4K, cardFrame > 0 {
-        let card = Int64(r) * ((m.cardProcessBytes4K ?? 0) + Int64(f) * cardFrame)
-        let cardTotal = m.cardBytes ?? 0
-        if cardTotal <= 0 {
-            rows.append(TrickplayRow(what: "Graphics card", needs: gb(card), has: "?", note: "", warn: false))
-        } else if card <= cardTotal {
-            rows.append(TrickplayRow(what: "Graphics card", needs: gb(card), has: gb(cardTotal), note: "Fits", warn: false))
-        } else {
-            rows.append(TrickplayRow(what: "Graphics card", needs: gb(card), has: gb(cardTotal), note: "Too much: batches are made smaller", warn: true))
+        let cardTotal = Double(m.cardBytes ?? 0)
+        for (i, t) in tiers.enumerated() {
+            let f = i < frames.count ? frames[i] : (t.frames ?? 10)
+            let card = Double(r) * (Double(m.cardProcessBytes4K ?? 0) + Double(f) * Double(cardFrame) * (t.scale ?? 1))
+            let what = "\(t.name), graphics card", at = "\(r) × \(f)"
+            if cardTotal <= 0 {
+                rows.append(TrickplayRow(what: what, frames: at, needs: gb(card), has: "?", note: "", warn: false))
+            } else if card <= cardTotal {
+                rows.append(TrickplayRow(what: what, frames: at, needs: gb(card), has: gb(cardTotal), note: "Fits", warn: false))
+            } else {
+                rows.append(TrickplayRow(what: what, frames: at, needs: gb(card), has: gb(cardTotal), note: "Too much: batches are made smaller", warn: true))
+            }
         }
     }
     return TrickplayTable(summary: summary, rows: rows)

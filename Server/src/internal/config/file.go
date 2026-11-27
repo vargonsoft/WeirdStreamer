@@ -46,7 +46,7 @@ func Load(path string) error {
 
 	GlobalConfig = config
 	loadedPath = path
-	SetTrickplaySettings(config.Jobs.TrickplayRunners, config.Jobs.TrickplayFramesPerRunner)
+	SetTrickplaySettings(config.Jobs.TrickplayRunners, config.Jobs.TierFrames()...)
 	SetTrickplayCPUOnly(config.Jobs.TrickplayCPUOnly)
 	SetWaitLimits(config.Jobs.Set())
 	return nil

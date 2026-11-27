@@ -851,7 +851,8 @@ fun TvJobsTab(server: ServerRepository, first: FocusRequester, up: FocusRequeste
         val isFirst = !firstUsed
         firstUsed = true
         val auto = { on: Boolean -> if (on) " (auto)" else "" }
-        TvSettingsRow("Trickplay", "${tp.runners} runners${auto(tp.autoRunners)} × ${tp.framesPerRunner} frames per runner${auto(tp.autoFrames)}",
+        TvSettingsRow("Trickplay", "${tp.runners} runners${auto(tp.autoRunners)}; frames per runner " +
+            tp.tiers.orEmpty().joinToString(" · ") { "${it.name} ${it.frames}${auto(it.auto)}" },
             focus = if (isFirst) first else null, up = if (isFirst) up else null,
             onClick = { trickplay = true }) { TvChevron() }
         // Saved at once; a GPU can only be chosen when there's one trickplay can decode on.
@@ -960,15 +961,14 @@ private fun TvStorageText(storage: List<StorageUse>) {
 }
 
 @Composable
-private fun TvTrickplayDialog(tp: TrickplaySettings, save: suspend (Int, Int) -> String?, onDismiss: () -> Unit) {
+private fun TvTrickplayDialog(tp: TrickplaySettings, save: suspend (Int, Map<String, Int>) -> String?, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     var runners by remember { mutableStateOf(trickplayField(tp.autoRunners, tp.runners)) }
-    var frames by remember { mutableStateOf(trickplayField(tp.autoFrames, tp.framesPerRunner)) }
+    val frames = remember { mutableStateListOf(*trickplayFrameFields(tp).toTypedArray()) }
     var error by remember { mutableStateOf<String?>(null) }
     val field = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { field.requestFocus() } }
     val r = runners.toIntOrNull() ?: 0 // empty: automatic (0)
-    val f = frames.toIntOrNull() ?: 0
     val context = LocalContext.current
     TvDialogFrame("Trickplay", onDismiss) {
         val number = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
@@ -976,15 +976,18 @@ private fun TvTrickplayDialog(tp: TrickplaySettings, save: suspend (Int, Int) ->
             placeholder = { FieldText(trickplayAutoRunners(tp)) }, singleLine = true,
             colors = tvTextFieldColors(), keyboardOptions = number,
             modifier = Modifier.fillMaxWidth().tvFieldLeavesOnUpDown().focusRequester(field))
-        TextField(frames, { frames = it.filter(Char::isDigit) }, label = { FieldText("Frames per runner") },
-            placeholder = { FieldText(trickplayAutoFrames(runners, tp)) }, singleLine = true,
-            colors = tvTextFieldColors(), keyboardOptions = number, modifier = Modifier.fillMaxWidth().tvFieldLeavesOnUpDown())
+        tp.tiers.orEmpty().forEachIndexed { i, t ->
+            TextField(frames.getOrElse(i) { "" }, { v -> if (i < frames.size) frames[i] = v.filter(Char::isDigit) },
+                label = { FieldText("Frames per runner, ${t.name}") },
+                placeholder = { FieldText(trickplayAutoFrames(runners, tp, i)) }, singleLine = true,
+                colors = tvTextFieldColors(), keyboardOptions = number, modifier = Modifier.fillMaxWidth().tvFieldLeavesOnUpDown())
+        }
         TrickplayMemoryTable(trickplayTable(runners, frames, tp), MaterialTheme.typography.bodyMedium)
         TvNote(trickplayLimits(tp))
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         TvDialogButtons("Save", onDismiss = onDismiss) {
             scope.launch {
-                val err = save(r, f)
+                val err = save(r, trickplayFramesRequest(frames, tp))
                 if (err == null) {
                     Toast.makeText(context, "Saved. Applies from the next batch.", Toast.LENGTH_SHORT).show()
                     onDismiss()

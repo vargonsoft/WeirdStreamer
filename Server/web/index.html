@@ -300,7 +300,8 @@
                         <!-- Trickplay's settings, kept in config.yml; they apply from its next batch -->
                         <div id="trickplay-settings" class="trickplay-settings" hidden>
                             <label>Trickplay runners <input type="number" id="tp-runners" min="1" class="settings-input"></label>
-                            <label>Frames per runner <input type="number" id="tp-frames" min="1" class="settings-input"></label>
+                            <!-- Frames per runner by the video's size: a field per tier (renderTrickplaySettings) -->
+                            <span id="tp-frames-fields" class="tp-frames-fields"></span>
                             <button type="button" id="tp-save" class="btn">Save</button>
                             <span id="tp-message" class="groups-message"></span>
                             <label id="tp-gpu-row" hidden><input type="checkbox" id="tp-gpu"> <span id="tp-gpu-label">Decode on the GPU</span></label>

@@ -675,8 +675,8 @@ class JobsModel(val server: ServerRepository, private val scope: CoroutineScope)
         }
     }
 
-    /** Saves trickplay's runners and frames per runner (0: automatic): an error to show, or null. */
-    suspend fun saveTrickplay(runners: Int, frames: Int): String? = saveTrickplay(TrickplaySettingsRequest(runners, frames))
+    /** Saves trickplay's runners and frames per runner by tier id (0: automatic): an error to show, or null. */
+    suspend fun saveTrickplay(runners: Int, frames: Map<String, Int>): String? = saveTrickplay(TrickplaySettingsRequest(runners, frames))
 
     /** Has trickplay decode on the GPU, or on the CPU: an error to show, or null. */
     suspend fun saveTrickplayGpu(useGpu: Boolean): String? = saveTrickplay(TrickplaySettingsRequest(useGpu = useGpu))
@@ -723,73 +723,94 @@ internal const val JOBS_ABOUT = "Jobs run at low priority, so playback gets the 
 /** What a trickplay field shows: its number, or nothing when it's automatic. */
 internal fun trickplayField(auto: Boolean, value: Int) = if (auto) "" else value.toString()
 
-/** The runners and frames per runner the fields give: an empty one is automatic, worked out as the server does
- *  (one runner per disk the libraries are on; the frames that fill half the memory for those runners). */
-internal fun trickplayEffective(runners: String, frames: String, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings): Pair<Int, Int> {
+/** The fields' texts for the tiers' frames per runner (empty: automatic). */
+internal fun trickplayFrameFields(tp: com.vargon.weirdstreamer.api.models.TrickplaySettings) =
+    tp.tiers.orEmpty().map { trickplayField(it.auto, it.frames) }
+
+/** The runners and each tier's frames per runner the fields give: an empty one is automatic, worked out as the server
+ *  does (one runner per disk the libraries are on; the frames that fill half the memory with that size for those
+ *  runners). */
+internal fun trickplayEffective(runners: String, frames: List<String>, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings): Pair<Int, List<Int>> {
     val r = runners.toIntOrNull()?.takeIf { it > 0 } ?: tp.autoRunnersValue.takeIf { it > 0 } ?: tp.runners
-    val f = frames.toIntOrNull()?.takeIf { it > 0 } ?: tp.autoFramesFor?.getOrNull(r - 1) ?: tp.framesPerRunner
+    val f = tp.tiers.orEmpty().mapIndexed { i, t ->
+        frames.getOrNull(i)?.toIntOrNull()?.takeIf { it > 0 } ?: t.autoFramesFor?.getOrNull(r - 1) ?: t.frames
+    }
     return r to f
 }
 
-/** A trickplay field's placeholder: what automatic gives. */
+/** The runners field's placeholder: what automatic gives. */
 internal fun trickplayAutoRunners(tp: com.vargon.weirdstreamer.api.models.TrickplaySettings) =
     "Auto: ${tp.autoRunnersValue.takeIf { it > 0 } ?: tp.runners}"
 
-internal fun trickplayAutoFrames(runners: String, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings) =
-    "Auto: ${trickplayEffective(runners, "", tp).second}"
+/** A tier's frames field's placeholder: what automatic gives for the runners in the field. */
+internal fun trickplayAutoFrames(runners: String, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings, tier: Int) =
+    "Auto: ${trickplayEffective(runners, emptyList(), tp).second.getOrElse(tier) { 0 }}"
 
-/** What the trickplay fields give (empty ones automatic) with 4K videos: [trickplayMemoryTable]. */
-internal fun trickplayTable(runners: String, frames: String, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings): TrickplayTable {
+/** The request's frames by tier id, from the fields (empty: 0, automatic). */
+internal fun trickplayFramesRequest(frames: List<String>, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings) =
+    tp.tiers.orEmpty().mapIndexed { i, t -> t.id to (frames.getOrNull(i)?.toIntOrNull() ?: 0) }.toMap()
+
+/** What the trickplay fields give (empty ones automatic) for each size: [trickplayMemoryTable]. */
+internal fun trickplayTable(runners: String, frames: List<String>, tp: com.vargon.weirdstreamer.api.models.TrickplaySettings): TrickplayTable {
     val (r, f) = trickplayEffective(runners, frames, tp)
-    return trickplayMemoryTable(r, f, tp.memory)
+    return trickplayMemoryTable(r, f, tp.tiers.orEmpty(), tp.memory)
 }
 
 /** The limits, and what automatic means. */
 internal fun trickplayLimits(tp: com.vargon.weirdstreamer.api.models.TrickplaySettings) =
-    "Runners 1 to ${tp.maxRunners}, frames per runner 1 to ${tp.maxFrames}, at most ${tp.maxProduct} frames at once. " +
-        "Empty is automatic: a runner per disk the libraries are on, and frames filling half the server's memory with 4K videos."
+    "Runners 1 to ${tp.maxRunners}. Frames per runner: " +
+        tp.tiers.orEmpty().joinToString(", ") { "${it.name} 1 to ${it.maxFrames} (at most ${it.maxProduct} at once)" } + ". " +
+        "Empty is automatic: a runner per disk the libraries are on, and frames filling half the server's memory with videos of that size."
 
-/** A row of the trickplay memory table: what it's about, what the settings need with 4K videos, what the server has,
- *  and whether that fits ([warn] when it doesn't). */
-data class TrickplayRow(val what: String, val needs: String, val has: String, val note: String, val warn: Boolean)
+/** A row of the trickplay memory table: the size it's about, its runners × frames, what that needs, what the server
+ *  (or card) has, and whether that fits ([warn] when it doesn't). */
+data class TrickplayRow(val what: String, val frames: String, val needs: String, val has: String, val note: String, val warn: Boolean)
 
 data class TrickplayTable(val summary: String, val rows: List<TrickplayRow>)
 
-/** What [r] runners of [f] frames take with 4K videos (each frame in a batch holds a decoder of its own), as the
- *  server measured it for the decoder it uses ([m].decoder: the CPU, an Intel or AMD GPU whose buffers are the
- *  server's memory, or an NVIDIA card with memory of its own), against the server's memory and swap, and the card's:
- *  a summary line and a row each. The server uses the settings as they are. As the web's trickplayMemoryTable. */
-internal fun trickplayMemoryTable(r: Int, f: Int, m: com.vargon.weirdstreamer.api.models.TrickplayMemory?): TrickplayTable {
-    fun gb(bytes: Long) = String.format(Locale.US, "%.1f GB", bytes / 1073741824.0)
+/** What [r] runners take with videos of each size, [frames] per runner for each of [tiers] (each frame in a batch
+ *  holds a decoder of its own), as the server measured it at 4K for the decoder it uses ([m].decoder: the CPU, an
+ *  Intel or AMD GPU whose buffers are the server's memory, or an NVIDIA card with memory of its own) and scaled for
+ *  each size, against the server's memory and swap, and the card's: a summary line and a row per size (and per size
+ *  on the card). The server uses the settings as they are. As the web's trickplayMemoryTable. */
+internal fun trickplayMemoryTable(r: Int, frames: List<Int>, tiers: List<com.vargon.weirdstreamer.api.models.TrickplayTier>,
+                                  m: com.vargon.weirdstreamer.api.models.TrickplayMemory?): TrickplayTable {
+    fun gb(bytes: Double) = String.format(Locale.US, "%.1f GB", bytes / 1073741824.0)
     val on = when (m?.decoder) {
         null -> ""
         "vaapi" -> ", decoded on the GPU"
         "cuda" -> ", decoded on the graphics card"
         else -> ", decoded on the CPU"
     }
-    val summary = "$r × $f = ${r * f} frames at once$on."
+    val summary = "$r runner${if (r == 1) "" else "s"}$on; a runner's frames depend on its video's size."
     if (m == null || m.frameBytes4k <= 0) return TrickplayTable(summary, emptyList())
     val rows = mutableListOf<TrickplayRow>()
-    val ram = r * (m.processBytes4k + f * m.frameBytes4k)
     val swap = m.swapBytes
-    val what = if (m.decoder == "vaapi") "Memory (with the GPU's buffers)" else "Memory"
-    rows += when {
-        m.totalBytes <= 0 -> TrickplayRow(what, gb(ram), "?", "", false)
-        else -> {
-            val has = gb(m.totalBytes) + if (swap > 0) " + ${gb(swap)} swap" else ""
-            when {
-                ram <= m.totalBytes -> TrickplayRow(what, gb(ram), has, "Fits", false)
-                ram <= m.totalBytes + swap -> TrickplayRow(what, gb(ram), has, "Uses swap", true)
-                else -> TrickplayRow(what, gb(ram), has, "Too much: frames are made one at a time", true)
+    tiers.forEachIndexed { i, t ->
+        val f = frames.getOrElse(i) { t.frames }
+        val ram = r * (m.processBytes4k + f * m.frameBytes4k * t.scale)
+        val at = "$r × $f"
+        rows += when {
+            m.totalBytes <= 0 -> TrickplayRow(t.name, at, gb(ram), "?", "", false)
+            else -> {
+                val has = gb(m.totalBytes.toDouble()) + if (swap > 0) " + ${gb(swap.toDouble())} swap" else ""
+                when {
+                    ram <= m.totalBytes -> TrickplayRow(t.name, at, gb(ram), has, "Fits", false)
+                    ram <= m.totalBytes + swap -> TrickplayRow(t.name, at, gb(ram), has, "Uses swap", true)
+                    else -> TrickplayRow(t.name, at, gb(ram), has, "Too much: frames are made one at a time", true)
+                }
             }
         }
     }
-    if (m.cardFrameBytes4k > 0) {
-        val card = r * (m.cardProcessBytes4k + f * m.cardFrameBytes4k)
+    if (m.cardFrameBytes4k > 0) tiers.forEachIndexed { i, t ->
+        val f = frames.getOrElse(i) { t.frames }
+        val card = r * (m.cardProcessBytes4k + f * m.cardFrameBytes4k * t.scale)
+        val what = "${t.name}, graphics card"
+        val at = "$r × $f"
         rows += when {
-            m.cardBytes <= 0 -> TrickplayRow("Graphics card", gb(card), "?", "", false)
-            card <= m.cardBytes -> TrickplayRow("Graphics card", gb(card), gb(m.cardBytes), "Fits", false)
-            else -> TrickplayRow("Graphics card", gb(card), gb(m.cardBytes), "Too much: batches are made smaller", true)
+            m.cardBytes <= 0 -> TrickplayRow(what, at, gb(card), "?", "", false)
+            card <= m.cardBytes -> TrickplayRow(what, at, gb(card), gb(m.cardBytes.toDouble()), "Fits", false)
+            else -> TrickplayRow(what, at, gb(card), gb(m.cardBytes.toDouble()), "Too much: batches are made smaller", true)
         }
     }
     return TrickplayTable(summary, rows)

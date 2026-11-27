@@ -310,25 +310,35 @@ data class JobsResponse(
     @SerializedName("trickplay") val trickplay: TrickplaySettings? = null
 )
 
-/** The trickplay job's settings (kept in the server's config.yml) and their limits. [runners] and
- *  [framesPerRunner] are those in effect; [autoRunners] and [autoFrames] say they're automatic, which gives
- *  [autoRunnersValue] runners (one per disk the libraries are on) and [autoFramesFor] frames for 1 to
- *  [maxRunners] runners (`autoFramesFor[r - 1]`: what fills half the server's memory). */
+/** The trickplay job's settings (kept in the server's config.yml) and their limits. [runners] is in effect;
+ *  [autoRunners] says it's automatic, which gives [autoRunnersValue] runners (one per disk the libraries are on).
+ *  Each of [tiers] (a size of video) has its frames per runner the same way, with `autoFramesFor[r - 1]` for r
+ *  runners (what fills half the server's memory). */
 data class TrickplaySettings(
     @SerializedName("runners") val runners: Int = 1,
-    @SerializedName("frames_per_runner") val framesPerRunner: Int = 10,
     @SerializedName("auto_runners") val autoRunners: Boolean = false,
-    @SerializedName("auto_frames") val autoFrames: Boolean = false,
-    /** The GPU trickplay can decode on ("" none), and whether it does ([memory] and [autoFramesFor] are for the
-     *  decoder in use). */
+    /** Frames per runner by the video's size, largest first (4K, 1080p, 720p, SD). */
+    @SerializedName("tiers") val tiers: List<TrickplayTier>? = null,
+    /** The GPU trickplay can decode on ("" none), and whether it does ([memory] and the tiers' autoFramesFor are
+     *  for the decoder in use). */
     @SerializedName("gpu") val gpu: String? = null,
     @SerializedName("use_gpu") val useGpu: Boolean = false,
     @SerializedName("auto_runners_value") val autoRunnersValue: Int = 0,
-    @SerializedName("auto_frames_for") val autoFramesFor: List<Int>? = null,
     @SerializedName("max_runners") val maxRunners: Int = 8,
+    @SerializedName("memory") val memory: TrickplayMemory? = null
+)
+
+/** One size of video's frames per runner: in effect, whether automatic, its limits, its memory per frame against
+ *  4K's ([scale]) and what automatic gives for 1 to maxRunners runners. */
+data class TrickplayTier(
+    @SerializedName("id") val id: String = "",
+    @SerializedName("name") val name: String = "",
+    @SerializedName("frames") val frames: Int = 10,
+    @SerializedName("auto") val auto: Boolean = false,
     @SerializedName("max_frames") val maxFrames: Int = 50,
     @SerializedName("max_product") val maxProduct: Int = 100,
-    @SerializedName("memory") val memory: TrickplayMemory? = null
+    @SerializedName("scale") val scale: Double = 1.0,
+    @SerializedName("auto_frames_for") val autoFramesFor: List<Int>? = null
 )
 
 /** For the estimate beside the trickplay settings, for the decoder trickplay uses ([decoder]: cpu, vaapi or
@@ -348,7 +358,7 @@ data class TrickplayMemory(
 /** Trickplay's settings to save; those left null stay as they are (Gson leaves nulls out). */
 data class TrickplaySettingsRequest(
     @SerializedName("runners") val runners: Int? = null,
-    @SerializedName("frames_per_runner") val framesPerRunner: Int? = null,
+    @SerializedName("frames") val frames: Map<String, Int>? = null, // by tier id (0: automatic)
     @SerializedName("use_gpu") val useGpu: Boolean? = null
 )
 

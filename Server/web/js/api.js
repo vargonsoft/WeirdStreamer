@@ -255,7 +255,7 @@ class MediaAPI {
         return this.request(`/api/admin/jobs/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
     }
 
-    // Trickplay's settings (saved to config.yml): any of { runners, frames_per_runner } (0 is automatic)
+    // Trickplay's settings (saved to config.yml): any of { runners, frames: { 4k, 1080p, 720p, sd } } (0 is automatic)
     // and { use_gpu }; returns the jobs status.
     async setTrickplaySettings(settings) {
         return this.request('/api/admin/jobs/trickplay/settings', {

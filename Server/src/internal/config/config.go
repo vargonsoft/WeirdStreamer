@@ -60,7 +60,12 @@ const (
 // JobsConfig tunes the trickplay job, which the Jobs page changes live.
 type JobsConfig struct {
 	TrickplayRunners         int `json:"trickplayRunners" yaml:"trickplayRunners"`                 // videos made at once: 1 to 8 (0: one per disk the libraries are on)
-	TrickplayFramesPerRunner int `json:"trickplayFramesPerRunner" yaml:"trickplayFramesPerRunner"` // frames per ffmpeg process: 1 to 50 (0: what fills half the memory)
+	// Frames per ffmpeg process, by the video's size (TrickplayTiers; 0: what fills half the memory with
+	// that size): 4K (and 1440p, 8K) 1 to 50, 1080p 1 to 100, 720p 1 to 150, SD 1 to 200.
+	TrickplayFramesPerRunner int `json:"trickplayFramesPerRunner" yaml:"trickplayFramesPerRunner"` // 4K
+	TrickplayFrames1080p     int `json:"trickplayFrames1080p" yaml:"trickplayFrames1080p"`
+	TrickplayFrames720p      int `json:"trickplayFrames720p" yaml:"trickplayFrames720p"`
+	TrickplayFramesSD        int `json:"trickplayFramesSD" yaml:"trickplayFramesSD"`
 	// Decode trickplay frames on the CPU even with a hardware encoder chosen (whose GPU decodes them
 	// otherwise): a CPU with many cores can make them faster than a small GPU.
 	TrickplayCPUOnly bool `json:"trickplayCPUOnly" yaml:"trickplayCPUOnly"`
@@ -137,15 +142,36 @@ func CurrentWaitLimits() WaitLimits {
 	return DefaultWaitLimits
 }
 
-const (
-	MaxTrickplayRunners = 8  // the pool of runners the job starts with
-	MaxTrickplayFrames  = 50 // one process's frames: more ran out of memory
-	MaxTrickplayProduct = 100
-)
+const MaxTrickplayRunners = 8 // the pool of runners the job starts with
+
+// TrickplayTier is a size of video with frames per runner of its own: a smaller picture's decoder
+// takes less memory, so its batches can be bigger. MaxFrames is one process's most (4K's 50: more
+// ran out of memory), MaxProduct the most at once (runners × frames).
+type TrickplayTier struct {
+	ID, Name              string
+	MaxFrames, MaxProduct int
+}
+
+// TrickplayTiers, largest first (the index is the tier's everywhere: config.yml's fields, the
+// settings, the Jobs page).
+var TrickplayTiers = []TrickplayTier{
+	{"4k", "4K", 50, 100}, {"1080p", "1080p", 100, 200}, {"720p", "720p", 150, 300}, {"sd", "SD", 200, 400},
+}
+
+// TierFrames are config.yml's frames per runner, by tier (0: automatic).
+func (j JobsConfig) TierFrames() []int {
+	return []int{j.TrickplayFramesPerRunner, j.TrickplayFrames1080p, j.TrickplayFrames720p, j.TrickplayFramesSD}
+}
+
+// SetTierFrames sets them, by tier.
+func (j *JobsConfig) SetTierFrames(f []int) {
+	j.TrickplayFramesPerRunner, j.TrickplayFrames1080p, j.TrickplayFrames720p, j.TrickplayFramesSD = f[0], f[1], f[2], f[3]
+}
 
 // The trickplay settings, read by its runners at every step while the Jobs page can change them:
 // kept apart from GlobalConfig so the reads are safe. Set when the config loads (0: automatic).
-var trickplayRunners, trickplayFrames atomic.Int64
+var trickplayRunners atomic.Int64
+var trickplayFrames [4]atomic.Int64 // by tier
 
 var trickplayCPUOnly atomic.Bool
 
@@ -155,23 +181,35 @@ func TrickplayCPUOnly() bool { return trickplayCPUOnly.Load() }
 // SetTrickplayCPUOnly sets it (Load does, and tests).
 func SetTrickplayCPUOnly(on bool) { trickplayCPUOnly.Store(on) }
 
-// SetTrickplaySettings sets the trickplay settings the job reads (Load does, and tests).
-func SetTrickplaySettings(runners, framesPerRunner int) {
+// SetTrickplaySettings sets the trickplay settings the job reads: the runners and the frames per
+// runner by tier (missing ones automatic). Load does, and tests.
+func SetTrickplaySettings(runners int, frames ...int) {
 	trickplayRunners.Store(int64(runners))
-	trickplayFrames.Store(int64(framesPerRunner))
+	for i := range trickplayFrames {
+		f := 0
+		if i < len(frames) {
+			f = frames[i]
+		}
+		trickplayFrames[i].Store(int64(f))
+	}
 }
 
-// TrickplaySettings are the trickplay job's settings as config.yml has them: 0 for automatic, which
-// media.TrickplayRunners and media.TrickplayFramesPerRunner work out (live).
-func TrickplaySettings() (runners, framesPerRunner int) {
-	r, f := int(trickplayRunners.Load()), int(trickplayFrames.Load())
-	if r != 0 {
-		r = min(max(r, 1), MaxTrickplayRunners)
+// TrickplayRunnersSetting is config.yml's runners: 0 for automatic, which media.TrickplayRunners
+// works out (live).
+func TrickplayRunnersSetting() int {
+	if r := int(trickplayRunners.Load()); r != 0 {
+		return min(max(r, 1), MaxTrickplayRunners)
 	}
-	if f != 0 {
-		f = min(max(f, 1), MaxTrickplayFrames)
+	return 0
+}
+
+// TrickplayFramesSetting is config.yml's frames per runner for a tier: 0 for automatic, which
+// media.TrickplayFramesPerRunner works out (live).
+func TrickplayFramesSetting(tier int) int {
+	if f := int(trickplayFrames[tier].Load()); f != 0 {
+		return min(max(f, 1), TrickplayTiers[tier].MaxFrames)
 	}
-	return r, f
+	return 0
 }
 
 // UpdateJobs saves new jobs settings (trickplay's, the wait limits) to the config file and reloads them.
@@ -421,10 +459,18 @@ func (c *Config) Validate() error {
 	if d.BackupKeep < 1 || d.BackupKeep > MaxBackupKeep {
 		return fmt.Errorf("database.backupKeep must be 1 to %d", MaxBackupKeep)
 	}
-	if r, f := c.Jobs.TrickplayRunners, c.Jobs.TrickplayFramesPerRunner; r < 0 || r > MaxTrickplayRunners || f < 0 || f > MaxTrickplayFrames {
-		return fmt.Errorf("trickplay runners must be 1 to %d, and frames per runner 1 to %d (0: automatic)", MaxTrickplayRunners, MaxTrickplayFrames)
-	} else if r > 0 && f > 0 && r*f > MaxTrickplayProduct {
-		return fmt.Errorf("runners times frames per runner can't exceed %d (about %d GB of memory)", MaxTrickplayProduct, MaxTrickplayProduct*110/1000)
+	r := c.Jobs.TrickplayRunners
+	if r < 0 || r > MaxTrickplayRunners {
+		return fmt.Errorf("trickplay runners must be 1 to %d (0: automatic)", MaxTrickplayRunners)
+	}
+	for i, f := range c.Jobs.TierFrames() {
+		t := TrickplayTiers[i]
+		if f < 0 || f > t.MaxFrames {
+			return fmt.Errorf("frames per runner for %s must be 1 to %d (0: automatic)", t.Name, t.MaxFrames)
+		}
+		if r > 0 && f > 0 && r*f > t.MaxProduct {
+			return fmt.Errorf("runners times frames per runner for %s can't exceed %d", t.Name, t.MaxProduct)
+		}
 	}
 	if err := c.Jobs.Set().validate(); err != nil {
 		return err

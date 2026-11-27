@@ -169,9 +169,13 @@ metadata:
 jobs:
   # Videos it makes frames for at once: 1 to 8 (0: one per disk the libraries are on)
   trickplayRunners: 0
-  # Frames one ffmpeg process makes: 1 to 50 (0: as many as fill half the server's memory with 4K
-  # videos). Runners times frames is at most 100 (memory).
+  # Frames one ffmpeg process makes, by the video's size (0: as many as fill half the server's memory
+  # with videos of that size): 4K (and 1440p) 1 to 50, at most 100 for all the runners at once (memory);
+  # 1080p 1 to 100 (200 at once); 720p 1 to 150 (300); SD 1 to 200 (400).
   trickplayFramesPerRunner: 0
+  trickplayFrames1080p: 0
+  trickplayFrames720p: 0
+  trickplayFramesSD: 0
   # Decode trickplay frames on the CPU even with a hardware encoder chosen (whose GPU decodes them
   # otherwise): a CPU with many cores can be faster than a small GPU, at the cost of its time and memory
   trickplayCPUOnly: false

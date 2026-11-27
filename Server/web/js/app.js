@@ -6528,29 +6528,40 @@ async function saveWaitLimits() {
     }
 }
 
-// Trickplay's settings box. The page refreshes every few seconds, so the fields only follow the
-// server while they aren't being edited. The GPU checkbox (shown when there's a GPU to decode on)
-// saves at once.
+// Trickplay's settings box: the runners, and frames per runner for each size of video (tp.tiers,
+// largest first). The page refreshes every few seconds, so the fields only follow the server while
+// they aren't being edited. The GPU checkbox (shown when there's a GPU to decode on) saves at once.
 function renderTrickplaySettings(tp) {
     const box = document.getElementById('trickplay-settings');
     if (!tp) return;
     box.hidden = false;
-    const runners = document.getElementById('tp-runners'), frames = document.getElementById('tp-frames');
+    const runners = document.getElementById('tp-runners');
     const gpu = document.getElementById('tp-gpu');
     runners.max = tp.max_runners;
-    frames.max = tp.max_frames;
+    const fields = document.getElementById('tp-frames-fields');
+    const edited = () => { box.dataset.edited = '1'; trickplayHint(); };
     if (!box.dataset.wired) {
         box.dataset.wired = '1';
-        const edited = () => { box.dataset.edited = '1'; trickplayHint(); };
         runners.oninput = edited;
-        frames.oninput = edited;
         document.getElementById('tp-save').onclick = saveTrickplaySettings;
         gpu.onchange = () => saveTrickplaySettings({ use_gpu: gpu.checked });
+        fields.append(el('span', 'tp-frames-title', 'Frames per runner, by the video\'s size'));
+        (tp.tiers || []).forEach(t => {
+            const input = Object.assign(document.createElement('input'), { type: 'number', min: 1, max: t.max_frames,
+                className: 'settings-input', id: `tp-frames-${t.id}` });
+            input.oninput = edited;
+            const label = el('label', '', t.name + ' ');
+            label.append(input);
+            fields.append(label);
+        });
     }
     if (box.dataset.edited !== '1') {
         // An empty field is automatic.
         runners.value = tp.auto_runners ? '' : tp.runners;
-        frames.value = tp.auto_frames ? '' : tp.frames_per_runner;
+        (tp.tiers || []).forEach(t => {
+            const input = document.getElementById(`tp-frames-${t.id}`);
+            if (input) input.value = t.auto ? '' : t.frames;
+        });
     }
     document.getElementById('tp-gpu-row').hidden = !tp.gpu;
     document.getElementById('tp-gpu-label').textContent = `Decode on the GPU (${tp.gpu || ''}); unchecked, the CPU decodes`;
@@ -6558,64 +6569,76 @@ function renderTrickplaySettings(tp) {
     trickplayHint();
 }
 
-// The runners and frames the fields give: an empty one is automatic, worked out as the server does
-// (one runner per disk the libraries are on; the frames that fill half the memory for those runners).
+// The runners and each size's frames the fields give: an empty one is automatic, worked out as the
+// server does (one runner per disk the libraries are on; the frames that fill half the memory with
+// that size for those runners).
 function trickplayEffective(tp) {
     const r = Number(document.getElementById('tp-runners').value) || tp.auto_runners_value || tp.runners;
-    const f = Number(document.getElementById('tp-frames').value) || (tp.auto_frames_for || [])[r - 1] || tp.frames_per_runner;
-    return [r, f];
+    const frames = (tp.tiers || []).map(t =>
+        Number(document.getElementById(`tp-frames-${t.id}`)?.value) || (t.auto_frames_for || [])[r - 1] || t.frames);
+    return [r, frames];
 }
 
 function trickplayHint() {
     const tp = jobsView && jobsView.data && jobsView.data.trickplay;
     if (!tp) return;
-    const [r, f] = trickplayEffective(tp);
-    const runners = document.getElementById('tp-runners'), frames = document.getElementById('tp-frames');
-    runners.placeholder = `Auto: ${tp.auto_runners_value || tp.runners}`;
-    frames.placeholder = `Auto: ${(tp.auto_frames_for || [])[r - 1] || tp.frames_per_runner}`;
-    const t = trickplayMemoryTable(r, f, tp.memory);
+    const [r, frames] = trickplayEffective(tp);
+    document.getElementById('tp-runners').placeholder = `Auto: ${tp.auto_runners_value || tp.runners}`;
+    (tp.tiers || []).forEach(t => {
+        const input = document.getElementById(`tp-frames-${t.id}`);
+        if (input) input.placeholder = `Auto: ${(t.auto_frames_for || [])[r - 1] || t.frames}`;
+    });
+    const t = trickplayMemoryTable(r, frames, tp.tiers || [], tp.memory);
     document.getElementById('tp-summary').textContent = t.summary;
     const table = document.getElementById('tp-memory');
     table.hidden = !t.rows.length;
     const cell = (tag, text, cls) => Object.assign(document.createElement(tag), { textContent: text, className: cls || '' });
     const head = document.createElement('tr');
-    head.append(cell('th', ''), cell('th', 'Needs with 4K', 'num'), cell('th', 'Has', 'num'), cell('th', ''));
+    head.append(cell('th', ''), cell('th', 'At once', 'num'), cell('th', 'Needs', 'num'), cell('th', 'Has', 'num'), cell('th', ''));
     table.replaceChildren(head, ...t.rows.map(row => {
         const tr = document.createElement('tr');
-        tr.append(cell('td', row.what), cell('td', row.needs, 'num'), cell('td', row.has, 'num'), cell('td', row.note, row.warn ? 'tp-warn' : ''));
+        tr.append(cell('td', row.what), cell('td', row.frames, 'num'), cell('td', row.needs, 'num'), cell('td', row.has, 'num'),
+            cell('td', row.note, row.warn ? 'tp-warn' : ''));
         return tr;
     }));
-    document.getElementById('tp-hint').textContent =
-        `Runners 1 to ${tp.max_runners}, frames per runner 1 to ${tp.max_frames}, at most ${tp.max_product} frames at once. ` +
-        'Empty is automatic: a runner per disk the libraries are on, and frames filling half the server\'s memory with 4K videos.';
+    document.getElementById('tp-hint').textContent = `Runners 1 to ${tp.max_runners}. Frames per runner: ` +
+        (tp.tiers || []).map(t => `${t.name} 1 to ${t.max_frames} (at most ${t.max_product} at once)`).join(', ') + '. ' +
+        'Empty is automatic: a runner per disk the libraries are on, and frames filling half the server\'s memory with videos of that size.';
 }
 
-// What r runners of f frames take with 4K videos (each frame in a batch holds a decoder of its own), as
-// the server measured it for the decoder it uses (m.decoder: the CPU, an Intel or AMD GPU whose buffers
-// are the server's memory, or an NVIDIA card with memory of its own), against the server's memory and
-// swap, and the card's: a summary line and a row each. The server uses the settings as they are. As
-// the apps' trickplayMemoryTable.
-function trickplayMemoryTable(r, f, m) {
+// What r runners take with videos of each size, frames[i] frames per runner for tiers[i] (each frame
+// in a batch holds a decoder of its own), as the server measured it at 4K for the decoder it uses
+// (m.decoder: the CPU, an Intel or AMD GPU whose buffers are the server's memory, or an NVIDIA card
+// with memory of its own) and scaled for each size (tier.scale), against the server's memory and swap,
+// and the card's: a summary line and a row per size (and per size on the card). The server uses the
+// settings as they are. As the apps' trickplayMemoryTable.
+function trickplayMemoryTable(r, frames, tiers, m) {
     const gb = bytes => `${(bytes / 2 ** 30).toFixed(1)} GB`;
     const on = !m ? '' : { vaapi: ', decoded on the GPU', cuda: ', decoded on the graphics card' }[m.decoder] || ', decoded on the CPU';
-    const summary = `${r} × ${f} = ${r * f} frames at once${on}.`;
+    const summary = `${r} runner${r === 1 ? '' : 's'}${on}; a runner's frames depend on its video's size.`;
     if (!m || !m.frame_bytes_4k) return { summary, rows: [] };
     const rows = [];
-    const ram = r * (m.process_bytes_4k + f * m.frame_bytes_4k);
     const swap = m.swap_bytes || 0;
-    const row = { what: m.decoder === 'vaapi' ? 'Memory (with the GPU\'s buffers)' : 'Memory', needs: gb(ram), has: '?', note: '', warn: false };
-    if (m.total_bytes) {
-        row.has = gb(m.total_bytes) + (swap ? ` + ${gb(swap)} swap` : '');
-        if (ram <= m.total_bytes) row.note = 'Fits';
-        else if (ram <= m.total_bytes + swap) Object.assign(row, { note: 'Uses swap', warn: true });
-        else Object.assign(row, { note: 'Too much: frames are made one at a time', warn: true });
-    }
-    rows.push(row);
+    tiers.forEach((t, i) => {
+        const f = frames[i];
+        const ram = r * (m.process_bytes_4k + f * m.frame_bytes_4k * t.scale);
+        const row = { what: t.name, frames: `${r} × ${f}`, needs: gb(ram), has: '?', note: '', warn: false };
+        if (m.total_bytes) {
+            row.has = gb(m.total_bytes) + (swap ? ` + ${gb(swap)} swap` : '');
+            if (ram <= m.total_bytes) row.note = 'Fits';
+            else if (ram <= m.total_bytes + swap) Object.assign(row, { note: 'Uses swap', warn: true });
+            else Object.assign(row, { note: 'Too much: frames are made one at a time', warn: true });
+        }
+        rows.push(row);
+    });
     if (m.card_frame_bytes_4k) {
-        const card = r * (m.card_process_bytes_4k + f * m.card_frame_bytes_4k);
-        const c = { what: 'Graphics card', needs: gb(card), has: m.card_bytes ? gb(m.card_bytes) : '?', note: '', warn: false };
-        if (m.card_bytes) Object.assign(c, card <= m.card_bytes ? { note: 'Fits' } : { note: 'Too much: batches are made smaller', warn: true });
-        rows.push(c);
+        tiers.forEach((t, i) => {
+            const f = frames[i];
+            const card = r * (m.card_process_bytes_4k + f * m.card_frame_bytes_4k * t.scale);
+            const c = { what: `${t.name}, graphics card`, frames: `${r} × ${f}`, needs: gb(card), has: m.card_bytes ? gb(m.card_bytes) : '?', note: '', warn: false };
+            if (m.card_bytes) Object.assign(c, card <= m.card_bytes ? { note: 'Fits' } : { note: 'Too much: batches are made smaller', warn: true });
+            rows.push(c);
+        });
     }
     return { summary, rows };
 }
@@ -6627,7 +6650,8 @@ async function saveTrickplaySettings(only) {
     const fields = !only || only instanceof Event;
     const settings = fields ? {
         runners: Number(document.getElementById('tp-runners').value) || 0, // 0: automatic
-        frames_per_runner: Number(document.getElementById('tp-frames').value) || 0,
+        frames: Object.fromEntries((jobsView.data.trickplay.tiers || []).map(t =>
+            [t.id, Number(document.getElementById(`tp-frames-${t.id}`)?.value) || 0])),
     } : only;
     try {
         const data = await api.setTrickplaySettings(settings);

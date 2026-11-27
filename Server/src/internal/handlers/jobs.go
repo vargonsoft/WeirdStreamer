@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -25,36 +26,49 @@ type jobsResponse struct {
 // trickplaySettings are the trickplay job's settings on the Jobs page (kept in config.yml),
 // and their limits.
 type trickplaySettings struct {
-	Runners         int  `json:"runners"`           // in effect
-	FramesPerRunner int  `json:"frames_per_runner"` // in effect, for those runners
-	AutoRunners     bool `json:"auto_runners"`      // runners is one per disk (config.yml's 0)
-	AutoFrames      bool `json:"auto_frames"`       // frames per runner fill half the memory (0)
+	Runners     int  `json:"runners"`      // in effect
+	AutoRunners bool `json:"auto_runners"` // runners is one per disk (config.yml's 0)
+	// Frames per runner by the video's size, largest first (config.TrickplayTiers)
+	Tiers []trickplayTier `json:"tiers"`
 	// The GPU trickplay can decode on (the hardware encoder's; "" none), and whether it does: the Jobs
 	// page can keep trickplay on the CPU. memory and auto_frames_for are for the decoder in use.
 	GPU    string `json:"gpu,omitempty"`
 	UseGPU bool   `json:"use_gpu"`
-	// What automatic gives: the runners (one per disk the libraries are on), and the frames for
-	// 1 to max_runners runners (auto_frames_for[r-1]), for the fields' hints while they're edited.
-	AutoRunnersValue int   `json:"auto_runners_value"`
-	AutoFramesFor    []int `json:"auto_frames_for"`
-	MaxRunners       int   `json:"max_runners"`
-	MaxFrames        int   `json:"max_frames"`
-	MaxProduct       int   `json:"max_product"` // runners times frames per runner
-	// For the estimate beside the settings: runners × (process + frames × frame) for 4K videos,
-	// against the server's memory and swap.
+	// What automatic gives: the runners (one per disk the libraries are on), for the field's hint.
+	AutoRunnersValue int `json:"auto_runners_value"`
+	MaxRunners       int `json:"max_runners"`
+	// For the estimate beside the settings: runners × (process + frames × frame) for each size, from
+	// the 4K figures and each tier's scale, against the server's memory and swap.
 	Memory media.TrickplayMemory `json:"memory"`
 }
 
+// trickplayTier is one size's frames per runner.
+type trickplayTier struct {
+	ID         string  `json:"id"`     // 4k, 1080p, 720p, sd
+	Name       string  `json:"name"`   // 4K, 1080p, 720p, SD
+	Frames     int     `json:"frames"` // in effect, for the runners in effect
+	Auto       bool    `json:"auto"`   // config.yml's 0: what fills half the memory
+	MaxFrames  int     `json:"max_frames"`
+	MaxProduct int     `json:"max_product"` // runners times frames per runner
+	Scale      float64 `json:"scale"`       // its memory per frame against 4K's
+	// What automatic gives for 1 to max_runners runners (auto_frames_for[r-1]), for the field's hint
+	AutoFramesFor []int `json:"auto_frames_for"`
+}
+
 func currentTrickplaySettings() trickplaySettings {
-	r, f := config.TrickplaySettings()
 	m := media.CurrentTrickplayMemory()
-	s := trickplaySettings{Runners: media.TrickplayRunners(), FramesPerRunner: media.TrickplayFramesPerRunner(),
-		AutoRunners: r == 0, AutoFrames: f == 0, GPU: media.TrickplayGPUName(), UseGPU: !config.TrickplayCPUOnly(),
-		AutoRunnersValue: min(media.LibraryDisks(), config.MaxTrickplayRunners),
-		MaxRunners: config.MaxTrickplayRunners, MaxFrames: config.MaxTrickplayFrames, MaxProduct: config.MaxTrickplayProduct,
+	s := trickplaySettings{Runners: media.TrickplayRunners(), AutoRunners: config.TrickplayRunnersSetting() == 0,
+		GPU: media.TrickplayGPUName(), UseGPU: !config.TrickplayCPUOnly(),
+		AutoRunnersValue: min(media.LibraryDisks(), config.MaxTrickplayRunners), MaxRunners: config.MaxTrickplayRunners,
 		Memory: m}
-	for n := 1; n <= config.MaxTrickplayRunners; n++ {
-		s.AutoFramesFor = append(s.AutoFramesFor, media.AutoTrickplayFrames(n, m))
+	for i, t := range config.TrickplayTiers {
+		tier := trickplayTier{ID: t.ID, Name: t.Name, Frames: media.TrickplayFramesPerRunner(i),
+			Auto: config.TrickplayFramesSetting(i) == 0, MaxFrames: t.MaxFrames, MaxProduct: t.MaxProduct,
+			Scale: media.TrickplayTierScale[i]}
+		for n := 1; n <= config.MaxTrickplayRunners; n++ {
+			tier.AutoFramesFor = append(tier.AutoFramesFor, media.AutoTrickplayFrames(n, m, i))
+		}
+		s.Tiers = append(s.Tiers, tier)
 	}
 	return s
 }
@@ -110,8 +124,8 @@ func (h *MediaHandler) SetWaitLimits(w http.ResponseWriter, r *http.Request) {
 
 // ControlJob runs, pauses or resumes a job, or changes its settings (admins):
 // POST /api/admin/jobs/{id}/{run|pause|resume|settings}. Trickplay's settings ({"runners",
-// "frames_per_runner"}, 0 for automatic, and "use_gpu"; those left out stay as they are) are saved to
-// config.yml and apply from its next batch.
+// "frames": {"4k", "1080p", "720p", "sd"}}, 0 for automatic, and "use_gpu"; those left out stay as they
+// are) are saved to config.yml and apply from its next batch.
 func (h *MediaHandler) ControlJob(w http.ResponseWriter, r *http.Request) {
 	if claims := auth.GetClaims(r.Context()); claims == nil || !claims.IsAdmin {
 		respondError(w, http.StatusForbidden, "Admin access required")
@@ -139,21 +153,28 @@ func (h *MediaHandler) ControlJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var body struct {
-			Runners         *int  `json:"runners"`
-			FramesPerRunner *int  `json:"frames_per_runner"`
-			UseGPU          *bool `json:"use_gpu"`
+			Runners *int           `json:"runners"`
+			Frames  map[string]int `json:"frames"` // by tier ID
+			UseGPU  *bool          `json:"use_gpu"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			respondError(w, http.StatusBadRequest, "Give runners, frames_per_runner (0: automatic) or use_gpu")
+			respondError(w, http.StatusBadRequest, "Give runners, frames by size (0: automatic) or use_gpu")
 			return
 		}
 		settings := config.GlobalConfig.Jobs
 		if body.Runners != nil {
 			settings.TrickplayRunners = *body.Runners
 		}
-		if body.FramesPerRunner != nil {
-			settings.TrickplayFramesPerRunner = *body.FramesPerRunner
+		frames := settings.TierFrames()
+		for id, f := range body.Frames {
+			i := slices.IndexFunc(config.TrickplayTiers, func(t config.TrickplayTier) bool { return t.ID == id })
+			if i < 0 {
+				respondError(w, http.StatusBadRequest, "Unknown size "+id+": 4k, 1080p, 720p or sd")
+				return
+			}
+			frames[i] = f
 		}
+		settings.SetTierFrames(frames)
 		if body.UseGPU != nil {
 			settings.TrickplayCPUOnly = !*body.UseGPU
 		}

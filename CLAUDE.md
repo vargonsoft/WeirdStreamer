@@ -506,16 +506,22 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   its decoders' pictures taken from the server's memory (not in ffmpeg's RSS, only its cgroup's); CUDA
   (a GTX 1060) 175 MB plus 124 MB of the server's memory and 60 MB plus 540 MB of the card's. The jobs
   reply's `trickplay.memory` carries the figures for the decoder in use (`decoder`, and `card_…` for CUDA).
+  Frames per runner are set by the video's size (`config.TrickplayTiers`, `media.TrickplayTier` from
+  `resolutionLabel`): 4K (1440p and up, and unknown sizes) in config.yml's `trickplayFramesPerRunner`, 1 to 50 (100 at
+  once), then `trickplayFrames1080p` 1 to 100 (200), `trickplayFrames720p` 1 to 150 (300), `trickplayFramesSD` 1 to 200
+  (400); each runner's batch takes its own video's tier. A tier's memory per frame is 4K's times `TrickplayTierScale`
+  (1080p 0.37, measured on the CPU with HEVC 10-bit; 720p 0.18, SD 0.09 by their pixels with room to spare).
   The defaults (config.yml's 0, an empty field on the Jobs page; `media.TrickplayRunners`,
-  `TrickplayFramesPerRunner`) are automatic: a runner per disk the libraries are on (`LibraryDisks`: whole
+  `TrickplayFramesPerRunner(tier)`) are automatic: a runner per disk the libraries are on (`LibraryDisks`: whole
   disks, each network or FUSE mount, Windows drives), and as many frames as fill half the server's memory
-  with 4K videos for those runners (and fit in 90% of an NVIDIA card's own memory, which is trickplay's to use) (`AutoTrickplayFrames`; 1 to 50, at most 100
-  at once). The jobs reply gives what's in effect, `auto_runners`/`auto_frames`, and what automatic gives
-  (`auto_runners_value`, `auto_frames_for[r-1]`) for the fields' placeholders and the note.
+  with videos of that size for those runners (and fit in 90% of an NVIDIA card's own memory, which is trickplay's to
+  use) (`AutoTrickplayFrames`, within the tier's limits). The jobs reply gives what's in effect, `auto_runners`, and
+  per tier (`tiers`: `frames`, `auto`, `max_frames`, `max_product`, `scale`, `auto_frames_for[r-1]`) for the fields'
+  placeholders and the note; saving sends `frames` by tier ID (`4k`, `1080p`, `720p`, `sd`).
   Numbers set are used as they are (the user sizes them, swap included); the Jobs page's trickplay
-  table shows what they take with 4K videos against the server's memory and swap, and an NVIDIA card's (a
-  row each: needs, has, fits or not; the jobs reply's `trickplay.memory`: `SystemMemory`, MemTotal or the
-  cgroup's limit when lower, `hw.memsize` on macOS; `SystemSwap`; web `trickplayMemoryTable`, Android
+  table shows what they take with each size against the server's memory and swap, and an NVIDIA card's (a
+  row per size and per size on the card: runners × frames, needs, has, fits or not; the jobs reply's `trickplay.memory`:
+  `SystemMemory`, MemTotal or the cgroup's limit when lower, `hw.memsize` on macOS; `SystemSwap`; web `trickplayMemoryTable`, Android
   `trickplayMemoryTable` in `AdminSettings.kt` drawn by `TrickplayMemoryTable.kt`, iPhone in `ServerModels.swift`). A batch the kernel kills is made again a frame at a time, and setup.sh's
   systemd unit has `OOMPolicy=continue`: by default an ffmpeg killed for memory made systemd stop and
   restart the whole server.

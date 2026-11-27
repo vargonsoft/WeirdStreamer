@@ -932,30 +932,37 @@ private fun WaitLimitsBox(l: com.vargon.weirdstreamer.api.models.JobLoad, save: 
 }
 
 @Composable
-private fun TrickplaySettingsBox(tp: TrickplaySettings, save: suspend (Int, Int) -> String?, saveGpu: suspend (Boolean) -> String?) {
+private fun TrickplaySettingsBox(tp: TrickplaySettings, save: suspend (Int, Map<String, Int>) -> String?, saveGpu: suspend (Boolean) -> String?) {
     val scope = rememberCoroutineScope()
+    val tiers = tp.tiers.orEmpty()
     var runners by remember { mutableStateOf(trickplayField(tp.autoRunners, tp.runners)) }
-    var frames by remember { mutableStateOf(trickplayField(tp.autoFrames, tp.framesPerRunner)) }
+    val frames = remember { mutableStateListOf(*trickplayFrameFields(tp).toTypedArray()) }
     var edited by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    LaunchedEffect(tp.runners, tp.framesPerRunner, tp.autoRunners, tp.autoFrames) {
+    LaunchedEffect(tp.runners, tp.autoRunners, trickplayFrameFields(tp)) {
         if (!edited) {
             runners = trickplayField(tp.autoRunners, tp.runners)
-            frames = trickplayField(tp.autoFrames, tp.framesPerRunner)
+            val now = trickplayFrameFields(tp)
+            frames.clear(); frames.addAll(now)
         }
     }
     val r = runners.toIntOrNull() ?: 0 // 0: automatic
-    val f = frames.toIntOrNull() ?: 0
+    val number = KeyboardOptions(keyboardType = KeyboardType.Number)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Trickplay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(runners, { runners = it.filter(Char::isDigit); edited = true }, label = { Text("Runners") },
-                    placeholder = { Text(trickplayAutoRunners(tp)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f))
-                OutlinedTextField(frames, { frames = it.filter(Char::isDigit); edited = true }, label = { Text("Frames per runner") },
-                    placeholder = { Text(trickplayAutoFrames(runners, tp)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f))
+            OutlinedTextField(runners, { runners = it.filter(Char::isDigit); edited = true }, label = { Text("Runners") },
+                placeholder = { Text(trickplayAutoRunners(tp)) }, singleLine = true, keyboardOptions = number,
+                modifier = Modifier.fillMaxWidth())
+            Text("Frames per runner, by the video's size", style = MaterialTheme.typography.labelLarge)
+            tiers.indices.chunked(2).forEach { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pair.forEach { i ->
+                        OutlinedTextField(frames.getOrElse(i) { "" }, { v -> if (i < frames.size) frames[i] = v.filter(Char::isDigit); edited = true },
+                            label = { Text(tiers[i].name) }, placeholder = { Text(trickplayAutoFrames(runners, tp, i)) },
+                            singleLine = true, keyboardOptions = number, modifier = Modifier.weight(1f))
+                    }
+                }
             }
             // Saved at once, apart from the fields.
             tp.gpu?.takeIf { it.isNotEmpty() }?.let { gpu ->
@@ -975,7 +982,7 @@ private fun TrickplaySettingsBox(tp: TrickplaySettings, save: suspend (Int, Int)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = {
                     scope.launch {
-                        val err = save(r, f)
+                        val err = save(r, trickplayFramesRequest(frames, tp))
                         if (err == null) {
                             edited = false
                             message = "Saved. Applies from the next batch." to false

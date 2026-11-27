@@ -909,7 +909,8 @@ private struct TrickplayMemoryTableView: View {
                 Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 2) {
                     GridRow {
                         Text("")
-                        Text("Needs with 4K").gridColumnAlignment(.trailing)
+                        Text("At once").gridColumnAlignment(.trailing)
+                        Text("Needs").gridColumnAlignment(.trailing)
                         Text("Has").gridColumnAlignment(.trailing)
                         Text("")
                     }
@@ -917,6 +918,7 @@ private struct TrickplayMemoryTableView: View {
                     ForEach(table.rows, id: \.what) { row in
                         GridRow {
                             Text(row.what)
+                            Text(row.frames).monospacedDigit()
                             Text(row.needs).monospacedDigit()
                             Text(row.has).monospacedDigit()
                             Text(row.note).foregroundStyle(row.warn ? Color.red : Palette.muted)
@@ -929,8 +931,6 @@ private struct TrickplayMemoryTableView: View {
     }
 }
 
-/// Trickplay's runners and frames per runner, saved to the server's settings (an empty field is automatic,
-/// sent as 0).
 /// When jobs wait for a disk or share: config.yml's limits, an empty field the default (POST
 /// /api/admin/jobs/limits). The fields follow the server while they aren't being edited, as trickplay's.
 private struct WaitLimitsBox: View {
@@ -994,26 +994,38 @@ private struct WaitLimitsBox: View {
     }
 }
 
+/// Trickplay's runners and frames per runner for each size of video, saved to the server's settings (an empty
+/// field is automatic, sent as 0).
 private struct TrickplayBox: View {
     @Environment(AppModel.self) private var model
     let settings: TrickplaySettings
     let onSaved: (JobsResponse) -> Void
 
     @State private var runners = ""
-    @State private var frames = ""
+    @State private var frames: [String] = []
     @State private var edited = false
     @State private var message: (String, Bool)?
 
+    private var tiers: [TrickplayTier] { settings.tiers ?? [] }
+
     var body: some View {
-        let r = Int(runners) ?? 0, f = Int(frames) ?? 0 // 0: automatic
+        let r = Int(runners) ?? 0 // 0: automatic
         let (er, ef) = settings.effective(runners, frames)
+        let auto = settings.effective(runners, []).1
         CardBox {
             Text("Trickplay").font(.headline)
-            HStack(spacing: 8) {
-                PhoneTextField(label: "Runners", text: Binding(get: { runners }, set: { runners = $0.filter(\.isNumber); edited = true }),
-                               placeholder: "Auto: \(settings.effective("", "").0)", keyboard: .numberPad)
-                PhoneTextField(label: "Frames per runner", text: Binding(get: { frames }, set: { frames = $0.filter(\.isNumber); edited = true }),
-                               placeholder: "Auto: \(settings.effective(runners, "").1)", keyboard: .numberPad)
+            PhoneTextField(label: "Runners", text: Binding(get: { runners }, set: { runners = $0.filter(\.isNumber); edited = true }),
+                           placeholder: "Auto: \(settings.effective("", []).0)", keyboard: .numberPad)
+            Text("Frames per runner, by the video's size").font(.subheadline.weight(.semibold))
+            ForEach(Array(stride(from: 0, to: tiers.count, by: 2)), id: \.self) { row in
+                HStack(spacing: 8) {
+                    ForEach(row..<min(row + 2, tiers.count), id: \.self) { i in
+                        PhoneTextField(label: tiers[i].name,
+                                       text: Binding(get: { i < frames.count ? frames[i] : "" },
+                                                     set: { v in if i < frames.count { frames[i] = v.filter(\.isNumber) }; edited = true }),
+                                       placeholder: "Auto: \(i < auto.count ? auto[i] : 0)", keyboard: .numberPad)
+                    }
+                }
             }
             // Saved at once, apart from the fields.
             if let gpu = settings.gpu, !gpu.isEmpty {
@@ -1024,16 +1036,20 @@ private struct TrickplayBox: View {
                     }
                 }
             }
-            TrickplayMemoryTableView(table: trickplayMemoryTable(er, ef, settings.memory))
-            Text("Runners 1 to \(settings.maxRunners ?? 8), frames per runner 1 to \(settings.maxFrames ?? 50), at most \(settings.maxProduct ?? 100) frames at once. Empty is automatic: a runner per disk the libraries are on, and frames filling half the server's memory with 4K videos.")
+            TrickplayMemoryTableView(table: trickplayMemoryTable(er, ef, tiers, settings.memory))
+            Text("Runners 1 to \(settings.maxRunners ?? 8). Frames per runner: " +
+                 tiers.map { "\($0.name) 1 to \($0.maxFrames ?? 50) (at most \($0.maxProduct ?? 100) at once)" }.joined(separator: ", ") +
+                 ". Empty is automatic: a runner per disk the libraries are on, and frames filling half the server's memory with videos of that size.")
                 .font(.caption).foregroundStyle(Palette.muted)
             HStack(spacing: 12) {
                 Button("Save") {
                     Task {
                         do {
-                            struct Body: Encodable { let runners: Int; let frames_per_runner: Int }
+                            struct Body: Encodable { let runners: Int; let frames: [String: Int] }
+                            var byTier: [String: Int] = [:]
+                            for (i, t) in tiers.enumerated() { byTier[t.id] = i < frames.count ? Int(frames[i]) ?? 0 : 0 }
                             if let reply: JobsResponse = try await model.client?.call("POST", "/api/admin/jobs/trickplay/settings",
-                                                                                       body: Body(runners: r, frames_per_runner: f)) {
+                                                                                       body: Body(runners: r, frames: byTier)) {
                                 onSaved(reply)
                             }
                             edited = false
@@ -1047,9 +1063,8 @@ private struct TrickplayBox: View {
         }
         .onAppear { sync() }
         .onChange(of: settings.runners) { sync() }
-        .onChange(of: settings.framesPerRunner) { sync() }
         .onChange(of: settings.autoRunners) { sync() }
-        .onChange(of: settings.autoFrames) { sync() }
+        .onChange(of: tiers.map { "\($0.frames ?? 0)\($0.auto ?? false)" }) { sync() }
     }
 
     private func save(useGpu: Bool) {
@@ -1066,7 +1081,7 @@ private struct TrickplayBox: View {
     private func sync() {
         guard !edited else { return }
         runners = settings.autoRunners == true ? "" : String(settings.runners ?? 1)
-        frames = settings.autoFrames == true ? "" : String(settings.framesPerRunner ?? 10)
+        frames = tiers.map { $0.auto == true ? "" : String($0.frames ?? 10) }
     }
 }
 
