@@ -1,5 +1,7 @@
 package com.vargon.weirdstreamer.ui.components
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -345,8 +347,12 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
     PhoneResumeDialog(viewModel)
     
     // The A–Z strip: folders' letters, then files'.
-    val letters = remember(items) {
-        buildIndex(items, { indexLabel(it.name) }, { if (it.isDirectory) 0 else 1 })
+    // The home screen leads with the TV Shows and Movies libraries and the Guide's tile (HomeTiles).
+    val shown = remember(items, viewModel.isGridView, viewModel.atFrontPage, viewModel.guideRow) {
+        homeItems(viewModel, items, if (viewModel.isGridView) 0 else null)
+    }
+    val letters = remember(shown) {
+        buildIndex(shown, { if (HomeTiles.isTile(it)) null else indexLabel(it.name) }, { if (it.isDirectory) 0 else 1 })
     }
     // The server's front page also has what's downloaded from it.
     val downloads = rememberReadyDownloads(viewModel).takeIf { viewModel.atFrontPage }.orEmpty()
@@ -397,9 +403,11 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
                     PhoneContinueRow(viewModel, sidePadding = 0.dp, downloads = downloads)
                 }
             }
-            items(items) { item ->
-                PhoneFileTileItem(item) {
-                    handlePhoneFileClick(viewModel, item)
+            items(shown, span = { if (HomeTiles.isRowEnd(it)) GridItemSpan(maxLineSpan) else GridItemSpan(1) }) { item ->
+                when {
+                    HomeTiles.isRowEnd(item) -> Spacer(Modifier.height(0.dp)) // the rest start a row of their own
+                    HomeTiles.isGuide(item) -> PhoneGuideTile { viewModel.openGuide("") }
+                    else -> PhoneFileTileItem(item) { handlePhoneFileClick(viewModel, item) }
                 }
             }
         }
@@ -414,10 +422,9 @@ private fun PhoneFileBrowserScreen(viewModel: MediaViewModel) {
                         downloads = downloads)
                 }
             }
-            items(items) { item ->
-                PhoneFileRowItem(item) {
-                    handlePhoneFileClick(viewModel, item)
-                }
+            items(shown) { item ->
+                if (HomeTiles.isGuide(item)) PhoneFileRowItem(item) { viewModel.openGuide("") }
+                else PhoneFileRowItem(item) { handlePhoneFileClick(viewModel, item) }
             }
         }
     }
@@ -585,3 +592,7 @@ private fun PhoneAuthDialog(host: String, onDismiss: () -> Unit, initialUsername
         }
     )
 }
+
+/** The home screen's libraries as HomeTiles arranges them (TV Shows and Movies, the Guide, then the rest); elsewhere [items]. */
+private fun homeItems(viewModel: MediaViewModel, items: List<FileItem>, columns: Int?): List<FileItem> =
+    if (viewModel.atFrontPage) HomeTiles.arrange(items, viewModel.guideRow == "", columns) else items

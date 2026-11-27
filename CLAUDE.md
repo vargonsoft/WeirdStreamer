@@ -709,6 +709,11 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   shorter than a minute tries 30 s, 10 s and 1 s; a disc a tenth, a fifth and three tenths into its main
   title. Thumbnails under 1 KB count as broken, so a video black throughout still gets none. Existing
   thumbnails stay until they're regenerated.
+- **The home screen's libraries** (web `renderMedia`, Android `HomeTiles`, iPhone `FileBrowserScreen`): the TV
+  Shows and Movies libraries come first, by name, each with its kind's icon on its folder (Material movie and
+  TV; in a corner badge over a folder picture; the browse response's `library_type`), then the Guide's tile,
+  then the other libraries by name from the next row (the TV's grid fills the row with empty cells, as it
+  moves focus by index; the phone's grid spans a break; the iPhone draws two grids).
 - **Folder pictures:** in folder view every folder shows a picture inside its folder icon (posters are only the Library view's) (web
   `folderPreview`, Android `FolderPreview` in `FolderThumbnails.kt`, iPhone `FolderPreview`): the
   browse response's `thumbnail_url` on each folder (`folderImage`, `database.FolderPreview`): its own
@@ -872,8 +877,9 @@ What's built (server):
     (`PickStation`: none taken twice, none in another channel's font).
   - Each logo has its own font. The server only draws the channel's number, in Liberation Sans Bold
     (`logofont/`, OFL). A solid holder takes the digits reversed (`reversePath`), so they cut it.
-- **Web** (`js/guide.js`, loaded after app.js and using its helpers): `createGuideRow` puts a Guide button
-  just above the folders (home, or a library's own page). The Guide is a screen like Settings
+- **Web** (`js/guide.js`, loaded after app.js and using its helpers): on the home screen the Guide is a
+  folder-sized tile after the TV Shows and Movies libraries (`createGuideTile`, placed by `renderMedia`); on a
+  library's own page `createGuideRow` puts a Guide button just above the folders. The Guide is a screen like Settings
   (`SCREENS.guide`).
   - Top left is `#guide-video`. It tunes to the last channel watched in this browser
     (`localStorage.guideChannel`).
@@ -887,8 +893,9 @@ What's built (server):
   - Settings' Guide tab (`loadGuideSettings` in `guide.js`): typed channels, the libraries' Show in Guide and Use for
     Guide Filler, prime time, the weather ZIP and the voice-over tester.
 - **Android** (`Guide.kt`: `GuideModel`, `GuidePlayer`, the cards; `TvGuide.kt`, `PhoneGuide.kt`):
-  - The Guide row is the last of the rows above the folders (`MediaViewModel.guideRow`, from
-    `/api/guide/available`): a button in `TvContinueRow` and `PhoneContinueRow`. `openGuide` sets
+  - On the home screen the Guide is a tile after the TV Shows and Movies libraries (`HomeTiles`; `guideRow`
+    is "" there); on a library's own page it's the last of the rows above the folders (`MediaViewModel.guideRow`,
+    from `/api/guide/available`): a button in `TvContinueRow` and `PhoneContinueRow`. `openGuide` sets
     `guideOpen`, which `MainActivity` shows instead of the browser.
   - `GuideModel` follows the tuned channel through `/now` (a timer at each item's end, by the
     server's clock) and keeps the last channel per server and Guide (`SharedPreferences` "guide").
@@ -974,7 +981,8 @@ What's built (server):
   Plan again from now (asked first; only by hand, `POST /api/admin/guide/replan`, `Service.Replan`) plans every channel
   again from its next program, the next 6 hours too; what each airs now stays.
 - **iPhone** (`Session/Guide.swift`: `GuideModel`; `Views/GuideView.swift`: `GuideScreen`), as the phone's:
-  - The Guide button ends `ContinueRows` (`AppModel.guideRow`); `openGuide` sets `guideOpen`, which
+  - On the home screen the Guide is a tile after the TV Shows and Movies libraries (`GuideTile`, `GuideRow` in
+    `FileBrowserScreen`); on a library's own page its button ends `ContinueRows` (`AppModel.guideRow`); `openGuide` sets `guideOpen`, which
     `RootView` shows as a full-screen cover. The last channel is kept per server and Guide (`UserDefaults`).
   - An item plays as is (`OriginalLoader`, seeked) where `OfflinePlayback` says the phone plays it, else
     through `HLSRelay` from where the channel is (H.264 copied, the audio kept where it plays), and after a

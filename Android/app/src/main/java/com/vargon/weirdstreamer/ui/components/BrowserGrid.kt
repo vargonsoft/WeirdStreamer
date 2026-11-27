@@ -46,7 +46,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-private const val GRID_COLUMNS = 4
+internal const val GRID_COLUMNS = 4
 
 /** Lets the toolbar hand focus down to whichever content is showing. */
 class ContentEntry {
@@ -146,6 +146,7 @@ fun BrowserGrid(
             if (from / columns == (list.size - 1) / columns) return true // already on the last row
             target = list.size - 1
         }
+        while (target > 0 && HomeTiles.isRowEnd(list[target])) target-- // the home screen's empty cells
         val path = list[target].path
         if (!tryFocus(path) && !gridState.isScrollInProgress) {
             // Not composed and nothing in flight to bring it in: scroll to it explicitly.
@@ -211,7 +212,7 @@ fun BrowserGrid(
     // grid view) moves onto it; Up/Down scroll letter by letter and Left goes to the letter's
     // first item.
     val letters = remember(items) {
-        buildIndex(items, { indexLabel(it.name) }, { if (it.isDirectory) 0 else 1 })
+        buildIndex(items, { if (HomeTiles.isTile(it)) null else indexLabel(it.name) }, { if (it.isDirectory) 0 else 1 })
     }
     val showBar = letters.size > 1
     val barRequester = remember { FocusRequester() }
@@ -300,7 +301,8 @@ fun BrowserGrid(
                 val isFirstColumn = index % columns == 0
                 val isFirstRow = index < columns
                 // The row's last tile (any row in list view): Right goes to the A–Z bar, or nowhere.
-                val isRowEnd = index % columns == columns - 1 || index == items.lastIndex
+                val isRowEnd = index % columns == columns - 1 || index == items.lastIndex ||
+                    HomeTiles.isRowEnd(items[index + 1]) // the home screen's typed row, its empty cells after it
                 if (isFirstColumn || isFirstRow || isRowEnd) {
                     // The lazy grid doesn't hand focus searches off its edges reliably, so the
                     // edges are explicit: left/up go to the toolbar, right from the row end to the bar.

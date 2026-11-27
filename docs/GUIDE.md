@@ -12,8 +12,9 @@ and iPhone; the iPhone's compiled and unit-tested only). The Music channel needs
 
 ## Decisions (settled)
 
-- **Where it opens.** A new row above the folders, only on the Libraries screen, holding (for now) one
-  button: **Guide**. If no library is in the Guide, there's no row and no button.
+- **Where it opens.** On the home screen, a folder-sized **Guide** tile after the TV Shows and Movies
+  libraries, which come first; the other libraries start the next row (settled 2026-11-26). A library's own
+  page (Library Only) has a Guide button above its folders. With no Guide, there's no tile or button.
 - **Library setting "Show in Guide":** On (Home Screen and Library), Library Only, or Off, like Continue
   Watching and Recently Added. **Off by default.** Library Only puts a Guide button on that library's own
   page, showing only its channels.

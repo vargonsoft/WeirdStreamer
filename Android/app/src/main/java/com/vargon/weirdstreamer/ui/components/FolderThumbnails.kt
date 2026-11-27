@@ -1,5 +1,12 @@
 package com.vargon.weirdstreamer.ui.components
 
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
@@ -33,7 +40,7 @@ import coil.request.ImageRequest
  * picture sits in its lower part, as on the web.
  */
 @Composable
-fun FolderPreview(url: String?, tint: Color, modifier: Modifier = Modifier, requestSize: Int? = null) {
+fun FolderPreview(url: String?, tint: Color, modifier: Modifier = Modifier, requestSize: Int? = null, kind: String? = null) {
     val context = LocalContext.current
     val request = remember(url, requestSize) {
         ImageRequest.Builder(context).data(url).crossfade(false)
@@ -57,8 +64,27 @@ fun FolderPreview(url: String?, tint: Color, modifier: Modifier = Modifier, requ
                 .size(maxWidth * 0.72f, maxHeight * 0.44f)
                 .clip(RoundedCornerShape(minOf(maxWidth, maxHeight) * 0.04f))
         )
+        // A TV Shows or Movies library's kind: on the folder's front, or in a corner badge over its picture
+        val kindIcon = when (kind) {
+            "tv" -> Icons.Default.Tv
+            "movie" -> Icons.Default.Movie
+            else -> null
+        }
+        if (kindIcon != null) {
+            if (url == null) {
+                Icon(kindIcon, contentDescription = null, tint = FolderKindColor,
+                    modifier = Modifier.offset(x = maxWidth * 0.33f, y = maxHeight * 0.40f).size(maxWidth * 0.34f))
+            } else {
+                Box(Modifier.offset(x = maxWidth * 0.6f, y = maxHeight * 0.6f).size(maxWidth * 0.32f)
+                    .clip(CircleShape).background(tint), contentAlignment = Alignment.Center) {
+                    Icon(kindIcon, contentDescription = null, tint = FolderKindColor, modifier = Modifier.fillMaxSize(0.62f))
+                }
+            }
+        }
     }
 }
+
+private val FolderKindColor = Color(0xFF3A2405)
 
 private val filmBase = Color(0xFF111111)
 private val filmHole = Color(0xD9F0ECE4)

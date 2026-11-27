@@ -7,7 +7,15 @@ struct FileBrowserScreen: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let items = model.filteredEntries
+        // The home screen: the TV Shows and Movies libraries first, the Guide's tile after them, then the
+        // others from the next row (Android's HomeTiles; the web's renderMedia).
+        let all = model.filteredEntries
+        let home = model.isServerRoot
+        let typed = home ? all.filter { $0.libraryType == "tv" || $0.libraryType == "movie" }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } : []
+        let rest = all.filter { !typed.contains($0) }
+        let guide = home && model.guideRow == ""
+        let items = typed + rest
         let letters = alphabetIndex(items.map(\.name), groups: items.map { $0.isDirectory ? 0 : 1 })
         ScrollViewReader { proxy in
             HStack(spacing: 0) {
@@ -15,8 +23,16 @@ struct FileBrowserScreen: View {
                     if model.isGridView {
                         VStack(spacing: 8) {
                             if model.hasTopRows { ContinueRows() }
+                            if !typed.isEmpty || guide {
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
+                                    ForEach(typed) { item in
+                                        FileTile(item: item).id(item.path)
+                                    }
+                                    if guide { GuideTile() }
+                                }
+                            }
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
-                                ForEach(items) { item in
+                                ForEach(rest) { item in
                                     FileTile(item: item).id(item.path)
                                 }
                             }
@@ -27,7 +43,11 @@ struct FileBrowserScreen: View {
                             if model.hasTopRows {
                                 ContinueRows().padding(.horizontal, 8).padding(.bottom, 8)
                             }
-                            ForEach(items) { item in
+                            ForEach(typed) { item in
+                                FileRow(item: item).id(item.path)
+                            }
+                            if guide { GuideRow() }
+                            ForEach(rest) { item in
                                 FileRow(item: item).id(item.path)
                             }
                         }
@@ -58,7 +78,7 @@ struct FileRow: View {
             HStack(spacing: 16) {
                 ZStack {
                     if item.isDirectory {
-                        FolderPreview(url: item.thumbnailUrl)
+                        FolderPreview(url: item.thumbnailUrl, kind: item.libraryType)
                     } else {
                         Image(systemName: item.isImage ? "photo" : (item.isPdf ? "doc.richtext" : "doc.text"))
                             .font(.system(size: 20))
@@ -113,7 +133,7 @@ struct FileTile: View {
             VStack(spacing: 4) {
                 ZStack {
                     if item.isDirectory {
-                        FolderPreview(url: item.thumbnailUrl).padding(4)
+                        FolderPreview(url: item.thumbnailUrl, kind: item.libraryType).padding(4)
                     } else {
                         Image(systemName: "doc.text")
                             .font(.system(size: 28))
@@ -206,8 +226,8 @@ struct ContinueRows: View {
             ForEach(model.newRows, id: \.heading) { row in
                 VideoRow(heading: row.heading, items: row.items)
             }
-            // The Guide's row last, just above the folders
-            if let library = model.guideRow {
+            // A library's own Guide's row last, just above the folders (the home screen's is a tile)
+            if let library = model.guideRow, !library.isEmpty {
                 Button { model.openGuide(library) } label: { Label("Guide", systemImage: "tv") }
                     .buttonStyle(PhoneButtonStyle())
                     .padding(.top, 12).padding(.bottom, 4)
@@ -343,5 +363,46 @@ struct IndexBar: View {
                 .onEnded { _ in touched = nil })
         }
         .frame(width: 24)
+    }
+}
+
+/// The home screen's Guide: a tile like a library's folder, after the TV Shows and Movies libraries.
+struct GuideTile: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button { model.openGuide("") } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "play.tv")
+                    .resizable().scaledToFit()
+                    .foregroundStyle(Palette.accent)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Text("Guide").font(.caption.weight(.medium)).lineLimit(1)
+            }
+            .padding(8)
+            .aspectRatio(1, contentMode: .fit)
+            .background(Palette.raised.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// The home screen's Guide in the list view: a row like a library's.
+struct GuideRow: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button { model.openGuide("") } label: {
+            HStack(spacing: 16) {
+                Image(systemName: "play.tv").font(.system(size: 22)).foregroundStyle(Palette.accent)
+                    .frame(width: 40, height: 40)
+                Text("Guide").font(.body)
+                Spacer()
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

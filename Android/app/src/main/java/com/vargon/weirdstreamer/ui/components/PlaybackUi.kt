@@ -147,8 +147,8 @@ fun PhoneContinueRow(viewModel: MediaViewModel, modifier: Modifier = Modifier, s
         PhoneVideoRow(viewModel, "Continue Watching", viewModel.continueItems, sidePadding)
         viewModel.newRows.forEach { (heading, items) -> PhoneVideoRow(viewModel, heading, items, sidePadding) }
         PhoneDownloadsRow(viewModel, downloads, sidePadding)
-        // The Guide's row last, just above the folders
-        viewModel.guideRow?.let { lib ->
+        // A library's own Guide's row last, just above the folders (the home screen's is a tile among its libraries)
+        viewModel.guideRow?.takeIf { it.isNotEmpty() }?.let { lib ->
             PhoneButton(onClick = { viewModel.openGuide(lib) },
                 modifier = Modifier.padding(start = sidePadding, end = sidePadding, top = 12.dp, bottom = 4.dp)) {
                 androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.LiveTv, contentDescription = null)

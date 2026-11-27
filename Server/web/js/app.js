@@ -640,15 +640,30 @@ function updateBreadcrumb() {
     }
 }
 
+let mediaRenders = 0; // renderMedia's count: what it finishes later belongs to the latest
+
 function renderMedia() {
     directoryList.innerHTML = '';
     mediaGrid.innerHTML = '';
     
-    // Render directories and media items in the same grid
-    state.directories.forEach(dir => {
-        const element = createDirectoryElement(dir);
-        mediaGrid.appendChild(element);
-    });
+    // Render directories and media items in the same grid. On the home screen the TV Shows and Movies
+    // libraries come first, with the Guide's tile after them (createGuideTile, once the server says
+    // there's a Guide); the other libraries start the next row.
+    const home = !state.currentPath;
+    const typed = home ? state.directories.filter(d => d.library_type) : [];
+    const rest = home ? state.directories.filter(d => !d.library_type) : state.directories;
+    typed.forEach(dir => mediaGrid.appendChild(createDirectoryElement(dir)));
+    const rowEnd = home ? el('div', 'grid-row-end') : null;
+    if (rowEnd && typed.length) mediaGrid.appendChild(rowEnd);
+    rest.forEach(dir => mediaGrid.appendChild(createDirectoryElement(dir)));
+    const render = ++mediaRenders;
+    if (home) {
+        createGuideTile().then(tile => {
+            if (!tile || render !== mediaRenders) return; // the grid was drawn again meanwhile
+            if (!rowEnd.isConnected) mediaGrid.prepend(rowEnd);
+            mediaGrid.insertBefore(tile, rowEnd);
+        });
+    }
     
     state.mediaItems.forEach(item => {
         // Videos have filmstrip edges here, telling them from photos in the same folder.
@@ -656,7 +671,7 @@ function renderMedia() {
         mediaGrid.appendChild(element);
     });
     // Folders' letters, then files' (the names as shown).
-    setAzIndex([...mediaGrid.children].map(el => ({
+    setAzIndex([...mediaGrid.children].filter(el => el.classList.contains('media-item')).map(el => ({
         el, label: azLabel(el.querySelector('.media-name')?.textContent || ''),
         run: el.classList.contains('directory-item') ? 0 : 1,
     })));
@@ -666,10 +681,11 @@ function renderMedia() {
     const atLibrary = state.currentPath.split('/').filter(p => p).length === 1;
     if (!state.currentPath || atLibrary) {
         const path = state.currentPath;
-        // The Guide row comes last, just above the folders.
+        // A library's own page has the Guide row last, just above the folders (the home screen's Guide
+        // is a tile among its libraries).
         Promise.all([createContinueRow(atLibrary ? state.libraryId : ''),
             atLibrary ? createNewAdditionsRow(state.libraryId) : createNewAdditionsRows(),
-            createGuideRow(atLibrary ? state.libraryId : '')]).then(rows => {
+            atLibrary ? createGuideRow(state.libraryId) : null]).then(rows => {
             const shown = rows.flat().filter(Boolean);
             if (shown.length && state.view === 'folders' && state.currentPath === path) {
                 directoryList.innerHTML = '';
@@ -710,6 +726,13 @@ function createDirectoryElement(dir) {
         thumbnail.appendChild(folderPreview(dir.thumbnail_url, dir.name));
     } else {
         thumbnail.innerHTML = placeholderIcon('folder');
+    }
+    // A TV Shows or Movies library has its kind's icon on its folder (in a corner badge over a picture)
+    if (!state.currentPath && (dir.library_type === 'tv' || dir.library_type === 'movie')) {
+        const badge = el('span', 'library-kind' + (dir.thumbnail_url ? ' library-kind-corner' : ''));
+        badge.innerHTML = iconSvg(dir.library_type === 'tv' ? 'tv' : 'movie');
+        badge.title = dir.library_type === 'tv' ? 'TV Shows' : 'Movies';
+        thumbnail.appendChild(badge);
     }
     if (dir.fixable && canFixMatches()) {
         thumbnail.appendChild(createFixMatchButton({ dir: dir.path }, dir.name));

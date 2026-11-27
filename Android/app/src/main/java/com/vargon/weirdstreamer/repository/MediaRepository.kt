@@ -44,7 +44,8 @@ data class FileItem(
     val id: Long? = null, // Database ID for WS Server
     val playback: com.vargon.weirdstreamer.api.models.Playback? = null, // the user's progress (WS Server videos)
     val fixable: Boolean = false, // a WS Server folder standing for one title, whose match an admin can fix
-    val format: String? = null // a WS Server video's: "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"
+    val format: String? = null, // a WS Server video's: "4K · HEVC · Dolby Vision · TrueHD Atmos 7.1"
+    val libraryType: String? = null // a WS Server library (the home screen's folders): "movie" or "tv"
 )
 
 /**

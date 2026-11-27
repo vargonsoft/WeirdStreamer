@@ -1,5 +1,8 @@
 package com.vargon.weirdstreamer.ui.components
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -73,6 +76,7 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
     }
 
     val icon = when {
+        HomeTiles.isGuide(item) -> Icons.Default.LiveTv // the home screen's Guide
         isParent -> Icons.Default.SubdirectoryArrowLeft
         item.isDirectory -> Icons.Default.Folder
         else -> Icons.Default.Description
@@ -106,8 +110,8 @@ fun PhoneFileRowItem(item: FileItem, modifier: Modifier = Modifier, onClick: () 
                 val folderThumbnail = if (item.isDirectory && !isParent) item.thumbnailUrl else null
                 val thumbnailUrl = if (item.isDirectory) null else item.thumbnailUrl ?: if (!isParent) item.path else null
 
-                if (item.isDirectory && !isParent) {
-                    FolderPreview(folderThumbnail, getPhoneIconTint(Icons.Default.Folder), Modifier.fillMaxSize(), requestSize = 80)
+                if (item.isDirectory && !isParent && !HomeTiles.isGuide(item)) {
+                    FolderPreview(folderThumbnail, getPhoneIconTint(Icons.Default.Folder), Modifier.fillMaxSize(), requestSize = 80, kind = item.libraryType)
                 } else if (!isImageLoaded) {
                     Icon(
                         icon,
@@ -211,7 +215,7 @@ fun PhoneFileTileItem(item: FileItem, modifier: Modifier = Modifier, onClick: ()
                 val thumbnailUrl = if (item.isDirectory) null else item.thumbnailUrl ?: if (!isParent) item.path else null
 
                 if (item.isDirectory && !isParent) {
-                    FolderPreview(folderThumbnail, getPhoneIconTint(Icons.Default.Folder), Modifier.fillMaxHeight(0.9f), requestSize = 200)
+                    FolderPreview(folderThumbnail, getPhoneIconTint(Icons.Default.Folder), Modifier.fillMaxHeight(0.9f), requestSize = 200, kind = item.libraryType)
                 } else if (!isImageLoaded) {
                     val isLargeIcon = item.isDirectory || isParent
                     Icon(
@@ -306,4 +310,23 @@ internal fun fixMatchTarget(viewModel: MediaViewModel, item: FileItem, isParent:
     item.isDirectory -> if (item.fixable) item.path to true else null
     item.originalPath != null && viewModel.isVideo(item) -> item.originalPath to false
     else -> null
+}
+
+/** The home screen's Guide: a tile like a library's folder, after the TV Shows and Movies libraries. */
+@Composable
+fun PhoneGuideTile(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Card(
+        modifier = modifier.fillMaxWidth().aspectRatio(1f).combinedClickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    ) {
+        Column(Modifier.fillMaxSize().padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.LiveTv, contentDescription = null, tint = getPhoneIconTint(Icons.Default.Folder),
+                    modifier = Modifier.fillMaxHeight(0.8f).aspectRatio(1f))
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("Guide", style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        }
+    }
 }

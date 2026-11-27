@@ -644,7 +644,8 @@ class MediaViewModel(application: Application) : AndroidViewModel(application) {
     var settingsTab by mutableStateOf("App")
 
     /** Whether the page leads with rows: Continue Watching, Recently Added, the Guide's. */
-    val hasTopRows: Boolean get() = continueItems.isNotEmpty() || newRows.isNotEmpty() || guideRow != null
+    // (the home screen's Guide is a tile among its libraries, HomeTiles; a library's own page has a Guide row)
+    val hasTopRows: Boolean get() = continueItems.isNotEmpty() || newRows.isNotEmpty() || !guideRow.isNullOrEmpty()
 
     // ---- The Guide (docs/GUIDE.md): live channels the server plans ----
 

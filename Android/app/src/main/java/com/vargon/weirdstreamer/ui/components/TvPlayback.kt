@@ -68,8 +68,8 @@ fun TvContinueRow(
         if (viewModel.continueItems.isNotEmpty()) add("Continue Watching" to viewModel.continueItems)
         addAll(viewModel.newRows)
     }
-    // The Guide's row last, just above the folders
-    val guide = viewModel.guideRow
+    // A library's own Guide's row last, just above the folders (the home screen's is a tile among its libraries)
+    val guide = viewModel.guideRow?.takeIf { it.isNotEmpty() }
     val count = rows.size + if (guide != null) 1 else 0
     // Each row's own requester: the top and bottom ones are the caller's (one row is both).
     val middle = remember(count) { List(count) { FocusRequester() } }

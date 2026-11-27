@@ -27,6 +27,7 @@ struct FolderShape: Shape {
 /// folder at the same size. As Android's FolderPreview and the web's folder cards.
 struct FolderPreview: View {
     let url: String?
+    var kind: String? = nil // a TV Shows or Movies library: its kind's icon on the folder (a corner badge over a picture)
 
     var body: some View {
         GeometryReader { g in
@@ -37,6 +38,20 @@ struct FolderPreview: View {
                         .frame(width: g.size.width * 0.72, height: g.size.height * 0.44)
                         .clipShape(RoundedRectangle(cornerRadius: min(g.size.width, g.size.height) * 0.04))
                         .offset(x: g.size.width * 0.14, y: g.size.height * 0.34)
+                }
+                if let symbol = kind == "tv" ? "tv" : kind == "movie" ? "movieclapper.fill" : nil {
+                    let ink = Color(red: 0.227, green: 0.141, blue: 0.02)
+                    if url == nil {
+                        Image(systemName: symbol).resizable().scaledToFit().foregroundStyle(ink)
+                            .frame(width: g.size.width * 0.34, height: g.size.height * 0.34)
+                            .offset(x: g.size.width * 0.33, y: g.size.height * 0.40)
+                    } else {
+                        Image(systemName: symbol).resizable().scaledToFit().foregroundStyle(ink)
+                            .padding(g.size.width * 0.06)
+                            .frame(width: g.size.width * 0.32, height: g.size.height * 0.32)
+                            .background(Palette.accent, in: Circle())
+                            .offset(x: g.size.width * 0.6, y: g.size.height * 0.6)
+                    }
                 }
             }
         }

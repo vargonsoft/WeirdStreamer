@@ -1,5 +1,7 @@
 package com.vargon.weirdstreamer.ui.components
 
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.material.icons.filled.LiveTv
 import com.vargon.weirdstreamer.repository.ServerRepository
 
 import androidx.activity.compose.BackHandler
@@ -606,11 +608,16 @@ private fun FileBrowserScreen(
         { item -> handleFileClick(viewModel, item) }
     }
     val onVisibleItemsChanged: (List<FileItem>) -> Unit = remember(viewModel) {
-        { visible -> viewModel.requestMetadataFor(visible) }
+        { visible -> viewModel.requestMetadataFor(visible.filterNot(HomeTiles::isTile)) }
     }
-    // TV has an Up button on the toolbar instead of a ".." entry.
+    // TV has an Up button on the toolbar instead of a ".." entry. The home screen leads with the TV
+    // Shows and Movies libraries and the Guide's tile (HomeTiles), the rest of their row left empty.
     val allItems = viewModel.getFilteredFileList()
-    val items = remember(allItems) { allItems.filter { it.path != "UP" } }
+    val homeGuide = viewModel.atFrontPage && viewModel.guideRow == ""
+    val items = remember(allItems, homeGuide, isGridView, viewModel.atFrontPage) {
+        val list = allItems.filter { it.path != "UP" }
+        if (viewModel.atFrontPage) HomeTiles.arrange(list, homeGuide, if (isGridView) GRID_COLUMNS else null) else list
+    }
     // The server's front page leads with what's in progress. The row sits above the grid: Down
     // from the toolbar lands on it, and Down from it on the grid.
     val showContinue = viewModel.hasTopRows
@@ -657,6 +664,15 @@ private fun FileBrowserScreen(
             } else null,
             onVisibleItemsChanged = onVisibleItemsChanged
         ) { item, modifier ->
+            if (HomeTiles.isRowEnd(item)) {
+                Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) // the typed row's empty cells
+                return@BrowserGrid
+            }
+            if (HomeTiles.isGuide(item)) {
+                if (isGridView) TileItem(title = "Guide", icon = Icons.Default.LiveTv, modifier = modifier) { viewModel.openGuide("") }
+                else FileRowItem(item, null, modifier = modifier) { viewModel.openGuide("") }
+                return@BrowserGrid
+            }
             val thumbnailUrl = remember(item.path, item.thumbnailUrl) { viewModel.thumbnailSourceFor(item) }
             val playback = if (item.isDirectory) null else viewModel.playbackFor(item.path)
             // Videos have filmstrip edges, telling them from photos in the same folder.

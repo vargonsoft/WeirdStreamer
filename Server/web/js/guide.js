@@ -67,6 +67,23 @@ async function createGuideRow(lib = '') {
     return section;
 }
 
+// The home screen's Guide: a folder-sized tile after the TV Shows and Movies libraries, when there's a Guide.
+async function createGuideTile() {
+    let available = false;
+    try {
+        available = await api.guideAvailable('');
+    } catch (error) {
+        return null;
+    }
+    if (!available) return null;
+    const div = el('div', 'media-item directory-item guide-tile');
+    div.onclick = () => showGuide('');
+    const thumbnail = el('div', 'media-thumbnail folder-thumbnail');
+    thumbnail.innerHTML = placeholderIcon('liveTv');
+    div.append(thumbnail, el('div', 'media-name', 'Guide'));
+    return div;
+}
+
 async function showGuide(lib = '', pushHistory = true) {
     guide.lib = lib;
     if (pushHistory) pushScreenHistory('guide');

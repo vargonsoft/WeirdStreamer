@@ -1,5 +1,6 @@
 package com.vargon.weirdstreamer.ui.components
 
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -82,6 +83,7 @@ fun FileTileItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Mod
         // A folder's picture goes inside its icon.
         thumbnailUrl = if (item.isDirectory) null else thumbnailUrl,
         folderThumbnail = if (item.isDirectory && !isParent) thumbnailUrl else null,
+        folderKind = item.libraryType,
         filmstrip = filmstrip,
         rotateIcon = if (isParent) 90f else 0f,
         progress = playback?.fraction(item.duration) ?: 0f,
@@ -97,6 +99,7 @@ fun TileItem(
     subtitle: String? = null,
     thumbnailUrl: String? = null,
     folderThumbnail: String? = null,
+    folderKind: String? = null, // a TV Shows or Movies library: its kind's icon on the folder
     filmstrip: Boolean = false,
     rotateIcon: Float = 0f,
     progress: Float = 0f,
@@ -121,9 +124,10 @@ fun TileItem(
         ) {
             // The icon sits under the thumbnail, which covers it once loaded; no load-state
             // bookkeeping (and no extra recomposition) needed.
-            val isLargeIcon = icon == Icons.Default.Folder || icon == Icons.Default.Dns || icon == Icons.Default.SubdirectoryArrowLeft
+            val isLargeIcon = icon == Icons.Default.Folder || icon == Icons.Default.Dns || icon == Icons.Default.SubdirectoryArrowLeft ||
+                icon == Icons.Default.LiveTv // the home screen's Guide, as large as a library's folder
             if (icon == Icons.Default.Folder) {
-                FolderPreview(folderThumbnail, getIconTint(Icons.Default.Folder), Modifier.fillMaxHeight(0.92f))
+                FolderPreview(folderThumbnail, getIconTint(Icons.Default.Folder), Modifier.fillMaxHeight(0.92f), kind = folderKind)
             } else {
                 Icon(
                     icon,
@@ -132,7 +136,7 @@ fun TileItem(
                         .fillMaxSize(if (isLargeIcon) 0.8f else 0.5f)
                         .padding(if (isLargeIcon) 4.dp else 10.dp)
                         .graphicsLayer(rotationZ = rotateIcon),
-                    tint = getIconTint(icon)
+                    tint = getIconTint(if (icon == Icons.Default.LiveTv) Icons.Default.Folder else icon)
                 )
             }
 
@@ -224,6 +228,7 @@ fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modi
         if (!item.isDirectory && !isParent) fileInfoText(item.size, item.duration) else null
     }
     val icon = when {
+        HomeTiles.isGuide(item) -> Icons.Default.LiveTv // the home screen's Guide
         isParent -> Icons.Default.SubdirectoryArrowLeft
         item.isDirectory -> Icons.Default.Folder
         else -> Icons.Default.Description
@@ -237,8 +242,8 @@ fun FileRowItem(item: FileItem, thumbnailUrl: String?, modifier: Modifier = Modi
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-            if (item.isDirectory && !isParent) {
-                FolderPreview(thumbnailUrl, getIconTint(Icons.Default.Folder), Modifier.fillMaxSize(), requestSize = 96)
+            if (item.isDirectory && !isParent && !HomeTiles.isGuide(item)) {
+                FolderPreview(thumbnailUrl, getIconTint(Icons.Default.Folder), Modifier.fillMaxSize(), requestSize = 96, kind = item.libraryType)
             } else {
                 Icon(
                     icon,
