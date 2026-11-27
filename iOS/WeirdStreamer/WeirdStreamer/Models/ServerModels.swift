@@ -947,6 +947,34 @@ struct GuideWeather: Decodable, Equatable {
     var alerts: [WeatherAlert]? = nil
     var radar: Bool? = nil
     var error: String? = nil
+    /// The regional and national pages: nil until the server has read them (in the background)
+    var regional: WeatherArea? = nil
+    var national: WeatherArea? = nil
+}
+
+/// The regional or national pages' cities, and their map (`map` with &w=, 16:9).
+struct WeatherArea: Decodable, Equatable {
+    let map: String
+    let cities: [WeatherCity]
+}
+
+/// A city's weather now (the regional pages) and today's forecast; `x` and `y` its place on the map (fractions from the
+/// top left), shown there when `onMap`.
+struct WeatherCity: Decodable, Equatable {
+    let name: String
+    let state: String?
+    let x: Double
+    let y: Double
+    let onMap: Bool?
+    let temp: Int?
+    let conditions: String?
+    let icon: String?
+    let windDir: String?
+    let wind: Int?
+    let high: Int?
+    let low: Int?
+    let forecast: String?
+    let dayIcon: String?
 }
 
 struct WeatherNow: Decodable, Equatable {

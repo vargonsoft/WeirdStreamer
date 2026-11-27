@@ -209,6 +209,9 @@ class ServerRepository(
     /** The area's radar image (a new address every 5 minutes, so it's fetched again). */
     fun weatherRadarUrl(now: Long): String = "$requestBase/api/guide/weather/radar?v=${now / 300_000}"
 
+    /** The Weather channel's regional or national map ([path] from the weather reply), [width] pixels wide. */
+    fun weatherMapUrl(path: String, width: Int = 1280): String = "$requestBase$path&w=$width"
+
     /** A channel's logo [width] pixels wide in [color] ("rrggbb"), transparent around it. */
     fun guideLogoUrl(channel: com.vargon.weirdstreamer.api.models.GuideChannel, width: Int, color: String = "ffffff"): String =
         "$requestBase${channel.logo}&w=$width&color=$color"

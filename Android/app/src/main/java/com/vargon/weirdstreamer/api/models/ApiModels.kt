@@ -1028,6 +1028,34 @@ data class GuideWeather(
     @SerializedName("alerts") val alerts: List<WeatherAlert>? = null,
     @SerializedName("radar") val radar: Boolean = false,
     @SerializedName("error") val error: String? = null,
+    // the regional and national pages: null until the server has read them (in the background)
+    @SerializedName("regional") val regional: WeatherArea? = null,
+    @SerializedName("national") val national: WeatherArea? = null,
+)
+
+/** The regional or national pages' cities, and their map (GET [map]&w=, 16:9). */
+data class WeatherArea(
+    @SerializedName("map") val map: String = "",
+    @SerializedName("cities") val cities: List<WeatherCity> = emptyList(),
+)
+
+/** A city's weather now (the regional pages) and today's forecast; [x] and [y] its place on the map (fractions from the
+ *  top left), shown there when [onMap]. */
+data class WeatherCity(
+    @SerializedName("name") val name: String = "",
+    @SerializedName("state") val state: String = "",
+    @SerializedName("x") val x: Float = 0f,
+    @SerializedName("y") val y: Float = 0f,
+    @SerializedName("on_map") val onMap: Boolean = false,
+    @SerializedName("temp") val temp: Int? = null,
+    @SerializedName("conditions") val conditions: String? = null,
+    @SerializedName("icon") val icon: String? = null,
+    @SerializedName("wind_dir") val windDir: String? = null,
+    @SerializedName("wind") val wind: Int? = null,
+    @SerializedName("high") val high: Int? = null,
+    @SerializedName("low") val low: Int? = null,
+    @SerializedName("forecast") val forecast: String? = null,
+    @SerializedName("day_icon") val dayIcon: String? = null,
 )
 
 data class WeatherNow(

@@ -968,7 +968,18 @@ What's built (server):
   - Weather: `guide/weather.go`, the National Weather Service for `guide.weatherZip` (Settings › Guide; default
     10001), the ZIP's position from the embedded Census table (`zipcodes.txt.gz`); `GET /api/guide/weather`
     (10-minute cache), `/weather/radar` (the radar station's latest GIF), `/weather/icon?name=` (drawn like the
-    logos' symbols, `weathericons.go`). Pages turn every 10 s by the server's clock.
+    logos' symbols, `weathericons.go`). Pages turn every 10 s by the server's clock: Current Conditions, Local Forecast,
+    Extended Forecast, Latest Observations and the Regional Forecast (the largest cities around the ZIP code, the home city
+    first: their weather now, today's high on the regional map), the Travel Forecast (16 cities across the country, 8 a page:
+    today's forecast, low and high) and the National Forecast (on the US map), and the radar. The regional and national
+    cities (`guide/weathermaps.go`: the reply's `regional` and `national`, each `map` and `cities` with `x`, `y` fractions on
+    it and `on_map`) are read in the background every 30 minutes (four at a time; each city's grid point kept), so the
+    reply never waits for them; the apps ask again after 30 s while they're missing. The cities (every one of 25,000 people
+    or more) and the states' outlines are built in (`uscities.txt.gz`, `usstates.txt.gz`, from the Census Bureau's
+    Gazetteer, population estimates and cartographic boundaries by `Server/scripts/build-weather-maps.py`). Regional cities
+    don't crowd each other's labels (`crowds`, an ellipse), nor do the national map's (the larger kept, `nationalOnMap`).
+    `GET /api/guide/weather/map?region=regional|national&w=` draws the land and state borders (16:9, Albers, transparent
+    water), cached per ZIP code and width.
   - Music: `guide/music.go`, the tracks in `guide.musicPath` (default `guide-music` beside the thumbnails),
     shuffled per day and played by the clock from midnight; `/now`'s `music` (url, offset, credit from
     `<track>.txt`), `GET /api/guide/music?name=`. Under the Weather channel and the Guide channel's cards, with

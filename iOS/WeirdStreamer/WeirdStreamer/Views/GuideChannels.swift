@@ -216,21 +216,82 @@ struct WeatherScreen: View {
     let guide: GuideModel
     let height: CGFloat
 
+    /// The Travel Forecast's cities a page.
+    static let travelPage = 8
+
+    /// Latest Observations and the Travel Forecast: a header row in gold, then a row per city, columns `widths` wide
+    /// (those in `ends` right-aligned). As Android's WeatherTable.
+    private func table(_ h: CGFloat, head: [String], widths: [CGFloat], ends: Set<Int>, rows: [[(String, Color)]]) -> some View {
+        GeometryReader { g in
+            let total = widths.reduce(0, +)
+            VStack(alignment: .leading, spacing: h * 0.6) {
+                HStack(spacing: 0) {
+                    ForEach(Array(head.enumerated()), id: \.offset) { i, t in
+                        Scaled(t.uppercased(), h * 3.4, color: gold, weight: .black)
+                            .frame(width: g.size.width * widths[i] / total, alignment: ends.contains(i) ? .trailing : .leading)
+                    }
+                }
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: 0) {
+                        ForEach(Array(row.enumerated()), id: \.offset) { i, cell in
+                            Scaled(cell.0, h * 4.2, color: cell.1)
+                                .padding(.trailing, h * 1.5)
+                                .frame(width: g.size.width * widths[i] / total, alignment: ends.contains(i) ? .trailing : .leading)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The Regional and National Forecast: the server's map (the land, 16:9, its water this page's blue) with each city's
+    /// icon, today's high and name where it is (those on the map).
+    private func mapPage(_ area: WeatherArea, _ h: CGFloat) -> some View {
+        GeometryReader { g in
+            ZStack(alignment: .topLeading) {
+                GuideImage(relative: area.map + "&w=1280").frame(width: g.size.width, height: g.size.height)
+                ForEach(area.cities.filter { $0.onMap == true }, id: \.name) { c in
+                    VStack(spacing: 0) {
+                        HStack(spacing: h * 0.4) {
+                            if let icon = c.dayIcon { GuideImage(relative: guide.weatherIconPath(icon)).frame(width: h * 6, height: h * 6) }
+                            Scaled((c.high ?? c.low).map { "\($0)°" } ?? "—", h * 5, color: gold, weight: .black)
+                        }
+                        Scaled(c.name, h * 2.6)
+                    }
+                    .fixedSize()
+                    .position(x: g.size.width * c.x, y: g.size.height * c.y)
+                }
+            }
+        }
+        .aspectRatio(16 / 9, contentMode: .fit)
+    }
+
     var body: some View {
         let h = height / 100
         let w = guide.weather
         let clock = guide.clock > 0 ? guide.clock : guide.serverNow()
+        // local (now, today, the extended forecast), regional (the cities around now, then their forecast on the map),
+        // national (the travel forecast's cities, 8 a page, then the map) and the radar: as the web's weatherPages
+        let regional = w?.regional?.cities ?? []
+        let national = w?.national?.cities ?? []
         var pages: [String] = []
         if w?.current != nil { pages.append("now") }
         if !(w?.periods ?? []).isEmpty { pages += ["today", "extended"] }
+        if regional.contains(where: { $0.temp != nil }) { pages.append("observations") }
+        if !regional.isEmpty { pages.append("regional") }
+        for i in stride(from: 0, to: national.count, by: Self.travelPage) { pages.append("travel\(i / Self.travelPage)") }
+        if !national.isEmpty { pages.append("national") }
         if w?.radar == true { pages.append("radar") }
         let page = pages.isEmpty ? "none" : pages[Int((clock / 10_000) % Int64(pages.count))]
-        let titles = ["now": "Current Conditions", "today": "Local Forecast", "extended": "Extended Forecast", "radar": "Local Radar"]
+        let travel = page.hasPrefix("travel") ? Int(page.dropFirst(6)) ?? 0 : -1
+        let titles = ["now": "Current Conditions", "today": "Local Forecast", "extended": "Extended Forecast", "radar": "Local Radar",
+                      "observations": "Latest Observations", "regional": "Regional Forecast", "national": "National Forecast"]
         let alerts = w?.alerts ?? []
         return VStack(spacing: 0) {
             // the gold bar: the page, the place, the time
             HStack {
-                Scaled((titles[page] ?? "Local Forecast").uppercased(), h * 6, color: Color(hex: 0x10204A), weight: .black, shadow: false)
+                Scaled((travel >= 0 ? "Travel Forecast" : titles[page] ?? "Local Forecast").uppercased(), h * 6,
+                       color: Color(hex: 0x10204A), weight: .black, shadow: false)
                 Spacer()
                 Scaled(w?.place ?? "", h * 4, color: Color(hex: 0x10204A), shadow: false).padding(.trailing, h * 3)
                 Scaled(Date(timeIntervalSince1970: Double(clock) / 1000).formatted(date: .omitted, time: .standard), h * 4,
@@ -274,8 +335,26 @@ struct WeatherScreen: View {
                     }
                 case "radar":
                     GuideImage(relative: guide.weatherRadarPath).border(.white, width: 2)
+                case "observations":
+                    table(h, head: ["", "Temp", "Weather", "Wind"], widths: [1.3, 0.6, 2, 0.8], ends: [1], rows: regional.map { c in
+                        [(c.name, .white), (c.temp.map { "\($0)°" } ?? "—", .white), (c.conditions ?? "", .white),
+                         (c.wind.map { $0 == 0 ? "Calm" : "\(c.windDir ?? "") \($0)".trimmingCharacters(in: .whitespaces) } ?? "", .white)]
+                    })
+                case "regional":
+                    mapPage(w!.regional!, h)
+                case "national":
+                    mapPage(w!.national!, h)
                 default:
-                    Scaled(w?.error ?? "The forecast isn't in yet.", h * 5, lines: 3).multilineTextAlignment(.center)
+                    if travel >= 0 {
+                        // the national cities, 8 a page: today's forecast, low and high
+                        table(h, head: ["", "", "Low", "High"], widths: [1.3, 2.2, 0.5, 0.5], ends: [2, 3],
+                              rows: national.dropFirst(travel * Self.travelPage).prefix(Self.travelPage).map { c in
+                            [(c.name, .white), (c.forecast ?? "", .white), (c.low.map { "\($0)°" } ?? "—", lightBlue),
+                             (c.high.map { "\($0)°" } ?? "—", .white)]
+                        })
+                    } else {
+                        Scaled(w?.error ?? "The forecast isn't in yet.", h * 5, lines: 3).multilineTextAlignment(.center)
+                    }
                 }
             }
             .padding(.horizontal, h * 4).padding(.vertical, h * 3)
@@ -297,7 +376,7 @@ struct WeatherScreen: View {
             .clipped()
         }
         .background(LinearGradient(colors: [Color(hex: 0x1D3F9A), Color(hex: 0x0A1F5C), Color(hex: 0x081640)], startPoint: .top, endPoint: .bottom))
-        .task(id: clock / 60_000) { await guide.loadWeather() } // read again once it's 5 minutes old
+        .task(id: clock / 30_000) { await guide.loadWeather() } // read again once it's old
     }
 
     private func nowPage(_ c: WeatherNow, _ h: CGFloat) -> some View {

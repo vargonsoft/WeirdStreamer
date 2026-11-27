@@ -446,7 +446,9 @@ final class GuideModel {
 
     /// Reads the forecast (the server keeps it 10 minutes; asked again after 5).
     func loadWeather() async {
-        if weather != nil && Date().timeIntervalSince(weatherAt) < 300 { return }
+        // after 5 minutes, or 30 seconds while the regional and national pages aren't in yet (the server reads them
+        // in the background)
+        if weather != nil && Date().timeIntervalSince(weatherAt) < (weather?.national != nil ? 300 : 30) { return }
         do {
             weather = try await client.get("/api/guide/weather")
             weatherAt = Date()

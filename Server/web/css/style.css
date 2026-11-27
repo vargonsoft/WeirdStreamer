@@ -4282,6 +4282,107 @@ body:has(#guide-screen.active) > footer {
     font: 900 5cqh/1 sans-serif;
 }
 
+/* Latest Observations and the Travel Forecast: a city a row */
+.weather-table {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto;
+    column-gap: 3cqw;
+    row-gap: 0.6cqh;
+    align-items: center;
+    width: 100%;
+    font: bold 4.2cqh/1.15 sans-serif;
+}
+
+.weather-travel-table {
+    grid-template-columns: auto 1fr auto auto;
+    font-size: 3.8cqh;
+}
+
+.weather-table-head.num {
+    text-align: right;
+}
+
+.weather-table-head {
+    color: #ffd23f;
+    font-size: 3.4cqh;
+    text-transform: uppercase;
+}
+
+.weather-table-city {
+    white-space: nowrap;
+}
+
+.weather-table-temp {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.weather-table-temp.low {
+    color: #9fc3ff;
+}
+
+.weather-table-sky,
+.weather-table-wind {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.weather-table-sky {
+    display: flex;
+    align-items: center;
+    gap: 1cqw;
+}
+
+.weather-table-icon {
+    height: 4.6cqh;
+}
+
+/* The Regional and National Forecast: the server's map, the cities over it */
+.weather-map {
+    position: relative;
+    height: 100%;
+    aspect-ratio: 16 / 9;
+    max-width: 100%;
+}
+
+.weather-map-land {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.weather-map-city {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-shadow: 0.3cqh 0.3cqh 0 #000;
+    white-space: nowrap;
+}
+
+.weather-map-reading {
+    display: flex;
+    align-items: center;
+    gap: 0.4cqw;
+}
+
+.weather-map-icon {
+    height: 6cqh;
+    filter: drop-shadow(0.3cqh 0.3cqh 0 rgba(0, 0, 0, 0.6));
+}
+
+.weather-map-temp {
+    font: 900 5cqh/1 sans-serif;
+    color: #ffd23f;
+}
+
+.weather-map-name {
+    font: bold 2.6cqh/1.1 sans-serif;
+}
+
 .weather-radar {
     height: 100%;
     max-width: 100%;

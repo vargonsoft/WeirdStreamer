@@ -424,7 +424,10 @@ class GuideModel(
 
     /** Reads the forecast (the server keeps it 10 minutes; asked again after 5). */
     suspend fun loadWeather() {
-        if (weather != null && System.currentTimeMillis() - weatherAt < 5 * 60_000) return
+        // after 5 minutes, or 30 seconds while the regional and national pages aren't in yet (the server reads them
+        // in the background)
+        val fresh = if (weather?.national != null) 5 * 60_000 else 30_000
+        if (weather != null && System.currentTimeMillis() - weatherAt < fresh) return
         repo.guideWeather().onSuccess {
             weather = it
             weatherAt = System.currentTimeMillis()
@@ -432,6 +435,8 @@ class GuideModel(
     }
 
     fun weatherIconUrl(name: String) = repo.weatherIconUrl(name)
+
+    fun weatherMapUrl(path: String) = repo.weatherMapUrl(path)
 
     fun weatherRadarUrl() = repo.weatherRadarUrl(serverNow())
 
@@ -674,3 +679,4 @@ fun ReportVoiceOver(model: GuideModel, channel: Int, button: @Composable (String
         scope.launch { label = if (model.reportVoiceOver().isSuccess) "Reported" else "Couldn't report it" }
     }
 }
+

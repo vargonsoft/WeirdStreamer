@@ -258,6 +258,7 @@ function renderGuideGrid() {
     grid.scrollLeft = scrollLeft;
     grid.scrollTop = scrollTop;
     guideGridDay(grid);
+
     if (guide.selected) {
         // The same program selected again, now that the grid was drawn anew
         const c = channels.find(ch => ch.number === guide.selected.channel.number);
@@ -773,7 +774,10 @@ function renderGuideListings() {
 // ---- The Weather channel ----
 
 async function loadWeather() {
-    if (guide.weather && Date.now() - guide.weatherAt < 5 * 60 * 1000) return guide.weather;
+    // read again after 5 minutes, or after 30 seconds while the regional and national pages aren't in yet (the
+    // server reads them in the background)
+    const fresh = guide.weather && guide.weather.national ? 5 * 60 * 1000 : 30 * 1000;
+    if (guide.weather && Date.now() - guide.weatherAt < fresh) return guide.weather;
     try {
         guide.weather = await api.guideWeather();
         guide.weatherAt = Date.now();
@@ -798,12 +802,44 @@ async function showWeather() {
     }, 1000);
 }
 
+// The pages in turn: local (now, today, the extended forecast), regional (the cities around now, then their
+// forecast on the map), national (the travel forecast's cities, 8 a page, then the map) and the radar.
+const TRAVEL_PAGE = 8;
+
 function weatherPages(w) {
     const pages = [];
     if (w.current) pages.push('now');
     if (w.periods && w.periods.length) pages.push('today', 'extended');
+    const regional = (w.regional && w.regional.cities) || [];
+    if (regional.some(c => c.temp != null)) pages.push('observations');
+    if (regional.length) pages.push('regional');
+    const national = (w.national && w.national.cities) || [];
+    for (let i = 0; i < national.length; i += TRAVEL_PAGE) pages.push('travel' + i / TRAVEL_PAGE);
+    if (national.length) pages.push('national');
     if (w.radar) pages.push('radar');
     return pages;
+}
+
+// A map page: the server's map (the land, MapAspect across, its water this page's blue) with each city's
+// icon, temperature and name where it is (those on_map: the national map leaves out a city a bigger one's
+// label would cover).
+function weatherMap(area, temp, icon) {
+    const map = el('div', 'weather-map');
+    const img = el('img', 'weather-map-land');
+    img.src = api.getThumbnailUrl(area.map + '&w=1280');
+    img.alt = '';
+    map.appendChild(img);
+    area.cities.filter(c => c.on_map).forEach(c => {
+        const spot = el('div', 'weather-map-city');
+        spot.style.left = `${c.x * 100}%`;
+        spot.style.top = `${c.y * 100}%`;
+        const row = el('div', 'weather-map-reading');
+        if (icon(c)) row.appendChild(Object.assign(el('img', 'weather-map-icon'), { src: weatherIconUrl(icon(c), 128), alt: '' }));
+        row.appendChild(el('span', 'weather-map-temp', temp(c) != null ? `${temp(c)}°` : '—'));
+        spot.append(row, el('div', 'weather-map-name', c.name));
+        map.appendChild(spot);
+    });
+    return map;
 }
 
 function renderWeather() {
@@ -813,7 +849,7 @@ function renderWeather() {
     const page = pages.length ? pages[Math.floor(serverNow() / 10000) % pages.length] : 'none';
     const clock = new Date(serverNow()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
     // only the clock changes within a page
-    const key = `${page}|${w.updated || 0}|${musicCredit()}`;
+    const key = `${page}|${w.updated || 0}|${(w.regional && w.regional.cities.length) || 0}|${(w.national && w.national.cities.length) || 0}|${musicCredit()}`;
     if (box.dataset.key === key) {
         const c = box.querySelector('.weather-clock');
         if (c) c.textContent = clock;
@@ -822,9 +858,12 @@ function renderWeather() {
     box.dataset.key = key;
     box.innerHTML = '';
     const head = el('div', 'weather-head');
-    const titles = { now: 'Current Conditions', today: 'Local Forecast', extended: 'Extended Forecast', radar: 'Local Radar', none: 'Local Forecast' };
-    head.append(el('div', 'weather-title', titles[page]), el('div', 'weather-place', w.place || ''), el('div', 'weather-clock', clock));
-    const body = el('div', 'weather-body weather-' + page);
+    const titles = { now: 'Current Conditions', today: 'Local Forecast', extended: 'Extended Forecast', radar: 'Local Radar',
+        observations: 'Latest Observations', regional: 'Regional Forecast', national: 'National Forecast', none: 'Local Forecast' };
+    const travel = page.startsWith('travel') ? Number(page.slice(6)) : -1;
+    head.append(el('div', 'weather-title', travel >= 0 ? 'Travel Forecast' : titles[page]), el('div', 'weather-place', w.place || ''),
+        el('div', 'weather-clock', clock));
+    const body = el('div', 'weather-body weather-' + (travel >= 0 ? 'travel' : page));
     const icon = (name, cls) => {
         const img = el('img', cls || 'weather-icon');
         img.src = weatherIconUrl(name);
@@ -869,6 +908,33 @@ function renderWeather() {
                 el('div', 'weather-day-temps', `${p.temp}°` + (night ? ` / ${night.temp}°` : '')));
             body.appendChild(col);
         });
+    } else if (page === 'observations') {
+        // the cities around: now
+        const table = el('div', 'weather-table weather-obs');
+        table.append(...['', 'Temp', 'Weather', 'Wind'].map(t => el('div', 'weather-table-head' + (t === 'Temp' ? ' num' : ''), t)));
+        w.regional.cities.forEach(c => {
+            table.append(el('div', 'weather-table-city', c.name), el('div', 'weather-table-temp', c.temp != null ? `${c.temp}°` : '—'),
+                el('div', 'weather-table-sky', c.conditions || ''),
+                el('div', 'weather-table-wind', c.wind == null ? '' : c.wind === 0 ? 'Calm' : `${c.wind_dir || ''} ${c.wind}`.trim()));
+        });
+        body.appendChild(table);
+    } else if (page === 'regional') {
+        body.appendChild(weatherMap(w.regional, c => c.high != null ? c.high : c.low, c => c.day_icon));
+    } else if (travel >= 0) {
+        // the national cities, 8 a page: today's forecast, low and high
+        const table = el('div', 'weather-table weather-travel-table');
+        table.append(...['', '', 'Low', 'High'].map(t => el('div', 'weather-table-head' + (t ? ' num' : ''), t)));
+        w.national.cities.slice(travel * TRAVEL_PAGE, (travel + 1) * TRAVEL_PAGE).forEach(c => {
+            const sky = el('div', 'weather-table-sky');
+            if (c.day_icon) sky.appendChild(Object.assign(el('img', 'weather-table-icon'), { src: weatherIconUrl(c.day_icon, 96), alt: '' }));
+            sky.appendChild(document.createTextNode(c.forecast || ''));
+            table.append(el('div', 'weather-table-city', c.name), sky,
+                el('div', 'weather-table-temp low', c.low != null ? `${c.low}°` : '—'),
+                el('div', 'weather-table-temp', c.high != null ? `${c.high}°` : '—'));
+        });
+        body.appendChild(table);
+    } else if (page === 'national') {
+        body.appendChild(weatherMap(w.national, c => c.high != null ? c.high : c.low, c => c.day_icon));
     } else if (page === 'radar') {
         const img = el('img', 'weather-radar');
         img.src = api.getThumbnailUrl('/api/guide/weather/radar?v=' + Math.floor(serverNow() / 300000));

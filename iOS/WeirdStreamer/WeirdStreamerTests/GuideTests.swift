@@ -127,6 +127,21 @@ struct GuideTests {
         #expect(n.music?.credit?.hasPrefix("\"Local Forecast\"") == true)
     }
 
+    @Test func weatherAreas() throws {
+        // GET /api/guide/weather's regional and national pages (guide.WeatherArea)
+        let w = try decode(GuideWeather.self, #"""
+        {"place":"New York, NY","zip":"10001","periods":[],"alerts":[],"radar":true,
+         "regional":{"map":"/api/guide/weather/map?region=regional&v=10001","cities":[
+          {"name":"New York","state":"NY","x":0.5,"y":0.52,"on_map":true,"temp":54,"conditions":"Partly Cloudy","icon":"cloudsun",
+           "wind_dir":"SSW","wind":11,"high":57,"low":45,"forecast":"Chance Rain Showers","day_icon":"rain"}]},
+         "national":{"map":"/api/guide/weather/map?region=national","cities":[
+          {"name":"Boston","state":"MA","x":0.89,"y":0.27,"on_map":false,"high":60,"low":46,"forecast":"Chance Light Rain","day_icon":"rain"}]}}
+        """#)
+        let ny = try #require(w.regional?.cities.first)
+        #expect(ny.temp == 54 && ny.windDir == "SSW" && ny.dayIcon == "rain" && ny.onMap == true && ny.x == 0.5)
+        #expect(w.national?.cities.first?.onMap == false && w.national?.map == "/api/guide/weather/map?region=national")
+    }
+
     @Test func weather() throws {
         let w = try decode(GuideWeather.self, """
         {"place":"New York, NY","zip":"10001","updated":1,"radar":true,

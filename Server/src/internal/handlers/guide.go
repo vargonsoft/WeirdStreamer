@@ -542,6 +542,24 @@ func (h *GuideHandler) WeatherRadar(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+// WeatherMap is the Weather channel's regional or national map: GET /api/guide/weather/map?region=regional|national
+// [&w=1280] (a PNG, guide.MapAspect across: the land and the states' borders, transparent around them). The
+// weather reply's regional and national cities have their places on it.
+func (h *GuideHandler) WeatherMap(w http.ResponseWriter, r *http.Request) {
+	width, err := strconv.Atoi(r.URL.Query().Get("w"))
+	if err != nil {
+		width = 1280
+	}
+	b, err := h.weather.Map(r.URL.Query().Get("region"), width)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "private, max-age=86400") // a new ZIP code is a new address (v=)
+	w.Write(b)
+}
+
 // WeatherIcon is a condition icon: GET /api/guide/weather/icon?name=rain[&w=128][&color=rrggbb] (a
 // PNG, white unless color= says, transparent around it).
 func (h *GuideHandler) WeatherIcon(w http.ResponseWriter, r *http.Request) {

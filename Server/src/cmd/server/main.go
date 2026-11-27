@@ -284,6 +284,7 @@ func serve(parent context.Context) {
 	api.HandleFunc("/guide/weather", guideHandler.Weather).Methods("GET")
 	api.HandleFunc("/guide/weather/radar", guideHandler.WeatherRadar).Methods("GET")
 	api.HandleFunc("/guide/weather/icon", guideHandler.WeatherIcon).Methods("GET")
+	api.HandleFunc("/guide/weather/map", guideHandler.WeatherMap).Methods("GET")
 	api.HandleFunc("/guide/music", guideHandler.Music).Methods("GET")
 	api.HandleFunc("/guide/voiceover", guideHandler.VoiceOver).Methods("GET")
 	api.HandleFunc("/guide/voiceover/report", guideHandler.ReportVoiceOver).Methods("POST")

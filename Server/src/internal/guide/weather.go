@@ -82,8 +82,11 @@ type Weather struct {
 	Current *WeatherNow     `json:"current,omitempty"`
 	Periods []WeatherPeriod `json:"periods"`
 	Alerts  []WeatherAlert  `json:"alerts"`
-	Radar   bool            `json:"radar"`           // GET /api/guide/weather/radar has the area's radar image
-	Error   string          `json:"error,omitempty"` // why there's nothing (an unknown ZIP code, no answer)
+	Radar   bool            `json:"radar"` // GET /api/guide/weather/radar has the area's radar image
+	// The regional and national pages (weathermaps.go): nil until they've been read (in the background)
+	Regional *WeatherArea `json:"regional,omitempty"`
+	National *WeatherArea `json:"national,omitempty"`
+	Error    string       `json:"error,omitempty"` // why there's nothing (an unknown ZIP code, no answer)
 }
 
 // WeatherNow is the latest observation, in US units. Missing readings are left out.
@@ -173,6 +176,7 @@ type WeatherService struct {
 	radar   []byte
 	radarAt time.Time
 	client  *http.Client
+	area    weatherAreas // the regional and national pages
 }
 
 type nwsPoint struct {
@@ -186,8 +190,16 @@ func NewWeatherService() *WeatherService {
 }
 
 // Get is the weather, read again when it's 10 minutes old (one reading at a time; a failed one keeps
-// what was read before).
+// what was read before), with the regional and national pages as last read (they're read in the
+// background every 30 minutes).
 func (w *WeatherService) Get(ctx context.Context) *Weather {
+	local := w.local(ctx)
+	out := *local
+	out.Regional, out.National = w.areas(out.Zip)
+	return &out
+}
+
+func (w *WeatherService) local(ctx context.Context) *Weather {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	zip := WeatherZip()

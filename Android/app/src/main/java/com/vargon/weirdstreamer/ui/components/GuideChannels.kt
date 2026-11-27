@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -235,19 +236,76 @@ fun GuideListings(model: GuideModel, modifier: Modifier) {
     }
 }
 
+/** The Travel Forecast's cities a page. */
+private const val TRAVEL_PAGE = 8
+
+/** Latest Observations and the Travel Forecast: a header row in gold, then a row per city, columns [weights] wide (those in
+ *  [ends] right-aligned). */
+@Composable
+private fun WeatherTable(s: Scale, head: List<String>, weights: List<Float>, rows: List<List<Pair<String, Color>>>,
+                         ends: Set<Int> = emptySet()) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(s.dp(0.6f))) {
+        Row(Modifier.fillMaxWidth()) {
+            head.forEachIndexed { i, t ->
+                ScaledText(t.uppercase(), s.sp(3.4f), Modifier.weight(weights[i]).padding(end = s.dp(1.5f)), color = Gold,
+                    weight = FontWeight.Black, align = if (i in ends) TextAlign.End else TextAlign.Start)
+            }
+        }
+        rows.forEach { row ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                row.forEachIndexed { i, (text, color) ->
+                    ScaledText(text, s.sp(4.2f), Modifier.weight(weights[i]).padding(end = s.dp(1.5f)), color = color,
+                        align = if (i in ends) TextAlign.End else TextAlign.Start)
+                }
+            }
+        }
+    }
+}
+
+/** The Regional and National Forecast: the server's map (the land, 16:9, its water this page's blue) with each city's
+ *  icon, today's high and name where it is (those on the map). */
+@Composable
+private fun WeatherMapPage(model: GuideModel, area: com.vargon.weirdstreamer.api.models.WeatherArea, s: Scale) {
+    BoxWithConstraints(Modifier.fillMaxHeight().aspectRatio(16f / 9f)) {
+        val mapWidth = maxWidth
+        val mapHeight = maxHeight
+        AsyncImage(model = model.weatherMapUrl(area.map), contentDescription = null, modifier = Modifier.fillMaxSize())
+        area.cities.filter { it.onMap }.forEach { c ->
+            // centered on its place
+            Column(Modifier.offset(x = mapWidth * c.x - s.dp(10f), y = mapHeight * c.y - s.dp(4.5f)).width(s.dp(20f)),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    c.dayIcon?.let { AsyncImage(model = model.weatherIconUrl(it), contentDescription = null, modifier = Modifier.size(s.dp(6f))) }
+                    ScaledText((c.high ?: c.low)?.let { "$it°" } ?: "—", s.sp(5f), color = Gold, weight = FontWeight.Black)
+                }
+                ScaledText(c.name, s.sp(2.6f), maxLines = 1)
+            }
+        }
+    }
+}
+
 /** The Weather channel: its pages, turned every 10 seconds by the server's clock (the same on every screen). */
 @Composable
 fun WeatherScreen(model: GuideModel, modifier: Modifier) {
     LaunchedEffect(Unit) { model.loadWeather() }
     val w = model.weather
     val clock = model.clock.takeIf { it > 0 } ?: model.serverNow()
+    // local (now, today, the extended forecast), regional (the cities around now, then their forecast on the map),
+    // national (the travel forecast's cities, 8 a page, then the map) and the radar: as the web's weatherPages
+    val regional = w?.regional?.cities.orEmpty()
+    val national = w?.national?.cities.orEmpty()
     val pages = buildList {
         if (w?.current != null) add("now")
         if (!w?.periods.isNullOrEmpty()) { add("today"); add("extended") }
+        if (regional.any { it.temp != null }) add("observations")
+        if (regional.isNotEmpty()) add("regional")
+        for (i in national.indices step TRAVEL_PAGE) add("travel${i / TRAVEL_PAGE}")
+        if (national.isNotEmpty()) add("national")
         if (w?.radar == true) add("radar")
     }
     val page = if (pages.isEmpty()) "none" else pages[((clock / 10_000) % pages.size).toInt()]
-    LaunchedEffect(clock / 60_000) { model.loadWeather() } // read again once it's 5 minutes old
+    val travel = if (page.startsWith("travel")) page.removePrefix("travel").toInt() else -1
+    LaunchedEffect(clock / 30_000) { model.loadWeather() } // read again once it's old
     BoxWithConstraints(modifier.background(Brush.verticalGradient(listOf(Color(0xFF1D3F9A), Color(0xFF0A1F5C), Color(0xFF081640))))) {
         val s = Scale(maxHeight, LocalDensity.current)
         val screenWidth = maxWidth
@@ -255,8 +313,9 @@ fun WeatherScreen(model: GuideModel, modifier: Modifier) {
             // the gold bar: the page, the place, the time
             Row(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xFFE6B800), Color(0xFFB38600))))
                 .padding(horizontal = s.dp(4f), vertical = s.dp(2f)), verticalAlignment = Alignment.CenterVertically) {
-                val title = mapOf("now" to "Current Conditions", "today" to "Local Forecast", "extended" to "Extended Forecast",
-                    "radar" to "Local Radar")[page] ?: "Local Forecast"
+                val title = if (travel >= 0) "Travel Forecast" else mapOf("now" to "Current Conditions", "today" to "Local Forecast",
+                    "extended" to "Extended Forecast", "radar" to "Local Radar", "observations" to "Latest Observations",
+                    "regional" to "Regional Forecast", "national" to "National Forecast")[page] ?: "Local Forecast"
                 ScaledText(title.uppercase(), s.sp(6f), Modifier.weight(1f), color = Color(0xFF10204A), weight = FontWeight.Black, shadow = false)
                 ScaledText(w?.place ?: "", s.sp(4f), Modifier.padding(end = s.dp(3f)), color = Color(0xFF10204A), shadow = false)
                 ScaledText(java.text.DateFormat.getTimeInstance(java.text.DateFormat.MEDIUM).format(Date(clock)), s.sp(4f),
@@ -295,7 +354,20 @@ fun WeatherScreen(model: GuideModel, modifier: Modifier) {
                     }
                     "radar" -> AsyncImage(model = model.weatherRadarUrl(), contentDescription = "Radar", contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxHeight().border(2.dp, Color.White))
-                    else -> ScaledText(w?.error ?: "The forecast isn't in yet.", s.sp(5f), maxLines = 3, align = TextAlign.Center)
+                    "observations" -> WeatherTable(s, listOf("", "Temp", "Weather", "Wind"), listOf(1.3f, 0.6f, 2f, 0.8f), regional.map { c ->
+                        listOf(c.name to Color.White, (c.temp?.let { "$it°" } ?: "—") to Color.White, (c.conditions ?: "") to Color.White,
+                            (c.wind?.let { if (it == 0) "Calm" else "${c.windDir.orEmpty()} $it".trim() } ?: "") to Color.White)
+                    })
+                    "regional" -> WeatherMapPage(model, w!!.regional!!, s)
+                    "national" -> WeatherMapPage(model, w!!.national!!, s)
+                    else -> if (travel >= 0) {
+                        // the national cities, 8 a page: today's forecast, low and high
+                        WeatherTable(s, listOf("", "", "Low", "High"), listOf(1.3f, 2.2f, 0.5f, 0.5f),
+                            national.drop(travel * TRAVEL_PAGE).take(TRAVEL_PAGE).map { c ->
+                                listOf(c.name to Color.White, (c.forecast ?: "") to Color.White,
+                                    (c.low?.let { "$it°" } ?: "—") to LightBlue, (c.high?.let { "$it°" } ?: "—") to Color.White)
+                            }, ends = setOf(2, 3))
+                    } else ScaledText(w?.error ?: "The forecast isn't in yet.", s.sp(5f), maxLines = 3, align = TextAlign.Center)
                 }
             }
             // warnings scroll along the bottom in red; the music's credit stays on screen
