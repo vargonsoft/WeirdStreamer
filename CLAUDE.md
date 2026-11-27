@@ -885,7 +885,8 @@ What's built (server):
     (`localStorage.guideChannel`).
   - Each item from `/now` plays as is, seeked to the channel's offset, where the browser can play it
     (`originalProblem`, the default audio track). Otherwise it plays through the server's stream with
-    `start=` (Compatibility (Auto)).
+    `start=` (Compatibility (Auto)). An item the browser then fails on (a QuickTime .mov in Firefox) goes on
+    through the stream, then a full transcode, from where the channel is (`playGuideItem`'s `onerror`).
   - A timer asks `/now` again when the item ends, by the server's clock (`guide.skew`).
   - Bumpers are a card drawn over the picture (`showBumper`).
   - There's no seeking, and a pause mutes instead. Typing a number tunes to that channel, and Up and

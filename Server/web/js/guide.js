@@ -417,24 +417,47 @@ async function playGuideItem(now, request) {
     const original = codecs && !originalProblem(codecs) && (!track || browserPlaysAudio(track));
     guideVideo.muted = guide.muted;
     guide.fileStart = 0; // where the player's time 0 is in the file (a stream's start)
-    if (original) {
-        guideVideo.src = api.getStreamUrl(now.path);
-        guideVideo.addEventListener('loadedmetadata', () => {
-            if (request === guide.request) guideVideo.currentTime = offset();
-        }, { once: true });
-    } else {
-        const copy = browserVideo(codecs);
+    // The server's stream from where the channel is: its video copied where the browser plays it, else
+    // transcoded; the audio kept where the browser plays it. full: all of it transcoded (H.264, stereo AAC).
+    const playStream = (full) => {
+        const copy = !full && browserVideo(codecs);
         let url = api.getStreamUrl(now.path, copy ? 'audio' : true);
-        url += track && KEPT_AUDIO.includes(track.codec) && browserPlaysAudio(track) ? '&audiocodec=copy' : '&audiocodec=aac&channels=2';
+        url += !full && track && KEPT_AUDIO.includes(track.codec) && browserPlaysAudio(track) ? '&audiocodec=copy' : '&audiocodec=aac&channels=2';
         const start = offset();
+        guide.fileStart = 0;
         if (start > 1) {
             url += `&start=${start.toFixed(2)}`;
             guide.fileStart = start;
         }
         guideVideo.src = url;
+        playGuideVideo();
+    };
+    // What the browser can't play (a file it can't open, such as a QuickTime .mov in Firefox, or a stream
+    // it can't decode) goes on through the server: the stream, then a full transcode, as the player does.
+    let step = original ? 'original' : browserVideo(codecs) ? 'copy' : 'full';
+    guideVideo.onerror = () => {
+        if (request !== guide.request || !guideVideo.getAttribute('src')) return;
+        if (step === 'full') {
+            guideVideo.onerror = null;
+            return;
+        }
+        step = step === 'original' && browserVideo(codecs) ? 'copy' : 'full';
+        playStream(step === 'full');
+    };
+    if (original) {
+        guideVideo.src = api.getStreamUrl(now.path);
+        guideVideo.addEventListener('loadedmetadata', () => {
+            if (request === guide.request && step === 'original') guideVideo.currentTime = offset();
+        }, { once: true });
+        playGuideVideo();
+    } else {
+        playStream(step === 'full');
     }
+}
+
+// Plays the Guide's video; autoplay with sound refused, it plays muted (the mute button says how to unmute).
+function playGuideVideo() {
     guideVideo.play().catch(error => {
-        // Autoplay with sound refused: play muted, and say how to unmute.
         if (error.name === 'NotAllowedError' && !guideVideo.muted) {
             guide.muted = guideVideo.muted = true;
             updateGuideMute();
