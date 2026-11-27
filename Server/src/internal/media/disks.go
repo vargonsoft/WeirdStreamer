@@ -104,7 +104,7 @@ func busiest() diskLoad {
 	}
 	if sh := load.Shares(); len(sh) > 0 {
 		d.share, d.name, d.ms = true, sh[0].Library, sh[0].Ms
-		if d.use > maxDisk {
+		if d.use > maxDisk() {
 			d.share = false // the disk is over its limit; that's the reason to give
 		}
 	}
@@ -119,18 +119,18 @@ func (d diskLoad) waitReason() (bool, string) {
 		also = ", and someone is playing from it"
 	}
 	if d.share {
-		limit := float64(relaxedShareMs)
+		limit := relaxedShareMs()
 		if d.contended {
-			limit = maxShareMs
+			limit = maxShareMs()
 		}
 		if d.ms > limit {
 			return true, fmt.Sprintf("%s busy (reads take %.0f ms%s)", d.name, d.ms, also)
 		}
 		return false, ""
 	}
-	limit := relaxedDisk
+	limit := relaxedDisk()
 	if d.contended {
-		limit = maxDisk
+		limit = maxDisk()
 	}
 	if d.use > limit {
 		name := "Disk"
@@ -145,15 +145,15 @@ func (d diskLoad) waitReason() (bool, string) {
 // overloaded says whether a disc decode already running on the file should stop.
 func (d diskLoad) overloaded() bool {
 	if d.share {
-		limit := float64(relaxedStopShareMs)
+		limit := relaxedShareMs()
 		if d.contended {
-			limit = stopShareMs
+			limit = maxShareMs()
 		}
-		return d.ms > limit
+		return d.ms > stopShareMs(limit)
 	}
-	limit := relaxedStopDisk
+	limit := relaxedDisk()
 	if d.contended {
-		limit = stopDisk
+		limit = maxDisk()
 	}
-	return d.use > limit
+	return d.use > stopDisk(limit)
 }

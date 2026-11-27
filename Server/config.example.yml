@@ -175,6 +175,15 @@ jobs:
   # Decode trickplay frames on the CPU even with a hardware encoder chosen (whose GPU decodes them
   # otherwise): a CPU with many cores can be faster than a small GPU, at the cost of its time and memory
   trickplayCPUOnly: false
+  # When every background job (trickplay, intros and credits, styled subtitles…) waits for the disk or
+  # share a file is on (0: the default; the Jobs page changes these). A disk's busy share of its time,
+  # 5 to 99%: 50 where someone is playing from it, 90 where no one is (Idle). A network share's or FUSE
+  # pool's read time, 5 to 10000 ms: 60 and 500. A job already reading stops further up: by default at
+  # 90% and 98%, 150 and 1000 ms (a fifth of the way from the limit to 100%; twice the ms, or 90 more).
+  waitDiskPercent: 0
+  waitDiskIdlePercent: 0
+  waitShareMs: 0
+  waitShareIdleMs: 0
 
 # The Guide: live channels made from the libraries with showInGuide
 guide:

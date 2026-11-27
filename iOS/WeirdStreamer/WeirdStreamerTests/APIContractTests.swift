@@ -81,6 +81,18 @@ struct APIContractTests {
         #expect(a.languages == ["en", "fr"])
     }
 
+    @Test func waitLimits() throws {
+        // GET /api/admin/jobs: the load with config.yml's wait limits (0: the default) and the defaults.
+        let jobs = try decode(JobsResponse.self, #"""
+        {"jobs":[],"load":{"available":true,"max_disk":0.5,"relaxed_disk":0.95,"max_share_ms":40,"relaxed_share_ms":500,
+         "limits":{"disk_percent":0,"disk_idle_percent":95,"share_ms":40,"share_idle_ms":0},
+         "default_limits":{"disk_percent":50,"disk_idle_percent":90,"share_ms":60,"share_idle_ms":500}}}
+        """#)
+        let l = try #require(jobs.load)
+        #expect(l.limits == WaitLimits(diskPercent: 0, diskIdlePercent: 95, shareMs: 40, shareIdleMs: 0))
+        #expect(l.defaultLimits?.shareIdleMs == 500 && l.relaxedDisk == 0.95)
+    }
+
     @Test func trickplayMemory() throws {
         // GET /api/admin/jobs: trickplay's settings with media.TrickplayMemory (4 GB and 2 GB of swap).
         let jobs = try decode(JobsResponse.self, #"""

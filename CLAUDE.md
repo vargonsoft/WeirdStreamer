@@ -469,7 +469,10 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   exec.ErrNotFound and not nice's exit status 127, which read like the file being turned down (a
   server started before ffmpeg was installed once marked every video done without frames).
 - **When jobs wait for the disks** (`media/load.go`, `disks.go`): above 50% busy on the disk someone is
-  playing from, 90% on one nobody is; a file whose disk can't be told counts the busiest disk at 50%.
+  playing from, 90% on one nobody is (these and the shares' 60 and 500 ms are config.yml's `jobs.waitDiskPercent`,
+  `waitDiskIdlePercent`, `waitShareMs`, `waitShareIdleMs`, 0 the default, `config.CurrentWaitLimits`; the Jobs page's
+  "When jobs wait" fields on web, phone, TV and iPhone, `POST /api/admin/jobs/limits`, used at once; a job already
+  reading stops further up, `stopDisk` and `stopShareMs`); a file whose disk can't be told counts the busiest disk at 50%.
   Libraries on network shares (SMB, NFS) and FUSE mounts (a mergerfs pool, sshfs, rclone: no block
   device, and a container's `/proc/diskstats` lists the host's disks) are judged by timing 64 KB reads
   from a big file in each instead (`isTimedFS`, `IsTimedMount`; above 60 ms where someone is playing,

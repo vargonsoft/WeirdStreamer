@@ -874,6 +874,7 @@ fun JobsTab(server: ServerRepository) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp)) }
                 m.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
+            d.load?.takeIf { it.defaultLimits != null }?.let { l -> item { WaitLimitsBox(l, m::saveWaitLimits) } }
             d.trickplay?.let { tp -> item { TrickplaySettingsBox(tp, m::saveTrickplay, m::saveTrickplayGpu) } }
             itemsIndexed(d.jobs, key = { _, j -> j.id }) { _, j -> JobCard(j, m.now, m::control) }
             item { StorageCard(d.storage.orEmpty()) }
@@ -884,6 +885,52 @@ fun JobsTab(server: ServerRepository) {
 // Trickplay's runners and frames per runner, saved to the server's config.yml (an empty field is
 // automatic, sent as 0). The tab refreshes every few seconds, so the fields only follow the server while
 // they aren't being edited. save returns an error to show, or null.
+/** When jobs wait for a disk or share: config.yml's limits, an empty field the default. The fields follow the server
+ *  while they aren't being edited, as trickplay's. */
+@Composable
+private fun WaitLimitsBox(l: com.vargon.weirdstreamer.api.models.JobLoad, save: suspend (com.vargon.weirdstreamer.api.models.WaitLimits) -> String?) {
+    val scope = rememberCoroutineScope()
+    val fields = waitLimitFields(l)
+    val values = remember { mutableStateListOf(*fields.map { it.value }.toTypedArray()) }
+    var edited by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    LaunchedEffect(fields.map { it.value }) {
+        if (!edited) fields.forEachIndexed { i, f -> values[i] = f.value }
+    }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("When jobs wait", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            fields.chunked(2).forEachIndexed { row, pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pair.forEachIndexed { j, f ->
+                        val i = row * 2 + j
+                        OutlinedTextField(values[i], { values[i] = it.filter(Char::isDigit); edited = true },
+                            label = { Text("${f.label} (${f.unit})") }, placeholder = { Text("Default: ${f.default}") },
+                            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+            Text(WAIT_LIMITS_ABOUT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(shape = AppButtonShape, colors = phoneButtonColors(), onClick = {
+                    scope.launch {
+                        val err = save(waitLimitsFrom(values))
+                        if (err == null) {
+                            edited = false
+                            message = "Saved. Applies now." to false
+                        } else message = err to true
+                    }
+                }) { Text("Save") }
+                message?.let { (text, isError) ->
+                    Text(text, style = MaterialTheme.typography.bodySmall,
+                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun TrickplaySettingsBox(tp: TrickplaySettings, save: suspend (Int, Int) -> String?, saveGpu: suspend (Boolean) -> String?) {
     val scope = rememberCoroutineScope()

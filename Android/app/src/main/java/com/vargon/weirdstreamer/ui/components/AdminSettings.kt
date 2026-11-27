@@ -681,6 +681,13 @@ class JobsModel(val server: ServerRepository, private val scope: CoroutineScope)
     /** Has trickplay decode on the GPU, or on the CPU: an error to show, or null. */
     suspend fun saveTrickplayGpu(useGpu: Boolean): String? = saveTrickplay(TrickplaySettingsRequest(useGpu = useGpu))
 
+    /** Saves when jobs wait for a disk or share (0: the default): an error to show, or null. */
+    suspend fun saveWaitLimits(limits: com.vargon.weirdstreamer.api.models.WaitLimits): String? {
+        val (resp, err) = attempt { server.api.setWaitLimits(limits) }
+        if (resp != null) data = resp
+        return err
+    }
+
     private suspend fun saveTrickplay(request: TrickplaySettingsRequest): String? {
         val (resp, err) = attempt { server.api.setTrickplaySettings(request) }
         if (resp != null) data = resp
@@ -787,6 +794,32 @@ internal fun trickplayMemoryTable(r: Int, f: Int, m: com.vargon.weirdstreamer.ap
     }
     return TrickplayTable(summary, rows)
 }
+
+/** The wait limits' fields: label, unit, the set value ("" for the default) and the default, in the order
+ *  [waitLimitsFrom] reads them back. */
+internal fun waitLimitFields(l: JobLoad): List<WaitLimitField> {
+    val set = l.limits ?: com.vargon.weirdstreamer.api.models.WaitLimits()
+    val d = l.defaultLimits ?: com.vargon.weirdstreamer.api.models.WaitLimits(50, 90, 60, 500)
+    fun v(n: Int) = if (n > 0) "$n" else ""
+    return listOf(
+        WaitLimitField("Disk, someone playing from it", "%", v(set.diskPercent), d.diskPercent),
+        WaitLimitField("Disk, no one playing from it", "%", v(set.diskIdlePercent), d.diskIdlePercent),
+        WaitLimitField("Share reads, someone playing from it", "ms", v(set.shareMs), d.shareMs),
+        WaitLimitField("Share reads, no one playing from it", "ms", v(set.shareIdleMs), d.shareIdleMs))
+}
+
+internal data class WaitLimitField(val label: String, val unit: String, val value: String, val default: Int)
+
+/** The request for the fields' texts (empty: 0, the default). */
+internal fun waitLimitsFrom(values: List<String>): com.vargon.weirdstreamer.api.models.WaitLimits {
+    val n = values.map { it.toIntOrNull() ?: 0 }
+    return com.vargon.weirdstreamer.api.models.WaitLimits(n[0], n[1], n[2], n[3])
+}
+
+internal const val WAIT_LIMITS_ABOUT = "Every job waits while the disk or share its file is on is busier than these. Disks 5 to 99%, " +
+    "shares (network shares and mergerfs pools) 5 to 10000 ms; the limit where no one plays can't be lower. A job already " +
+    "reading stops further up: a disk at four fifths of the way from its limit to 100%, a share at twice its time or 90 ms more. " +
+    "Empty is the default."
 
 internal fun loadText(l: JobLoad): String {
     fun pct(f: Double) = "${(f * 100).roundToInt()}%"

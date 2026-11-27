@@ -64,6 +64,77 @@ type JobsConfig struct {
 	// Decode trickplay frames on the CPU even with a hardware encoder chosen (whose GPU decodes them
 	// otherwise): a CPU with many cores can make them faster than a small GPU.
 	TrickplayCPUOnly bool `json:"trickplayCPUOnly" yaml:"trickplayCPUOnly"`
+	// When every background job waits for a disk or share (0: the default): a disk's busy share of its
+	// time, in percent, and a network share's read time, in ms; each where someone is playing from it
+	// and where no one is (Idle). A job already reading stops at the stop limits worked out from these.
+	WaitDiskPercent     int `json:"waitDiskPercent" yaml:"waitDiskPercent"`
+	WaitDiskIdlePercent int `json:"waitDiskIdlePercent" yaml:"waitDiskIdlePercent"`
+	WaitShareMs         int `json:"waitShareMs" yaml:"waitShareMs"`
+	WaitShareIdleMs     int `json:"waitShareIdleMs" yaml:"waitShareIdleMs"`
+}
+
+// WaitLimits are the jobs' wait limits, as config.yml has them (0: the default) or in effect.
+type WaitLimits struct {
+	DiskPercent     int `json:"disk_percent"`      // a disk someone plays from
+	DiskIdlePercent int `json:"disk_idle_percent"` // one nobody plays from
+	ShareMs         int `json:"share_ms"`          // a share's read time, someone playing from it
+	ShareIdleMs     int `json:"share_idle_ms"`     // ... nobody
+}
+
+// DefaultWaitLimits are the limits a 0 gives.
+var DefaultWaitLimits = WaitLimits{DiskPercent: 50, DiskIdlePercent: 90, ShareMs: 60, ShareIdleMs: 500}
+
+const (
+	MinWaitDiskPercent, MaxWaitDiskPercent = 5, 99
+	MinWaitShareMs, MaxWaitShareMs         = 5, 10000
+)
+
+// Set returns the limits config.yml sets (0: the default).
+func (j JobsConfig) Set() WaitLimits {
+	return WaitLimits{j.WaitDiskPercent, j.WaitDiskIdlePercent, j.WaitShareMs, j.WaitShareIdleMs}
+}
+
+// Effective fills in the defaults.
+func (w WaitLimits) Effective() WaitLimits {
+	or := func(v, d int) int {
+		if v == 0 {
+			return d
+		}
+		return v
+	}
+	d := DefaultWaitLimits
+	return WaitLimits{or(w.DiskPercent, d.DiskPercent), or(w.DiskIdlePercent, d.DiskIdlePercent),
+		or(w.ShareMs, d.ShareMs), or(w.ShareIdleMs, d.ShareIdleMs)}
+}
+
+func (w WaitLimits) validate() error {
+	for _, p := range []int{w.DiskPercent, w.DiskIdlePercent} {
+		if p != 0 && (p < MinWaitDiskPercent || p > MaxWaitDiskPercent) {
+			return fmt.Errorf("a disk's wait limit must be %d to %d%% (0: the default)", MinWaitDiskPercent, MaxWaitDiskPercent)
+		}
+	}
+	for _, ms := range []int{w.ShareMs, w.ShareIdleMs} {
+		if ms != 0 && (ms < MinWaitShareMs || ms > MaxWaitShareMs) {
+			return fmt.Errorf("a share's wait limit must be %d to %d ms (0: the default)", MinWaitShareMs, MaxWaitShareMs)
+		}
+	}
+	if e := w.Effective(); e.DiskIdlePercent < e.DiskPercent || e.ShareIdleMs < e.ShareMs {
+		return fmt.Errorf("the limit where no one is playing can't be lower than the one where someone is")
+	}
+	return nil
+}
+
+var waitLimits atomic.Pointer[WaitLimits]
+
+// SetWaitLimits sets the limits the jobs read (Load does, and tests).
+func SetWaitLimits(w WaitLimits) { waitLimits.Store(&w) }
+
+// CurrentWaitLimits are the jobs' wait limits in effect (live: the Jobs page changes them).
+func CurrentWaitLimits() WaitLimits {
+	if w := waitLimits.Load(); w != nil {
+		return w.Effective()
+	}
+	return DefaultWaitLimits
 }
 
 const (
@@ -103,7 +174,7 @@ func TrickplaySettings() (runners, framesPerRunner int) {
 	return r, f
 }
 
-// UpdateJobs saves new trickplay settings to the config file and reloads them.
+// UpdateJobs saves new jobs settings (trickplay's, the wait limits) to the config file and reloads them.
 func UpdateJobs(jobs JobsConfig) error {
 	c := *GlobalConfig
 	c.Jobs = jobs
@@ -354,6 +425,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("trickplay runners must be 1 to %d, and frames per runner 1 to %d (0: automatic)", MaxTrickplayRunners, MaxTrickplayFrames)
 	} else if r > 0 && f > 0 && r*f > MaxTrickplayProduct {
 		return fmt.Errorf("runners times frames per runner can't exceed %d (about %d GB of memory)", MaxTrickplayProduct, MaxTrickplayProduct*110/1000)
+	}
+	if err := c.Jobs.Set().validate(); err != nil {
+		return err
 	}
 	if e := c.Streaming.HardwareEncoder; e != "" && !slices.Contains(HardwareEncoders, e) {
 		return fmt.Errorf("streaming.hardwareEncoder must be empty or one of %s", strings.Join(HardwareEncoders, ", "))

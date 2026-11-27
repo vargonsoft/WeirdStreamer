@@ -266,6 +266,9 @@ interface ApiService {
     @POST("/api/admin/jobs/{id}/{action}")
     suspend fun controlJob(@Path("id") id: String, @Path("action") action: String): Response<JobsResponse>
 
+    @POST("/api/admin/jobs/limits")
+    suspend fun setWaitLimits(@Body request: com.vargon.weirdstreamer.api.models.WaitLimits): Response<JobsResponse>
+
     @POST("/api/admin/jobs/trickplay/settings")
     suspend fun setTrickplaySettings(@Body request: com.vargon.weirdstreamer.api.models.TrickplaySettingsRequest): Response<JobsResponse>
 

@@ -36,6 +36,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,6 +74,7 @@ import androidx.tv.material3.Text
 import com.vargon.weirdstreamer.api.models.AdminStream
 import com.vargon.weirdstreamer.api.models.BackgroundJob
 import com.vargon.weirdstreamer.api.models.StorageUse
+import com.vargon.weirdstreamer.api.models.JobLoad
 import com.vargon.weirdstreamer.api.models.TrickplaySettings
 import com.vargon.weirdstreamer.repository.ServerRepository
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
@@ -826,6 +828,7 @@ private fun TvStreamText(s: AdminStream) {
 fun TvJobsTab(server: ServerRepository, first: FocusRequester, up: FocusRequester) {
     val m = rememberJobs(server)
     var trickplay by remember { mutableStateOf(false) }
+    var waitLimits by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val d = m.data
@@ -838,10 +841,18 @@ fun TvJobsTab(server: ServerRepository, first: FocusRequester, up: FocusRequeste
     m.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
     val tp = d.trickplay
     var firstUsed = false
+    val load = d.load?.takeIf { it.defaultLimits != null }
+    if (load != null) {
+        firstUsed = true
+        TvSettingsRow("When jobs wait", waitLimitFields(load).joinToString(" · ") { "${it.value.ifEmpty { "${it.default}" }} ${it.unit}" },
+            focus = first, up = up, onClick = { waitLimits = true }) { TvChevron() }
+    }
     if (tp != null) {
+        val isFirst = !firstUsed
         firstUsed = true
         val auto = { on: Boolean -> if (on) " (auto)" else "" }
-        TvSettingsRow("Trickplay", "${tp.runners} runners${auto(tp.autoRunners)} × ${tp.framesPerRunner} frames per runner${auto(tp.autoFrames)}", focus = first, up = up,
+        TvSettingsRow("Trickplay", "${tp.runners} runners${auto(tp.autoRunners)} × ${tp.framesPerRunner} frames per runner${auto(tp.autoFrames)}",
+            focus = if (isFirst) first else null, up = if (isFirst) up else null,
             onClick = { trickplay = true }) { TvChevron() }
         // Saved at once; a GPU can only be chosen when there's one trickplay can decode on.
         tp.gpu?.takeIf { it.isNotEmpty() }?.let { gpu ->
@@ -857,6 +868,39 @@ fun TvJobsTab(server: ServerRepository, first: FocusRequester, up: FocusRequeste
     }
     TvInfoCard(focus = if (!firstUsed && d.jobs.isEmpty()) first else null) { TvStorageText(d.storage.orEmpty()) }
     if (trickplay && tp != null) TvTrickplayDialog(tp, m::saveTrickplay, onDismiss = { trickplay = false })
+    if (waitLimits && load != null) TvWaitLimitsDialog(load, m::saveWaitLimits, onDismiss = { waitLimits = false })
+}
+
+/** When jobs wait for a disk or share: config.yml's limits, an empty field the default. */
+@Composable
+private fun TvWaitLimitsDialog(l: JobLoad, save: suspend (com.vargon.weirdstreamer.api.models.WaitLimits) -> String?, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val fields = remember { waitLimitFields(l) }
+    val values = remember { mutableStateListOf(*fields.map { it.value }.toTypedArray()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val field = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { field.requestFocus() } }
+    val context = LocalContext.current
+    TvDialogFrame("When jobs wait", onDismiss) {
+        val number = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
+        fields.forEachIndexed { i, f ->
+            TextField(values[i], { values[i] = it.filter(Char::isDigit) }, label = { FieldText("${f.label} (${f.unit})") },
+                placeholder = { FieldText("Default: ${f.default}") }, singleLine = true,
+                colors = tvTextFieldColors(), keyboardOptions = number,
+                modifier = Modifier.fillMaxWidth().tvFieldLeavesOnUpDown().then(if (i == 0) Modifier.focusRequester(field) else Modifier))
+        }
+        TvNote(WAIT_LIMITS_ABOUT)
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+        TvDialogButtons("Save", onDismiss = onDismiss) {
+            scope.launch {
+                val err = save(waitLimitsFrom(values))
+                if (err == null) {
+                    Toast.makeText(context, "Saved. Applies now.", Toast.LENGTH_SHORT).show()
+                    onDismiss()
+                } else error = err
+            }
+        }
+    }
 }
 
 @Composable

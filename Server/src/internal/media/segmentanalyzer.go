@@ -211,24 +211,32 @@ func busyFor(path string, streams *StreamTracker) (bool, string) {
 // each network share's read time (ms), slowest first. Jobs wait above MaxDisk and MaxShareMs on a
 // disk or share someone is playing from, and above the Relaxed limits on one nobody is.
 type LoadStatus struct {
-	Available           bool        `json:"available"`
-	CPU                 float64     `json:"cpu"`
-	Disk                float64     `json:"disk"`
-	MaxDisk             float64     `json:"max_disk"`
-	RelaxedDisk         float64     `json:"relaxed_disk"`
-	Shares              []ShareLoad `json:"shares"`
-	MaxShareMs          float64     `json:"max_share_ms"`
-	RelaxedShareMs      float64     `json:"relaxed_share_ms"`
-	Streaming           bool        `json:"streaming"`
-	PauseWhileStreaming bool        `json:"pause_while_streaming"`
+	Available      bool        `json:"available"`
+	CPU            float64     `json:"cpu"`
+	Disk           float64     `json:"disk"`
+	MaxDisk        float64     `json:"max_disk"`
+	RelaxedDisk    float64     `json:"relaxed_disk"`
+	Shares         []ShareLoad `json:"shares"`
+	MaxShareMs     float64     `json:"max_share_ms"`
+	RelaxedShareMs float64     `json:"relaxed_share_ms"`
+	// The limits as config.yml sets them (0: the default) and the defaults, for the Jobs page's fields
+	Limits              config.WaitLimits `json:"limits"`
+	DefaultLimits       config.WaitLimits `json:"default_limits"`
+	Streaming           bool              `json:"streaming"`
+	PauseWhileStreaming bool              `json:"pause_while_streaming"`
 }
 
 // CurrentLoad returns the load readings and whether anyone is streaming.
 func CurrentLoad(streams *StreamTracker) LoadStatus {
 	cpu, disk, ok := load.Readings()
-	return LoadStatus{Available: ok, CPU: cpu, Disk: disk, MaxDisk: maxDisk, RelaxedDisk: relaxedDisk,
-		Shares: load.Shares(), MaxShareMs: maxShareMs, RelaxedShareMs: relaxedShareMs,
-		Streaming: streaming(streams), PauseWhileStreaming: pauseWhileStreaming()}
+	var set config.WaitLimits
+	if config.GlobalConfig != nil {
+		set = config.GlobalConfig.Jobs.Set()
+	}
+	return LoadStatus{Limits: set, Available: ok, CPU: cpu, Disk: disk, MaxDisk: maxDisk(), RelaxedDisk: relaxedDisk(),
+		Shares: load.Shares(), MaxShareMs: maxShareMs(), RelaxedShareMs: relaxedShareMs(),
+		DefaultLimits: config.DefaultWaitLimits,
+		Streaming:     streaming(streams), PauseWhileStreaming: pauseWhileStreaming()}
 }
 
 // overloadedFor says whether a job already reading path should stop: its disk or share well past

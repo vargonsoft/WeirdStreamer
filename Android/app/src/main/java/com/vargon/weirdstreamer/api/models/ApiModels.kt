@@ -388,8 +388,19 @@ data class JobLoad(
     @SerializedName("shares") val shares: List<ShareLoad>? = null,
     @SerializedName("max_share_ms") val maxShareMs: Double = 0.0,
     @SerializedName("relaxed_share_ms") val relaxedShareMs: Double = 0.0, // ... and on a share nobody plays from
+    @SerializedName("limits") val limits: WaitLimits? = null, // as config.yml sets them (0: the default)
+    @SerializedName("default_limits") val defaultLimits: WaitLimits? = null,
     @SerializedName("streaming") val streaming: Boolean = false,
     @SerializedName("pause_while_streaming") val pauseWhileStreaming: Boolean = false
+)
+
+/** When jobs wait for a disk (percent busy) or share (read time, ms), where someone plays from it and where no
+ *  one does: the Jobs tab's fields, and POST /api/admin/jobs/limits (0: the default). */
+data class WaitLimits(
+    @SerializedName("disk_percent") val diskPercent: Int = 0,
+    @SerializedName("disk_idle_percent") val diskIdlePercent: Int = 0,
+    @SerializedName("share_ms") val shareMs: Int = 0,
+    @SerializedName("share_idle_ms") val shareIdleMs: Int = 0
 )
 
 /** A network share's read time (ms), from the Jobs load. */

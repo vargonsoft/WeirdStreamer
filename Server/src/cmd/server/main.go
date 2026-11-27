@@ -323,6 +323,7 @@ func serve(parent context.Context) {
 	api.HandleFunc("/downloads/{id}/file", mediaHandler.DownloadFile).Methods("GET", "HEAD")
 	api.HandleFunc("/admin/streams", mediaHandler.ListStreams).Methods("GET")
 	api.HandleFunc("/admin/jobs", mediaHandler.ListJobs).Methods("GET")
+	api.HandleFunc("/admin/jobs/limits", mediaHandler.SetWaitLimits).Methods("POST")
 	api.HandleFunc("/admin/jobs/{id}/{action}", mediaHandler.ControlJob).Methods("POST")
 	api.HandleFunc("/media/match/search", mediaHandler.SearchMatch).Methods("GET")
 	api.HandleFunc("/media/match/posters", mediaHandler.GetMatchPosters).Methods("GET")

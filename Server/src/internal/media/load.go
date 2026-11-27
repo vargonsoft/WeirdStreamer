@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/weirdstreamer/server/internal/config"
 	"github.com/weirdstreamer/server/internal/fileio"
 )
 
@@ -51,20 +52,23 @@ type shareProbe struct {
 
 // A disk or share someone is playing from holds the jobs back at the lower limits; one nobody is
 // playing from only when it's close to full (the jobs run at idle disk priority anyway).
-const (
-	maxDisk         = 0.50 // busy share of a whole disk's time a stream is reading from
-	relaxedDisk     = 0.90 // ... and of one no stream is reading from
-	stopDisk        = 0.90 // a disc decode already running stops above these
-	relaxedStopDisk = 0.98
-	loadSample      = 5 * time.Second
+// The limits are config.yml's (jobs.wait…, the Jobs page; config.CurrentWaitLimits): a disk's busy share
+// of its time and a share's read time, where a stream reads from it and where none does (relaxed). A job
+// already running stops further up: a disk at four fifths of the way from its limit to full (50% stops
+// at 90%, 90% at 98%), a share at twice its time or 90 ms more (60 at 150, 500 at 1000).
+func maxDisk() float64                  { return float64(config.CurrentWaitLimits().DiskPercent) / 100 }
+func relaxedDisk() float64              { return float64(config.CurrentWaitLimits().DiskIdlePercent) / 100 }
+func stopDisk(limit float64) float64    { return limit + (1-limit)*0.8 }
+func maxShareMs() float64               { return float64(config.CurrentWaitLimits().ShareMs) }
+func relaxedShareMs() float64           { return float64(config.CurrentWaitLimits().ShareIdleMs) }
+func stopShareMs(limit float64) float64 { return max(2*limit, limit+90) }
 
-	maxShareMs         = 60   // a share's reads take this long when its disk is busy
-	relaxedShareMs     = 500  // ... the limit when no stream reads from it
-	stopShareMs        = 150  // a job already running stops above this
-	relaxedStopShareMs = 1000 // ... or this, when no stream reads from it
-	probeReads         = 3    // reads per sample; their median counts
-	probeSize          = 64 << 10
-	probeEvery         = 10 * time.Minute // how often the files to read are chosen again
+const (
+	loadSample = 5 * time.Second
+
+	probeReads = 3 // reads per sample; their median counts
+	probeSize  = 64 << 10
+	probeEvery = 10 * time.Minute // how often the files to read are chosen again
 )
 
 // NewLoadMonitor starts sampling until ctx ends. probes (when given) names a big file for each

@@ -264,6 +264,15 @@ class MediaAPI {
         });
     }
 
+    // When jobs wait for a disk or share (saved to config.yml): any of { disk_percent, disk_idle_percent,
+    // share_ms, share_idle_ms } (0 is the default); returns the jobs status.
+    async setWaitLimits(limits) {
+        return this.request('/api/admin/jobs/limits', {
+            method: 'POST',
+            body: JSON.stringify(limits),
+        });
+    }
+
     // extra: { ended, title } — the player reached the end; a disc's title (0: the main title)
     async reportPlayback(path, position, paused, extra = {}) {
         return this.request('/api/streams/progress', {

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/weirdstreamer/server/internal/config"
 )
 
 func TestDiskLimitsDependOnPlayback(t *testing.T) {
@@ -24,6 +26,30 @@ func TestDiskLimitsDependOnPlayback(t *testing.T) {
 		if wait, why := c.d.waitReason(); wait != c.wait {
 			t.Errorf("%s: wait = %v (%q), want %v", c.name, wait, why, c.wait)
 		}
+	}
+}
+
+// The limits are config.yml's (the Jobs page), and a job already running stops further up.
+func TestDiskLimitsFromConfig(t *testing.T) {
+	config.SetWaitLimits(config.WaitLimits{DiskPercent: 30, ShareMs: 40, ShareIdleMs: 200})
+	defer config.SetWaitLimits(config.WaitLimits{})
+	share := diskLoad{known: true, share: true, ms: 70, contended: true}
+	disk := diskLoad{known: true, use: 0.35, contended: true}
+	if wait, _ := share.waitReason(); !wait {
+		t.Error("share at 70 ms, limit 40: doesn't wait")
+	}
+	if wait, _ := disk.waitReason(); !wait {
+		t.Error("disk at 35%, limit 30%: doesn't wait")
+	}
+	if share.overloaded() || disk.overloaded() {
+		t.Error("stops just past the wait limits")
+	}
+	share.ms, disk.use = 140, 0.9 // past 130 ms (40 + 90) and 86% (30% + 4/5 of the rest)
+	if !share.overloaded() || !disk.overloaded() {
+		t.Error("doesn't stop past the stop limits")
+	}
+	if idle := (diskLoad{known: true, share: true, ms: 250}); idle.overloaded() { // nobody playing: stops past 400 ms
+		t.Error("idle share stops at 250 ms")
 	}
 }
 

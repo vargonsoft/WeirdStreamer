@@ -73,6 +73,41 @@ func (h *MediaHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, resp)
 }
 
+// SetWaitLimits saves when the jobs wait for a disk or share (admins): POST /api/admin/jobs/limits
+// {"disk_percent", "disk_idle_percent", "share_ms", "share_idle_ms"}, 0 for the default, those left
+// out as they are. Saved to config.yml and used at once. Answers with the jobs' status.
+func (h *MediaHandler) SetWaitLimits(w http.ResponseWriter, r *http.Request) {
+	if claims := auth.GetClaims(r.Context()); claims == nil || !claims.IsAdmin {
+		respondError(w, http.StatusForbidden, "Admin access required")
+		return
+	}
+	var body struct {
+		DiskPercent     *int `json:"disk_percent"`
+		DiskIdlePercent *int `json:"disk_idle_percent"`
+		ShareMs         *int `json:"share_ms"`
+		ShareIdleMs     *int `json:"share_idle_ms"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondError(w, http.StatusBadRequest, "Give disk_percent, disk_idle_percent, share_ms or share_idle_ms (0: the default)")
+		return
+	}
+	settings := config.GlobalConfig.Jobs
+	for _, f := range []struct {
+		v  *int
+		to *int
+	}{{body.DiskPercent, &settings.WaitDiskPercent}, {body.DiskIdlePercent, &settings.WaitDiskIdlePercent},
+		{body.ShareMs, &settings.WaitShareMs}, {body.ShareIdleMs, &settings.WaitShareIdleMs}} {
+		if f.v != nil {
+			*f.to = *f.v
+		}
+	}
+	if err := config.UpdateJobs(settings); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, jobsResponse{Jobs: jobs.All(), Load: media.CurrentLoad(h.streams), Trickplay: currentTrickplaySettings()})
+}
+
 // ControlJob runs, pauses or resumes a job, or changes its settings (admins):
 // POST /api/admin/jobs/{id}/{run|pause|resume|settings}. Trickplay's settings ({"runners",
 // "frames_per_runner"}, 0 for automatic, and "use_gpu"; those left out stay as they are) are saved to

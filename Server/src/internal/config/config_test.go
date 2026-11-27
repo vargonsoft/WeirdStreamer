@@ -144,3 +144,27 @@ func TestSaveKeepsLogsPath(t *testing.T) {
 		t.Errorf("saved config lost logsPath: %s", data)
 	}
 }
+
+func TestWaitLimits(t *testing.T) {
+	for _, tc := range []struct {
+		w  WaitLimits
+		ok bool
+	}{
+		{WaitLimits{}, true},
+		{WaitLimits{DiskPercent: 30, ShareMs: 100}, true},
+		{WaitLimits{DiskPercent: 95}, false}, // above the idle default (90)
+		{WaitLimits{DiskPercent: 95, DiskIdlePercent: 99}, true},
+		{WaitLimits{DiskPercent: 4}, false},
+		{WaitLimits{ShareIdleMs: 50}, false}, // below the default while playing (60)
+		{WaitLimits{ShareMs: 20000, ShareIdleMs: 20000}, false},
+	} {
+		if err := tc.w.validate(); (err == nil) != tc.ok {
+			t.Errorf("%+v: %v", tc.w, err)
+		}
+	}
+	SetWaitLimits(WaitLimits{ShareMs: 40})
+	defer SetWaitLimits(WaitLimits{})
+	if got := CurrentWaitLimits(); got != (WaitLimits{50, 90, 40, 500}) {
+		t.Errorf("in effect %+v", got)
+	}
+}

@@ -596,8 +596,19 @@ struct JobLoad: Decodable {
     let shares: [ShareLoad]?
     let maxShareMs: Double?
     let relaxedShareMs: Double?
+    let limits: WaitLimits?        // as config.yml sets them (0: the default)
+    let defaultLimits: WaitLimits?
     let streaming: Bool?
     let pauseWhileStreaming: Bool?
+}
+
+/// When jobs wait for a disk (percent busy) or share (read time, ms), where someone plays from it and where no
+/// one does: the Jobs tab's fields (Android's WaitLimits).
+struct WaitLimits: Decodable, Equatable {
+    var diskPercent: Int?
+    var diskIdlePercent: Int?
+    var shareMs: Int?
+    var shareIdleMs: Int?
 }
 
 struct StorageUse: Decodable { let name: String; let bytes: Int64 }

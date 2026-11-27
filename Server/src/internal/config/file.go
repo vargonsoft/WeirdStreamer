@@ -48,6 +48,7 @@ func Load(path string) error {
 	loadedPath = path
 	SetTrickplaySettings(config.Jobs.TrickplayRunners, config.Jobs.TrickplayFramesPerRunner)
 	SetTrickplayCPUOnly(config.Jobs.TrickplayCPUOnly)
+	SetWaitLimits(config.Jobs.Set())
 	return nil
 }
 

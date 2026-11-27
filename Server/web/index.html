@@ -286,6 +286,17 @@
                         <h3>Background Jobs</h3>
                         <p class="settings-hint">Jobs run at low priority, so playback gets the CPU and disks first. They wait while a disk, network share or mergerfs pool is busy (or, with the setting under Streaming, while anyone is streaming). Pause holds a job until you resume it, or the server restarts.</p>
                         <p id="jobs-load" class="jobs-load"></p>
+                        <!-- When jobs wait for a disk or share, kept in config.yml (jobs.wait…); empty is the default -->
+                        <div id="wait-limits" class="trickplay-settings wait-limits" hidden>
+                            <span class="wait-limits-title">Jobs wait when</span>
+                            <label>a disk someone plays from is busier than <input type="number" id="wl-disk" class="settings-input"> %</label>
+                            <label>one no one plays from <input type="number" id="wl-disk-idle" class="settings-input"> %</label>
+                            <label>a share's reads someone plays from take over <input type="number" id="wl-share" class="settings-input"> ms</label>
+                            <label>one no one plays from <input type="number" id="wl-share-idle" class="settings-input"> ms</label>
+                            <button type="button" id="wl-save" class="btn">Save</button>
+                            <span id="wl-message" class="groups-message"></span>
+                            <p id="wl-hint" class="settings-hint"></p>
+                        </div>
                         <!-- Trickplay's settings, kept in config.yml; they apply from its next batch -->
                         <div id="trickplay-settings" class="trickplay-settings" hidden>
                             <label>Trickplay runners <input type="number" id="tp-runners" min="1" class="settings-input"></label>

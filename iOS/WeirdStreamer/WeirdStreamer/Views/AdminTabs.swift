@@ -761,6 +761,7 @@ struct JobsTab: View {
                             .font(.caption).foregroundStyle(Palette.muted)
                         if let load = data.load { Text(loadText(load)).font(.caption).foregroundStyle(Palette.muted) }
                         if let error { Text(error).font(.caption).foregroundStyle(Palette.error) }
+                        if let load = data.load, load.defaultLimits != nil { WaitLimitsBox(load: load) { self.data = $0 } }
                         if let tp = data.trickplay { TrickplayBox(settings: tp) { self.data = $0 } }
                         ForEach(data.jobs ?? []) { job in JobCard(job: job, now: now) { control(job.id, $0) } }
                         StorageCard(storage: data.storage ?? [])
@@ -930,6 +931,69 @@ private struct TrickplayMemoryTableView: View {
 
 /// Trickplay's runners and frames per runner, saved to the server's settings (an empty field is automatic,
 /// sent as 0).
+/// When jobs wait for a disk or share: config.yml's limits, an empty field the default (POST
+/// /api/admin/jobs/limits). The fields follow the server while they aren't being edited, as trickplay's.
+private struct WaitLimitsBox: View {
+    @Environment(AppModel.self) private var model
+    let load: JobLoad
+    let onSaved: (JobsResponse) -> Void
+
+    @State private var values = ["", "", "", ""]
+    @State private var edited = false
+    @State private var message: (String, Bool)?
+
+    private var fields: [(label: String, set: Int?, def: Int?)] {
+        let s = load.limits, d = load.defaultLimits
+        return [("Disk, someone playing (%)", s?.diskPercent, d?.diskPercent),
+                ("Disk, no one playing (%)", s?.diskIdlePercent, d?.diskIdlePercent),
+                ("Share reads, someone playing (ms)", s?.shareMs, d?.shareMs),
+                ("Share reads, no one playing (ms)", s?.shareIdleMs, d?.shareIdleMs)]
+    }
+
+    var body: some View {
+        CardBox {
+            Text("When jobs wait").font(.headline)
+            ForEach(0..<2, id: \.self) { row in
+                HStack(spacing: 8) {
+                    ForEach(0..<2, id: \.self) { col in
+                        let i = row * 2 + col
+                        PhoneTextField(label: fields[i].label,
+                                       text: Binding(get: { values[i] }, set: { values[i] = $0.filter(\.isNumber); edited = true }),
+                                       placeholder: "Default: \(fields[i].def ?? 0)", keyboard: .numberPad)
+                    }
+                }
+            }
+            Text("Every job waits while the disk or share its file is on is busier than these. Disks 5 to 99%, shares (network shares and mergerfs pools) 5 to 10000 ms; the limit where no one plays can't be lower. A job already reading stops further up: a disk at four fifths of the way from its limit to 100%, a share at twice its time or 90 ms more. Empty is the default.")
+                .font(.caption).foregroundStyle(Palette.muted)
+            HStack(spacing: 12) {
+                Button("Save") {
+                    Task {
+                        do {
+                            struct Body: Encodable { let disk_percent, disk_idle_percent, share_ms, share_idle_ms: Int }
+                            let n = values.map { Int($0) ?? 0 } // 0: the default
+                            if let reply: JobsResponse = try await model.client?.call("POST", "/api/admin/jobs/limits",
+                                body: Body(disk_percent: n[0], disk_idle_percent: n[1], share_ms: n[2], share_idle_ms: n[3])) {
+                                onSaved(reply)
+                            }
+                            edited = false
+                            message = ("Saved. Applies now.", false)
+                        } catch { message = (errorText(error), true) }
+                    }
+                }
+                .buttonStyle(PhoneButtonStyle())
+                MessageLine(message: message)
+            }
+        }
+        .onAppear { sync() }
+        .onChange(of: load.limits) { sync() }
+    }
+
+    private func sync() {
+        guard !edited else { return }
+        values = fields.map { f in (f.set ?? 0) > 0 ? String(f.set!) : "" }
+    }
+}
+
 private struct TrickplayBox: View {
     @Environment(AppModel.self) private var model
     let settings: TrickplaySettings

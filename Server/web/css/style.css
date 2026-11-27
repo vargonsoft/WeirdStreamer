@@ -2503,6 +2503,8 @@ header h1 {
 .trickplay-settings #tp-gpu-row { flex-basis: 100%; }
 .trickplay-settings #tp-gpu-row[hidden] { display: none; }
 .trickplay-settings #tp-gpu { width: auto; }
+.wait-limits input { width: 90px; }
+.wait-limits-title { flex-basis: 100%; font-weight: 600; }
 /* What the settings need with 4K videos against what the server has: one row for its memory, one for an NVIDIA card's */
 .tp-memory { flex-basis: 100%; max-width: 680px; border-collapse: collapse; font-size: 0.9em; }
 .tp-memory[hidden] { display: none; }

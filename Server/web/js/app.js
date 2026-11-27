@@ -6478,6 +6478,50 @@ function renderStorage(storage) {
     box.replaceChildren(...storage.map(u => row(u.name, u.bytes)), row('Total', total, 'storage-total'));
 }
 
+// When jobs wait for a disk or share: config.yml's limits (an empty field is the default, shown as its
+// placeholder). The fields follow the server while they aren't being edited, as trickplay's.
+const WAIT_LIMIT_FIELDS = [['wl-disk', 'disk_percent'], ['wl-disk-idle', 'disk_idle_percent'],
+    ['wl-share', 'share_ms'], ['wl-share-idle', 'share_idle_ms']];
+
+function renderWaitLimits(load) {
+    const box = document.getElementById('wait-limits');
+    if (!load || !load.default_limits) return;
+    box.hidden = false;
+    if (!box.dataset.wired) {
+        box.dataset.wired = '1';
+        WAIT_LIMIT_FIELDS.forEach(([id]) => { document.getElementById(id).oninput = () => { box.dataset.edited = '1'; }; });
+        document.getElementById('wl-save').onclick = saveWaitLimits;
+    }
+    WAIT_LIMIT_FIELDS.forEach(([id, key]) => {
+        const input = document.getElementById(id);
+        input.placeholder = String(load.default_limits[key]); // the default, which an empty field keeps
+        if (box.dataset.edited !== '1') input.value = load.limits && load.limits[key] ? load.limits[key] : '';
+    });
+    document.getElementById('wl-hint').textContent = 'Disks 5 to 99%, shares (network shares and mergerfs pools) 5 to 10000 ms; ' +
+        'the limit where no one plays can\'t be lower. A job already reading stops further up: a disk at four fifths of the way ' +
+        'from its limit to 100%, a share at twice its time or 90 ms more. Empty is the default.';
+}
+
+async function saveWaitLimits() {
+    const box = document.getElementById('wait-limits');
+    const message = document.getElementById('wl-message');
+    const limits = {};
+    WAIT_LIMIT_FIELDS.forEach(([id, key]) => { limits[key] = Number(document.getElementById(id).value) || 0; });
+    try {
+        const data = await api.setWaitLimits(limits);
+        delete box.dataset.edited;
+        message.textContent = 'Saved. Applies now.';
+        message.style.color = '';
+        if (jobsView) {
+            jobsView.data = data;
+            renderJobs();
+        }
+    } catch (e) {
+        message.textContent = e.message;
+        message.style.color = 'var(--danger-color, #c62828)';
+    }
+}
+
 // Trickplay's settings box. The page refreshes every few seconds, so the fields only follow the
 // server while they aren't being edited. The GPU checkbox (shown when there's a GPU to decode on)
 // saves at once.
@@ -6617,6 +6661,7 @@ function renderJobs() {
     document.getElementById('jobs-load').textContent = loadText.join(' · ');
     renderStorage(jobsView.data.storage || []);
     renderTrickplaySettings(jobsView.data.trickplay);
+    renderWaitLimits(load);
 
     const list = document.getElementById('jobs-list');
     list.replaceChildren(...jobs.map(job => {
