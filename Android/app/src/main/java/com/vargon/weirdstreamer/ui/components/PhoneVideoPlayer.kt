@@ -3,11 +3,8 @@ package com.vargon.weirdstreamer.ui.components
 import android.app.Activity
 import android.os.Build
 import android.util.Log
-import android.view.LayoutInflater
-import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
-import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -43,15 +40,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -63,7 +57,6 @@ import com.vargon.weirdstreamer.api.models.DiscInfo
 import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.vargon.weirdstreamer.api.models.forDiscTitle
 import com.vargon.weirdstreamer.api.models.progressTitle
-import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -784,28 +777,7 @@ fun PhoneVideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        // Inflate layout with PlayerView configured to use TextureView
-                        val view = LayoutInflater.from(ctx).inflate(R.layout.texture_video_view, null) as PlayerView
-                        view.apply {
-                            player = exoPlayer
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            layoutParams = FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                        }
-                    },
-                    update = { view ->
-                        // Update the player reference when exoPlayer changes (e.g., when transcoding is toggled)
-                        view.player = exoPlayer
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer(videoTransform)
-                )
+                PlayerVideoView(exoPlayer, rotated = rotation % 360f != 0f, modifier = Modifier.fillMaxSize().graphicsLayer(videoTransform))
                 // ASS subtitles are placed on the picture: drawn here, moved with it.
                 serverSubs?.takeIf { it.styled }?.let { subs ->
                     AssSubtitle(subs, position = subtitlePosition, videoAspect = videoShape,

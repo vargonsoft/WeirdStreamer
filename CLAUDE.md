@@ -529,6 +529,10 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   and `subtitle=N` (burn in that subtitle track, scaled to the video), in `TrackOptions`
   (`media/codecs.go`).
 - **TV player** (`VideoPlayer.kt`, ExoPlayer):
+  - The picture (TV and phone, `PlayerVideoView`) is a SurfaceView: only its frames reach the display as
+    they are, so HDR10, HLG and Dolby Vision switch the TV into its HDR or Dolby Vision mode (in a TextureView
+    they were composed as SDR and came out dark). A SurfaceView follows the zoom, pan and fill scaling but not
+    rotation, so while the picture is turned it's a TextureView (HDR dim again).
   - Transcode modes come from `transcodeModes` in `UiUtils.kt`, picked in a D-pad dialog in
     `PlayerDialogs.kt`. `transcodeQuery()` caps the height at what the hardware decodes.
   - Any playback error on the original switches to Compatibility (Auto), and so does a track

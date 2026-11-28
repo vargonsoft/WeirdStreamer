@@ -1,9 +1,6 @@
 package com.vargon.weirdstreamer.ui.components
 
 import android.util.Log
-import android.view.LayoutInflater
-import android.view.ViewGroup
-import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
@@ -25,14 +22,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.*
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.tv.material3.*
 import com.vargon.weirdstreamer.api.models.DiscInfo
@@ -45,7 +39,6 @@ import com.vargon.weirdstreamer.api.models.TrickplayInfo
 import com.vargon.weirdstreamer.api.models.forDiscTitle
 import com.vargon.weirdstreamer.api.models.progressTitle
 import com.vargon.weirdstreamer.ui.theme.WeirdStreamerTheme
-import com.vargon.weirdstreamer.R
 import kotlinx.coroutines.delay
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -920,16 +913,7 @@ fun VideoPlayer(viewModel: MediaViewModel, path: String, onBack: (String) -> Uni
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(modifier = Modifier.then(if (currentAspectRatio != null) Modifier.aspectRatio(currentAspectRatio!!) else Modifier.fillMaxSize()), contentAlignment = Alignment.Center) {
-                AndroidView(
-                    factory = { ctx ->
-                        LayoutInflater.from(ctx).inflate(R.layout.texture_video_view, null).let { it as PlayerView }.apply {
-                            player = exoPlayer; useController = false; resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                        }
-                    },
-                    update = { view -> view.player = exoPlayer },
-                    modifier = Modifier.fillMaxSize().graphicsLayer(videoTransform)
-                )
+                PlayerVideoView(exoPlayer, rotated = rotation % 360f != 0f, modifier = Modifier.fillMaxSize().graphicsLayer(videoTransform))
                 // ASS subtitles are placed on the picture: drawn here, moved with it (zoom, fill, rotation).
                 serverSubs?.takeIf { it.styled }?.let { subs ->
                     AssSubtitle(subs, position = subtitlePosition, videoAspect = videoShape,
