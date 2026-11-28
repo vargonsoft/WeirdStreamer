@@ -2,7 +2,8 @@
 # Builds the server's own ffmpeg and ffprobe into Server/ffmpeg/bin (git-ignored), with what
 # scripts/check-ffmpeg.sh asks for. Homebrew's ffmpeg lacks the DVD reader (dvdvideo, from
 # libdvdnav and libdvdread), the chromaprint muxer (intro detection by sound) and the subtitles
-# filter (libass). live.sh and run-e2e.sh put Server/ffmpeg/bin first on the PATH when it's there.
+# filter (libass); zimg adds zscale, for tone mapping HDR. live.sh and run-e2e.sh put
+# Server/ffmpeg/bin first on the PATH when it's there.
 #
 # macOS with Homebrew: ./scripts/build-ffmpeg.sh [version]   (default below; about 10 minutes)
 # The libraries come from Homebrew; the build happens in ffmpeg-build beside the install folder.
@@ -16,7 +17,7 @@ mkdir -p "$prefix"
 prefix=$(cd "$prefix" && pwd)
 cd "$prefix/.."
 
-brew install pkgconf x264 x265 dav1d libvpx opus lame libdvdnav libdvdread chromaprint libass >/dev/null
+brew install pkgconf x264 x265 dav1d libvpx opus lame libdvdnav libdvdread chromaprint libass zimg >/dev/null
 export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 mkdir -p ffmpeg-build
@@ -31,7 +32,7 @@ cd "ffmpeg-$version"
     --enable-gpl --enable-version3 \
     --enable-libx264 --enable-libx265 --enable-libdav1d --enable-libvpx \
     --enable-libopus --enable-libmp3lame \
-    --enable-libdvdnav --enable-libdvdread --enable-chromaprint --enable-libass \
+    --enable-libdvdnav --enable-libdvdread --enable-chromaprint --enable-libass --enable-libzimg \
     --enable-videotoolbox --enable-audiotoolbox \
     --disable-doc --disable-ffplay \
     --extra-cflags="-I$(brew --prefix)/include" --extra-ldflags="-L$(brew --prefix)/lib"

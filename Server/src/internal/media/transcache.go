@@ -91,7 +91,7 @@ func (c *transcodeCache) attach(filePath string, args []string, offset int64, se
 	// fall back on. The name stays the CPU arguments', so reconnects find it either way.
 	run, fallback := args, []string(nil)
 	if hw, device, ok := hardwareChoice(); ok && encodesVideo(args) && c.hardwareRoom() {
-		run, fallback = hardwareArgs(args, hw, device), args
+		run, fallback = gpuToneMap(hardwareArgs(args, hw, device), filePath, hw), args
 		s.gpu = true
 		sess.SetVideoEncoder(encoderLabel(run), run)
 	}

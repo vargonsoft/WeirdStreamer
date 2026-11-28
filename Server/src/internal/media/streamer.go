@@ -422,6 +422,13 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 	if resolution != "" {
 		scale = fmt.Sprintf("scale=-2:'min(%s,ih)'", resolution)
 	}
+	// HDR is tone mapped to SDR (after the scaling, which makes it cheaper): see tonemap.go.
+	var video *VideoCodec
+	if c, err := ProbeCodecs(filePath); err == nil {
+		video = c.Video
+	}
+	toneMapped := hdrFilter(video)
+	scale = joinFilters(scale, toneMapped)
 	// A chosen audio track or burned-in subtitles need the streams mapped; otherwise ffmpeg picks.
 	if tracks.Audio >= 0 || tracks.Subtitle >= 0 {
 		args = append(args, tracks.mapArgs(filePath, scale)...)
@@ -467,6 +474,12 @@ func (s *Streamer) transcodeAndServe(w http.ResponseWriter, r *http.Request, fil
 		"pipe:1",
 	)
 	info := describeTranscode(args, startTime, bitrate, resolution, reason)
+	if toneMapped != "" {
+		info.Video = strings.Replace(info.Video, toneMapped, "HDR tone mapped to SDR", 1)
+		if !strings.Contains(info.Video, "HDR tone mapped") {
+			info.Video = strings.TrimSuffix(info.Video, ")") + ", HDR tone mapped to SDR)"
+		}
+	}
 	info.Audio = audioInfo
 	sess.StartTranscode(info)
 	return s.runTranscode(w, r, filePath, args, sess)

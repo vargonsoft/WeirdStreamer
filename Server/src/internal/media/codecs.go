@@ -40,6 +40,11 @@ type VideoCodec struct {
 	Profile string `json:"profile,omitempty"`
 	Level   int    `json:"level,omitempty"` // as ffprobe gives it: 51 for H.264 5.1, 153 for HEVC 5.1
 	PixFmt  string `json:"pix_fmt,omitempty"`
+	// ffprobe's color_transfer: smpte2084 (PQ) and arib-std-b67 (HLG) are HDR (HDR, tonemap.go).
+	ColorTransfer  string `json:"color_transfer,omitempty"`
+	ColorSpace     string `json:"color_space,omitempty"`     // the matrix: bt2020nc, bt709…
+	ColorPrimaries string `json:"color_primaries,omitempty"` // bt2020, bt709…
+	DolbyVision    int    `json:"dolby_vision,omitempty"`    // its profile (5, 7, 8…); 0 none
 }
 
 type AudioCodec struct {
@@ -103,7 +108,7 @@ func isFont(mimetype, name string) bool {
 // ProbeCodecs reads the codecs of a file's first video stream and of all its audio streams.
 func ProbeCodecs(path string) (*Codecs, error) {
 	out, err := exec.Command("ffprobe", "-v", "error",
-		"-show_entries", "format=format_name,duration:stream=codec_type,codec_name,profile,level,pix_fmt,channels:stream_tags=language,title,filename,mimetype:stream_disposition=default,forced,attached_pic",
+		"-show_entries", "format=format_name,duration:stream=codec_type,codec_name,profile,level,pix_fmt,color_transfer,color_space,color_primaries,channels:stream_tags=language,title,filename,mimetype:stream_disposition=default,forced,attached_pic:stream_side_data=dv_profile",
 		"-of", "json", path).Output()
 	if err != nil {
 		return nil, err
@@ -114,11 +119,17 @@ func ProbeCodecs(path string) (*Codecs, error) {
 			Duration   string `json:"duration"`
 		} `json:"format"`
 		Streams []struct {
-			CodecType   string            `json:"codec_type"`
-			CodecName   string            `json:"codec_name"`
-			Profile     string            `json:"profile"`
-			Level       int               `json:"level"`
-			PixFmt      string            `json:"pix_fmt"`
+			CodecType string `json:"codec_type"`
+			CodecName string `json:"codec_name"`
+			Profile   string `json:"profile"`
+			Level     int    `json:"level"`
+			PixFmt    string `json:"pix_fmt"`
+			Transfer  string `json:"color_transfer"`
+			Matrix    string `json:"color_space"`
+			Primaries string `json:"color_primaries"`
+			SideData  []struct {
+				DVProfile int `json:"dv_profile"`
+			} `json:"side_data_list"`
 			Channels    int               `json:"channels"`
 			Tags        map[string]string `json:"tags"`
 			Disposition map[string]int    `json:"disposition"`
@@ -135,7 +146,13 @@ func ProbeCodecs(path string) (*Codecs, error) {
 		switch s.CodecType {
 		case "video":
 			if c.Video == nil && s.Disposition["attached_pic"] == 0 { // not cover art
-				c.Video = &VideoCodec{Codec: s.CodecName, Profile: s.Profile, Level: max(s.Level, 0), PixFmt: s.PixFmt}
+				c.Video = &VideoCodec{Codec: s.CodecName, Profile: s.Profile, Level: max(s.Level, 0), PixFmt: s.PixFmt,
+					ColorTransfer: s.Transfer, ColorSpace: s.Matrix, ColorPrimaries: s.Primaries}
+				for _, d := range s.SideData {
+					if d.DVProfile > 0 {
+						c.Video.DolbyVision = d.DVProfile
+					}
+				}
 			}
 		case "audio":
 			c.Audio = append(c.Audio, AudioCodec{Index: len(c.Audio), Codec: s.CodecName, Channels: s.Channels,
@@ -242,8 +259,9 @@ func (t TrackOptions) audioIndex(c *Codecs) int {
 	return c.DefaultAudio()
 }
 
-// mapArgs maps the first video stream (with the chosen subtitles burned in, then the video
-// filter vf, if any) and the chosen audio track.
+// mapArgs maps the first video stream (through the video filter vf, if any, then with the chosen
+// subtitles burned in, scaled to it) and the chosen audio track. vf comes first so that the
+// subtitles keep their colors (it may tone map) and are drawn at the video's final size.
 func (t TrackOptions) mapArgs(filePath, vf string) []string {
 	c, err := ProbeCodecs(filePath)
 	if err != nil {
@@ -252,10 +270,11 @@ func (t TrackOptions) mapArgs(filePath, vf string) []string {
 	var args []string
 	if t.Subtitle >= 0 && t.Subtitle < len(c.Subtitles) {
 		// Subtitle pictures are drawn for their own canvas (1080p on 4K discs): scaled to the video.
-		graph := fmt.Sprintf("[0:v:0]split[v][ref];[0:s:%d][ref]scale=rw:rh[s];[v][s]overlay", t.Subtitle)
+		video := "[0:v:0]"
 		if vf != "" {
-			graph += "," + vf
+			video += vf + ","
 		}
+		graph := video + fmt.Sprintf("split[v][ref];[0:s:%d][ref]scale=rw:rh[s];[v][s]overlay", t.Subtitle)
 		args = append(args, "-filter_complex", graph+"[vout]", "-map", "[vout]")
 	} else {
 		args = append(args, "-map", "0:v:0")

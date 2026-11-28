@@ -525,6 +525,20 @@ destination that isn't connected, or a failed install, makes it exit non-zero.
   `trickplayMemoryTable` in `AdminSettings.kt` drawn by `TrickplayMemoryTable.kt`, iPhone in `ServerModels.swift`). A batch the kernel kills is made again a frame at a time, and setup.sh's
   systemd unit has `OOMPolicy=continue`: by default an ffmpeg killed for memory made systemd stop and
   restart the whole server.
+- **HDR in encodes** (`media/tonemap.go`): an HDR video (the codecs report's `color_transfer`: PQ for HDR10,
+  HDR10+ and Dolby Vision with an HDR10 base; HLG) encoded to 8-bit H.264 (streaming transcodes, encoded downloads;
+  not copies) is tone mapped to BT.709 SDR. The CPU's arguments do it with zscale (zimg) and `tonemap=mobius:param=0.5`
+  (`hdrFilter`; a matrix or primaries the file leaves out are taken as BT.2020), after any scaling and before burned-in
+  subtitles; without zscale it isn't (logged once; `check-ffmpeg.sh` warns). It about doubles a 4K encode's CPU.
+  When the encode runs on NVENC or Quick Sync and the startup check passed (`gpuToneMapCheck`: libplacebo over Vulkan on
+  a real GPU, not llvmpipe; the encoder's `tone_map` in the hardware report, and a `[HARDWARE]` line), `gpuToneMap` swaps
+  that for libplacebo (`hwupload`, `libplacebo`, `hwdownload`, on the first Vulkan GPU): a tenth of the CPU, closer to
+  the SDR grade (Jellyfin's test videos), and it reads Dolby Vision profile 5 (the codecs report's `dolby_vision`),
+  which the CPU can't: those are tone mapped only on the GPU. The CPU's arguments stay the fallback when the GPU fails.
+  VA-API can't (its frames must be uploaded to its own device after; nothing that maps or derives between it and
+  Vulkan worked on ws's Meteor Lake, and `tonemap_vaapi` refuses HDR10 without mastering data): its HDR is tone mapped
+  on the CPU, too slow for 4K on ws (10 s in 12.2 s; libplacebo with Quick Sync 7.8 s at 143% CPU), so Intel servers
+  want Quick Sync. Tried with NVENC on the GTX 1060 and Quick Sync on ws.
 - **Streams with track options:** file transcodes take `audio=N` (index among the audio tracks)
   and `subtitle=N` (burn in that subtitle track, scaled to the video), in `TrackOptions`
   (`media/codecs.go`).

@@ -36,6 +36,8 @@ check filters overlay required "burning picture subtitles into a video"
 check filters subtitles required "burning subtitles in (needs libass)"
 check filters blackdetect required "intro and credits detection"
 check demuxers dvdvideo optional "disc images (.iso)" "disc images won't play"
+check filters zscale optional "tone mapping HDR videos in transcodes (needs zimg)" "HDR videos transcode washed out"
+check filters tonemap optional "tone mapping HDR videos in transcodes" "HDR videos transcode washed out"
 check muxers chromaprint optional "intro detection by audio" "intros aren't detected by sound"
 
 if [ "$missing" = 0 ]; then

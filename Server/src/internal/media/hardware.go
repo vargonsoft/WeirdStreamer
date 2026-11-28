@@ -43,6 +43,9 @@ type HardwareEncoder struct {
 	// Sessions is how many encodes the driver let run at once at startup (NVENC: GeForce drivers
 	// allow 8 or 12, depending on the version); 0 when it showed no limit.
 	Sessions int `json:"sessions,omitempty"`
+	// ToneMap is the GPU that tone maps HDR for this encoder's transcodes (libplacebo over Vulkan,
+	// tonemap.go), as Vulkan names it; "" when that didn't work and the CPU does it.
+	ToneMap string `json:"tone_map,omitempty"`
 }
 
 // HardwareProblem is a GPU an encoder was tried on that didn't work, and why, for Settings.
@@ -122,6 +125,13 @@ func logHardware(r HardwareReport) {
 			log.Printf("[HARDWARE] %s on %s works, %d encodes at once (the driver's limit)", e.Name, e.GPU, e.Sessions)
 		} else {
 			log.Printf("[HARDWARE] %s on %s works", e.Name, e.GPU)
+		}
+		if e.ToneMap != "" {
+			log.Printf("[HARDWARE] %s's transcodes tone map HDR on %s (libplacebo)", e.Name, e.ToneMap)
+		} else if e.ID == "vaapi" {
+			log.Printf("[HARDWARE] %s's transcodes tone map HDR on the CPU (Quick Sync's tone map on the GPU, where it works)", e.Name)
+		} else if e.ID != "videotoolbox" {
+			log.Printf("[HARDWARE] %s's transcodes tone map HDR on the CPU (libplacebo over Vulkan didn't work on a GPU)", e.Name)
 		}
 	}
 	for _, p := range r.Problems {
@@ -225,6 +235,7 @@ func detectHardware() HardwareReport {
 		if id == "nvenc" {
 			e.Sessions = countSessions(id, g.Device)
 		}
+		e.ToneMap = gpuToneMapCheck(id)
 		r.Encoders = append(r.Encoders, e)
 	}
 	nvidia := false

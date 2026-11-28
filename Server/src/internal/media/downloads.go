@@ -327,8 +327,16 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 		}
 		src := Playable(job.Path)
 		args = append(inputFilters(src, ""), "-i", src, "-map", "0:v:0", "-map", fmt.Sprintf("0:a:%d?", track))
+		scale := ""
 		if height > 0 {
-			args = append(args, "-vf", fmt.Sprintf("scale=-2:%d", height))
+			scale = fmt.Sprintf("scale=-2:%d", height)
+		}
+		// An encoded copy of HDR video is tone mapped to SDR (tonemap.go); a kept one stays HDR.
+		if !job.KeepVideo {
+			scale = joinFilters(scale, hdrFilter(codecs.Video))
+		}
+		if scale != "" {
+			args = append(args, "-vf", scale)
 		}
 		if len(codecs.Audio) > 0 && !mp4Audio(codecs.Audio[track].Codec) {
 			keepAudio = false // DTS, TrueHD…: MP4 can't carry it
@@ -380,6 +388,9 @@ func (m *DownloadManager) encode(ctx context.Context, job *DownloadJob) error {
 		return m.ffmpeg(ctx, job, src, args, part)
 	}
 	gpuArgs := hardwareArgs(args, hw, device)
+	if !src.Disc {
+		gpuArgs = gpuToneMap(gpuArgs, Playable(job.Path), hw)
+	}
 	job.encoder = encoderLabel(gpuArgs)
 	err = m.ffmpeg(ctx, job, src, gpuArgs, part)
 	downloadsOnGPU.Add(-1)
